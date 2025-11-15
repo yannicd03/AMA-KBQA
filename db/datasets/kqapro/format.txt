@@ -1,0 +1,207 @@
+# Original Dataset: 
+```json
+{
+    'concepts':
+    {
+        '<id>':
+        {
+            'name': str,
+            'instanceOf': ['<id>', '<id>'], # ids of parent concept
+        }
+    },
+    'entities': # excluding concepts
+    {
+        '<id>': 
+        {
+            'name': str,
+            'instanceOf': ['<id>', '<id>'], # ids of parent concept
+            'attributes':
+            [
+                {
+                    'key': str, # attribute key
+                    'value':  # attribute value
+                    {
+                        'type': 'string'/'quantity'/'date'/'year',
+                        'value': float/int/str, # float or int for quantity, int for year, 'yyyy/mm/dd' for date
+                        'unit': str,  # for quantity
+                    },
+                    'qualifiers':
+                    {
+                        '<qk>':  # qualifier key, one key may have multiple corresponding qualifier values
+                        [
+                            {
+                                'type': 'string'/'quantity'/'date'/'year',
+                                'value': float/int/str,
+                                'unit': str,
+                            }, # the format of qualifier value is similar to attribute value
+                        ]
+                    }
+                },
+            ]
+            'relations':
+            [
+                {
+                    'predicate': str,
+                    'object': '<id>', # NOTE: it may be a concept id
+                    'direction': 'forward'/'backward',
+                    'qualifiers':
+                    {
+                        '<qk>':  # qualifier key, one key may have multiple corresponding qualifier values
+                        [
+                            {
+                                'type': 'string'/'quantity'/'date'/'year',
+                                'value': float/int/str,
+                                'unit': str,
+                            }, # the format of qualifier value is similar to attribute value
+                        ]
+                    }
+                },
+            ]
+        }
+    }
+}
+```
+
+
+# Transformed n-triples format: 
+
+The format is based on N-Triples, a simple, line-by-line representation of RDF (Resource Description Framework) graphs. All identifiers (like "Mount Everest") have had spaces replaced with underscores (`_`) to form valid URIs.
+
+Here are the key patterns and the prefixes you'll need.
+
+### 🌎 1. Namespace Prefixes
+
+To make your queries readable, you should define these prefixes at the start of your SPARQL query:
+
+```sparql
+PREFIX ex:   <http://kqapro.org/entity/>
+PREFIX prop: <http://kqapro.org/property/>
+PREFIX attr: <http://kqapro.org/attribute/>
+PREFIX qual: <http://kqapro.org/qualifier/>
+PREFIX unit: <http://kqapro.org/unit/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+```
+
+-----
+
+### 🏛️ 2. Core Entity Model
+
+  * **Entities and Concepts** are represented by URIs using the `ex:` prefix (e.g., `ex:Joe_Biden`).
+  * **Names/Labels** are stored using `rdfs:label` (e.g., `ex:Joe_Biden rdfs:label "Joe Biden"`).
+  * **"Instance Of"** relationships are stored using `rdf:type` (e.g., `ex:Joe_Biden rdf:type ex:Human`).
+
+**Example Query (Find an entity by its name):**
+
+```sparql
+SELECT ?id
+WHERE {
+  ?id rdfs:label "Joe Biden" .
+}
+```
+
+-----
+
+### 🏷️ 3. Attributes (Simple Facts)
+
+Attributes are simple, direct-to-literal triples.
+
+  * **Structure:** `ex:subject_id attr:attribute_key "value"^^xsd:type`
+  * **Example:** `ex:Joe_Biden attr:date_of_birth "1942-11-20"^^xsd:date`
+
+**Example Query (Find Joe Biden's birth date):**
+
+```sparql
+SELECT ?date
+WHERE {
+  ?person rdfs:label "Joe Biden" .
+  ?person attr:date_of_birth ?date .
+}
+```
+
+-----
+
+### 🔗 4. Relations (Links Between Entities)
+
+Relations are direct links between two entities.
+
+  * **Structure:** `ex:subject_id prop:predicate_key ex:object_id`
+  * **Example:** `ex:Joe_Biden prop:spouse ex:Jill_Biden`
+
+**Example Query (Find the name of Joe Biden's spouse):**
+
+```sparql
+SELECT ?spouseName
+WHERE {
+  ?person rdfs:label "Joe Biden" .
+  ?person prop:spouse ?spouse_id .
+  ?spouse_id rdfs:label ?spouseName .
+}
+```
+
+-----
+
+### 📏 5. Quantities (Values with Units)
+
+Quantities are not simple literals. They point to an intermediate "blank node" (a node with no name) that holds the value and the unit.
+
+  * **Structure:**
+    `ex:Mount_Everest attr:height _:b1 .`
+    `_:b1 rdf:value "8848.86"^^xsd:decimal .`
+    `_:b1 unit:unit unit:metre .`
+
+**Example Query (Get the value and unit of Mount Everest's height):**
+
+```sparql
+SELECT ?value ?unit_uri
+WHERE {
+  ex:Mount_Everest attr:height ?quantity_node .
+  ?quantity_node rdf:value ?value .
+  ?quantity_node unit:unit ?unit_uri .
+}
+```
+
+-----
+
+### 📑 6. Qualifiers (Facts about other Facts)
+
+This is the most complex pattern. Qualifiers are modeled using **reification**.
+
+**The Logic:**
+
+1.  A simple, "base" triple is **always** added (e.g., `ex:Joe_Biden prop:position_held ex:President_of_the_United_States`).
+2.  **In addition**, a special `rdf:Statement` node is created (as a blank node) to represent that fact.
+3.  Qualifiers (like "start time" or "end time") are attached *to that statement node*.
+
+<!-- end list -->
+
+  * **Structure:**
+    `# The base fact`
+    `ex:Joe_Biden prop:position_held ex:President_of_the_United_States .`
+
+    `# The reified statement describing that fact`
+    `_:b2 rdf:type rdf:Statement .`
+    `_:b2 rdf:subject ex:Joe_Biden .`
+    `_:b2 rdf:predicate prop:position_held .`
+    `_:b2 rdf:object ex:President_of_the_United_States .`
+
+    `# The qualifiers attached to that statement`
+    `_:b2 qual:start_time "2021-01-20"^^xsd:date .`
+    `_:b2 qual:end_time "2025-01-20"^^xsd:date .`
+
+**Example Query (Find the start date of Joe Biden's presidency):**
+
+```sparql
+SELECT ?startDate
+WHERE {
+  # 1. Find the statement node
+  ?statement rdf:type rdf:Statement ;
+             rdf:subject ex:Joe_Biden ;
+             rdf:predicate prop:position_held ;
+             rdf:object ex:President_of_the_United_States .
+  
+  # 2. Get the qualifier from that statement
+  ?statement qual:start_time ?startDate .
+}
+```

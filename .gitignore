@@ -208,3 +208,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+
+/db/datasets/kqapro/kb.json
+/db/datasets/kqapro/kb.nt
+/db/qdrant_storage
+/db/virtuoso_storage

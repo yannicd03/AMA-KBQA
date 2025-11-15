@@ -5,6 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "ipykernel>=7.1.0",
     "openai-agents>=0.5.1",
+    "qdrant-client>=1.15.1",
+    "qlever>=0.5.33",
+    "rdflib>=7.4.0",
     "streamlit>=1.51.0",
 ]
