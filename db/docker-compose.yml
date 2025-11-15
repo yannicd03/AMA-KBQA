@@ -1,4 +1,4 @@
-# docker exec -i virtuoso_db isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/database/to_load', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
+# docker exec -i virtuoso_db isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
 
 services:
   virtuoso:
@@ -13,9 +13,11 @@ services:
     volumes:
       # 1. Bind mount for the persistent database files
       - ./virtuoso_storage:/database
-
       # 2. Bind mount for your data to be loaded
-      - ./datasets/kqapro:/database/to_load
+      - ./datasets/kqapro:/usr/share/proj
+    environment:
+      - DBA_PASSWORD=kit_ama_kbqa
+      - SPARQL_UPDATE=true
 
   qdrant:
     image: qdrant/qdrant
