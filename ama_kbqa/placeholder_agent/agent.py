@@ -14,17 +14,21 @@ HTTP_REFERER = os.getenv("OFFICIAL_SITE_URL")
 X_TITLE = os.getenv("APP_NAME_FOR_REFERER")
 
 
-class KQAProAgent:
+class PlaceholderAgent:
     """
-    Spezialisierter Agent für Knowledge Graph Question Answering.
+    Placeholder für zukünftige spezialisierte Agenten.
+    Kann für verschiedene Domänen angepasst werden.
     """
     
-    def __init__(self, name: str = "kqapro_agent", session_id: str = "default"):
+    def __init__(self, name: str = "placeholder_agent", session_id: str = "default", 
+                 domain: str = "general", capabilities: str = "Allgemeine Aufgaben"):
         if not OPENROUTER_API_KEY:
             raise RuntimeError("OPENROUTER_API_KEY fehlt in .env")
         
         self.name = name
         self.session_id = session_id
+        self.domain = domain
+        self.capabilities_desc = capabilities
         
         default_headers = {}
         if HTTP_REFERER:
@@ -41,16 +45,11 @@ class KQAProAgent:
         self.model = MODEL_NAME
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
         
-        self.system_prompt = """Du bist ein Experte für Knowledge Graph Question Answering (KGQA).
-Du analysierst Fragen über strukturierte Wissensgraphen und beantwortest sie präzise.
+        self.system_prompt = f"""Du bist ein spezialisierter Agent für: {domain}
 
-Deine Fähigkeiten:
-- Verständnis von Entity-Relationen in Wissensgraphen
-- Beantwortung komplexer Fragen über Fakten und Zusammenhänge
-- Erkennung von mehrschrittigen Reasoning-Aufgaben
-- Umgang mit unvollständigen oder mehrdeutigen Anfragen
+Deine Fähigkeiten: {capabilities}
 
-Antworte immer faktisch und präzise."""
+Antworte präzise und hilfsbereit."""
         
         self._messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt}
@@ -58,11 +57,11 @@ Antworte immer faktisch und präzise."""
     
     def get_capabilities(self) -> str:
         """Beschreibe die Fähigkeiten dieses Agenten."""
-        return "Knowledge Graph Question Answering (KGQA), Fakten über Entities und deren Relationen, strukturiertes Wissen"
+        return self.capabilities_desc
     
     def ask(self, query: str) -> str:
         """
-        Beantworte eine Frage im Kontext von Knowledge Graphs.
+        Beantworte eine Frage.
         
         Args:
             query: Die Frage des Orchestrators
@@ -84,7 +83,7 @@ Antworte immer faktisch und präzise."""
         except Exception as e:
             if self._messages and self._messages[-1]["role"] == "user":
                 self._messages.pop()
-            raise RuntimeError(f"KQAProAgent API Fehler: {e}")
+            raise RuntimeError(f"{self.name} API Fehler: {e}")
         
         assistant_text = response.choices[0].message.content or ""
         
@@ -96,13 +95,18 @@ Antworte immer faktisch und präzise."""
         return assistant_text.strip()
     
     def reset(self):
-        """Setze die Konversation zurück (behält System Prompt)."""
+        """Setze die Konversation zurück."""
         self._messages = [
             {"role": "system", "content": self.system_prompt}
         ]
 
 
 if __name__ == "__main__":
-    agent = KQAProAgent()
-    answer = agent.ask("Wer ist der Regisseur von Inception?")
-    print(f"KQAPro Agent: {answer}")
+    code_agent = PlaceholderAgent(
+        name="code_helper",
+        domain="Programmierung",
+        capabilities="Python, JavaScript, Debugging, Code-Erklärungen"
+    )
+    
+    answer = code_agent.ask("Erkläre was List Comprehension in Python ist")
+    print(f"Code Agent: {answer}")
