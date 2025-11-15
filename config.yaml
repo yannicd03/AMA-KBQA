@@ -1,5 +1,5 @@
 openrouter:
-  api_key: "***REMOVED***
+  api_key: "***REMOVED***"
   model: "openrouter/open-gpt4o-mini"
   temperature: 0.5
   max_tokens: 2048
