@@ -1,0 +1,2 @@
+class SupevisorAgent():
+    pass
