@@ -3,11 +3,17 @@
 
 ## Setup
 - Clone the repo
-- Download the KQAPro Dataset from here
+- Download the KQAPro Dataset from [here](https://huggingface.co/datasets/drt/kqa_pro/blob/main/kb.json)
 - place the kb.json file into this folder: "db/datasets/kqapro"
 - Run `convert_kb_to_nt.py` in order to transform the .json file to .nt, a format which can be read by qlever
-- Start the Databases by using `docker compose up -d`
-- Populate the Database by using `docker exec -i virtuoso_db isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/database/to_load', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"` 
+- Start the Databases by using
+```bash
+docker compose up -d
+```
+- Populate the Database by using
+```bash
+docker exec -i virtuoso_db isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
+``` 
 - (WIP) Setup Qdrant
 
 
