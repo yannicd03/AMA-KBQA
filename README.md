@@ -12,7 +12,7 @@ docker compose up -d
 ```
 - Populate the Database by using
 ```bash
-docker exec -i virtuoso_db isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
+docker exec -i virtuoso_ama_kbqa isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
 ``` 
 - (WIP) Setup Qdrant
 
