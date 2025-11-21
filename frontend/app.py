@@ -2,7 +2,7 @@ import streamlit as st
 import time
 from datetime import datetime
 
-# --- AGENT IMPORT ---
+# --- AGENT IMPORT ---strea
 from ama_kbqa.orchestrator_agent.agent import OrchestratorAgent
 
 # --- KONFIGURATION ---
@@ -302,7 +302,6 @@ st.markdown("""
 chat_container = st.container()
 
 with chat_container:
-    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
     
     # Eingabefeld
     user_input = st.text_input(
@@ -411,8 +410,6 @@ with chat_container:
         else:
             # Bei Fehler (z.B. Agent-Absturz)
             st.error(f"❌ {backend_response['answer_text']}")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer (ohne den grauen Balken darüber)
 st.markdown("""
