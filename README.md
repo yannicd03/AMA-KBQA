@@ -1,5 +1,12 @@
 # AMA KBQA
 
+## TODO
+
+- [ ] Implement Graph Scratchpad using the `networkx` library
+
+## Timeline
+![alt text](image.png)
+
 ## Setup
 
 1. Clone the repo
