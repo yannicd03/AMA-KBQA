@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 
 # --- AGENT IMPORT ---strea
-from ama_kbqa.orchestrator_agent.agent import OrchestratorAgent
+from ama_kbqa.agents.orchestrator_agent import OrchestratorAgent
 
 # --- KONFIGURATION ---
 st.set_page_config(
