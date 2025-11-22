@@ -21,6 +21,9 @@ KB_FILE_NAME = Path("db/datasets/kqapro/kb.json")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "qwen/qwen3-embedding-8b"
 VECTOR_DIMENSION = 4096
+# Can also be models.Distance.EUCLID or models.Distance.DOT. This is defined in the beginning, when setting up the collection and cannot be changed without recreating the collection.
+# The Distance Measure has to fir the Embedding Model used, in most modern models like Qwen3-Embedding Cosine Similarity is the standard.
+DISTANCE_MEASURE = models.Distance.COSINE
 
 # Get API Key
 try:
@@ -56,7 +59,7 @@ def setup_collections(client: QdrantClient):
             collection_name=col_name,
             vectors_config=models.VectorParams(
                 size=VECTOR_DIMENSION,
-                distance=models.Distance.COSINE
+                distance=DISTANCE_MEASURE
             )
         )
     print("Collections created successfully.")
