@@ -24,6 +24,8 @@ dependencies = [
     "streamlit>=1.51.0",
     "requests>=2.32.5",
     "loguru>=0.7.3",
+    "fastmcp>=2.13.1",
+    "sparqlwrapper>=2.0.0",
 ]
 
 [tool.setuptools.packages.find]
