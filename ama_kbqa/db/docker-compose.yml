@@ -1,9 +1,9 @@
-# docker exec -i virtuoso_db isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
+# docker exec -i virtuoso_ama_kbqa isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
 
 services:
   virtuoso:
     image: openlink/virtuoso-opensource-7
-    container_name: virtuoso_db
+    container_name: virtuoso_ama_kbqa
     ports:
       # 8890 is the HTTP port (set in virtuoso.ini)
       - "8890:8890"
@@ -12,7 +12,7 @@ services:
 
     volumes:
       # 1. Bind mount for the persistent database files
-      - ./virtuoso_storage:/database
+      - ama_virtuoso_data:/database
       # 2. Bind mount for your data to be loaded
       - ./datasets/kqapro:/usr/share/proj
     environment:
@@ -21,8 +21,12 @@ services:
 
   qdrant:
     image: qdrant/qdrant
-    container_name: qdrant
+    container_name: qdrant_ama_kbqa
     ports:
       - 6333:6333
     volumes:
-      - ./qdrant_storage:/qdrant/storage
+      - ama_qdrant_data:/qdrant/storage
+
+volumes:
+  ama_qdrant_data:
+  ama_virtuoso_data:
