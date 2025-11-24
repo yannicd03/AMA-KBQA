@@ -1,318 +1,303 @@
-from __future__ import annotations
 import os
 import sys
+import asyncio
+import json
+import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from contextlib import AsyncExitStack
+from datetime import datetime
+import traceback
+import signal 
+
 from dotenv import load_dotenv
 from openai import OpenAI
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.types import Tool as McpTool
+from asyncio.exceptions import CancelledError
 
-load_dotenv(override=True)
+load_dotenv()
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# --- KONFIGURATION & PFAD-LOGIK ---
+current_file = Path(__file__).resolve()
+# Gehe zwei Ebenen hoch zur Wurzel des Projekts (ama_kbqa)
+ama_kbqa_root = current_file.parents[2]
+default_server_path = ama_kbqa_root / "server" / "orchestrator_server.py"
+
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o")
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Du bist ein Orchestrator. Du delegierst Aufgaben an spezialisierte Agenten.")
-REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
-ENABLE_REASONING = os.getenv("ENABLE_REASONING", "true").lower() in ("true", "1", "yes")
-HTTP_REFERER = os.getenv("OFFICIAL_SITE_URL")
-X_TITLE = os.getenv("APP_NAME_FOR_REFERER")
+# Nutze den Orchestrator-Serverpfad
+MCP_SERVER_PATH = os.getenv("ORCHESTRATOR_SERVER_PATH", str(default_server_path))
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Du bist ein intelligenter Orchestrator.")
+
+# --- TRACING & FARBEN ---
+
+# ANSI Farben
+COLOR_BLUE = '\033[94m' # Orchestrator Standard
+COLOR_GREEN = '\033[92m' # Agenten-Standard / User-Query / Finale Antwort
+COLOR_RED = '\033[91m' # Fehler
+COLOR_YELLOW = '\033[93m' # Warnung / Info
+COLOR_END = '\033[0m'
+
+def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
+    """Standardisiertes Tracing mit Zeitstempel und Agenten-Präfix."""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    # Stelle sicher, dass der Agentenname die richtige Farbe hat, um Verwirrung zu vermeiden
+    print(f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {msg}")
 
 
-class OrchestratorAgent:
-    def __init__(self, name: str, session_id: str):
-        if not OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY fehlt in .env")
+# --- MCP CLIENT (für Orchestrator und Sub-Agenten) ---
+
+class MCPClient:
+    def __init__(self, server_path: str, agent_name: str):
+        self.server_path = Path(server_path)
+        self.agent_name = agent_name
+        self.exit_stack = AsyncExitStack()
+        self.session: Optional[ClientSession] = None
+        self._connected = False
+        # self._process entfernt, da wir keinen direkten Zugriff mehr benötigen
+
+    async def start(self):
+        if self._connected: return
+        if not self.server_path.exists():
+            trace(self.agent_name, f"{COLOR_RED}MCP-Server nicht gefunden: {self.server_path}{COLOR_END}", COLOR_RED)
+            raise FileNotFoundError(f"MCP-Server nicht gefunden: {self.server_path}")
         
-        self.name = name
+        # Erzeuge eine `stdio_client` Instanz (ein async generator)
+        client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
+        
+        # FIX: Nur read und write entpacken (Library Change: process wird nicht mehr zurückgegeben)
+        read, write = await self.exit_stack.enter_async_context(client_gen)
+        
+        self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+        await self.session.initialize()
+        self._connected = True
+
+    async def list_tools(self) -> List[McpTool]:
+        if not self.session: raise RuntimeError("Not connected")
+        result = await self.session.list_tools()
+        return result.tools
+
+    async def call_tool(self, name: str, args: Dict) -> str:
+        if not self.session: raise RuntimeError("Not connected")
+        result = await self.session.call_tool(name, arguments=args)
+        if hasattr(result, "content") and result.content:
+            return result.content[0].text
+        return str(result)
+
+    async def close(self):
+        if self._connected:
+            try:
+                # FIX: Nur noch aclose aufrufen. Der ExitStack beendet den Prozess automatisch.
+                await self.exit_stack.aclose()
+                # Kleine Pause zur Unterstützung des asynchronen Cleanups
+                await asyncio.sleep(0.05) 
+            except (CancelledError, RuntimeError) as e:
+                trace(self.agent_name, f"{COLOR_YELLOW}WARNUNG: MCP-Close Fehler ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
+            except Exception as e:
+                 trace(self.agent_name, f"{COLOR_RED}Fehler beim Schließen des MCP-Clients: {e}{COLOR_END}", COLOR_RED)
+            finally:
+                self._connected = False
+
+
+# --- Orchestrator ---
+
+class Orchestrator:
+    
+    def __init__(self, session_id: str = "default"):
+        self.name = "ORCHESTRATOR"
         self.session_id = session_id
-        self.dialogue_log: List[str] = []
-        
-        default_headers = {}
-        if HTTP_REFERER:
-            default_headers["HTTP-Referer"] = HTTP_REFERER
-        if X_TITLE:
-            default_headers["X-Title"] = X_TITLE
-        
-        self.client = OpenAI(
-            base_url=OPENROUTER_BASE_URL,
-            api_key=OPENROUTER_API_KEY,
-            default_headers=default_headers if default_headers else None
-        )
-        
+        # Der OpenAI-Client wird mit der OpenRouter-Basis-URL und dem Key initialisiert
+        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
         self.model = MODEL_NAME
-        self.request_timeout = REQUEST_TIMEOUT_SECONDS
-        self.enable_reasoning = ENABLE_REASONING
-        self._messages: List[Dict[str, Any]] = []
+        self.mcp: Optional[MCPClient] = None
+        self._agents = {}
         
-        if SYSTEM_PROMPT:
-            self._messages.append({"role": "system", "content": SYSTEM_PROMPT})
-        
-        # Cache für lazy-loaded Agenten
-        self._agent_cache: Dict[str, Any] = {}
-        
-        # Agent-Konfiguration (welche Agenten verfügbar sind)
-        self._available_agents = {
+        self._agent_config = {
             "kqapro_agent": {
-                "module": "ama_kbqa.kqapro_agent.agent",
+                "module": "ama_kbqa.agents.kqapro_agent.agent",
                 "class": "KQAProAgent",
-                "capabilities": "Knowledge Graph Question Answering, Fakten über Entities und deren Relationen"
+                "description": "Faktenwissen, Knowledge Graph, Beziehungen"
             },
             "code_agent": {
                 "module": "ama_kbqa.placeholder_agent.agent",
                 "class": "PlaceholderAgent",
-                "init_kwargs": {
-                    "domain": "Programmierung",
-                    "capabilities": "Python, JavaScript, Code-Erklärungen, Debugging"
-                },
-                "capabilities": "Python, JavaScript, Code-Erklärungen, Debugging"
+                "init_kwargs": {"domain": "Coding", "capabilities": "Python, Algorithmen"},
+                "description": "Programmierung, Python"
             },
             "math_agent": {
                 "module": "ama_kbqa.placeholder_agent.agent",
                 "class": "PlaceholderAgent",
-                "init_kwargs": {
-                    "domain": "Mathematik",
-                    "capabilities": "Berechnungen, Algebra, Statistik"
-                },
-                "capabilities": "Berechnungen, Algebra, Statistik"
+                "init_kwargs": {"domain": "Math", "capabilities": "Gleichungen, Algebra"},
+                "description": "Rechnen, Mathematik"
             }
         }
-    
-    def _load_agent(self, agent_name: str) -> Any:
-        """
-        Lazy Loading: Erstelle Agent nur wenn er gebraucht wird.
-        
-        Args:
-            agent_name: Name des Agenten (z.B. 'kqapro_agent')
-            
-        Returns:
-            Agent-Instanz
-        """
-        # Prüfe ob Agent bereits im Cache
-        if agent_name in self._agent_cache:
-            self.dialogue_log.append(f"[SYSTEM] Agent '{agent_name}' aus Cache geladen")
-            return self._agent_cache[agent_name]
-        
-        # Prüfe ob Agent konfiguriert ist
-        if agent_name not in self._available_agents:
-            raise ValueError(f"Agent '{agent_name}' nicht verfügbar")
-        
-        config = self._available_agents[agent_name]
-        
+
+    def _trace(self, msg: str, color: str = COLOR_BLUE):
+        trace(self.name, msg, color)
+
+    def _mcp_tool_to_openai(self, mcp_tool: McpTool) -> Dict:
+        """Konvertiert MCP Tool-Schema in OpenAI/OpenRouter Tool-Format"""
+        return {
+            "type": "function",
+            "function": {
+                "name": mcp_tool.name,
+                "description": mcp_tool.description,
+                "parameters": mcp_tool.inputSchema
+            }
+        }
+
+    async def _init_mcp(self):
+        """Initialisiert und startet den Orchestrator MCP-Client."""
+        if self.mcp: return
         try:
-            # Dynamischer Import
-            module = __import__(config["module"], fromlist=[config["class"]])
-            agent_class = getattr(module, config["class"])
-            
-            # Erstelle Agent-Instanz
-            init_kwargs = config.get("init_kwargs", {})
-            agent = agent_class(
-                name=agent_name,
-                session_id=self.session_id,
-                **init_kwargs
+            self._trace(f"Starte MCP Server: {MCP_SERVER_PATH}")
+            self.mcp = MCPClient(MCP_SERVER_PATH, self.name)
+            await self.mcp.start()
+            self._trace("MCP verbunden")
+        except Exception as e:
+            self._trace(f"{COLOR_RED}MCP Fehler: {e}{COLOR_END}", COLOR_RED)
+            self.mcp = None
+
+    async def _route_autonomously(self, query: str) -> Optional[str]:
+        """Nutzt LLM und MCP Tools zur Agenten-Auswahl."""
+        if not self.mcp: return None
+
+        self._trace("Bereite Routing vor: Hole Tool-Definitionen vom Server (ListTools)...")
+
+        try:
+            mcp_tools = await self.mcp.list_tools()
+            openai_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
+            self._trace(f"Habe {len(openai_tools)} Tools geladen. Frage nun das LLM...")
+        except Exception as e:
+            self._trace(f"{COLOR_RED}Fehler beim Listen der Tools: {e}{COLOR_END}", COLOR_RED)
+            return None
+
+        if not openai_tools:
+            self._trace(f"{COLOR_YELLOW}Keine Tools verfügbar.{COLOR_END}", COLOR_YELLOW)
+            return None
+
+        messages = [
+            {"role": "system", "content": "Du bist ein Router. Wähle das passende Tool um herauszufinden, welcher Agent zuständig ist."},
+            {"role": "user", "content": f"Query: {query}"}
+        ]
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model, messages=messages, tools=openai_tools, tool_choice="required"
             )
             
-            # Cache Agent
-            self._agent_cache[agent_name] = agent
-            self.dialogue_log.append(f"[SYSTEM] Agent '{agent_name}' erstellt und gecacht")
+            message = completion.choices[0].message
             
-            return agent
-            
+            if message.tool_calls:
+                tool_call = message.tool_calls[0]
+                func_name = tool_call.function.name
+                func_args = json.loads(tool_call.function.arguments)
+                
+                self._trace(f"LLM hat entschieden: Rufe Tool '{func_name}' auf mit {func_args}")
+                
+                tool_result = await self.mcp.call_tool(func_name, func_args)
+                self._trace(f"Tool Ergebnis: {tool_result}")
+                
+                # Mapping des Tool-Ergebnisses auf den Agenten-Namen
+                res_lower = tool_result.lower()
+                if "kqapro" in res_lower: return "kqapro_agent"
+                if "code" in res_lower: return "code_agent"
+                if "math" in res_lower: return "math_agent"
+                
+                self._trace(f"{COLOR_YELLOW}Tool-Ergebnis konnte keinem Agenten zugeordnet werden.{COLOR_END}", COLOR_YELLOW)
+                return None
+            else:
+                self._trace(f"{COLOR_YELLOW}LLM hat kein Tool aufgerufen.{COLOR_END}", COLOR_YELLOW)
+                return None
+
         except Exception as e:
-            raise RuntimeError(f"Fehler beim Laden von Agent '{agent_name}': {e}")
-    
-    def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
-        """Interne Methode für LLM-Aufrufe."""
-        extra_body = None
-        if self.enable_reasoning:
-            extra_body = {"reasoning": {"enabled": True}}
-        
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            timeout=self.request_timeout,
-            extra_body=extra_body,
-        )
-        
-        return response.choices[0].message.content or ""
-    
-    def _decide_routing(self, user_query: str) -> Optional[str]:
-        """
-        Entscheide, welcher Agent die Anfrage bearbeiten soll.
-        
-        Der Orchestrator analysiert die User-Frage und wählt den
-        passendsten Agenten basierend auf deren Capabilities.
-        
-        Workflow:
-        1. Liste alle verfügbaren Agenten mit ihren Fähigkeiten auf
-        2. Frage das LLM: "Welcher Agent passt am besten?"
-        3. LLM antwortet mit Agent-Namen oder 'none'
-        4. Validiere dass der Agent existiert
-        """
-        if not self._available_agents:
+            self._trace(f"{COLOR_RED}Fehler im Routing-Prozess: {e}{COLOR_END}", COLOR_RED)
             return None
-        
-        # Erstelle Liste der verfügbaren Agenten (ohne sie zu laden!)
-        agent_list = "\n".join(
-            f"- {name}: {config['capabilities']}" 
-            for name, config in self._available_agents.items()
-        )
-        
-        routing_prompt = f"""Du bist ein Routing-System. Analysiere die Benutzeranfrage und wähle den BESTEN spezialisierten Agenten.
 
-VERFÜGBARE AGENTEN:
-{agent_list}
+    def _load_agent(self, agent_name: str):
+        """Lädt und initialisiert einen Sub-Agenten."""
+        if agent_name in self._agents: return self._agents[agent_name]
+        if agent_name not in self._agent_config: return None
+        
+        try:
+            cfg = self._agent_config[agent_name]
+            # Importiere das Modul und die Klasse dynamisch
+            mod = __import__(cfg["module"], fromlist=[cfg["class"]]) 
+            cls = getattr(mod, cfg["class"])
+            kwargs = cfg.get("init_kwargs", {})
+            # Instanziierung des Agenten
+            agent = cls(name=agent_name, session_id=self.session_id, **kwargs)
+            self._agents[agent_name] = agent
+            return agent
+        except Exception as e:
+            self._trace(f"{COLOR_RED}Ladefehler {agent_name}: {e}{COLOR_END}", COLOR_RED)
+            # print(traceback.format_exc()) # Für detaillierte Debugging-Ausgabe
+            return None
 
-BENUTZERANFRAGE: {user_query}
-
-REGELN:
-- Antworte NUR mit dem exakten Agent-Namen (z.B. 'kqapro_agent')
-- Wenn KEIN Agent passt, antworte mit 'none'
-- Wähle den spezialisiertesten Agenten für die Aufgabe
-- Bei Wissensfragen über Fakten/Entities → kqapro_agent
-- Bei Code/Programmierung → code_agent  
-- Bei Mathematik/Berechnungen → math_agent
-
-ANTWORT (nur Agent-Name):"""
+    async def ask(self, query: str) -> str:
+        """Hauptmethode: Route die Anfrage und hole die Antwort."""
+        self._trace(f"USER: {query}", COLOR_GREEN)
         
-        decision_messages = [
-            {"role": "system", "content": "Du bist ein präziser Routing-Experte. Antworte nur mit Agent-Namen."},
-            {"role": "user", "content": routing_prompt}
-        ]
-        
-        decision = self._call_llm(decision_messages).strip().lower()
-        self.dialogue_log.append(f"[ORCHESTRATOR] Routing-Entscheidung: {decision}")
-        
-        # Validiere dass Agent verfügbar ist
-        if decision in self._available_agents:
-            return decision
-        
-        # Fallback: Suche nach Teilstring-Match
-        for agent_name in self._available_agents.keys():
-            if agent_name in decision or decision in agent_name:
-                self.dialogue_log.append(f"[ORCHESTRATOR] Fuzzy-Match gefunden: {agent_name}")
-                return agent_name
-        
-        return None
-    
-    def ask(self, user_text: str, max_iterations: int = 3) -> str:
-        """
-        Hauptmethode: Beantworte die Anfrage durch Delegation an Sub-Agenten.
-        
-        Args:
-            user_text: Die Benutzeranfrage
-            max_iterations: Maximale Anzahl von Rückfragen an Agenten
-        
-        Returns:
-            Der komplette Dialog-Log als String
-        """
-        if not user_text.strip():
-            raise ValueError("Leerer Prompt nicht erlaubt.")
-        
-        self.dialogue_log.append(f"\n{'='*60}")
-        self.dialogue_log.append(f"[USER] {user_text}")
-        self.dialogue_log.append(f"{'='*60}\n")
-        
-        # Routing-Entscheidung
-        selected_agent_name = self._decide_routing(user_text)
-        
-        if selected_agent_name and selected_agent_name in self._available_agents:
-            # Lade Agent JETZT (Lazy Loading!)
-            agent = self._load_agent(selected_agent_name)
+        try:
+            await self._init_mcp()
+            selected_agent_name = await self._route_autonomously(query)
+            answer = ""
             
-            # Delegiere an Sub-Agent
-            iterations = 0
-            current_query = user_text
-            agent_responses = []
-            
-            while iterations < max_iterations:
-                iterations += 1
-                self.dialogue_log.append(f"\n[ORCHESTRATOR → {selected_agent_name.upper()}] Iteration {iterations}")
-                self.dialogue_log.append(f"Query: {current_query}\n")
-                
-                # Hole Antwort vom Sub-Agent
-                agent_answer = agent.ask(current_query)
-                agent_responses.append(agent_answer)
-                
-                self.dialogue_log.append(f"[{selected_agent_name.upper()} → ORCHESTRATOR]")
-                self.dialogue_log.append(f"{agent_answer}\n")
-                
-                # Bewerte ob weitere Iteration nötig ist
-                evaluation_prompt = f"""Ursprüngliche Frage: {user_text}
+            print("-" * 50) # Visuelle Trennlinie
 
-Agent-Antwort: {agent_answer}
-
-Ist diese Antwort ausreichend um die ursprüngliche Frage zu beantworten?
-Antworte nur mit 'JA' oder 'NEIN' gefolgt von einer kurzen Begründung."""
+            if selected_agent_name:
+                self._trace(f"Routing erfolgreich -> {selected_agent_name}", COLOR_GREEN)
+                agent = self._load_agent(selected_agent_name)
                 
-                eval_messages = [
-                    {"role": "system", "content": "Du bewertest Antwortqualität."},
-                    {"role": "user", "content": evaluation_prompt}
-                ]
+                if agent:
+                    try:
+                        # Wichtig: Call muss ASYNC sein, da KQAProAgent.ask async ist
+                        if inspect.iscoroutinefunction(agent.ask):
+                            answer = await agent.ask(query)
+                        else:
+                            answer = agent.ask(query)
+                    except Exception as e:
+                        self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
+                        self._trace("Führe LLM Fallback durch.")
+                        answer = self._fallback_llm(query)
+                else:
+                    self._trace("Agent konnte nicht geladen werden. Führe LLM Fallback durch.")
+                    answer = self._fallback_llm(query)
+            else:
+                self._trace("Routing fehlgeschlagen. Führe LLM Fallback durch.")
+                answer = self._fallback_llm(query)
                 
-                evaluation = self._call_llm(eval_messages)
-                self.dialogue_log.append(f"[ORCHESTRATOR] Evaluation: {evaluation}\n")
-                
-                if evaluation.strip().upper().startswith("JA"):
-                    break
-                
-                # Formuliere Nachfrage
-                if iterations < max_iterations:
-                    followup_prompt = f"""Die bisherige Antwort war unvollständig.
+            return answer
 
-Ursprüngliche Frage: {user_text}
-Bisherige Antwort: {agent_answer}
+        finally:
+            if self.mcp:
+                await self.mcp.close()
+                self._trace("Orchestrator MCP-Server sauber beendet")
 
-Formuliere eine präzise Nachfrage um die fehlenden Informationen zu erhalten."""
-                    
-                    followup_messages = [
-                        {"role": "system", "content": "Du formulierst präzise Nachfragen."},
-                        {"role": "user", "content": followup_prompt}
-                    ]
-                    
-                    current_query = self._call_llm(followup_messages)
-                    self.dialogue_log.append(f"[ORCHESTRATOR] Nachfrage: {current_query}\n")
-            
-            # Finale Zusammenfassung
-            self.dialogue_log.append(f"\n{'='*60}")
-            self.dialogue_log.append("[ORCHESTRATOR] Erstelle finale Antwort...")
-            self.dialogue_log.append(f"{'='*60}\n")
-            
-            summary_prompt = f"""Ursprüngliche Benutzeranfrage: {user_text}
+    def _fallback_llm(self, query: str) -> str:
+        """Direkter LLM-Call, wenn kein Agent zuständig ist oder Fehler auftreten."""
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": query}]
+        ).choices[0].message.content
 
-Gesammelte Informationen von {selected_agent_name}:
-{chr(10).join(f"- {resp}" for resp in agent_responses)}
 
-Erstelle eine präzise, vollständige Antwort auf die ursprüngliche Frage basierend auf diesen Informationen."""
-            
-            self._messages.append({"role": "user", "content": summary_prompt})
-            final_answer = self._call_llm(self._messages)
-            
-            self.dialogue_log.append(f"[ORCHESTRATOR → USER] Finale Antwort:")
-            self.dialogue_log.append(f"{final_answer}")
-            
-        else:
-            # Kein passender Agent, beantworte selbst
-            self.dialogue_log.append("[ORCHESTRATOR] Kein spezialisierter Agent verfügbar, beantworte selbst...\n")
-            self._messages.append({"role": "user", "content": user_text})
-            final_answer = self._call_llm(self._messages)
-            self.dialogue_log.append(f"[ORCHESTRATOR → USER] Antwort:")
-            self.dialogue_log.append(f"{final_answer}")
-        
-        # Gib kompletten Dialog-Log zurück
-        return "\n".join(self.dialogue_log)
-    
-    def reset(self):
-        """Setze die Konversation zurück."""
-        system = next((m for m in self._messages if m.get("role") == "system"), None)
-        self._messages = []
-        if system:
-            self._messages.append(system)
-        self.dialogue_log = []
-        # Agenten bleiben im Cache!
+async def main():
+    orchestrator = Orchestrator()
+    result = await orchestrator.ask("Wer ist der Regisseur von Inception?")
+    print("-" * 50) 
+    print(f"\n[{COLOR_GREEN}FINALE ANTWORT{COLOR_END}]\n{result}")
 
 
 if __name__ == "__main__":
-    # Teste Orchestrator - Agenten werden automatisch bei Bedarf geladen
-    agent = OrchestratorAgent("orchestrator", "test-session")
-    result = agent.ask("Wer ist der Regisseur von Inception?")
-    print(result)
+    try:
+        # Führe die asynchrone Hauptfunktion aus
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    except Exception:
+        # Fange unhandled exceptions außerhalb von asyncio.run()
+        print(f"\n{COLOR_RED}--- KRITISCHER FEHLER IM HAUPTLAUF ---{COLOR_END}")
+        traceback.print_exc()
