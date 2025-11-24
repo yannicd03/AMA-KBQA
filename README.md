@@ -3,6 +3,9 @@
 ## TODO
 
 - [ ] Implement Graph Scratchpad using the `networkx` library
+- [ ] Implement Batch processing
+- [ ] Debug Agents
+- [ ] 
 
 ## Timeline
 ![alt text](image.png)
