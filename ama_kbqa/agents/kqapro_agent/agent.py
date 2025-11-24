@@ -20,16 +20,23 @@ load_dotenv(override=True)
 
 # --- TRACING & FARBEN ---
 
-COLOR_BLUE = '\033[94m' 
-COLOR_GREEN = '\033[92m' 
-COLOR_RED = '\033[91m' 
-COLOR_YELLOW = '\033[93m' 
+COLOR_BLUE = '\033[94m'
+COLOR_GREEN = '\033[92m'
+COLOR_RED = '\033[91m'
+COLOR_YELLOW = '\033[93m'
+COLOR_CYAN = '\033[96m'  # Added Cyan for better distinction
 COLOR_END = '\033[0m'
+
 
 def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
     """Standardisiertes Tracing mit Zeitstempel und Agenten-Präfix."""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {msg}")
+    # Handle multi-line messages nicely by indenting subsequent lines
+    lines = msg.split('\n')
+    header = f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {lines[0]}"
+    print(header)
+    for line in lines[1:]:
+        print(f"{' ' * (len(timestamp) + 2 + len(agent_name) + 6)} {color}{line}{COLOR_END}")
 
 
 # Dynamische Pfad-Ermittlung für den Sub-Agent Server
@@ -55,31 +62,31 @@ class MCPClient:
         self.exit_stack = AsyncExitStack()
         self.session: Optional[ClientSession] = None
         self._connected = False
-        # self._process entfernt, da nicht mehr benötigt
 
     async def start(self):
-        if self._connected: return
+        if self._connected:
+            return
         if not self.server_path.exists():
             trace(self.agent_name, f"{COLOR_RED}MCP-Server nicht gefunden: {self.server_path}{COLOR_END}", COLOR_RED)
             raise FileNotFoundError(f"MCP-Server nicht gefunden: {self.server_path}")
-        
-        # Erzeuge eine `stdio_client` Instanz (ein async generator)
+
         client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
-        
-        # FIX: Nur 'read' und 'write' entpacken. 'process' wird nicht mehr zurückgegeben.
+
         read, write = await self.exit_stack.enter_async_context(client_gen)
-        
+
         self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
         await self.session.initialize()
         self._connected = True
 
     async def list_tools(self) -> List[McpTool]:
-        if not self.session: raise RuntimeError("Not connected")
+        if not self.session:
+            raise RuntimeError("Not connected")
         result = await self.session.list_tools()
         return result.tools
 
     async def call_tool(self, name: str, args: Dict) -> str:
-        if not self.session: raise RuntimeError("Not connected")
+        if not self.session:
+            raise RuntimeError("Not connected")
         result = await self.session.call_tool(name, arguments=args)
         if hasattr(result, "content") and result.content:
             return result.content[0].text
@@ -88,54 +95,51 @@ class MCPClient:
     async def close(self):
         if self._connected:
             try:
-                # FIX: Nur aclose aufrufen. ExitStack beendet den Prozess automatisch.
                 await self.exit_stack.aclose()
-                await asyncio.sleep(0.05) 
+                await asyncio.sleep(0.05)
             except (CancelledError, RuntimeError) as e:
-                # Fange die typischen Fehler beim Shutdown ab
-                trace(self.agent_name, f"{COLOR_YELLOW}WARNUNG: MCP-Close Fehler beim Beenden ignoriert ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
+                trace(
+                    self.agent_name, f"{COLOR_YELLOW}WARNUNG: MCP-Close Fehler beim Beenden ignoriert ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
             except Exception as e:
                 trace(self.agent_name, f"{COLOR_RED}Fehler beim Schließen des MCP-Clients: {e}{COLOR_END}", COLOR_RED)
             finally:
-                # FIX: Kein manuelles terminate() mehr nötig
                 self._connected = False
 
 
 # --- KQAProAgent ---
 
 class KQAProAgent:
-    
+
     def __init__(self, name: str = "kqapro_agent", session_id: str = "default"):
         if not OPENROUTER_API_KEY:
             raise RuntimeError("OPENROUTER_API_KEY fehlt in .env")
-        
+
         self.name = name
         self.session_id = session_id
         self.mcp: Optional[MCPClient] = None
-        
+
         self.client = OpenAI(
             base_url=OPENROUTER_BASE_URL,
             api_key=OPENROUTER_API_KEY
         )
-        
+
         self.model = MODEL_NAME
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
-        
+
         self.system_prompt = """Du bist ein Experte für Knowledge Graph Question Answering (KGQA).
 Du analysierst Fragen über strukturierte Wissensgraphen und beantwortest sie präzise.
 
 Deine Hauptaufgabe ist es, die verfügbaren Tools zu nutzen, um Fakten zu recherchieren, bevor du die finale Antwort gibst.
 Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen hast, antworte direkt und präzise.
 """
-        
+
         self._messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt}
         ]
 
     def _trace(self, msg: str, color: str = COLOR_GREEN):
-        # Nutzt jetzt die globale Trace-Funktion mit dem Agenten-Namen
         trace(self.name, msg, color)
-        
+
     def _mcp_tool_to_openai(self, mcp_tool: McpTool) -> Dict:
         return {
             "type": "function",
@@ -145,12 +149,12 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
                 "parameters": mcp_tool.inputSchema
             }
         }
-    
+
     async def _init_mcp(self):
-        if self.mcp: return
+        if self.mcp:
+            return
         try:
             self._trace(f"Starte eigenen MCP Server: {MCP_SERVER_PATH}")
-            # Übergib den Agenten-Namen für das Tracing
             self.mcp = MCPClient(MCP_SERVER_PATH, self.name)
             await self.mcp.start()
             self._trace("Eigener MCP verbunden")
@@ -161,11 +165,11 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
 
     async def ask(self, query: str) -> str:
         self._trace(f"Eingehende Query: '{query}'", COLOR_GREEN)
-        
+
         try:
             # 1. MCP starten und Tools laden
             await self._init_mcp()
-            
+
             if not self.mcp:
                 self._trace(f"{COLOR_YELLOW}Tool-Server nicht verfügbar. Antworte ohne Tools.{COLOR_END}", COLOR_YELLOW)
                 self._messages.append({"role": "user", "content": query})
@@ -181,23 +185,46 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
             while True:
                 response = self._llm_call(tools=openai_tools)
                 message = response.choices[0].message
-                
-                # Finale Antwort
+
+                # -------------------------------------------------------
+                # VERBESSERTES LOGGING: Zwischengedanken (Thoughts/Text)
+                # -------------------------------------------------------
+                if message.content:
+                    self._trace(f"🧠 Gedanke/Text: {message.content}", COLOR_BLUE)
+
+                # Finale Antwort (Keine Tools mehr)
                 if not message.tool_calls:
                     assistant_text = message.content or ""
                     self._messages.append({"role": "assistant", "content": assistant_text})
-                    self._trace("Finale Antwort vom LLM generiert.")
+                    self._trace("🏁 Finale Antwort vom LLM generiert.")
                     return assistant_text.strip()
-                
+
                 # Tool-Call(s) ausführen
                 for tool_call in message.tool_calls:
                     func_name = tool_call.function.name
-                    func_args = json.loads(tool_call.function.arguments)
-                    
-                    self._trace(f"LLM wählt internes Tool '{func_name}' mit {func_args}")
+                    try:
+                        func_args = json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        func_args = {}
+
+                    # -------------------------------------------------------
+                    # VERBESSERTES LOGGING: Tool Call & Parameter
+                    # -------------------------------------------------------
+                    args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
+                    self._trace(f"🛠️  Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
 
                     tool_result = await self.mcp.call_tool(func_name, func_args)
-                    
+
+                    # -------------------------------------------------------
+                    # VERBESSERTES LOGGING: Tool Ergebnisse
+                    # -------------------------------------------------------
+                    # Kürze Ergebnis für Logs, falls es riesig ist, um Konsole nicht zu fluten
+                    log_result = tool_result
+                    if len(log_result) > 500:
+                        log_result = log_result[:500] + f"... [truncated, total len: {len(tool_result)}]"
+
+                    self._trace(f"🔙 Result ({func_name}): {log_result}", COLOR_CYAN)
+
                     self._messages.append(message)
                     self._messages.append({
                         "role": "tool",
@@ -205,18 +232,15 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
                         "name": func_name,
                         "content": tool_result
                     })
-                    self._trace(f"Tool Ergebnis an LLM zurückgegeben.")
-                
+
         except Exception as e:
             self._trace(f"{COLOR_RED}Fehler im Agenten-Loop: {e}{COLOR_END}", COLOR_RED)
             raise
-        
+
         finally:
-            # Hier muss der eigene MCP geschlossen werden
             if self.mcp:
                 await self.mcp.close()
                 self._trace("Eigener MCP-Server sauber beendet")
-
 
     def _llm_call(self, tools: Optional[List[Dict[str, Any]]] = None):
         """Führt den eigentlichen API-Call aus (mit Tools)."""
@@ -226,7 +250,7 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
             timeout=self.request_timeout,
             tools=tools
         )
-    
+
     def _llm_call_text_only(self):
         """Führt den eigentlichen API-Call aus (ohne Tools)."""
         return self.client.chat.completions.create(
@@ -242,6 +266,7 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
         if self.mcp:
             asyncio.run(self.mcp.close())
             self.mcp = None
+
 
 if __name__ == "__main__":
     async def run_test():
