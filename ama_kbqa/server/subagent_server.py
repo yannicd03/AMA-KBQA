@@ -8,20 +8,23 @@ from fastmcp import FastMCP, Context
 from qdrant_client import QdrantClient
 from openai import OpenAI
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Any, Optional
 from SPARQLWrapper import SPARQLWrapper, JSON
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 
 # --- Configuration ---
-QDRANT_HOST = "localhost"
+QDRANT_HOST = "localhost"  # TODO Fix Adress
 QDRANT_PORT = 6333
 COLLECTION_ENTITIES = "kqapro-entities"
 COLLECTION_RELATIONS = "kqapro-relations"
 VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "qwen/qwen3-embedding-8b"
-TOP_N = 5
+TOP_N = 10
 SCORE_THRESHHOLD = 0.7
+OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 
 # --- 1. Define a Context Class for Type Safety ---
 
@@ -42,6 +45,7 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 
 
 class AppContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     qdrant: QdrantClient
     openai: OpenAI
     sparql: Any  # SPARQLWrapper is not easily Pydantic-serializable, usually fine as Any
@@ -66,9 +70,9 @@ class NodeMatch(BaseModel):
         description="Vector similarity score (0-1), higher is better."
     )
     # --- NEW FIELD FOR SHAPE INFORMED PROMPTING ---
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
-        description="The full node payload containing attributes, relations, and schema info."
+    metadata: list[str] = Field(
+        default_factory=list,
+        description="The keys of the node payload containing attributes, relations, and schema info."
     )
 
 
@@ -159,7 +163,11 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         sparql = SPARQLWrapper(VIRTUOSO_ENDPOINT)
         sparql.setReturnFormat(JSON)
         # Yield the context so tools can access it
+        logger.debug("Initialisation was successful")
         yield AppContext(qdrant=qdrant, openai=openai, sparql=sparql)
+
+    except Exception as e:
+        logger.error(f"Server Initialisatuion failed: {e}")
 
     finally:
         # Cleanup code (runs on shutdown)
@@ -192,20 +200,21 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     Performs a semantic vector search to identify relevant nodes (Entities or Concepts) within the Knowledge Graph.
 
     Use this tool to resolve natural language descriptions into concrete Knowledge Graph nodes. 
-    It retrieves the top matches based on vector similarity and returns their full context.
+    It retrieves the top matches based on vector similarity.
 
     Key Features:
     - **Semantic Resolution:** Can find nodes even without exact name matches (e.g., inputting "The capital of France" will find "Paris").
-    - **Shape Retrieval:** Returns the full `metadata` payload (attributes and relations) for every match. This payload provides the "Shape" required for generating accurate, schema-aware SPARQL queries or answers.
+    - **Shape Retrieval:** Returns the **available keys** of the metadata payload. This provides the "Shape" (available attributes and relations) required for generating SPARQL queries without retrieving the heavy data values immediately.
 
     Args:
         semantic_node_name (str): The search query. This can be a specific entity name (e.g., "Berlin") or a descriptive phrase (e.g., "German cities with a population over 3 million").
         context (Context): The FastMCP request context containing the active database connections.
 
     Returns:
-        SearchResponse: A structured object containing a list of `NodeMatch` items, each with its original ID, relevance score, and full metadata payload.
+        SearchResponse: A structured object containing a list of `NodeMatch` items, each with its original ID, relevance score, and a list of available metadata keys.
     """
     # 1. Get Context
+    logger.info(f"Ran FindNode Tool with semantic_node_name: {semantic_node_name} and context: {context}")
     app_context: AppContext = context.request_context.lifespan_context
 
     try:
@@ -213,7 +222,7 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
         vector = get_embedding(app_context.openai, semantic_node_name)
 
         # 3. Search Qdrant
-        # We request the payload explicitly (though it is True by default)
+        # We request the payload to extract keys, even though we won't return values
         search_results = app_context.qdrant.search(
             collection_name=COLLECTION_ENTITIES,
             query_vector=vector,
@@ -227,13 +236,17 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
         for point in search_results:
             payload = point.payload or {}
 
+            # EXTRACT KEYS ONLY
+            # We convert the keys to a list to show the schema without the data overhead
+            payload_keys = list(payload.keys())
+
             match = NodeMatch(
                 original_id=payload.get("original_id", "N/A"),
                 name=payload.get("name", "Unknown"),
                 node_type=payload.get("node_type", "unknown"),
                 relevance_score=point.score,
-                # Pass the entire dictionary as metadata
-                metadata=payload
+                # Pass only the list of keys instead of the full dictionary
+                metadata=payload_keys
             )
             matches.append(match)
 
@@ -260,6 +273,9 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
     Returns:
         NeighborhoodResponse: Verified triples found in the Virtuoso database.
     """
+    logger.info(
+        f"Ran ExploreNeighborhood Tool with base_node_id: {base_node_id}, semantic_relation_name: {semantic_relation_name} and context: {context}")
+
     ctx: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = ctx.sparql
 
@@ -351,6 +367,7 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
     Returns:
         SPARQLResponse: The structured results containing variables and bindings.
     """
+    logger.info(f"Ran ExploreNeighborhood Tool with query: {query} and context: {context}")
     ctx: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = ctx.sparql
 
