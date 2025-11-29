@@ -1,184 +1,329 @@
-import json
-import random
+from __future__ import annotations
 import os
-import asyncio
-import time
-import io
-import contextlib
 import sys
-from datetime import datetime
+import asyncio
+import json
+import inspect
+from typing import Any, Dict, List, Optional
 from pathlib import Path
+from contextlib import AsyncExitStack
+from datetime import datetime
 
-# Import the Agent
-from agent import KQAProAgent
+from dotenv import load_dotenv
+from openai import OpenAI
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from mcp.types import Tool as McpTool
+from asyncio.exceptions import CancelledError
 
-# --- Configuration ---
-VALID_FILE_PATH = "valid.json"
-RESULTS_BASE_DIR = "batch_results"
+load_dotenv(override=True)
+
+# --- TRACING & FARBEN ---
+
+COLOR_BLUE = '\033[94m'
+COLOR_GREEN = '\033[92m'
+COLOR_RED = '\033[91m'
+COLOR_YELLOW = '\033[93m'
+COLOR_CYAN = '\033[96m'  # Added Cyan for better distinction
+COLOR_END = '\033[0m'
 
 
-def load_data(filepath):
-    """Loads the valid.json dataset."""
-    if not os.path.exists(filepath):
-        raise FileNotFoundError(f"File not found: {filepath}")
+def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
+    """Standardisiertes Tracing mit Zeitstempel und Agenten-Präfix."""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    # Handle multi-line messages nicely by indenting subsequent lines
+    lines = msg.split('\n')
+    header = f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {lines[0]}"
+    print(header)
+    for line in lines[1:]:
+        print(f"{' ' * (len(timestamp) + 2 + len(agent_name) + 6)} {color}{line}{COLOR_END}")
 
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return json.load(f)
+
+# Dynamische Pfad-Ermittlung für den Sub-Agent Server
+current_file = Path(__file__).resolve()
+ama_kbqa_root = current_file.parents[2]
+default_subagent_server_path = ama_kbqa_root / "server" / "kqapro_server.py"
+
+# --- KONFIGURATION ---
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o")
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
+
+MCP_SERVER_PATH = os.getenv("SUBAGENT_SERVER_PATH", str(default_subagent_server_path))
 
 
-def get_next_batch_dir(base_dir):
-    """Creates and returns the next available batch directory (e.g., batch_001, batch_002)."""
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-        return os.path.join(base_dir, "batch_001")
+# --- MCP CLIENT FÜR SUB-AGENTEN (Angepasst) ---
 
-    existing_batches = [d for d in os.listdir(base_dir) if os.path.isdir(
-        os.path.join(base_dir, d)) and d.startswith("batch_")]
+class MCPClient:
+    def __init__(self, server_path: str, agent_name: str):
+        self.server_path = Path(server_path)
+        self.agent_name = agent_name
+        self.exit_stack = AsyncExitStack()
+        self.session: Optional[ClientSession] = None
+        self._connected = False
 
-    if not existing_batches:
-        new_batch_name = "batch_001"
-    else:
-        # Extract numbers, find max, increment
-        batch_nums = []
-        for d in existing_batches:
+    async def start(self):
+        if self._connected:
+            return
+        if not self.server_path.exists():
+            trace(self.agent_name, f"{COLOR_RED}MCP-Server nicht gefunden: {self.server_path}{COLOR_END}", COLOR_RED)
+            raise FileNotFoundError(f"MCP-Server nicht gefunden: {self.server_path}")
+
+        client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
+
+        read, write = await self.exit_stack.enter_async_context(client_gen)
+
+        self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+        await self.session.initialize()
+        self._connected = True
+
+    async def list_tools(self) -> List[McpTool]:
+        if not self.session:
+            raise RuntimeError("Not connected")
+        result = await self.session.list_tools()
+        return result.tools
+
+    async def call_tool(self, name: str, args: Dict) -> str:
+        if not self.session:
+            raise RuntimeError("Not connected")
+        result = await self.session.call_tool(name, arguments=args)
+        if hasattr(result, "content") and result.content:
+            return result.content[0].text
+        return str(result)
+
+    async def close(self):
+        if self._connected:
             try:
-                num = int(d.split('_')[1])
-                batch_nums.append(num)
-            except (IndexError, ValueError):
-                continue
-
-        next_num = max(batch_nums) + 1 if batch_nums else 1
-        new_batch_name = f"batch_{next_num:03d}"
-
-    full_path = os.path.join(base_dir, new_batch_name)
-    os.makedirs(full_path, exist_ok=True)
-    return full_path
+                await self.exit_stack.aclose()
+                await asyncio.sleep(0.05)
+            except (CancelledError, RuntimeError) as e:
+                trace(
+                    self.agent_name, f"{COLOR_YELLOW}WARNUNG: MCP-Close Fehler beim Beenden ignoriert ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
+            except Exception as e:
+                trace(self.agent_name, f"{COLOR_RED}Fehler beim Schließen des MCP-Clients: {e}{COLOR_END}", COLOR_RED)
+            finally:
+                self._connected = False
 
 
-async def run_single_benchmark(agent: KQAProAgent, item: dict, batch_dir: str, index: int):
-    """Runs a single question benchmark and saves the result."""
-    question = item.get('question', '')
-    golden_answer = item.get('answer', '')
-    sparql_query = item.get('sparql', '')
+# --- KQAProAgent ---
 
-    print(f"\n--- Running Question {index + 1} ---")
-    print(f"Q: {question}")
+class KQAProAgent:
 
-    # Capture Console Output
-    # We use io.StringIO to capture stdout (print statements)
-    output_capture = io.StringIO()
+    def __init__(self, name: str = "kqapro_agent", session_id: str = "default"):
+        if not OPENROUTER_API_KEY:
+            raise RuntimeError("OPENROUTER_API_KEY fehlt in .env")
 
-    start_time = time.time()
-    predicted_answer = ""
-    error_msg = None
+        self.name = name
+        self.session_id = session_id
+        self.mcp: Optional[MCPClient] = None
 
-    try:
-        # Redirect stdout to capture buffer
-        with contextlib.redirect_stdout(output_capture):
-            predicted_answer = await agent.ask(question)
-    except Exception as e:
-        error_msg = str(e)
-        # Capture the error in the logs too if needed
-        output_capture.write(f"\n[ERROR ENCOUNTERED]: {e}\n")
-        print(f"Error processing question: {e}")
-    finally:
-        end_time = time.time()
+        self.client = OpenAI(
+            base_url=OPENROUTER_BASE_URL,
+            api_key=OPENROUTER_API_KEY
+        )
 
-    duration = end_time - start_time
-    console_logs = output_capture.getvalue()
+        self.model = MODEL_NAME
+        self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
-    # Construct Result Object
-    result_data = {
-        "metadata": {
-            "question_index": index,
-            "timestamp": datetime.now().isoformat(),
-            "duration_seconds": round(duration, 4),
-            "total_tokens_used": agent.token_usage.get("total_tokens", 0),
-            "prompt_tokens": agent.token_usage.get("prompt_tokens", 0),
-            "completion_tokens": agent.token_usage.get("completion_tokens", 0),
-            "status": "success" if not error_msg else "error",
-            "error_message": error_msg
-        },
-        "input": {
-            "question": question,
-            "golden_answer": golden_answer,
-            "golden_sparql": sparql_query,
-            "choices": item.get('choices', []),
-            "program": item.get('program', [])
-        },
-        "output": {
-            "predicted_answer": predicted_answer,
-            "conversation_history": agent._messages
-        },
-        "console_logs": console_logs
-    }
+        # NEW: Token Tracking
+        self.token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
 
-    # Write to file
-    filename = f"question_{index:03d}.json"
-    file_path = os.path.join(batch_dir, filename)
+        self.system_prompt = """You are an expert in Knowledge Graph Question Answering (KGQA).
+            You analyze questions about structured knowledge graphs and answer them precisely.
 
-    with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(result_data, f, indent=4, ensure_ascii=False)
+            ### YOUR WORKING MEMORY (SCRATCHPAD)
+            You have access to the tool `ManageJournal`. This is your most important tool.
+            You MUST use it at every step to:
+            1. **Log visited nodes**: To ensure you do not run in circles (Loop Avoidance).
+            2. **Save facts**: When you have verified a triple, write it down here.
+            3. **Planning**: Update your plan whenever you find new information.
 
-    print(f"Saved result to {file_path}")
+            ### PROCESS
+            1. Analyze the question.
+            2. Search for start nodes (`FindNode`).
+            3. Write your plan into the journal (`ManageJournal`).
+            4. Explore neighborhoods (`ExploreNeighborhood`).
+            5. Write found facts into the journal (`ManageJournal`).
+            6. When enough facts are gathered -> Answer.
+            """
 
+        self._messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": self.system_prompt}
+        ]
 
-async def main():
-    # 1. Configuration Inputs
-    try:
-        n_questions = int(input("How many questions to benchmark? (default 5): ") or 5)
-        seed_val = input("Enter random seed (default 42): ")
-        seed_val = int(seed_val) if seed_val else 42
-    except ValueError:
-        print("Invalid input. Using defaults.")
-        n_questions = 5
-        seed_val = 42
+    def _trace(self, msg: str, color: str = COLOR_GREEN):
+        trace(self.name, msg, color)
 
-    print(f"Starting Benchmark: N={n_questions}, Seed={seed_val}")
+    def _mcp_tool_to_openai(self, mcp_tool: McpTool) -> Dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": mcp_tool.name,
+                "description": mcp_tool.description,
+                "parameters": mcp_tool.inputSchema
+            }
+        }
 
-    # 2. Load and Sample Data
-    try:
-        data = load_data(VALID_FILE_PATH)
-    except FileNotFoundError:
-        print(f"Error: Could not find {VALID_FILE_PATH}. Please ensure it is in the same directory.")
-        return
+    async def _init_mcp(self):
+        if self.mcp:
+            return
+        try:
+            self._trace(f"Starte eigenen MCP Server: {MCP_SERVER_PATH}")
+            self.mcp = MCPClient(MCP_SERVER_PATH, self.name)
+            await self.mcp.start()
+            self._trace("Eigener MCP verbunden")
+        except Exception as e:
+            self._trace(f"{COLOR_RED}Eigener MCP Fehler: {e}{COLOR_END}", COLOR_RED)
+            self.mcp = None
+            raise
 
-    random.seed(seed_val)
-    if len(data) < n_questions:
-        print(f"Warning: Requested {n_questions} questions, but file only has {len(data)}. Using all.")
-        selected_items = data
-    else:
-        selected_items = random.sample(data, n_questions)
-
-    # 3. Create Batch Directory
-    batch_dir = get_next_batch_dir(RESULTS_BASE_DIR)
-    print(f"Results will be saved in: {batch_dir}")
-
-    # 4. Save Batch Metadata
-    batch_meta = {
-        "seed": seed_val,
-        "n_requested": n_questions,
-        "n_actual": len(selected_items),
-        "timestamp": datetime.now().isoformat()
-    }
-    with open(os.path.join(batch_dir, "batch_metadata.json"), 'w') as f:
-        json.dump(batch_meta, f, indent=4)
-
-    # 5. Run Benchmark Loop
-    for i, item in enumerate(selected_items):
-        # Instantiate a fresh agent for each question to ensure clean state
-        agent = KQAProAgent(name=f"BenchAgent_{i}", session_id=f"bench_{i}")
+    async def ask(self, query: str) -> str:
+        self._trace(f"Eingehende Query: '{query}'", COLOR_GREEN)
 
         try:
-            await run_single_benchmark(agent, item, batch_dir, i)
-        except Exception as e:
-            print(f"Critical error running benchmark for item {i}: {e}")
-        finally:
-            # Ensure resources (like MCP client) are cleaned up
-            if agent.mcp:
-                await agent.mcp.close()
+            # 1. MCP starten und Tools laden
+            await self._init_mcp()
 
-    print(f"\nBatch processing complete. Check folder: {batch_dir}")
+            if not self.mcp:
+                self._trace(f"{COLOR_YELLOW}Tool-Server nicht verfügbar. Antworte ohne Tools.{COLOR_END}", COLOR_YELLOW)
+                self._messages.append({"role": "user", "content": query})
+                return self._llm_call_text_only()
+
+            mcp_tools = await self.mcp.list_tools()
+            openai_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
+            self._trace(f"Found {len(openai_tools)} Tools.")
+
+            # 2. Iterativer Tool-Call Loop
+            self._messages.append({"role": "user", "content": query})
+
+            while True:
+                response = self._llm_call(tools=openai_tools)
+                message = response.choices[0].message
+
+                # Update Token Usage
+                if response.usage:
+                    self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+                    self.token_usage["completion_tokens"] += response.usage.completion_tokens
+                    self.token_usage["total_tokens"] += response.usage.total_tokens
+
+                # -------------------------------------------------------
+                # VERBESSERTES LOGGING: Zwischengedanken (Thoughts/Text)
+                # -------------------------------------------------------
+                if message.content:
+                    self._trace(f"🧠 Gedanke/Text: {message.content}", COLOR_BLUE)
+
+                # Finale Antwort (Keine Tools mehr)
+                if not message.tool_calls:
+                    assistant_text = message.content or ""
+                    self._messages.append({"role": "assistant", "content": assistant_text})
+                    self._trace("🏁 Finale Antwort vom LLM generiert.")
+                    return assistant_text.strip()
+
+                # Tool-Call(s) ausführen
+                for tool_call in message.tool_calls:
+                    func_name = tool_call.function.name
+                    try:
+                        func_args = json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        func_args = {}
+
+                    # -------------------------------------------------------
+                    # VERBESSERTES LOGGING: Tool Call & Parameter
+                    # -------------------------------------------------------
+                    args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
+                    self._trace(f"🛠️  Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
+
+                    tool_result = await self.mcp.call_tool(func_name, func_args)
+
+                    # -------------------------------------------------------
+                    # VERBESSERTES LOGGING: Tool Ergebnisse
+                    # -------------------------------------------------------
+                    # Kürze Ergebnis für Logs, falls es riesig ist, um Konsole nicht zu fluten
+                    log_result = tool_result
+                    if len(log_result) > 500:
+                        log_result = log_result[:500] + f"... [truncated, total len: {len(tool_result)}]"
+
+                    self._trace(f"🔙 Result ({func_name}): {log_result}", COLOR_CYAN)
+
+                    self._messages.append(message)
+                    self._messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": func_name,
+                        "content": tool_result
+                    })
+
+        except Exception as e:
+            self._trace(f"{COLOR_RED}Fehler im Agenten-Loop: {e}{COLOR_END}", COLOR_RED)
+            raise
+
+        finally:
+            if self.mcp:
+                # --- NEW: TRACEABILITY BLOCK ---
+                try:
+                    # Explicitly fetch the final state of the scratchpad
+                    # We send 'content="Final"' just to satisfy the schema, though 'read' ignores it.
+                    final_state = await self.mcp.call_tool("ManageJournal", {"action": "read", "content": "Final Trace"})
+
+                    # Print it using the agent's distinct color scheme
+                    self._trace(f"🛑 FINAL SCRATCHPAD STATE:\n{final_state}", COLOR_CYAN)
+                except Exception:
+                    # Fails silently if the server doesn't have the ManageJournal tool yet
+                    pass
+                # -------------------------------
+
+                await self.mcp.close()
+                self._trace("Eigener MCP-Server sauber beendet")
+
+    def _llm_call(self, tools: Optional[List[Dict[str, Any]]] = None):
+        """Führt den eigentlichen API-Call aus (mit Tools)."""
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=self._messages,
+            timeout=self.request_timeout,
+            tools=tools
+        )
+
+    def _llm_call_text_only(self):
+        """Führt den eigentlichen API-Call aus (ohne Tools)."""
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=self._messages,
+            timeout=self.request_timeout,
+        )
+        if response.usage:
+            self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+            self.token_usage["completion_tokens"] += response.usage.completion_tokens
+            self.token_usage["total_tokens"] += response.usage.total_tokens
+
+        return response.choices[0].message.content
+
+    def reset(self):
+        self._messages = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+        self.token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
+        if self.mcp:
+            asyncio.run(self.mcp.close())
+            self.mcp = None
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    async def run_test():
+        agent = KQAProAgent()
+        try:
+            answer = await agent.ask("Wer ist der Regisseur von Inception?")
+            print(f"\n[KQAPro Agent Antwort]\n{answer}")
+        except Exception as e:
+            print(f"Fehler im Testlauf: {e}")
+
+    asyncio.run(run_test())
