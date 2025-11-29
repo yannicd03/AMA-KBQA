@@ -215,3 +215,6 @@ __marimo__/
 /db/datasets/kqapro/kb.nt
 /db/qdrant_storage
 /db/virtuoso_storage
+db/datasets/kqapro/test.json
+db/datasets/kqapro/train.json
+db/datasets/kqapro/val.json
