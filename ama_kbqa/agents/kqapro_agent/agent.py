@@ -126,6 +126,13 @@ class KQAProAgent:
         self.model = MODEL_NAME
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
+        # NEW: Token Tracking
+        self.token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
+
         self.system_prompt = """You are an expert in Knowledge Graph Question Answering (KGQA).
             You analyze questions about structured knowledge graphs and answer them precisely.
 
@@ -197,6 +204,12 @@ class KQAProAgent:
             while True:
                 response = self._llm_call(tools=openai_tools)
                 message = response.choices[0].message
+                
+                # Update Token Usage
+                if response.usage:
+                    self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+                    self.token_usage["completion_tokens"] += response.usage.completion_tokens
+                    self.token_usage["total_tokens"] += response.usage.total_tokens
 
                 # -------------------------------------------------------
                 # VERBESSERTES LOGGING: Zwischengedanken (Thoughts/Text)
@@ -278,16 +291,27 @@ class KQAProAgent:
 
     def _llm_call_text_only(self):
         """Führt den eigentlichen API-Call aus (ohne Tools)."""
-        return self.client.chat.completions.create(
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=self._messages,
             timeout=self.request_timeout,
-        ).choices[0].message.content
+        )
+        if response.usage:
+            self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+            self.token_usage["completion_tokens"] += response.usage.completion_tokens
+            self.token_usage["total_tokens"] += response.usage.total_tokens
+            
+        return response.choices[0].message.content
 
     def reset(self):
         self._messages = [
             {"role": "system", "content": self.system_prompt}
         ]
+        self.token_usage = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
         if self.mcp:
             asyncio.run(self.mcp.close())
             self.mcp = None
