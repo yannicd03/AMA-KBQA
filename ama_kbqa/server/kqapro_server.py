@@ -8,9 +8,11 @@ from fastmcp import FastMCP, Context
 from qdrant_client import QdrantClient
 from openai import OpenAI
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal, Any, Optional
 from SPARQLWrapper import SPARQLWrapper, JSON
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 
 # --- Configuration ---
 QDRANT_HOST = "localhost"
@@ -20,6 +22,7 @@ COLLECTION_RELATIONS = "kqapro-relations"
 VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "qwen/qwen3-embedding-8b"
+OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 CHAT_MODEL = "minimax/minimax-m2"
 TOP_N = 5
 SCORE_THRESHHOLD = 0.7
@@ -43,6 +46,7 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 
 
 class AppContext(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     qdrant: QdrantClient
     openai: OpenAI
     sparql: Any  # SPARQLWrapper is not easily Pydantic-serializable, usually fine as Any
@@ -124,6 +128,27 @@ class SPARQLResponse(BaseModel):
                    ] = Field(..., description="List of rows. Each row is a dict mapping variable name to value.")
     raw_json: dict[str, Any] = Field(..., description="The full raw JSON response from Virtuoso.")
 
+
+class JournalState(BaseModel):
+    """The scratchpad state for the current reasoning session."""
+    visited_nodes: list[str] = Field(default_factory=list, description="IDs of nodes already explored.")
+    verified_facts: list[str] = Field(default_factory=list, description="Triples that have been verified via SPARQL.")
+    current_plan: list[str] = Field(default_factory=list, description="Step-by-step plan for the remaining steps.")
+
+    def to_str(self) -> str:
+        return (
+            f"--- CURRENT JOURNAL ---\n"
+            f"VISITED NODES: {', '.join(self.visited_nodes)}\n"
+            f"VERIFIED FACTS: {'; '.join(self.verified_facts)}\n"
+            f"NEXT STEPS: {'; '.join(self.current_plan)}\n"
+            f"-----------------------"
+        )
+
+
+# Global state container (resets when the agent process restarts the server)
+# Since your agent.py restarts the server for every 'ask', this resets automatically per question.
+session_journal = JournalState()
+
 # --- 2. Define the Lifespan Manager ---
 
 
@@ -175,6 +200,9 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         # Yield the context so tools can access it
         yield AppContext(qdrant=qdrant, openai=openai, sparql=sparql)
 
+    except Exception as e:
+        logger.error(f"Something went wrong: {e}")
+
     finally:
         # Cleanup code (runs on shutdown)
         logger.error("🔌 Shutting down: Closing connections...")
@@ -198,6 +226,42 @@ def get_embedding(client: OpenAI, text: str) -> list[float]:
     return response.data[0].embedding
 
 # --- 5. Refactored Tool using Context ---
+
+
+@mcp.tool
+def ManageJournal(
+    action: Literal["add_visited", "add_fact", "update_plan", "read"],
+    content: str,
+    context: Context
+) -> str:
+    """
+    Use this tool to keep track of your progress. 
+    ALWAYS use this after verifying a fact or exploring a node to prevent loops.
+
+    Args:
+        action: The type of update to perform.
+        content: The text content to add (e.g., node ID, fact, or plan step).
+
+    Returns:
+        The FULL current content of the journal to refresh your memory.
+    """
+    global session_journal
+
+    if action == "add_visited":
+        if content not in session_journal.visited_nodes:
+            session_journal.visited_nodes.append(content)
+
+    elif action == "add_fact":
+        if content not in session_journal.verified_facts:
+            session_journal.verified_facts.append(content)
+
+    elif action == "update_plan":
+        # We overwrite the plan as it changes dynamically
+        session_journal.current_plan = [content]
+
+    # 'read' action just falls through to return the state
+
+    return session_journal.to_str()
 
 
 @mcp.tool

@@ -42,7 +42,7 @@ def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
 # Dynamische Pfad-Ermittlung für den Sub-Agent Server
 current_file = Path(__file__).resolve()
 ama_kbqa_root = current_file.parents[2]
-default_subagent_server_path = ama_kbqa_root / "server" / "subagent_server.py"
+default_subagent_server_path = ama_kbqa_root / "server" / "kqapro_server.py"
 
 # --- KONFIGURATION ---
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -126,12 +126,24 @@ class KQAProAgent:
         self.model = MODEL_NAME
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
-        self.system_prompt = """Du bist ein Experte für Knowledge Graph Question Answering (KGQA).
-Du analysierst Fragen über strukturierte Wissensgraphen und beantwortest sie präzise.
+        self.system_prompt = """You are an expert in Knowledge Graph Question Answering (KGQA).
+            You analyze questions about structured knowledge graphs and answer them precisely.
 
-Deine Hauptaufgabe ist es, die verfügbaren Tools zu nutzen, um Fakten zu recherchieren, bevor du die finale Antwort gibst.
-Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen hast, antworte direkt und präzise.
-"""
+            ### YOUR WORKING MEMORY (SCRATCHPAD)
+            You have access to the tool `ManageJournal`. This is your most important tool.
+            You MUST use it at every step to:
+            1. **Log visited nodes**: To ensure you do not run in circles (Loop Avoidance).
+            2. **Save facts**: When you have verified a triple, write it down here.
+            3. **Planning**: Update your plan whenever you find new information.
+
+            ### PROCESS
+            1. Analyze the question.
+            2. Search for start nodes (`FindNode`).
+            3. Write your plan into the journal (`ManageJournal`).
+            4. Explore neighborhoods (`ExploreNeighborhood`).
+            5. Write found facts into the journal (`ManageJournal`).
+            6. When enough facts are gathered -> Answer.
+            """
 
         self._messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt}
@@ -177,7 +189,7 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
 
             mcp_tools = await self.mcp.list_tools()
             openai_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
-            self._trace(f"Habe {len(openai_tools)} interne Tools geladen.")
+            self._trace(f"Found {len(openai_tools)} Tools.")
 
             # 2. Iterativer Tool-Call Loop
             self._messages.append({"role": "user", "content": query})
@@ -239,6 +251,19 @@ Wenn du eine Frage beantworten kannst, nachdem du die nötigen Tools aufgerufen 
 
         finally:
             if self.mcp:
+                # --- NEW: TRACEABILITY BLOCK ---
+                try:
+                    # Explicitly fetch the final state of the scratchpad
+                    # We send 'content="Final"' just to satisfy the schema, though 'read' ignores it.
+                    final_state = await self.mcp.call_tool("ManageJournal", {"action": "read", "content": "Final Trace"})
+
+                    # Print it using the agent's distinct color scheme
+                    self._trace(f"🛑 FINAL SCRATCHPAD STATE:\n{final_state}", COLOR_CYAN)
+                except Exception:
+                    # Fails silently if the server doesn't have the ManageJournal tool yet
+                    pass
+                # -------------------------------
+
                 await self.mcp.close()
                 self._trace("Eigener MCP-Server sauber beendet")
 
