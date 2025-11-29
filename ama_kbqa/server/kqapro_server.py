@@ -20,6 +20,7 @@ COLLECTION_RELATIONS = "kqapro-relations"
 VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "qwen/qwen3-embedding-8b"
+CHAT_MODEL = "minimax/minimax-m2"
 TOP_N = 5
 SCORE_THRESHHOLD = 0.7
 
@@ -69,6 +70,19 @@ class NodeMatch(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="The full node payload containing attributes, relations, and schema info."
+    )
+
+
+class ExtractionResponse(BaseModel):
+    """Structured response for entity and relation extraction."""
+    entities_concepts: list[str] = Field(
+        ...,
+        alias="entities/concepts",
+        description="List of specific entities or general concepts identified in the query."
+    )
+    relations: list[str] = Field(
+        ...,
+        description="List of relationship predicates or actions identified in the query."
     )
 
 
@@ -184,6 +198,37 @@ def get_embedding(client: OpenAI, text: str) -> list[float]:
     return response.data[0].embedding
 
 # --- 5. Refactored Tool using Context ---
+
+
+@mcp.tool
+def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
+    """
+    Extracts entities/concepts and relations from a natural language query 
+    using structured output.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+
+    model = CHAT_MODEL
+
+    try:
+        completion = app_context.openai.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Extract the semantic entities/concepts and relations from the user query."
+                },
+                {"role": "user", "content": query}
+            ],
+            response_format=ExtractionResponse,
+        )
+
+        return completion.choices[0].message.parsed
+
+    except Exception as e:
+        logger.error(f"Entity Extraction failed: {e}")
+        # Return empty lists on failure to maintain type safety
+        return ExtractionResponse(**{"entities/concepts": [], "relations": []})
 
 
 @mcp.tool

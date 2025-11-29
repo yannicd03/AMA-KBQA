@@ -101,6 +101,12 @@ WHERE {
 }
 ```
 
+**Example Query (Find Node by its id):**
+
+```sparql
+
+```
+
 ---
 
 ### 🏷️ 3. Attributes (Simple Facts)
