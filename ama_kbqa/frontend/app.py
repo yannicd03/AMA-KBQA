@@ -1,405 +1,319 @@
-
-# app.py — Orchestrator mit MCP-STDIO-Integration und Toolliste für das LLM
-from __future__ import annotations
-import os
-import sys
+# Copyright 2025 Snowflake Inc. (Adapted for AMA KBQA)
+import streamlit as st
+from htbuilder.units import rem
+from htbuilder import div, styles
+import datetime
+import time
 import asyncio
-from contextlib import AsyncExitStack
-from typing import Any, Dict, List, Optional, Tuple
+import sys
+import io
+import re
+from contextlib import redirect_stdout
 
-from pathlib import Path
-from dotenv import load_dotenv
-from openai import OpenAI
+# Importiere deinen Orchestrator
+try:
+    from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
+except ImportError:
+    # Fallback für Development
+    sys.path.append("../..")
+    from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
 
-# MCP-Client SDK (offiziell)
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+st.set_page_config(page_title="AMA KBQA Assistant", page_icon="✨", layout="centered")
 
-load_dotenv(override=True)
+# -----------------------------------------------------------------------------
+# CSS Styling & Animations
+# -----------------------------------------------------------------------------
+st.markdown("""
+<style>
+    /* Keyframes für Fade-In Animation */
+    @keyframes slideInUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Animation auf Chat-Nachrichten anwenden */
+    .stChatMessage {
+        animation: slideInUp 0.5s ease-out forwards;
+    }
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o")
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Du bist ein Orchestrator. Du delegierst Aufgaben an spezialisierte Agenten.")
-REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
-ENABLE_REASONING = os.getenv("ENABLE_REASONING", "true").lower() in ("true", "1", "yes")
-HTTP_REFERER = os.getenv("OFFICIAL_SITE_URL")
-X_TITLE = os.getenv("APP_NAME_FOR_REFERER")
+    /* Terminal/Console Output Style */
+    .console-container {
+        background-color: #0d1117; /* Sehr dunkles Grau/Blau wie Github Dark */
+        color: #c9d1d9;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 0.80rem;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #30363d;
+        white-space: pre-wrap; /* Wichtig für Zeilenumbrüche */
+        line-height: 1.5;
+        max-height: 500px;
+        overflow-y: auto;
+        box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+    
+    /* Scrollbar im Terminal hübscher machen */
+    .console-container::-webkit-scrollbar {
+        width: 8px;
+    }
+    .console-container::-webkit-scrollbar-track {
+        background: #0d1117;
+    }
+    .console-container::-webkit-scrollbar-thumb {
+        background: #30363d;
+        border-radius: 4px;
+    }
+    .console-container::-webkit-scrollbar-thumb:hover {
+        background: #58a6ff;
+    }
 
-# Pfad zu deinem MCP-Server-Script (STDIO)
-MCP_SERVER_PATH = "/Users/Admin/DEV_UNI/AMAKBQA/ama_kbqa/server/orchestrator_server.py"
+    /* Status Container Styling */
+    div[data-testid="stStatusWidget"] {
+        background-color: #f0f2f6;
+        border-radius: 10px;
+    }
 
-# ---------- MCP STDIO Client-Manager ----------
+    /* Footer für Zeitangabe */
+    .execution-time {
+        font-size: 0.7rem;
+        color: #888;
+        margin-top: 0.2rem;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        opacity: 0.8;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-class MCPServerManager:
+# -----------------------------------------------------------------------------
+# Icons (SVG Data URIs)
+# -----------------------------------------------------------------------------
+
+BOT_AVATAR = "https://api.iconify.design/streamline:ai-technology-spark-solid.svg?color=%2360a5fa"
+USER_AVATAR = "https://api.iconify.design/solar:user-circle-bold.svg?color=%23555555"
+
+# -----------------------------------------------------------------------------
+# Helper: ANSI to HTML Converter for Colored Logs
+# -----------------------------------------------------------------------------
+
+def ansi_to_html(text):
     """
-    Startet den MCP-Server via STDIO als Subprozess, listet Tools und
-    führt Toolaufrufe aus. Der Prozess wird nach Nutzung sauber geschlossen.
-    (Siehe offizielle MCP-Client-Guides.)  # Referenzen unten
+    Wandelt ANSI-Terminal-Farbcodes (inkl. High Intensity) in HTML-Spans um
+    und entfernt unbekannte Sequenzen.
     """
+    # 1. HTML Escaping (wichtig, damit <foo> nicht als Tag interpretiert wird)
+    html_text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    def __init__(self, server_script_path: str):
-        self.server_script_path = server_script_path
-        self._session: Optional[ClientSession] = None
-        self._stack: Optional[AsyncExitStack] = None
+    # 2. ANSI Mapping (Standard + High Intensity)
+    ansi_codes = {
+        # Resets und Styles
+        r'\x1b\[0m': '</span>',
+        r'\x1b\[1m': '<span style="font-weight:bold; color: #fff;">', # Bold (oft auch heller)
+        
+        # Standard Colors (30-37)
+        r'\x1b\[30m': '<span style="color:#484f58">', # Black/Gray
+        r'\x1b\[31m': '<span style="color:#ff7b72">', # Red
+        r'\x1b\[32m': '<span style="color:#3fb950">', # Green
+        r'\x1b\[33m': '<span style="color:#d29922">', # Yellow
+        r'\x1b\[34m': '<span style="color:#58a6ff">', # Blue
+        r'\x1b\[35m': '<span style="color:#bc8cff">', # Magenta
+        r'\x1b\[36m': '<span style="color:#39c5cf">', # Cyan
+        r'\x1b\[37m': '<span style="color:#b1bac4">', # White
 
-    async def __aenter__(self) -> "MCPServerManager":
-        self._stack = AsyncExitStack()
-        # Wichtig: sys.executable statt "python", damit venv korrekt ist
-        transport = await self._stack.enter_async_context(stdio_client(
-            StdioServerParameters(
-                command=sys.executable,
-                args=[self.server_script_path],
-                env=None
-            )
-        ))
-        read, write = transport
-        self._session = await self._stack.enter_async_context(ClientSession(read, write))
-        await self._session.initialize()
-        return self
+        # High Intensity Colors (90-97) - Das hat gefehlt!
+        r'\x1b\[90m': '<span style="color:#6e7681">', # Dark Gray
+        r'\x1b\[91m': '<span style="color:#ff7b72">', # Bright Red
+        r'\x1b\[92m': '<span style="color:#3fb950">', # Bright Green (in deinem Log verwendet)
+        r'\x1b\[93m': '<span style="color:#d29922">', # Bright Yellow
+        r'\x1b\[94m': '<span style="color:#58a6ff">', # Bright Blue
+        r'\x1b\[95m': '<span style="color:#bc8cff">', # Bright Magenta
+        r'\x1b\[96m': '<span style="color:#39c5cf">', # Bright Cyan
+        r'\x1b\[97m': '<span style="color:#f0f6fc">', # Bright White
+    }
+    
+    # 3. Ersetzen der bekannten Codes
+    for pattern, replacement in ansi_codes.items():
+        # Wir nutzen re.IGNORECASE, falls mal klein/groß gemischt wird
+        html_text = re.sub(pattern, replacement, html_text, flags=re.IGNORECASE)
 
-    async def __aexit__(self, exc_type, exc, tb):
-        if self._stack:
-            await self._stack.aclose()
+    # 4. Cleanup: Alle übrigen ANSI-Sequenzen entfernen (verhindert "Boxen")
+    # Das Pattern fängt alles beginnend mit ESC [ ... bis zum nächsten Buchstaben ab
+    ansi_cleanup_pattern = r'\x1b\[[0-9;]*[a-zA-Z]'
+    html_text = re.sub(ansi_cleanup_pattern, '', html_text)
 
-    async def list_tools(self):
-        assert self._session is not None
-        # tools/list → liefert Tool-Metadaten (Name, Desc, InputSchema, Meta)
-        resp = await self._session.list_tools()
-        return resp.tools
+    return html_text
 
-    async def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None):
-        assert self._session is not None
-        call_res = await self._session.call_tool(name, arguments or {})
-        # Ergebnis robust extrahieren:
-        if hasattr(call_res, "data") and call_res.data is not None:
-            return call_res.data
-        if getattr(call_res, "content", None):
-            for block in call_res.content:
-                if getattr(block, "type", "") == "text" and getattr(block, "text", None):
-                    return block.text
-        return None
+class StreamlitHTMLCapture(io.StringIO):
+    """
+    Fängt stdout ab, wandelt Farben um und updated einen Streamlit Container.
+    """
+    def __init__(self, placeholder):
+        super().__init__()
+        self.placeholder = placeholder
+        self.raw_buffer = ""
 
-
-class OrchestratorAgent:
-    def __init__(self, name: str, session_id: str):
-        if not OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY fehlt in .env")
-
-        self.name = name
-        self.session_id = session_id
-        self.dialogue_log: List[str] = []
-
-        default_headers = {}
-        if HTTP_REFERER:
-            default_headers["HTTP-Referer"] = HTTP_REFERER
-        if X_TITLE:
-            default_headers["X-Title"] = X_TITLE
-
-        self.client = OpenAI(
-            base_url=OPENROUTER_BASE_URL,
-            api_key=OPENROUTER_API_KEY,
-            default_headers=default_headers if default_headers else None
+    def write(self, string):
+        self.raw_buffer += string
+        # Umwandlung zu HTML inkl. Farben
+        colored_html = ansi_to_html(self.raw_buffer)
+        
+        # Rendern im Console-Look
+        self.placeholder.markdown(
+            f'<div class="console-container">{colored_html}</div>', 
+            unsafe_allow_html=True
         )
 
-        self.model = MODEL_NAME
-        self.request_timeout = REQUEST_TIMEOUT_SECONDS
-        self.enable_reasoning = ENABLE_REASONING
-        self._messages: List[Dict[str, Any]] = []
+    def flush(self):
+        pass
 
-        # Basis-Systemprompt
-        if SYSTEM_PROMPT:
-            self._messages.append({"role": "system", "content": SYSTEM_PROMPT})
+# -----------------------------------------------------------------------------
+# UI Logic
+# -----------------------------------------------------------------------------
 
-        # Lazy-Cache für Sub-Agenten
-        self._agent_cache: Dict[str, Any] = {}
+SUGGESTIONS = {
+    ":blue[:material/movie:] Wer ist der Regisseur von Inception?": "Wer ist der Regisseur von Inception?",
+    ":green[:material/music_note:] Heavy Metal Bands wie Queen": "How many heavy metal groups are in the genre of Queen?",
+    ":orange[:material/location_on:] Wo wurde Einstein geboren?": "In welcher Stadt wurde Albert Einstein geboren?",
+}
 
-        # Verfügbare Sub-Agenten
-        self._available_agents = {
-            "kqapro_agent": {
-                "module": "ama_kbqa.agents.kqapro_agent.agent",
-                "class": "KQAProAgent",
-                "capabilities": "Knowledge Graph Question Answering, Fakten über Entities und deren Relationen"
-            },
-            "code_agent": {
-                "module": "ama_kbqa.placeholder_agent.agent",
-                "class": "PlaceholderAgent",
-                "init_kwargs": {
-                    "domain": "Programmierung",
-                    "capabilities": "Python, JavaScript, Code-Erklärungen, Debugging"
-                },
-                "capabilities": "Python, JavaScript, Code-Erklärungen, Debugging"
-            },
-            "math_agent": {
-                "module": "ama_kbqa.placeholder_agent.agent",
-                "class": "PlaceholderAgent",
-                "init_kwargs": {
-                    "domain": "Mathematik",
-                    "capabilities": "Berechnungen, Algebra, Statistik"
-                },
-                "capabilities": "Berechnungen, Algebra, Statistik"
-            }
-        }
+# Header (Snowflake Style)
+st.html(div(style=styles(font_size=rem(5), line_height=1))["❉"])
 
-        # Pfad zum MCP-Server
-        self.mcp_server_path = MCP_SERVER_PATH
+title_row = st.container(horizontal=True, vertical_alignment="bottom")
+with title_row:
+    st.title("AMA KBQA Assistant", anchor=False)
 
-    # ---------- Sub-Agent Lazy Loader ----------
+# Init Session State
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    def _load_agent(self, agent_name: str) -> Any:
-        if agent_name in self._agent_cache:
-            self.dialogue_log.append(f"[SYSTEM] Agent '{agent_name}' aus Cache geladen")
-            return self._agent_cache[agent_name]
+# --- Logic for Initial View vs Chat View ---
+user_first_interaction = ("initial_question" in st.session_state and st.session_state.initial_question) or \
+                         ("selected_suggestion" in st.session_state and st.session_state.selected_suggestion)
+has_message_history = len(st.session_state.messages) > 0
 
-        if agent_name not in self._available_agents:
-            raise ValueError(f"Agent '{agent_name}' nicht verfügbar")
+if not user_first_interaction and not has_message_history:
+    st.markdown("#### :gray[Erkunde den Wissensgraphen.]")
+    with st.container():
+        st.chat_input("Stelle eine Frage...", key="initial_question")
+        st.pills("Beispiele", options=SUGGESTIONS.keys(), key="selected_suggestion", label_visibility="collapsed")
+    st.stop()
 
-        config = self._available_agents[agent_name]
+# --- Chat Interface ---
+user_message = st.chat_input("Nachhaken...")
+
+if not user_message:
+    if "initial_question" in st.session_state and st.session_state.initial_question:
+        user_message = st.session_state.initial_question
+    if "selected_suggestion" in st.session_state and st.session_state.selected_suggestion:
+        user_message = SUGGESTIONS[st.session_state.selected_suggestion]
+
+# Restart Button
+with title_row:
+    if st.button("Neustart", icon=":material/refresh:"):
+        st.session_state.messages = []
+        st.session_state.initial_question = None
+        st.session_state.selected_suggestion = None
+        st.rerun()
+
+# --- Render History ---
+for message in st.session_state.messages:
+    avatar = BOT_AVATAR if message["role"] == "assistant" else USER_AVATAR
+    
+    with st.chat_message(message["role"], avatar=avatar):
+        # 1. Trace Log (Expander) falls vorhanden
+        if "trace" in message and message["trace"]:
+            # State 'complete' macht einen grünen Rand/Haken
+            with st.status("Gedankenprozess ansehen", state="complete", expanded=False):
+                st.markdown(f'<div class="console-container">{message["trace"]}</div>', unsafe_allow_html=True)
+        
+        # 2. Content
+        st.markdown(message["content"])
+        
+        # 3. Execution Time Footer
+        if "duration" in message:
+            st.markdown(f"""
+            <div class="execution-time">
+                <span style="vertical-align: middle;">⏱️</span> 
+                {message['duration']:.2f}s
+            </div>
+            """, unsafe_allow_html=True)
+
+# --- Handle New Interaction ---
+if user_message:
+    # User Message
+    with st.chat_message("user", avatar=USER_AVATAR):
+        st.markdown(user_message)
+    st.session_state.messages.append({"role": "user", "content": user_message})
+
+    # Assistant Response
+    with st.chat_message("assistant", avatar=BOT_AVATAR):
+        
+        start_time = time.time()
+        
+        # Der Status-Container: Standardmäßig geschlossen (expanded=False)
+        status = st.status("Agent denkt nach...", expanded=False)
+        
+        # Placeholder für die Konsole INNERHALB des Expanders
+        with status:
+            st.write(":gray[Live Log Output:]")
+            console_placeholder = st.empty()
+        
+        # Log Capture Setup
+        capture_io = StreamlitHTMLCapture(console_placeholder)
+        orchestrator = Orchestrator()
+        
+        # Async Execution
         try:
-            module = __import__(config["module"], fromlist=[config["class"]])
-            agent_class = getattr(module, config["class"])
-            init_kwargs = config.get("init_kwargs", {})
-            agent = agent_class(
-                name=agent_name,
-                session_id=self.session_id,
-                **init_kwargs
-            )
-            self._agent_cache[agent_name] = agent
-            self.dialogue_log.append(f"[SYSTEM] Agent '{agent_name}' erstellt und gecacht")
-            return agent
-        except Exception as e:
-            raise RuntimeError(f"Fehler beim Laden von Agent '{agent_name}': {e}")
+            # Event Loop Handling
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            
+            with redirect_stdout(capture_io):
+                # Wir printen ein Start-Event, damit man sieht, dass es losgeht
+                print(f"\033[1;36m[Frontend]\033[0m -> Starte Analyse für: '{user_message}'")
+                
+                # DIE AGENTEN LOGIK
+                result_text = loop.run_until_complete(orchestrator.ask(user_message))
+                
+                print(f"\033[1;32m[Frontend]\033[0m -> Vorgang abgeschlossen.")
 
-    # ---------- LLM Call ----------
-
-    def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
-        extra_body = None
-        if self.enable_reasoning:
-            extra_body = {"reasoning": {"enabled": True}}
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            timeout=self.request_timeout,
-            extra_body=extra_body,
-        )
-        return response.choices[0].message.content or ""
-
-    # ---------- Routing ----------
-
-    def _decide_routing(self, user_query: str) -> Optional[str]:
-        if not self._available_agents:
-            return None
-
-        agent_list = "\n".join(
-            f"- {name}: {config['capabilities']}"
-            for name, config in self._available_agents.items()
-        )
-
-        routing_prompt = f"""Du bist ein Routing-System. Analysiere die Benutzeranfrage und wähle den BESTEN spezialisierten Agenten.
-
-VERFÜGBARE AGENTEN:
-{agent_list}
-
-BENUTZERANFRAGE: {user_query}
-
-REGELN:
-- Antworte NUR mit dem exakten Agent-Namen (z.B. 'kqapro_agent')
-- Wenn KEIN Agent passt, antworte mit 'none'
-- Wähle den spezialisiertesten Agenten für die Aufgabe
-- Bei Wissensfragen über Fakten/Entities → kqapro_agent
-- Bei Code/Programmierung → code_agent
-- Bei Mathematik/Berechnungen → math_agent
-
-ANTWORT (nur Agent-Name):"""
-
-        decision_messages = [
-            {"role": "system", "content": "Du bist ein präziser Routing-Experte. Antworte nur mit Agent-Namen."},
-            {"role": "user", "content": routing_prompt}
-        ]
-
-        decision = self._call_llm(decision_messages).strip().lower()
-        self.dialogue_log.append(f"[ORCHESTRATOR] Routing-Entscheidung: {decision}")
-
-        if decision in self._available_agents:
-            return decision
-
-        for agent_name in self._available_agents.keys():
-            if agent_name in decision or decision in agent_name:
-                self.dialogue_log.append(f"[ORCHESTRATOR] Fuzzy-Match gefunden: {agent_name}")
-                return agent_name
-
-        return None
-
-    # ---------- Utility: MCP-Hinweis → Agent ----------
-
-    def _map_mcp_db_hint_to_agent(self, hint: str) -> Optional[str]:
-        if not hint:
-            return None
-        h = hint.lower()
-        if "kqapro" in h or "knowledge" in h or "entity" in h or "relation" in h:
-            return "kqapro_agent"
-        if "code" in h or "python" in h or "programm" in h or "debug" in h:
-            return "code_agent"
-        if "math" in h or "algebra" in h or "statistik" in h or "berechn" in h:
-            return "math_agent"
-        for name in self._available_agents.keys():
-            if name in h:
-                return name
-        return None
-
-    # ---------- Hauptmethode ----------
-
-    def ask(self, user_text: str, max_iterations: int = 3) -> str:
-        if not user_text.strip():
-            raise ValueError("Leerer Prompt nicht erlaubt.")
-
-        self.dialogue_log.append(f"\n{'='*60}")
-        self.dialogue_log.append(f"[USER] {user_text}")
-        self.dialogue_log.append(f"{'='*60}\n")
-
-        # 1) MCP-Server starten (STDIO), TOOLS LISTEN und databaseSearch AUSFÜHREN
-        #    → Die Toolliste wird dem LLM als System-Kontext gegeben (sichtbar).
-        tools = []
-        db_hint_str = ""
-        try:
-            self.dialogue_log.append("[MCP] Starte MCP-Server (STDIO)...")
-            async def mcp_phase():
-                async with MCPServerManager(self.mcp_server_path) as mcp:
-                    listed = await mcp.list_tools()  # tools/list
-                    db = await mcp.call_tool("databaseSearch", {"question": user_text})  # tools/call
-                    return listed, db
-
-            tools, db_hint_raw = asyncio.run(mcp_phase())
-            db_hint_str = str(db_hint_raw) if db_hint_raw is not None else ""
-            tool_lines = []
-            for t in tools:
-                name = getattr(t, "name", "unknown")
-                desc = getattr(t, "description", "") or ""
-                # InputSchema könnte groß sein — hier optional
-                tool_lines.append(f"- {name}: {desc}")
-
-            tools_for_prompt = "\n".join(tool_lines) if tool_lines else "(keine Tools gefunden)"
-            self.dialogue_log.append(f"[MCP] Verfügbare Tools: {[getattr(t, 'name', 'unknown') for t in tools]}")
-            self.dialogue_log.append(f"[MCP] databaseSearch-Ergebnis: {db_hint_str}")
-
-            # → LLM soll Toolliste explizit sehen und die Regel kennen (databaseSearch zuerst)
-            self._messages.insert(0, {
-                "role": "system",
-                "content": (
-                    "MCP-Tools sind verfügbar und wurden bereits inspiziert.\n"
-                    "VERFÜGBARE MCP-TOOLS:\n"
-                    f"{tools_for_prompt}\n\n"
-                    "REGELN:\n"
-                    "1) Das Tool 'databaseSearch(question)' MUSS immer zuerst laufen.\n"
-                    "2) Dessen Textantwort bestimmt, auf welcher Knowledge-Base/mit welchem Agenten gesucht wird.\n"
-                    "3) Danach wird der passende Sub-Agent delegiert.\n\n"
-                    f"databaseSearch(question='{user_text}') → Antwort: {db_hint_str}\n"
-                    "Hinweis: Die Ausführung von 'databaseSearch' wurde bereits serverseitig vorgenommen."
-                )
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            # Status Update: Fertig
+            status.update(label="Antwort generiert!", state="complete", expanded=False)
+            
+            # Finale Antwort rendern
+            st.markdown(result_text)
+            
+            # Zeitangabe
+            st.markdown(f"""
+            <div class="execution-time">
+                <span style="vertical-align: middle;">⏱️</span> 
+                {duration:.2f}s
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # In History speichern
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": result_text,
+                "trace": ansi_to_html(capture_io.raw_buffer), # Trace HTML speichern
+                "duration": duration
             })
 
         except Exception as e:
-            self.dialogue_log.append(f"[MCP] Fehler beim MCP-Vorprozess: {e}")
-            # Minimum: trotzdem eine Regel ins Prompt
-            self._messages.insert(0, {
-                "role": "system",
-                "content": (
-                    "MCP-Tools sollten verfügbar sein, jedoch gab es einen Fehler beim Vorprozess.\n"
-                    "REGELN: Versuche dennoch, nach der passenden Knowledge-Base zu entscheiden."
-                )
-            })
+            status.update(label="Fehler!", state="error")
+            st.error(f"Fehler bei der Ausführung: {str(e)}")
+            # Bei Fehler auch den Trace zeigen
+            st.error("Trace Log:")
+            st.markdown(f'<div class="console-container">{ansi_to_html(capture_io.raw_buffer)}</div>', unsafe_allow_html=True)
 
-        # 2) Routing-Entscheidung durch MCP-Hinweis bevorzugen, sonst LLM
-        selected_agent_name = self._map_mcp_db_hint_to_agent(db_hint_str)
-        if not selected_agent_name:
-            self.dialogue_log.append("[ORCHESTRATOR] Kein klarer MCP-Hinweis, nutze LLM-Routing...")
-            selected_agent_name = self._decide_routing(user_text)
-
-        if selected_agent_name and selected_agent_name in self._available_agents:
-            agent = self._load_agent(selected_agent_name)
-            iterations = 0
-            current_query = user_text
-            agent_responses = []
-
-            while iterations < max_iterations:
-                iterations += 1
-                self.dialogue_log.append(f"\n[ORCHESTRATOR → {selected_agent_name.upper()}] Iteration {iterations}")
-                self.dialogue_log.append(f"Query: {current_query}\n")
-
-                agent_answer = agent.ask(current_query)
-                agent_responses.append(agent_answer)
-
-                self.dialogue_log.append(f"[{selected_agent_name.upper()} → ORCHESTRATOR]")
-                self.dialogue_log.append(f"{agent_answer}\n")
-
-                evaluation_prompt = f"""Ursprüngliche Frage: {user_text}
-
-Agent-Antwort: {agent_answer}
-
-Ist diese Antwort ausreichend um die ursprüngliche Frage zu beantworten?
-Antworte nur mit 'JA' oder 'NEIN' gefolgt von einer kurzen Begründung."""
-
-                eval_messages = [
-                    {"role": "system", "content": "Du bewertest Antwortqualität."},
-                    {"role": "user", "content": evaluation_prompt}
-                ]
-                evaluation = self._call_llm(eval_messages)
-                self.dialogue_log.append(f"[ORCHESTRATOR] Evaluation: {evaluation}\n")
-
-                if evaluation.strip().upper().startswith("JA"):
-                    break
-
-                if iterations < max_iterations:
-                    followup_prompt = f"""Die bisherige Antwort war unvollständig.
-
-Ursprüngliche Frage: {user_text}
-Bisherige Antwort: {agent_answer}
-
-Formuliere eine präzise Nachfrage um die fehlenden Informationen zu erhalten."""
-                    followup_messages = [
-                        {"role": "system", "content": "Du formulierst präzise Nachfragen."},
-                        {"role": "user", "content": followup_prompt}
-                    ]
-                    current_query = self._call_llm(followup_messages)
-                    self.dialogue_log.append(f"[ORCHESTRATOR] Nachfrage: {current_query}\n")
-
-            self.dialogue_log.append(f"\n{'='*60}")
-            self.dialogue_log.append("[ORCHESTRATOR] Erstelle finale Antwort...")
-            self.dialogue_log.append(f"{'='*60}\n")
-
-            summary_prompt = f"""Ursprüngliche Benutzeranfrage: {user_text}
-
-Gesammelte Informationen von {selected_agent_name}:
-{chr(10).join(f"- {resp}" for resp in agent_responses)}
-
-Erstelle eine präzise, vollständige Antwort auf die ursprüngliche Frage basierend auf diesen Informationen."""
-            self._messages.append({"role": "user", "content": summary_prompt})
-            final_answer = self._call_llm(self._messages)
-
-            self.dialogue_log.append(f"[ORCHESTRATOR → USER] Finale Antwort:")
-            self.dialogue_log.append(f"{final_answer}")
-
-        else:
-            self.dialogue_log.append("[ORCHESTRATOR] Kein spezialisierter Agent verfügbar, beantworte selbst...\n")
-            self._messages.append({"role": "user", "content": user_text})
-            final_answer = self._call_llm(self._messages)
-            self.dialogue_log.append(f"[ORCHESTRATOR → USER] Antwort:")
-            self.dialogue_log.append(f"{final_answer}")
-
-        return "\n".join(self.dialogue_log)
-
-    def reset(self):
-        system = next((m for m in self._messages if m.get("role") == "system"), None)
-        self._messages = []
-        if system:
-            self._messages.append(system)
-        self.dialogue_log = []
-        # Agenten bleiben im Cache!
-
-
-# ---- Optionaler Direktstart für schnellen Test ----
-if __name__ == "__main__":
-    agent = OrchestratorAgent("orchestrator", "test-session")
-    result = agent.ask("Wer ist der Regisseur von Inception?")
-    print(result)
+    # State Cleanup
+    st.session_state.initial_question = None
+    st.session_state.selected_suggestion = None

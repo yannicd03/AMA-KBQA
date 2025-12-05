@@ -211,9 +211,7 @@ class KQAProAgent:
                     self.token_usage["completion_tokens"] += response.usage.completion_tokens
                     self.token_usage["total_tokens"] += response.usage.total_tokens
 
-                # -------------------------------------------------------
-                # VERBESSERTES LOGGING: Zwischengedanken (Thoughts/Text)
-                # -------------------------------------------------------
+                # Logging des Gedankens
                 if message.content:
                     self._trace(f"🧠 Gedanke/Text: {message.content}", COLOR_BLUE)
 
@@ -224,6 +222,12 @@ class KQAProAgent:
                     self._trace("🏁 Finale Antwort vom LLM generiert.")
                     return assistant_text.strip()
 
+                # --- KORREKTUR START ---
+                # Die Assistant-Message MUSS VOR der Verarbeitung der Tools
+                # EINMALIG zur Historie hinzugefügt werden.
+                self._messages.append(message)
+                # --- KORREKTUR ENDE ---
+
                 # Tool-Call(s) ausführen
                 for tool_call in message.tool_calls:
                     func_name = tool_call.function.name
@@ -232,25 +236,22 @@ class KQAProAgent:
                     except json.JSONDecodeError:
                         func_args = {}
 
-                    # -------------------------------------------------------
-                    # VERBESSERTES LOGGING: Tool Call & Parameter
-                    # -------------------------------------------------------
+                    # Logging
                     args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
                     self._trace(f"🛠️  Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
 
+                    # Ausführung
                     tool_result = await self.mcp.call_tool(func_name, func_args)
 
-                    # -------------------------------------------------------
-                    # VERBESSERTES LOGGING: Tool Ergebnisse
-                    # -------------------------------------------------------
-                    # Kürze Ergebnis für Logs, falls es riesig ist, um Konsole nicht zu fluten
+                    # Logging Result
                     log_result = tool_result
                     if len(log_result) > 500:
                         log_result = log_result[:500] + f"... [truncated, total len: {len(tool_result)}]"
-
                     self._trace(f"🔙 Result ({func_name}): {log_result}", COLOR_CYAN)
 
-                    self._messages.append(message)
+                    # --- HIER WAR DER FEHLER (Entfernt: self._messages.append(message)) ---
+                    
+                    # Nur das Tool-Result wird in der Schleife angehängt
                     self._messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
