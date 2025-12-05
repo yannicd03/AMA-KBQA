@@ -2,12 +2,49 @@
 
 ## TODO
 
-- [ ] Implement Graph Scratchpad using the `networkx` library
-- [ ] Implement Batch processing
-- [ ] Debug Agents
-- [ ] 
+- [x] Implement Graph Scratchpad using the `networkx` library
+- [x] Implement Batch processing
+- [x] Debug Agents
+- [ ] Optimize Tools (Runtime and Context)
+- [ ] Add Logging for duration of toolcalls
+- [ ] Add 10 Answeroptions to the agent prompt
+
+## Batch Processing
+
+The project includes a comprehensive batch runner for benchmarking the KQAPro agent on validation dataset questions.
+
+### Quick Start
+
+```bash
+# Process 10 random questions with default seed (42)
+python ama_kbqa/agents/kqapro_agent/batch_runner.py
+
+# Process 50 questions with custom seed
+python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 50 --seed 123
+```
+
+### Features
+
+- **Random Sampling**: Intelligently samples n random questions from the 11,797 validation questions using a reproducible seed
+- **Automatic Organization**: Creates sequential batch folders (Batch001, Batch002, etc.) in `batch_results/`
+- **Comprehensive Metadata**: Tracks question/answer, duration, tokens, agent turns, SPARQL queries, and more
+- **Accuracy Metric**: Automatically evaluates answer correctness by mapping verbose responses to choices using LLM
+- **Detailed Results**: Saves sampled questions, individual results, and summary statistics with accuracy rates
+
+### Output
+
+Each batch creates a folder with:
+- `sampled_questions.json` - The questions selected for this batch
+- `results.json` - Detailed results for each question with all metadata (including selected_answer and accuracy)
+- `summary.json` - Summary statistics with overall and per-question-type accuracy rates
+
+### Documentation
+
+- [BATCH_RUNNER_README.md](ama_kbqa/agents/kqapro_agent/BATCH_RUNNER_README.md) - Complete batch processing documentation
+- [ACCURACY_METRIC_IMPLEMENTATION.md](ACCURACY_METRIC_IMPLEMENTATION.md) - Details on accuracy evaluation implementation
 
 ## Timeline
+
 ![alt text](image.png)
 
 ## Setup
@@ -172,10 +209,10 @@ PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 ```
 
-
 ## Potential new tools
+
 - Find Relation between
 - Find outgoing connections
 - Find incoming connections
 - Find Neighbors
-- 
+-

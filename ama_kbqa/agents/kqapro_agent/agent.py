@@ -18,7 +18,7 @@ from asyncio.exceptions import CancelledError
 
 load_dotenv(override=True)
 
-# --- TRACING & FARBEN ---
+# --- TRACING & COLORS ---
 
 COLOR_BLUE = '\033[94m'
 COLOR_GREEN = '\033[92m'
@@ -29,7 +29,7 @@ COLOR_END = '\033[0m'
 
 
 def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
-    """Standardisiertes Tracing mit Zeitstempel und Agenten-Präfix."""
+    """Standardized tracing with timestamp and agent prefix."""
     timestamp = datetime.now().strftime("%H:%M:%S")
     # Handle multi-line messages nicely by indenting subsequent lines
     lines = msg.split('\n')
@@ -39,12 +39,12 @@ def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
         print(f"{' ' * (len(timestamp) + 2 + len(agent_name) + 6)} {color}{line}{COLOR_END}")
 
 
-# Dynamische Pfad-Ermittlung für den Sub-Agent Server
+# Dynamic path resolution for the Sub-Agent Server
 current_file = Path(__file__).resolve()
 ama_kbqa_root = current_file.parents[2]
 default_subagent_server_path = ama_kbqa_root / "server" / "kqapro_server.py"
 
-# --- KONFIGURATION ---
+# --- CONFIGURATION ---
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o")
@@ -53,7 +53,7 @@ REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
 MCP_SERVER_PATH = os.getenv("SUBAGENT_SERVER_PATH", str(default_subagent_server_path))
 
 
-# --- MCP CLIENT FÜR SUB-AGENTEN (Angepasst) ---
+# --- MCP CLIENT FOR SUB-AGENTS (Adapted) ---
 
 class MCPClient:
     def __init__(self, server_path: str, agent_name: str):
@@ -67,8 +67,8 @@ class MCPClient:
         if self._connected:
             return
         if not self.server_path.exists():
-            trace(self.agent_name, f"{COLOR_RED}MCP-Server nicht gefunden: {self.server_path}{COLOR_END}", COLOR_RED)
-            raise FileNotFoundError(f"MCP-Server nicht gefunden: {self.server_path}")
+            trace(self.agent_name, f"{COLOR_RED}MCP server not found: {self.server_path}{COLOR_END}", COLOR_RED)
+            raise FileNotFoundError(f"MCP server not found: {self.server_path}")
 
         client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
 
@@ -99,9 +99,9 @@ class MCPClient:
                 await asyncio.sleep(0.05)
             except (CancelledError, RuntimeError) as e:
                 trace(
-                    self.agent_name, f"{COLOR_YELLOW}WARNUNG: MCP-Close Fehler beim Beenden ignoriert ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
+                    self.agent_name, f"{COLOR_YELLOW}WARNING: MCP-Close error on shutdown ignored ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
             except Exception as e:
-                trace(self.agent_name, f"{COLOR_RED}Fehler beim Schließen des MCP-Clients: {e}{COLOR_END}", COLOR_RED)
+                trace(self.agent_name, f"{COLOR_RED}Error closing MCP client: {e}{COLOR_END}", COLOR_RED)
             finally:
                 self._connected = False
 
@@ -112,7 +112,7 @@ class KQAProAgent:
 
     def __init__(self, name: str = "kqapro_agent", session_id: str = "default"):
         if not OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY fehlt in .env")
+            raise RuntimeError("OPENROUTER_API_KEY missing in .env")
 
         self.name = name
         self.session_id = session_id
@@ -173,32 +173,32 @@ class KQAProAgent:
         if self.mcp:
             return
         try:
-            self._trace(f"Starte eigenen MCP Server: {MCP_SERVER_PATH}")
+            self._trace(f"Starting own MCP server: {MCP_SERVER_PATH}")
             self.mcp = MCPClient(MCP_SERVER_PATH, self.name)
             await self.mcp.start()
-            self._trace("Eigener MCP verbunden")
+            self._trace("Own MCP connected")
         except Exception as e:
-            self._trace(f"{COLOR_RED}Eigener MCP Fehler: {e}{COLOR_END}", COLOR_RED)
+            self._trace(f"{COLOR_RED}Own MCP error: {e}{COLOR_END}", COLOR_RED)
             self.mcp = None
             raise
 
     async def ask(self, query: str) -> str:
-        self._trace(f"Eingehende Query: '{query}'", COLOR_GREEN)
+        self._trace(f"Incoming query: '{query}'", COLOR_GREEN)
 
         try:
-            # 1. MCP starten und Tools laden
+            # 1. Start MCP and load tools
             await self._init_mcp()
 
             if not self.mcp:
-                self._trace(f"{COLOR_YELLOW}Tool-Server nicht verfügbar. Antworte ohne Tools.{COLOR_END}", COLOR_YELLOW)
+                self._trace(f"{COLOR_YELLOW}Tool server not available. Answering without tools.{COLOR_END}", COLOR_YELLOW)
                 self._messages.append({"role": "user", "content": query})
                 return self._llm_call_text_only()
 
             mcp_tools = await self.mcp.list_tools()
             openai_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
-            self._trace(f"Found {len(openai_tools)} Tools.")
+            self._trace(f"Found {len(openai_tools)} tools.")
 
-            # 2. Iterativer Tool-Call Loop
+            # 2. Iterative tool-call loop
             self._messages.append({"role": "user", "content": query})
 
             while True:
@@ -211,24 +211,24 @@ class KQAProAgent:
                     self.token_usage["completion_tokens"] += response.usage.completion_tokens
                     self.token_usage["total_tokens"] += response.usage.total_tokens
 
-                # Logging des Gedankens
+                # Logging intermediate thoughts (Thoughts/Text)
                 if message.content:
-                    self._trace(f"🧠 Gedanke/Text: {message.content}", COLOR_BLUE)
+                    self._trace(f"🧠 Thought/Text: {message.content}", COLOR_BLUE)
 
-                # Finale Antwort (Keine Tools mehr)
+                # Final answer (no more tools)
                 if not message.tool_calls:
                     assistant_text = message.content or ""
                     self._messages.append({"role": "assistant", "content": assistant_text})
-                    self._trace("🏁 Finale Antwort vom LLM generiert.")
+                    self._trace("🏁 Final answer generated by LLM.")
                     return assistant_text.strip()
 
-                # --- KORREKTUR START ---
-                # Die Assistant-Message MUSS VOR der Verarbeitung der Tools
-                # EINMALIG zur Historie hinzugefügt werden.
+                # --- CORRECTION START ---
+                # The assistant message MUST be added to the history ONCE
+                # BEFORE processing the tools.
                 self._messages.append(message)
-                # --- KORREKTUR ENDE ---
+                # --- CORRECTION END ---
 
-                # Tool-Call(s) ausführen
+                # Execute tool call(s)
                 for tool_call in message.tool_calls:
                     func_name = tool_call.function.name
                     try:
@@ -240,18 +240,18 @@ class KQAProAgent:
                     args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
                     self._trace(f"🛠️  Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
 
-                    # Ausführung
+                    # Execution
                     tool_result = await self.mcp.call_tool(func_name, func_args)
 
-                    # Logging Result
+                    # Logging result
                     log_result = tool_result
                     if len(log_result) > 500:
                         log_result = log_result[:500] + f"... [truncated, total len: {len(tool_result)}]"
                     self._trace(f"🔙 Result ({func_name}): {log_result}", COLOR_CYAN)
 
-                    # --- HIER WAR DER FEHLER (Entfernt: self._messages.append(message)) ---
-                    
-                    # Nur das Tool-Result wird in der Schleife angehängt
+                    # --- BUG WAS HERE (Removed: self._messages.append(message)) ---
+
+                    # Only the tool result is appended in the loop
                     self._messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -260,7 +260,7 @@ class KQAProAgent:
                     })
 
         except Exception as e:
-            self._trace(f"{COLOR_RED}Fehler im Agenten-Loop: {e}{COLOR_END}", COLOR_RED)
+            self._trace(f"{COLOR_RED}Error in agent loop: {e}{COLOR_END}", COLOR_RED)
             raise
 
         finally:
@@ -279,10 +279,10 @@ class KQAProAgent:
                 # -------------------------------
 
                 await self.mcp.close()
-                self._trace("Eigener MCP-Server sauber beendet")
+                self._trace("Own MCP server cleanly terminated")
 
     def _llm_call(self, tools: Optional[List[Dict[str, Any]]] = None):
-        """Führt den eigentlichen API-Call aus (mit Tools)."""
+        """Executes the actual API call (with tools)."""
         return self.client.chat.completions.create(
             model=self.model,
             messages=self._messages,
@@ -291,7 +291,7 @@ class KQAProAgent:
         )
 
     def _llm_call_text_only(self):
-        """Führt den eigentlichen API-Call aus (ohne Tools)."""
+        """Executes the actual API call (without tools)."""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self._messages,
@@ -322,9 +322,9 @@ if __name__ == "__main__":
     async def run_test():
         agent = KQAProAgent()
         try:
-            answer = await agent.ask("Wer ist der Regisseur von Inception?")
-            print(f"\n[KQAPro Agent Antwort]\n{answer}")
+            answer = await agent.ask("Who is the director of Inception?")
+            print(f"\n[KQAPro Agent Answer]\n{answer}")
         except Exception as e:
-            print(f"Fehler im Testlauf: {e}")
+            print(f"Error in test run: {e}")
 
     asyncio.run(run_test())

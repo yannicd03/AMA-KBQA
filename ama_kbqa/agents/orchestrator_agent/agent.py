@@ -19,29 +19,29 @@ from asyncio.exceptions import CancelledError
 
 load_dotenv(find_dotenv())
 
-# --- KONFIGURATION & PFAD-LOGIK ---
+# --- CONFIGURATION & PATH LOGIC ---
 current_file = Path(__file__).resolve()
 ama_kbqa_root = current_file.parents[2]
 default_server_path = ama_kbqa_root / "server" / "orchestrator_server.py"
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o")
+MODEL_NAME = os.getenv("MODEL_NAME", "minimax/minimax-m2")
 MCP_SERVER_PATH = os.getenv("ORCHESTRATOR_SERVER_PATH", str(default_server_path))
-SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "Du bist ein intelligenter Orchestrator.")
+SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are an intelligent orchestrator.")
 
-# --- TRACING & FARBEN ---
+# --- TRACING & COLORS ---
 
 COLOR_BLUE = '\033[94m'      # Orchestrator Info
-COLOR_GREEN = '\033[92m'     # Erfolg / Finale Antwort
-COLOR_RED = '\033[91m'       # Fehler
-COLOR_YELLOW = '\033[93m'    # Tool Calls / Warnung
-COLOR_CYAN = '\033[96m'      # Reasoning / Gedanken
+COLOR_GREEN = '\033[92m'     # Success / Final Answer
+COLOR_RED = '\033[91m'       # Error
+COLOR_YELLOW = '\033[93m'    # Tool Calls / Warning
+COLOR_CYAN = '\033[96m'      # Reasoning / Thoughts
 COLOR_MAGENTA = '\033[95m'   # Tool Inputs/Outputs
 COLOR_END = '\033[0m'
 
 
 def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
-    """Standardisiertes Tracing mit Zeitstempel und Agenten-Präfix."""
+    """Standardized tracing with timestamp and agent prefix."""
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {msg}")
 
@@ -60,8 +60,8 @@ class MCPClient:
         if self._connected:
             return
         if not self.server_path.exists():
-            trace(self.agent_name, f"{COLOR_RED}MCP-Server nicht gefunden: {self.server_path}{COLOR_END}", COLOR_RED)
-            raise FileNotFoundError(f"MCP-Server nicht gefunden: {self.server_path}")
+            trace(self.agent_name, f"{COLOR_RED}MCP server not found: {self.server_path}{COLOR_END}", COLOR_RED)
+            raise FileNotFoundError(f"MCP server not found: {self.server_path}")
 
         client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
         read, write = await self.exit_stack.enter_async_context(client_gen)
@@ -91,9 +91,9 @@ class MCPClient:
                 await asyncio.sleep(0.05)
             except (CancelledError, RuntimeError) as e:
                 trace(self.agent_name,
-                      f"{COLOR_YELLOW}WARNUNG: MCP-Close Fehler ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
+                      f"{COLOR_YELLOW}WARNING: MCP-Close error ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
             except Exception as e:
-                trace(self.agent_name, f"{COLOR_RED}Fehler beim Schließen des MCP-Clients: {e}{COLOR_END}", COLOR_RED)
+                trace(self.agent_name, f"{COLOR_RED}Error closing MCP client: {e}{COLOR_END}", COLOR_RED)
             finally:
                 self._connected = False
 
@@ -114,19 +114,19 @@ class Orchestrator:
             "kqapro_agent": {
                 "module": "ama_kbqa.agents.kqapro_agent.agent",
                 "class": "KQAProAgent",
-                "description": "Faktenwissen, Knowledge Graph, Beziehungen"
+                "description": "Factual knowledge, Knowledge Graph, Relationships"
             },
             "code_agent": {
                 "module": "ama_kbqa.placeholder_agent.agent",
                 "class": "PlaceholderAgent",
-                "init_kwargs": {"domain": "Coding", "capabilities": "Python, Algorithmen"},
-                "description": "Programmierung, Python"
+                "init_kwargs": {"domain": "Coding", "capabilities": "Python, Algorithms"},
+                "description": "Programming, Python"
             },
             "math_agent": {
                 "module": "ama_kbqa.placeholder_agent.agent",
                 "class": "PlaceholderAgent",
-                "init_kwargs": {"domain": "Math", "capabilities": "Gleichungen, Algebra"},
-                "description": "Rechnen, Mathematik"
+                "init_kwargs": {"domain": "Math", "capabilities": "Equations, Algebra"},
+                "description": "Computation, Mathematics"
             }
         }
 
@@ -134,17 +134,17 @@ class Orchestrator:
         trace(self.name, msg, color)
 
     def _log_pretty(self, label: str, data: Any, color: str = COLOR_MAGENTA):
-        """Hilfsfunktion zum schönen Ausgeben von JSON-Daten."""
+        """Helper function for pretty-printing JSON data."""
         try:
             if isinstance(data, str):
-                # Versuch, String als JSON zu parsen für bessere Darstellung
+                # Try to parse string as JSON for better display
                 try:
                     data = json.loads(data)
                 except:
-                    pass  # Ist halt ein normaler String
+                    pass  # Just a normal string
 
             pretty_json = json.dumps(data, indent=2, ensure_ascii=False)
-            # Wir rücken das JSON ein, damit es sauber unter dem Label steht
+            # Indent the JSON so it appears cleanly under the label
             indented_json = "\n".join([f"    {line}" for line in pretty_json.splitlines()])
             print(f"{color}    {label}:{COLOR_END}\n{color}{indented_json}{COLOR_END}")
         except Exception:
@@ -165,38 +165,38 @@ class Orchestrator:
         if self.mcp:
             return
         try:
-            self._trace(f"Starte MCP Server: {MCP_SERVER_PATH}")
+            self._trace(f"Starting MCP server: {MCP_SERVER_PATH}")
             self.mcp = MCPClient(MCP_SERVER_PATH, self.name)
             await self.mcp.start()
-            self._trace("MCP verbunden")
+            self._trace("MCP connected")
         except Exception as e:
-            self._trace(f"{COLOR_RED}MCP Fehler: {e}{COLOR_END}", COLOR_RED)
+            self._trace(f"{COLOR_RED}MCP error: {e}{COLOR_END}", COLOR_RED)
             self.mcp = None
 
     async def _route_autonomously(self, query: str) -> Optional[str]:
-        """Nutzt LLM und MCP Tools zur Agenten-Auswahl."""
+        """Uses LLM and MCP Tools for agent selection."""
         if not self.mcp:
             return None
 
-        self._trace("Bereite Routing vor: Hole Tool-Definitionen...")
+        self._trace("Preparing routing: fetching tool definitions...")
 
         try:
             mcp_tools = await self.mcp.list_tools()
             openai_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
         except Exception as e:
-            self._trace(f"{COLOR_RED}Fehler beim Listen der Tools: {e}{COLOR_END}", COLOR_RED)
+            self._trace(f"{COLOR_RED}Error listing tools: {e}{COLOR_END}", COLOR_RED)
             return None
 
         if not openai_tools:
-            self._trace(f"{COLOR_YELLOW}Keine Tools verfügbar.{COLOR_END}", COLOR_YELLOW)
+            self._trace(f"{COLOR_YELLOW}No tools available.{COLOR_END}", COLOR_YELLOW)
             return None
 
-        # System Prompt aktualisiert, um Gedankenprozess zu fördern
+        # Updated system prompt to encourage reasoning process
         messages = [
             {"role": "system", "content": (
-                "Du bist ein Router. Deine Aufgabe ist es, den richtigen Sub-Agenten für eine User-Anfrage zu finden. "
-                "Denke Schritt für Schritt nach. Analysiere erst die Anfrage und entscheide dann, welches Tool du aufrufst. "
-                "Formuliere deine Überlegung kurz im Text, bevor du das Tool nutzt."
+                "You are a router. Your task is to find the right sub-agent for a user request. "
+                "Think step by step. First analyze the request, then decide which tool to call. "
+                "Briefly state your reasoning in text before using the tool."
             )},
             {"role": "user", "content": f"Query: {query}"}
         ]
@@ -208,7 +208,7 @@ class Orchestrator:
 
             message = completion.choices[0].message
 
-            # 1. Logging: Gedankenprozess (Reasoning)
+            # 1. Logging: Reasoning process
             if message.content:
                 self._trace(f"🤔 {message.content}", color=COLOR_CYAN)
 
@@ -218,14 +218,14 @@ class Orchestrator:
                 func_args_str = tool_call.function.arguments
                 func_args = json.loads(func_args_str)
 
-                # 2. Logging: Tool Call und Parameter
-                self._trace(f"🛠️ Rufe Tool auf: {func_name}", color=COLOR_YELLOW)
-                self._log_pretty("Argumente", func_args, COLOR_YELLOW)
+                # 2. Logging: Tool call and parameters
+                self._trace(f"🛠️ Calling tool: {func_name}", color=COLOR_YELLOW)
+                self._log_pretty("Arguments", func_args, COLOR_YELLOW)
 
                 tool_result = await self.mcp.call_tool(func_name, func_args)
 
-                # 3. Logging: Ergebnis
-                self._log_pretty("Ergebnis", tool_result, COLOR_MAGENTA)
+                # 3. Logging: Result
+                self._log_pretty("Result", tool_result, COLOR_MAGENTA)
 
                 # Mapping
                 res_lower = tool_result.lower()
@@ -236,14 +236,14 @@ class Orchestrator:
                 if "math" in res_lower:
                     return "math_agent"
 
-                self._trace(f"{COLOR_YELLOW}Tool-Ergebnis unklar: {tool_result}{COLOR_END}", COLOR_YELLOW)
+                self._trace(f"{COLOR_YELLOW}Tool result unclear: {tool_result}{COLOR_END}", COLOR_YELLOW)
                 return None
             else:
-                self._trace(f"{COLOR_YELLOW}LLM hat kein Tool aufgerufen.{COLOR_END}", COLOR_YELLOW)
+                self._trace(f"{COLOR_YELLOW}LLM did not call any tool.{COLOR_END}", COLOR_YELLOW)
                 return None
 
         except Exception as e:
-            self._trace(f"{COLOR_RED}Fehler im Routing-Prozess: {e}{COLOR_END}", COLOR_RED)
+            self._trace(f"{COLOR_RED}Error in routing process: {e}{COLOR_END}", COLOR_RED)
             return None
 
     def _load_agent(self, agent_name: str):
@@ -261,11 +261,11 @@ class Orchestrator:
             self._agents[agent_name] = agent
             return agent
         except Exception as e:
-            self._trace(f"{COLOR_RED}Ladefehler {agent_name}: {e}{COLOR_END}", COLOR_RED)
+            self._trace(f"{COLOR_RED}Loading error {agent_name}: {e}{COLOR_END}", COLOR_RED)
             return None
 
     async def ask(self, query: str) -> str:
-        """Hauptmethode: Route die Anfrage und hole die Antwort."""
+        """Main method: Route the request and get the answer."""
         self._trace(f"USER: {query}", COLOR_GREEN)
 
         try:
@@ -276,7 +276,7 @@ class Orchestrator:
             print("-" * 50)
 
             if selected_agent_name:
-                self._trace(f"Routing erfolgreich -> {selected_agent_name}", COLOR_GREEN)
+                self._trace(f"Routing successful -> {selected_agent_name}", COLOR_GREEN)
                 agent = self._load_agent(selected_agent_name)
 
                 if agent:
@@ -287,13 +287,13 @@ class Orchestrator:
                             answer = agent.ask(query)
                     except Exception as e:
                         self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
-                        self._trace("Führe LLM Fallback durch.")
+                        self._trace("Executing LLM fallback.")
                         answer = self._fallback_llm(query)
                 else:
-                    self._trace("Agent konnte nicht geladen werden. Fallback.")
+                    self._trace("Agent could not be loaded. Fallback.")
                     answer = self._fallback_llm(query)
             else:
-                self._trace("Routing fehlgeschlagen. Fallback.")
+                self._trace("Routing failed. Fallback.")
                 answer = self._fallback_llm(query)
 
             return answer
@@ -301,7 +301,7 @@ class Orchestrator:
         finally:
             if self.mcp:
                 await self.mcp.close()
-                self._trace("Orchestrator MCP-Server sauber beendet")
+                self._trace("Orchestrator MCP server cleanly terminated")
 
     def _fallback_llm(self, query: str) -> str:
         return self.client.chat.completions.create(
@@ -312,7 +312,7 @@ class Orchestrator:
 
 async def main():
     orchestrator = Orchestrator()
-    # Test-Frage angepasst, um Routing zu provozieren
+    # Test question adapted to trigger routing
     result = await orchestrator.ask("How many heavy metal groups are in the genre of Queen (the one famous for heavy metal) ?")
     print("-" * 50)
     print(f"\n[{COLOR_GREEN}FINALE ANTWORT{COLOR_END}]\n{result}")
@@ -324,5 +324,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     except Exception:
-        print(f"\n{COLOR_RED}--- KRITISCHER FEHLER IM HAUPTLAUF ---{COLOR_END}")
+        print(f"\n{COLOR_RED}--- CRITICAL ERROR IN MAIN RUN ---{COLOR_END}")
         traceback.print_exc()
