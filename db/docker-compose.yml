@@ -1,5 +1,5 @@
 # docker exec -i virtuoso_ama_kbqa isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/share/proj', 'kb.nt', 'http://kqapro.org/kb'); rdf_loader_run(); checkpoint;"
-
+#name: ama-db
 services:
   virtuoso:
     image: openlink/virtuoso-opensource-7
