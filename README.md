@@ -9,6 +9,7 @@
 - [ ] Add Logging for duration of toolcalls
 - [x] Add 10 Answeroptions to the agent prompt
 - [ ] Keep MCP Server open over Batch processing run
+- [ ] Add other API Endpoints
 
 ## Batch Processing
 
@@ -69,6 +70,7 @@ docker exec -i virtuoso_ama_kbqa isql 1111 dba kit_ama_kbqa "EXEC=ld_dir('/usr/s
 ```
 
 7. Setup Qdrant by running the `populate_vector_db.py` file
+8. Download the question dataset (train.json, val.json and test.json) from [here](https://huggingface.co/datasets/drt/kqa_pro/tree/main) and put it into db/datasets/kqapro folder
 
 You can test Virtuoso by opening http://localhost:8890/sparql and running this query:
 
