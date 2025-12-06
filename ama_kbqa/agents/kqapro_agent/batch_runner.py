@@ -10,6 +10,7 @@ Usage:
 """
 
 from __future__ import annotations
+from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 import os
 import sys
 import asyncio
@@ -34,8 +35,6 @@ ama_kbqa_root = current_file.parents[2]
 project_root = current_file.parents[3]  # Go up one more level to project root
 sys.path.insert(0, str(ama_kbqa_root))
 
-from ama_kbqa.agents.kqapro_agent.benchmark import KQAProAgent
-
 
 # ============================================================================
 # CONFIGURATION
@@ -47,7 +46,7 @@ BATCH_RESULTS_BASE_DIR = project_root / "batch_results"
 # OpenRouter configuration for answer selection
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "minimax/minimax-m2")
+MODEL_NAME = os.getenv("MODEL_NAME", "arcee-ai/trinity-mini")
 
 # Virtuoso SPARQL endpoint configuration
 VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
@@ -364,7 +363,8 @@ def synthesize_final_sparql(
                                     discovered_triples.append(f"ex:{base_node} prop:{predicate} <{obj_value}>")
                                 else:
                                     # It's a literal - store both the pattern and a sample value
-                                    discovered_triples.append(f"ex:{base_node} prop:{predicate} ?value (found: '{obj_value}')")
+                                    discovered_triples.append(
+                                        f"ex:{base_node} prop:{predicate} ?value (found: '{obj_value}')")
             except:
                 # If parsing fails, just continue
                 pass
@@ -375,7 +375,6 @@ def synthesize_final_sparql(
     # Add discovered triple patterns to context
     if discovered_triples:
         context += "\n\nVERIFIED TRIPLE PATTERNS (use these directly):\n" + "\n".join(discovered_triples)
-        print(f"[SPARQL] Discovered {len(discovered_triples)} verified triple patterns from tool results")
 
     # Build the synthesis prompt
     prompt = f"""You are a SPARQL query synthesis expert for the KQAPro knowledge graph. Based on the question and the agent's exploration, generate a SINGLE, complete SPARQL query that directly answers the question.

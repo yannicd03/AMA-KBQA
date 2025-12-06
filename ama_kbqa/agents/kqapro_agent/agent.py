@@ -47,7 +47,7 @@ default_subagent_server_path = ama_kbqa_root / "server" / "kqapro_server.py"
 # --- CONFIGURATION ---
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o")
+MODEL_NAME = os.getenv("MODEL_NAME", "arcee-ai/trinity-mini")
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
 
 MCP_SERVER_PATH = os.getenv("SUBAGENT_SERVER_PATH", str(default_subagent_server_path))
@@ -157,31 +157,6 @@ class KQAProAgent:
                                 2. Save facts: When you have verified a triple, write it down here.
                                 3. Planning: Update your plan whenever you find new information.
 
-                                AVAILABLE TOOLS
-
-                                1. `QtypePrediction(queestion: str)`
-                                    Use: First step. Returns the type of question your faceing so you can reffer to the "manual" for this question-type.  
-
-                                2.  `EntityExtraction(query: str)`
-                                    Use: Second step. Breaks the question into `entities` (Concepts/Instances) and `relations` (Predicates).
-
-                                3.  `FindNode(semantic_node_name: str)`
-                                    Use: Resolves a natural language entity to a Node ID (QID). Beforehand please use `EntityExtraction` to get the entity to use here.
-                                    Note: Returns a list of matches with `metadata`. ALWAYS read the metadata/description to verify you selected the correct entity (e.g., "Apple" company vs "Apple" fruit).
-
-                                4.  `ExploreNeighborhood(base_node_id: str, semantic_relation_name: str)`
-                                    Use: Verifies if a specific relation exists for a node.
-                                    Logic: It performs a vector search for the `semantic_relation_name`, finds the best candidate Property ID (PID), and checks if `ex:{base_node_id} prop:{PID} ?o` exists.
-                                    Returns: A `verified_match` object containing the `predicate_used` and the `objects` found.
-                                    Limitation: This only checks connections where `base_node_id` is the Subject.
-
-                                5.  `RunSPARQL(query: str)`
-                                    Use: Executes complex logic (Counts, Superlatives, Filters) or checks connections where the entity is the Object by parseing a SPARQL query.
-                                    Syntax: Write the query body. Use the prefixes defined above.
-
-                                6.  `ManageJournal(action, content)`
-                                    Use: Call this AFTER every search/query to update your plan and log found IDs. Prevents loops.
-
                                 REASONING STRATEGIES (THE 9 QUESTION TYPES)
 
                                 1. Count (Aggregation)
@@ -247,10 +222,10 @@ class KQAProAgent:
                                 
 
                                 EXECUTION LOOP
-                                1.Analyze the question (QtypePrediction): Analyze the question and classify the question as one of the 9 types of Questions mentioned above via the tool.
-                                2.Analyze (EntityExtraction): Call EntityExtraction to break the question into Entities and Relations.
-                                3.Map (FindNode): specific QIDs for the entities found in Step 1.
-                                4.Log (ManageJournal): Log the QIDs, Relations, ... found.
+                                1.Analyze the question (using the QtypePrediction tool): Analyze the question and classify the question as one of the 9 types of Questions mentioned above via the tool.
+                                2.Analyze (using the EntityExtraction tool): Call EntityExtraction to break the question into Entities and Relations.
+                                3.Map (using the FindNode tool): specific QIDs for the entities found in Step 1.
+                                4.Log (using the ManageJournal tool): Log the QIDs, Relations, ... found.
                                 5.Explore (ExploreNeighborhood): Use the QID and the extracted relation to find the correct predicate/fact.
                                 6.Refine & Execute: Use your tools and iterate through nodes and relations until you have enough information to answer the question.
                                 7.Answer: Provide the final answer directly and strictly from the tool outputs.
@@ -308,7 +283,7 @@ class KQAProAgent:
             while True:
                 response = self._llm_call(tools=openai_tools)
                 message = response.choices[0].message
-                
+
                 # Update Token Usage
                 if response.usage:
                     self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
@@ -405,7 +380,7 @@ class KQAProAgent:
             self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
             self.token_usage["completion_tokens"] += response.usage.completion_tokens
             self.token_usage["total_tokens"] += response.usage.total_tokens
-            
+
         return response.choices[0].message.content
 
     def reset(self):
