@@ -226,7 +226,171 @@ def get_embedding(client: OpenAI, text: str) -> list[float]:
     return response.data[0].embedding
 
 # --- 5. Refactored Tool using Context ---
+@mcp.tool
+def QtypePrediction(question_to_classify: str, context: Context) -> str:
+    """
+    Classifies a single question using the LLM with a pre-formatted string of few-shot examples.
 
+    Args:
+        question_to_classify (str): The question to classify.
+        formatted_examples (str): A string containing all the few-shot examples, pre-formatted.
+
+    Returns:
+        str: The predicted question type.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+
+    # The prompt now uses the pre-formatted examples directly
+    prompt = f"""
+        ### Task
+        You are a question classification assistant.
+        
+        Your goal is to classify the following question into **exactly one** of the 9 KQA-Pro categories:
+        
+        - Count
+        - Verify
+        - SelectBetween
+        - SelectAmong
+        - QueryAttr
+        - QueryAttrQualifier
+        - QueryRelation
+        - QueryRelationQualifier
+        - QueryName
+        
+        You must reason through a structured decision process before answering.  
+        At each step, evaluate whether a specific type fits based on the question's content.  
+        If a later step reveals a better fit, you are allowed to go back and revise the earlier decision.
+        
+        Your final answer must be a **single line**:
+        Qtype: <TYPE>
+        
+        
+        ────────────────────────────────────────
+        ### Explanation of Each Question Type
+        
+        1. **Count** Use this type if the question asks directly for a **number or quantity** of things.  
+        Typical phrases include “How many…?”, “What is the number of…?”, or “Count the…”.  
+        The expected answer is a non-negative integer.  
+        Note: even if entities are mentioned, the focus must be on **counting** them, not on what they are or when something happened.
+        
+        2. **Verify** Choose this type if the question can be answered with a clear “yes” or “no”.  
+        It will usually be phrased as a **factual check**, e.g., “Is…?”, “Did…?”, “Was…?”, and refers to a full statement.  
+        Only use Verify if the statement is **complete enough** to verify independently — no missing subjects or vague phrases.
+        
+        3. **SelectBetween** This type applies when the question explicitly names **exactly two distinct entities** and compares them on a **single measurable attribute**.  
+        Comparative words such as “more”, “older”, “faster”, or “better” must appear.  
+        Avoid choosing SelectBetween if more than two entities are listed or if no comparison is being made.
+        
+        4. **SelectAmong** Use this type when a group or class of entities is involved and the question asks which one has an **extreme property** (e.g., the biggest, fastest, most successful).  
+        A superlative is usually present — “most”, “least”, “biggest”, “oldest”, etc.  
+        If a list is given or a general class (e.g., “Which planet…”), and only one is being selected as “best” or “most”, this is SelectAmong.
+        
+        5. **QueryAttr** Select this type if the question names a specific entity (like a person, company, city) and asks for a **literal attribute** (date, population, height, etc.).  
+        Examples include “What is the population of Tokyo?” or “When was Google founded?”  
+        Do not choose QueryAttr if the question also includes a time or place constraint — in that case, prefer QueryAttrQualifier.
+        
+        6. **QueryAttrQualifier** This type is a refinement of QueryAttr: it still asks for a property of a single entity, but now with a **qualifying context** like “in 2020”, “at night”, or “during WWII”.  
+        The key difference is that QueryAttrQualifier adds a **constraint or filter** to the value being requested.
+        
+        7. **QueryRelation** Use this type if the question involves two entities and asks **what connects them**.  
+        Typical patterns include: “Who directed Inception?”, “How is X related to Y?”, “Who founded Tesla?”  
+        The expected answer is the **name of the relation** or **the entity that serves as a link**.
+        
+        8. **QueryRelationQualifier** This type builds on QueryRelation. Use it when the relation is already assumed or known, and the question now asks about **its context** — such as when it occurred, in what role, or under what conditions.  
+        For example: “When did X direct Y?” or “In what role did X work at Y?”
+        
+        9. **QueryName** This applies when the question gives a description (using attributes, relations, or actions) and asks **who or what entity** matches it.  
+        Examples: “Who discovered penicillin?”, “Which scientist developed relativity?”  
+        Here, the subject or object is **unknown**, and the question seeks the **name of the entity**.
+        
+        ────────────────────────────────────────
+        ### Structural Comparison Table (Yes/No Logic)
+        
+        | Type                  | Asks count | Yes/No | Attribute | Needs qualifier | Two entities | Superlative | Comparison | Needs name |
+        |-----------------------|------------|--------|-----------|------------------|---------------|-------------|------------|-------------|
+        | Count                 | Yes        | No     | No        | No               | No            | No          | No         | No          |
+        | Verify                | No         | Yes    | No        | No               | No            | No          | No         | No          |
+        | SelectBetween         | No         | No     | No        | No               | Yes           | No          | Yes        | No          |
+        | SelectAmong           | No         | No     | No        | No               | Often         | Yes         | No         | No          |
+        | QueryAttr             | No         | No     | Yes       | No               | No            | No          | No         | No          |
+        | QueryAttrQualifier    | No         | No     | Yes       | Yes              | No            | No          | No         | No          |
+        | QueryRelation         | No         | No     | No        | No               | Yes           | No          | No         | No          |
+        | QueryRelationQualif.  | No         | No     | No        | Yes              | Yes           | No          | No         | No          |
+        | QueryName             | No         | No     | No        | No               | No            | No          | No         | Yes         |
+        
+        ────────────────────────────────────────
+        ### Classification Logic: Step-by-Step Reasoning
+        
+        You must now classify the input question by walking through this chain of thought:
+        
+        **Step 1** Is the question primarily asking for a **number** of things?  
+        → If yes, the correct type is likely **Count**.  
+        → However, if it adds time/place context (e.g. “in 2020”), consider revisiting this as **QueryAttrQualifier**.
+        
+        **Step 2** Is the question a **yes/no statement** that can be verified as true or false?  
+        → If yes, this points to **Verify**.  
+        → But if it instead expects a specific name or value, this is incorrect.
+        
+        **Step 3** Does the question mention **exactly two entities**, and compare them on a property?  
+        → If yes, and words like “more”, “less”, “faster” appear → choose **SelectBetween**.  
+        → If only one item is selected from a group → go to Step 4 instead.
+        
+        **Step 4** Does the question include a **superlative** like “most”, “least”, “biggest”, or refer to a group/list of candidates?  
+        → If yes → this is likely **SelectAmong**.
+        
+        **Step 5** Does the question involve **two named entities** and ask what **relation** connects them?  
+        → If yes → choose **QueryRelation**.  
+        → If the question asks **when/where/how** that relation took place → choose **QueryRelationQualifier**.
+        
+        **Step 6** Does the question mention **one entity** and ask for a **specific value** (e.g., date, amount, status)?  
+        → If yes, and no qualifier is present → this is **QueryAttr**.  
+        → If there is a time/place condition → switch to **QueryAttrQualifier**.
+        
+        **Step 7** Does the question ask **who or what** matches a description, where the entity is **not explicitly named**?  
+        → If yes → this is **QueryName**.
+        
+        You may revisit previous steps if you realize a better fit based on qualifiers, phrasing, or intent.
+        
+        ────────────────────────────────────────
+        ### Scratchpad (internal reasoning — DO NOT SHOW TO USER)
+        <scratch>
+        
+        ────────────────────────────────────────
+        ### Final
+        Output exactly one line:
+        Qtype: <TYPE>
+        
+        ────────────────────────────────────────
+        ### Question
+        {question_to_classify}
+    """
+
+    messages = [{"role": "system", "content": prompt}]
+    try:
+        # Use the OpenAI client from the app_context
+        response = app_context.openai.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=messages,
+            temperature=0.2, # Low temperature for classification stability
+        )
+        
+        # Parse the standard OpenAI object response
+        content = response.choices[0].message.content.strip()
+        
+        # Extract the type after "Qtype: "
+        if "Qtype: " in content:
+            choice = content.split("Qtype: ")[-1].strip()
+        else:
+            # Fallback if the model outputted just the type directly
+            choice = content
+            
+        logger.info(f"Question: {question_to_classify}")
+        logger.info(f"Predicted qtype: {choice}")
+        return str(choice)
+        
+    except Exception as e:
+        logger.error(f"Error in QtypePrediction: {e}")
+        return "Error"
 
 @mcp.tool
 def ManageJournal(
