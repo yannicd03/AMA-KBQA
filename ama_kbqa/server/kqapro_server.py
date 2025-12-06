@@ -1,8 +1,11 @@
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator
+from pathlib import Path
+from functools import wraps
 
 from fastmcp import FastMCP, Context
 from qdrant_client import QdrantClient
@@ -13,6 +16,19 @@ from typing import Literal, Any, Optional
 from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Configure logger
+log_dir = REPO_ROOT / "logs"
+log_dir.mkdir(exist_ok=True)
+logger.add(
+    log_dir / "kqapro_server.log",
+    rotation="10 MB",
+    retention="7 days",
+    level="DEBUG",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
+)
 
 # --- Configuration ---
 QDRANT_HOST = "localhost"
@@ -240,8 +256,33 @@ def get_embedding(client: OpenAI, text: str) -> list[float]:
     )
     return response.data[0].embedding
 
+
+def log_tool_duration(func):
+    """Decorator to log the duration of tool execution."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        tool_name = func.__name__
+        start_time = time.time()
+        logger.info(f"[{tool_name}] Starting execution...")
+
+        try:
+            result = func(*args, **kwargs)
+            duration = time.time() - start_time
+            logger.info(f"[{tool_name}] Completed in {duration:.2f}s")
+            return result
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"[{tool_name}] Failed after {duration:.2f}s - Error: {e}")
+            raise
+
+    return wrapper
+
+
 # --- 5. Refactored Tool using Context ---
+
+
 @mcp.tool
+@log_tool_duration
 def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredictionResponse:
     """
     Classifies a single question using the LLM with a pre-formatted string of few-shot examples.
@@ -385,12 +426,12 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
         response = app_context.openai.chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
-            temperature=0.2, # Low temperature for classification stability
+            temperature=0.2,  # Low temperature for classification stability
         )
-        
+
         # Parse the standard OpenAI object response
         content = response.choices[0].message.content.strip()
-        
+
         # Extract the type after "Qtype: "
         if "Qtype: " in content:
             choice = content.split("Qtype: ")[-1].strip()
@@ -407,7 +448,9 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
         logger.error(f"Error in QtypePrediction: {e}")
         raise
 
+
 @mcp.tool
+@log_tool_duration
 def ManageJournal(
     action: Literal["add_visited", "add_fact", "update_plan", "read"],
     content: str,
@@ -443,38 +486,39 @@ def ManageJournal(
     return session_journal.to_str()
 
 
+# @mcp.tool
+# def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
+#     """
+#     Extracts entities/concepts and relations from a natural language query
+#     using structured output.
+#     """
+#     app_context: AppContext = context.request_context.lifespan_context
+
+#     model = CHAT_MODEL
+
+#     try:
+#         completion = app_context.openai.beta.chat.completions.parse(
+#             model=model,
+#             messages=[
+#                 {
+#                     "role": "system",
+#                     "content": "Extract the semantic entities/concepts and relations from the user query."
+#                 },
+#                 {"role": "user", "content": query}
+#             ],
+#             response_format=ExtractionResponse,
+#         )
+
+#         return completion.choices[0].message.parsed
+
+#     except Exception as e:
+#         logger.error(f"Entity Extraction failed: {e}")
+#         # Return empty lists on failure to maintain type safety
+#         return ExtractionResponse(**{"entities/concepts": [], "relations": []})
+
+
 @mcp.tool
-def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
-    """
-    Extracts entities/concepts and relations from a natural language query 
-    using structured output.
-    """
-    app_context: AppContext = context.request_context.lifespan_context
-
-    model = CHAT_MODEL
-
-    try:
-        completion = app_context.openai.beta.chat.completions.parse(
-            model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Extract the semantic entities/concepts and relations from the user query."
-                },
-                {"role": "user", "content": query}
-            ],
-            response_format=ExtractionResponse,
-        )
-
-        return completion.choices[0].message.parsed
-
-    except Exception as e:
-        logger.error(f"Entity Extraction failed: {e}")
-        # Return empty lists on failure to maintain type safety
-        return ExtractionResponse(**{"entities/concepts": [], "relations": []})
-
-
-@mcp.tool
+@log_tool_duration
 def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     """
     Performs a semantic vector search to identify relevant nodes (Entities or Concepts) within the Knowledge Graph.
@@ -537,6 +581,7 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
 
 
 @mcp.tool
+@log_tool_duration
 def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context: Context) -> NeighborhoodResponse:
     """
     Finds specific facts about a node by semantically matching relations and verifying them in the Graph DB.
@@ -626,6 +671,7 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 
 
 @mcp.tool
+@log_tool_duration
 def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
     """
     Executes an arbitrary SPARQL query against the Knowledge Graph.
