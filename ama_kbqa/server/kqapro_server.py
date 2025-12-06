@@ -129,6 +129,21 @@ class SPARQLResponse(BaseModel):
     raw_json: dict[str, Any] = Field(..., description="The full raw JSON response from Virtuoso.")
 
 
+class QtypePredictionResponse(BaseModel):
+    """Predicted question type classification."""
+    question_type: Literal[
+        "Count",
+        "Verify",
+        "SelectBetween",
+        "SelectAmong",
+        "QueryAttr",
+        "QueryAttrQualifier",
+        "QueryRelation",
+        "QueryRelationQualifier",
+        "QueryName"
+    ] = Field(..., description="The classified question type from KQAPro taxonomy.")
+
+
 class JournalState(BaseModel):
     """The scratchpad state for the current reasoning session."""
     visited_nodes: list[str] = Field(default_factory=list, description="IDs of nodes already explored.")
@@ -227,16 +242,15 @@ def get_embedding(client: OpenAI, text: str) -> list[float]:
 
 # --- 5. Refactored Tool using Context ---
 @mcp.tool
-def QtypePrediction(question_to_classify: str, context: Context) -> str:
+def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredictionResponse:
     """
     Classifies a single question using the LLM with a pre-formatted string of few-shot examples.
 
     Args:
         question_to_classify (str): The question to classify.
-        formatted_examples (str): A string containing all the few-shot examples, pre-formatted.
 
     Returns:
-        str: The predicted question type.
+        QtypePredictionResponse: The predicted question type classification.
     """
     app_context: AppContext = context.request_context.lifespan_context
 
@@ -383,14 +397,15 @@ def QtypePrediction(question_to_classify: str, context: Context) -> str:
         else:
             # Fallback if the model outputted just the type directly
             choice = content
-            
+
         logger.info(f"Question: {question_to_classify}")
         logger.info(f"Predicted qtype: {choice}")
-        return str(choice)
-        
+
+        return QtypePredictionResponse(question_type=choice)
+
     except Exception as e:
         logger.error(f"Error in QtypePrediction: {e}")
-        return "Error"
+        raise
 
 @mcp.tool
 def ManageJournal(
