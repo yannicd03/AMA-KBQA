@@ -5,7 +5,8 @@ This script processes a random sample of questions from the validation dataset
 and saves detailed results including metadata for analysis.
 
 Usage:
-    python batch_runner.py --n_questions 10 --seed 42
+    python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42
+    --postprocessing_mode sparql 
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Dict, List, Any, Optional
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from SPARQLWrapper import SPARQLWrapper, JSON
 
 # Load environment variables
 load_dotenv(override=True)
@@ -46,6 +48,21 @@ BATCH_RESULTS_BASE_DIR = project_root / "batch_results"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "minimax/minimax-m2")
+
+# Virtuoso SPARQL endpoint configuration
+VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
+
+# SPARQL prefixes (matching kqapro_server.py)
+SPARQL_PREFIXES = """
+PREFIX ex:   <http://kqapro.org/entity/>
+PREFIX prop: <http://kqapro.org/property/>
+PREFIX attr: <http://kqapro.org/attribute/>
+PREFIX qual: <http://kqapro.org/qualifier/>
+PREFIX unit: <http://kqapro.org/unit/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
+"""
 
 # Ensure batch_results directory exists
 BATCH_RESULTS_BASE_DIR.mkdir(exist_ok=True)
@@ -181,49 +198,95 @@ def select_answer_from_choices(
     if not valid_choices:
         return choices[0] if choices else "unknown"
 
-    # Build the prompt for answer selection
-    prompt = f"""Given the following question and detailed answer, select the most appropriate choice from the available options.
+    # First, try simple string matching - look for choices in the predicted answer
+    predicted_lower = predicted_answer.lower()
+
+    # Exact match with emphasis markers (**, etc.)
+    for choice in valid_choices:
+        # Look for the choice emphasized in the answer (e.g., **choice** or "choice")
+        if f"**{choice.lower()}**" in predicted_lower or f'"{choice.lower()}"' in predicted_lower:
+            print(f"[MATCH] Found emphasized choice '{choice}' in predicted answer")
+            return choice
+
+    # Check for "yes" or "no" answers in boolean questions
+    if "yes" in valid_choices and "no" in valid_choices:
+        # Look for strong yes/no indicators
+        if predicted_lower.startswith("yes") or " yes," in predicted_lower or "answer: yes" in predicted_lower or "answer is yes" in predicted_lower:
+            print("[MATCH] Detected 'yes' answer from predicted text")
+            return "yes"
+        elif predicted_lower.startswith("no") or " no," in predicted_lower or "answer: no" in predicted_lower or "answer is no" in predicted_lower:
+            print("[MATCH] Detected 'no' answer from predicted text")
+            return "no"
+
+    # Look for exact word matches (whole words only)
+    import re
+    for choice in valid_choices:
+        # Use word boundaries to find exact matches
+        pattern = r'\b' + re.escape(choice.lower()) + r'\b'
+        if re.search(pattern, predicted_lower):
+            print(f"[MATCH] Found exact word match for choice '{choice}' in predicted answer")
+            return choice
+
+    # Build the prompt for answer selection with improved instructions
+    choices_numbered = "\n".join(f"{i+1}. {choice}" for i, choice in enumerate(valid_choices))
+
+    prompt = f"""You are an answer extraction system. Your task is to identify which of the provided choices best matches the detailed answer.
 
 Question: {question}
 
 Detailed Answer: {predicted_answer}
 
 Available Choices:
-{chr(10).join(f"- {choice}" for choice in valid_choices)}
+{choices_numbered}
 
-Instructions:
-1. Carefully read the detailed answer
-2. Determine which of the available choices best matches the meaning of the detailed answer
-3. Respond with ONLY the exact choice text, nothing else
+CRITICAL INSTRUCTIONS:
+1. Read the detailed answer carefully
+2. Identify the main answer or conclusion in the detailed answer
+3. Select the choice that EXACTLY matches this answer
+4. If the answer says "yes", select "yes". If it says "no", select "no"
+5. If a specific choice is mentioned or emphasized (in bold, quotes, etc.), select that choice
+6. Respond with ONLY the number of your choice (1, 2, 3, etc.) OR the exact choice text
 
-Your selected choice:"""
+Your selection:"""
 
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
-                {"role": "system", "content": "You are a precise answer selector. You must respond with only one of the provided choices, exactly as written."},
+                {"role": "system", "content": "You are a precise answer selector. Respond with only the number or exact text of the matching choice."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.0,  # Deterministic selection
-            max_tokens=50  # Short response expected
+            max_tokens=100
         )
 
         selected = response.choices[0].message.content.strip()
+        print(f"[DEBUG] LLM selected: '{selected}'")
+
+        # Try to parse as a number first
+        try:
+            choice_num = int(selected.split('.')[0].strip())
+            if 1 <= choice_num <= len(valid_choices):
+                print(f"[MATCH] LLM selected choice {choice_num}: '{valid_choices[choice_num-1]}'")
+                return valid_choices[choice_num - 1]
+        except (ValueError, IndexError):
+            pass
 
         # Verify the selected answer is in the valid choices (case-insensitive)
         selected_lower = selected.lower()
         for choice in valid_choices:
             if choice.lower() == selected_lower:
+                print(f"[MATCH] LLM selected exact match: '{choice}'")
                 return choice
 
         # If exact match not found, try to find partial match
         for choice in valid_choices:
             if choice.lower() in selected_lower or selected_lower in choice.lower():
+                print(f"[MATCH] LLM selected partial match: '{choice}'")
                 return choice
 
-        # If no match found, return the first valid choice as fallback
-        print(f"[WARNING] LLM selected '{selected}' which is not in choices. Using first choice.")
+        # If no match found, use the first valid choice as fallback
+        print(f"[WARNING] LLM selected '{selected}' which is not in choices. Using first choice: '{valid_choices[0]}'")
         return valid_choices[0]
 
     except Exception as e:
@@ -232,12 +295,245 @@ Your selected choice:"""
         return valid_choices[0] if valid_choices else (choices[0] if choices else "unknown")
 
 
+def synthesize_final_sparql(
+    question: str,
+    agent_messages: List[Any],
+    client: OpenAI
+) -> Optional[str]:
+    """
+    Synthesizes a single final SPARQL query from the agent's conversation history.
+
+    This function analyzes all tool calls, scratchpad entries, and verified facts
+    to construct a comprehensive SPARQL query that directly answers the question.
+
+    Args:
+        question: The original question
+        agent_messages: The full message history from the agent
+        client: OpenAI client instance
+
+    Returns:
+        A SPARQL query string, or None if synthesis fails
+    """
+    # Extract tool calls and results from message history
+    tool_interactions = []
+    discovered_triples = []  # Store actual triple patterns discovered
+
+    for msg in agent_messages:
+        # Handle both dict and object-based messages
+        if isinstance(msg, dict):
+            role = msg.get("role")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls", [])
+            tool_call_id = msg.get("tool_call_id")
+        else:
+            role = getattr(msg, "role", None)
+            content = getattr(msg, "content", "")
+            tool_calls = getattr(msg, "tool_calls", [])
+            tool_call_id = getattr(msg, "tool_call_id", None)
+
+        if role == "assistant" and tool_calls:
+            for tc in tool_calls:
+                if isinstance(tc, dict):
+                    tool_name = tc.get('function', {}).get('name')
+                    tool_args = tc.get('function', {}).get('arguments')
+                else:
+                    tool_name = tc.function.name
+                    tool_args = tc.function.arguments
+
+                tool_interactions.append(f"Tool Call: {tool_name} with args {tool_args}")
+
+        elif role == "tool" and content:
+            tool_interactions.append(f"Tool Result: {content[:500]}")  # Truncate long results
+
+            # Try to extract verified triple patterns from ExploreNeighborhood results
+            try:
+                if "verified_match" in content and "predicate_used" in content:
+                    # Parse the JSON result to extract triple patterns
+                    result_data = json.loads(content)
+                    if result_data.get("verified_match"):
+                        base_node = result_data.get("base_node", "")
+                        predicate = result_data["verified_match"].get("predicate_used", "")
+                        objects = result_data["verified_match"].get("objects", [])
+
+                        if base_node and predicate:
+                            # Store the verified triple pattern
+                            for obj in objects[:3]:  # Limit to first 3 objects
+                                obj_value = obj.get("value", "")
+                                obj_type = obj.get("type", "")
+                                if obj_type == "uri":
+                                    discovered_triples.append(f"ex:{base_node} prop:{predicate} <{obj_value}>")
+                                else:
+                                    # It's a literal - store both the pattern and a sample value
+                                    discovered_triples.append(f"ex:{base_node} prop:{predicate} ?value (found: '{obj_value}')")
+            except:
+                # If parsing fails, just continue
+                pass
+
+    # Build context from interactions
+    context = "\n".join(tool_interactions) if tool_interactions else "No tool interactions recorded"
+
+    # Add discovered triple patterns to context
+    if discovered_triples:
+        context += "\n\nVERIFIED TRIPLE PATTERNS (use these directly):\n" + "\n".join(discovered_triples)
+        print(f"[SPARQL] Discovered {len(discovered_triples)} verified triple patterns from tool results")
+
+    # Build the synthesis prompt
+    prompt = f"""You are a SPARQL query synthesis expert for the KQAPro knowledge graph. Based on the question and the agent's exploration, generate a SINGLE, complete SPARQL query that directly answers the question.
+
+Question: {question}
+
+Agent's Exploration (Tool Calls and Results):
+{context}
+
+CRITICAL INSTRUCTIONS - PREFIX USAGE:
+1. For ENTITIES (like Q217008, Q64, etc.), use the prefix "ex:" - Example: ex:Q217008
+2. For PROPERTIES/RELATIONS (like P36, P1082, etc.), use the prefix "prop:" - Example: prop:P36
+3. For ATTRIBUTES, use the prefix "attr:" - Example: attr:language
+4. NEVER use "wd:", "wdt:", or other Wikidata prefixes - this is NOT Wikidata!
+5. DO NOT include PREFIX declarations in your response - they will be added automatically
+
+CRITICAL RDF/SPARQL RULES:
+1. If you see "VERIFIED TRIPLE PATTERNS" above, USE THEM DIRECTLY in your query
+2. NEVER try to query properties on literal values (strings, numbers, URLs)
+3. If a property returns a literal (like a URL or string), you CANNOT query further properties on it
+4. Only entities (things with URIs like ex:Q64) can have properties, NOT literals
+5. If the answer is already in the verified triple patterns as a literal, just return that value directly
+
+QUERY STRUCTURE:
+1. Analyze the VERIFIED TRIPLE PATTERNS first - these are proven to exist in the database
+2. Synthesize this information into ONE comprehensive SPARQL query
+3. The query should directly answer the original question
+4. Return ONLY the SPARQL query itself (SELECT/ASK/COUNT), no explanations
+5. If counting, use COUNT(?var) or COUNT(DISTINCT ?var)
+6. If verifying (yes/no question), use ASK query
+7. Otherwise use SELECT to get the answer values
+
+Example correct queries:
+- Simple property: SELECT ?value WHERE {{ ex:Q64 prop:P1082 ?value . }}
+- With filter: SELECT ?value WHERE {{ ex:Q64 prop:P856 ?value . FILTER(contains(?value, "blade")) }}
+- Count: SELECT (COUNT(?value) AS ?count) WHERE {{ ex:Q64 prop:P150 ?value . }}
+
+Your SPARQL query:"""
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "You are a SPARQL query expert. Generate precise, executable SPARQL queries based on conversation context."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,
+            max_tokens=500
+        )
+
+        query = response.choices[0].message.content.strip()
+
+        # Remove markdown code blocks if present
+        if query.startswith("```sparql") or query.startswith("```"):
+            query = query.replace("```sparql", "").replace("```", "").strip()
+
+        # Remove any PREFIX declarations the LLM might have added
+        lines = query.split("\n")
+        query_lines = [line for line in lines if not line.strip().startswith("PREFIX")]
+        query = "\n".join(query_lines).strip()
+
+        # Fix common prefix errors (Wikidata -> KQAPro)
+        query = query.replace("wd:", "ex:")  # Entity prefix
+        query = query.replace("wdt:", "prop:")  # Property prefix
+        query = query.replace("wikibase:", "")  # Remove wikibase references
+        query = query.replace("bd:", "")  # Remove blazegraph/wikidata specific prefixes
+
+        # Fix schema.org or other common mistakes
+        query = query.replace("schema:", "rdfs:")
+
+        print(f"[SPARQL] Synthesized query:\n{query}")
+        return query
+
+    except Exception as e:
+        print(f"[ERROR] Failed to synthesize SPARQL query: {e}")
+        return None
+
+
+def execute_sparql_postprocessing(
+    question: str,
+    agent_messages: List[Any],
+    client: OpenAI,
+    sparql_wrapper: SPARQLWrapper
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Execute SPARQL-based postprocessing to get the final answer.
+
+    Args:
+        question: The original question
+        agent_messages: The agent's message history
+        client: OpenAI client for query synthesis
+        sparql_wrapper: SPARQLWrapper instance for query execution
+
+    Returns:
+        Tuple of (final_answer, sparql_query_used)
+    """
+    # Step 1: Synthesize the SPARQL query
+    query = synthesize_final_sparql(question, agent_messages, client)
+
+    if not query:
+        print("[ERROR] Could not synthesize SPARQL query")
+        return None, None
+
+    # Step 2: Add prefixes and execute
+    full_query = f"{SPARQL_PREFIXES}\n{query}"
+
+    try:
+        sparql_wrapper.setQuery(full_query)
+        results = sparql_wrapper.query().convert()
+
+        # Step 3: Format the results based on query type
+        if query.strip().upper().startswith("ASK"):
+            # Boolean query
+            answer = "yes" if results.get("boolean", False) else "no"
+            print(f"[SPARQL] ASK query result: {answer}")
+            return answer, query
+
+        elif "COUNT" in query.upper():
+            # Count query
+            bindings = results.get("results", {}).get("bindings", [])
+            if bindings and len(bindings) > 0:
+                # Get the first variable's value (usually named ?count or similar)
+                first_var = list(bindings[0].keys())[0]
+                count_value = bindings[0][first_var]["value"]
+                print(f"[SPARQL] COUNT query result: {count_value}")
+                return str(count_value), query
+            else:
+                return "0", query
+
+        else:
+            # SELECT query
+            bindings = results.get("results", {}).get("bindings", [])
+            if bindings:
+                # Extract all values from the first binding
+                values = []
+                for var_name, var_data in bindings[0].items():
+                    values.append(var_data["value"])
+
+                answer = ", ".join(values) if len(values) > 1 else values[0]
+                print(f"[SPARQL] SELECT query result: {answer}")
+                return answer, query
+            else:
+                print("[SPARQL] Query returned no results")
+                return "unknown", query
+
+    except Exception as e:
+        print(f"[ERROR] SPARQL execution failed: {e}")
+        return None, query
+
+
 async def process_question(
     agent: KQAProAgent,
     item: Dict[str, Any],
     question_idx: int,
     total_questions: int,
-    client: OpenAI
+    client: OpenAI,
+    postprocessing_mode: str = "choice",
+    sparql_wrapper: Optional[SPARQLWrapper] = None
 ) -> Dict[str, Any]:
     """
     Process a single question through the agent and collect metadata.
@@ -248,6 +544,8 @@ async def process_question(
         question_idx: Current question index (0-based)
         total_questions: Total number of questions being processed
         client: OpenAI client for answer selection
+        postprocessing_mode: Either "choice" (multiple choice selection) or "sparql" (SPARQL synthesis)
+        sparql_wrapper: SPARQLWrapper instance (required if postprocessing_mode is "sparql")
 
     Returns:
         Dictionary with results and metadata
@@ -276,20 +574,46 @@ async def process_question(
         end_time = time.time()
         duration = end_time - start_time
 
-        # Post-processing: Select answer from choices using LLM
+        # Post-processing: Select answer based on mode
         selected_answer = None
         accuracy = False
+        synthesized_sparql = None
 
-        if choices and len(choices) > 0:
-            selected_answer = select_answer_from_choices(
+        if postprocessing_mode == "sparql":
+            # SPARQL-based postprocessing
+            if sparql_wrapper is None:
+                raise ValueError("SPARQL wrapper is required for sparql postprocessing mode")
+
+            selected_answer, synthesized_sparql = execute_sparql_postprocessing(
                 question=question,
-                predicted_answer=predicted_answer,
-                choices=choices,
-                client=client
+                agent_messages=agent._messages,
+                client=client,
+                sparql_wrapper=sparql_wrapper
             )
-            # Calculate accuracy by comparing selected answer to gold answer (case-insensitive)
+
+            # Calculate accuracy by comparing SPARQL result to gold answer
             if gold_answer and selected_answer:
-                accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
+                # For count questions, compare as numbers
+                if qtype == "Count":
+                    try:
+                        accuracy = int(selected_answer) == int(gold_answer)
+                    except (ValueError, TypeError):
+                        accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
+                else:
+                    accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
+
+        else:
+            # Choice-based postprocessing (original behavior)
+            if choices and len(choices) > 0:
+                selected_answer = select_answer_from_choices(
+                    question=question,
+                    predicted_answer=predicted_answer,
+                    choices=choices,
+                    client=client
+                )
+                # Calculate accuracy by comparing selected answer to gold answer (case-insensitive)
+                if gold_answer and selected_answer:
+                    accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
 
         # Collect metadata
         result = {
@@ -307,6 +631,8 @@ async def process_question(
             "number_of_turns_used": len([m for m in agent._messages if (isinstance(m, dict) and m.get("role") == "assistant") or (hasattr(m, "role") and m.role == "assistant")]),
             "gold_sparql_query": gold_sparql,
             "extracted_sparql_query": None,  # Would need to parse from agent output
+            "synthesized_sparql_query": synthesized_sparql,  # SPARQL query from postprocessing
+            "postprocessing_mode": postprocessing_mode,  # Which method was used
             "program": program,
             "choices": choices,
             "success": True,
@@ -336,6 +662,8 @@ async def process_question(
             "number_of_turns_used": 0,
             "gold_sparql_query": gold_sparql,
             "extracted_sparql_query": None,
+            "synthesized_sparql_query": None,
+            "postprocessing_mode": postprocessing_mode,
             "program": program,
             "choices": choices,
             "success": False,
@@ -446,6 +774,7 @@ def save_batch_results(
     print(f"\n{'='*80}")
     print("BATCH SUMMARY")
     print(f"{'='*80}")
+    print(f"Postprocessing Mode: {config.get('postprocessing_mode', 'N/A')}")
     print(f"Total Questions:     {len(results)}")
     print(f"Successful:          {len(successful)}")
     print(f"Failed:              {len(failed)}")
@@ -471,21 +800,23 @@ def save_batch_results(
 # MAIN BATCH PROCESSING
 # ============================================================================
 
-async def run_batch(n_questions: int = 10, seed: int = 42):
+async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: str = "choice"):
     """
     Run a complete batch processing job.
 
     Args:
         n_questions: Number of questions to sample and process
         seed: Random seed for reproducibility
+        postprocessing_mode: Postprocessing method - "choice" (multiple choice) or "sparql" (SPARQL synthesis)
     """
     print(f"\n{'='*80}")
     print("KQAPro Batch Runner")
     print(f"{'='*80}")
     print(f"Configuration:")
-    print(f"  Questions:  {n_questions}")
-    print(f"  Seed:       {seed}")
-    print(f"  Dataset:    {VALIDATION_DATASET_PATH}")
+    print(f"  Questions:            {n_questions}")
+    print(f"  Seed:                 {seed}")
+    print(f"  Postprocessing Mode:  {postprocessing_mode}")
+    print(f"  Dataset:              {VALIDATION_DATASET_PATH}")
     print(f"{'='*80}\n")
 
     # Create batch folder
@@ -508,16 +839,32 @@ async def run_batch(n_questions: int = 10, seed: int = 42):
         api_key=OPENROUTER_API_KEY
     )
 
+    # Create SPARQL wrapper if needed for sparql postprocessing mode
+    sparql_wrapper = None
+    if postprocessing_mode == "sparql":
+        sparql_wrapper = SPARQLWrapper(VIRTUOSO_ENDPOINT)
+        sparql_wrapper.setReturnFormat(JSON)
+        print(f"[OK] Connected to Virtuoso endpoint: {VIRTUOSO_ENDPOINT}\n")
+
     # Process all questions
     results = []
     for i, item in enumerate(sampled_questions):
-        result = await process_question(agent, item, i, len(sampled_questions), client)
+        result = await process_question(
+            agent=agent,
+            item=item,
+            question_idx=i,
+            total_questions=len(sampled_questions),
+            client=client,
+            postprocessing_mode=postprocessing_mode,
+            sparql_wrapper=sparql_wrapper
+        )
         results.append(result)
 
     # Save results
     config = {
         "n_questions": n_questions,
         "seed": seed,
+        "postprocessing_mode": postprocessing_mode,
         "dataset_path": str(VALIDATION_DATASET_PATH),
         "total_available": len(validation_data)
     }
@@ -550,11 +897,22 @@ def main():
         default=42,
         help="Random seed for reproducibility (default: 42)"
     )
+    parser.add_argument(
+        "--postprocessing_mode",
+        type=str,
+        choices=["choice", "sparql"],
+        default="choice",
+        help="Postprocessing method: 'choice' for multiple choice selection, 'sparql' for SPARQL synthesis (default: choice)"
+    )
 
     args = parser.parse_args()
 
     # Run the batch
-    asyncio.run(run_batch(n_questions=args.n_questions, seed=args.seed))
+    asyncio.run(run_batch(
+        n_questions=args.n_questions,
+        seed=args.seed,
+        postprocessing_mode=args.postprocessing_mode
+    ))
 
 
 if __name__ == "__main__":

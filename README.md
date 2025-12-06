@@ -7,7 +7,8 @@
 - [x] Debug Agents
 - [ ] Optimize Tools (Runtime and Context)
 - [ ] Add Logging for duration of toolcalls
-- [ ] Add 10 Answeroptions to the agent prompt
+- [x] Add 10 Answeroptions to the agent prompt
+- [ ] Keep MCP Server open over Batch processing run
 
 ## Batch Processing
 
@@ -34,6 +35,7 @@ python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 50 --seed 123
 ### Output
 
 Each batch creates a folder with:
+
 - `sampled_questions.json` - The questions selected for this batch
 - `results.json` - Detailed results for each question with all metadata (including selected_answer and accuracy)
 - `summary.json` - Summary statistics with overall and per-question-type accuracy rates
