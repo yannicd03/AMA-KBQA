@@ -1,0 +1,82 @@
+# AMA KBQA Configuration File
+
+[llm]
+# Active LLM provider for chat/reasoning tasks
+# Options: "lm_studio", "openrouter", "kit_ollama", "deepseek", "zai"
+chat_provider = "openrouter"
+
+# Active LLM provider for embedding tasks
+# Options: "lm_studio", "openrouter", "kit_ollama"
+embedding_provider = "openrouter"
+
+# Model parameters
+chat_temperature = 0.2
+chat_max_tokens = 4000
+embedding_temperature = 0.0
+
+[lm_studio]
+# Local LM Studio server settings
+base_url = "http://localhost:1234/v1"
+# Model identifiers
+chat_model = "qwen/qwen3-14b"
+embedding_model = "text-embedding-3-small"
+# API key (can be any string for local servers)
+api_key = "lm-studio"
+
+[openrouter]
+# OpenRouter API settings (https://openrouter.ai/)
+base_url = "https://openrouter.ai/api/v1"
+# Model identifiers (use OpenRouter model names)
+# Examples: "anthropic/claude-3.5-sonnet", "google/gemini-pro-1.5", "openai/gpt-4-turbo"
+chat_model = "openai/gpt-oss-120b"
+embedding_model = "qwen/qwen3-embedding-8b"
+# API key will be read from OPENROUTER_API_KEY environment variable
+
+[kit_ollama]
+# KIT Ollama endpoint (https://ki-toolbox.scc.kit.edu/ollama)
+base_url = "https://ki-toolbox.scc.kit.edu/ollama/api"
+# Model identifier
+chat_model = "gpt-oss:120b"
+# API token will be read from KIT_OLLAMA_TOKEN environment variable
+# For embeddings, you can use a different model or fallback to another provider
+
+[deepseek]
+# DeepSeek API settings (https://platform.deepseek.com/)
+base_url = "https://api.deepseek.com/v1"
+# Model identifier
+chat_model = "deepseek-chat"
+embedding_model = "deepseek-embedding"
+# API key will be read from DEEPSEEK_API_KEY environment variable
+
+[zai]
+# z.ai API settings (https://z.ai/)
+base_url = "https://api.z.ai/v1"
+# Model identifier
+chat_model = "glm-4.6"
+# API key will be read from ZAI_API_KEY environment variable
+
+[database]
+# Qdrant vector database settings
+qdrant_host = "localhost"
+qdrant_port = 6333
+collection_entities = "kqapro-entities"
+collection_relations = "kqapro-relations"
+
+# Virtuoso SPARQL endpoint
+virtuoso_endpoint = "http://localhost:8890/sparql"
+
+[search]
+# Vector search parameters
+top_n = 5
+score_threshold = 0.7
+
+[logging]
+# Logging configuration
+level = "INFO"
+
+[postprocessing]
+# LLM Judge configuration for batch processing
+# The judge evaluates answer correctness, reasoning quality, and provides improvement suggestions
+judge_provider = "openrouter"  # Which LLM provider to use for judging
+judge_model = "openai/gpt-oss-120b"  # Model for judging (can be different from chat_model)
+judge_temperature = 0.0  # Lower temperature for more consistent judgments

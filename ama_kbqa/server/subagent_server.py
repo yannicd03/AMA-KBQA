@@ -15,7 +15,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 # --- Configuration ---
-QDRANT_HOST = "localhost"  # TODO Fix Adress
+QDRANT_HOST = "localhost"  # TODO Fix Address
 QDRANT_PORT = 6333
 COLLECTION_ENTITIES = "kqapro-entities"
 COLLECTION_RELATIONS = "kqapro-relations"

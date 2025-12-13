@@ -19,6 +19,24 @@ load_dotenv(find_dotenv())
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# Import configuration utilities
+sys.path.insert(0, str(REPO_ROOT))
+from ama_kbqa.config import (
+    get_chat_client,
+    get_embedding_client,
+    get_chat_model_name,
+    get_embedding_model_name,
+    get_chat_temperature,
+    get_chat_max_tokens,
+    get_qdrant_host,
+    get_qdrant_port,
+    get_virtuoso_endpoint,
+    get_collection_entities,
+    get_collection_relations,
+    get_top_n,
+    get_score_threshold,
+)
+
 # Configure logger
 log_dir = REPO_ROOT / "logs"
 log_dir.mkdir(exist_ok=True)
@@ -30,18 +48,18 @@ logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}"
 )
 
-# --- Configuration ---
-QDRANT_HOST = "localhost"
-QDRANT_PORT = 6333
-COLLECTION_ENTITIES = "kqapro-entities"
-COLLECTION_RELATIONS = "kqapro-relations"
-VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_MODEL = "qwen/qwen3-embedding-8b"
-OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
-CHAT_MODEL = "minimax/minimax-m2"
-TOP_N = 5
-SCORE_THRESHHOLD = 0.7
+# --- Configuration from config.toml ---
+QDRANT_HOST = get_qdrant_host()
+QDRANT_PORT = get_qdrant_port()
+COLLECTION_ENTITIES = get_collection_entities()
+COLLECTION_RELATIONS = get_collection_relations()
+VIRTUOSO_ENDPOINT = get_virtuoso_endpoint()
+EMBEDDING_MODEL = get_embedding_model_name()
+CHAT_MODEL = get_chat_model_name()
+CHAT_TEMPERATURE = get_chat_temperature()
+CHAT_MAX_TOKENS = get_chat_max_tokens()
+TOP_N = get_top_n()
+SCORE_THRESHHOLD = get_score_threshold()
 
 # --- 1. Define a Context Class for Type Safety ---
 
@@ -64,7 +82,8 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 class AppContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     qdrant: QdrantClient
-    openai: OpenAI
+    chat_client: OpenAI  # Client for chat/reasoning tasks
+    embedding_client: OpenAI  # Client for embedding tasks
     sparql: Any  # SPARQLWrapper is not easily Pydantic-serializable, usually fine as Any
 
 
@@ -212,24 +231,28 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     Code before 'yield' runs on startup.
     Code after 'yield' runs on shutdown.
     """
-    logger.info("Starting up: Connecting to Qdrant & OpenAI...")
+    logger.info("Starting up: Connecting to Qdrant & LLM providers...")
 
     try:
-        # Initialize Clients
+        # Initialize Clients using config.toml
         qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)  # TODO Use Async Client instead?
 
         # Quick connectivity check
         qdrant.get_collections()
 
-        openai = OpenAI(
-            base_url=OPENROUTER_BASE_URL,
-            api_key=os.environ['OPENROUTER_API_KEY']
-        )
+        # Get LLM clients from config
+        chat_client = get_chat_client()
+        embedding_client = get_embedding_client()
 
         sparql = SPARQLWrapper(VIRTUOSO_ENDPOINT)
         sparql.setReturnFormat(JSON)
         # Yield the context so tools can access it
-        yield AppContext(qdrant=qdrant, openai=openai, sparql=sparql)
+        yield AppContext(
+            qdrant=qdrant,
+            chat_client=chat_client,
+            embedding_client=embedding_client,
+            sparql=sparql
+        )
 
     except Exception as e:
         logger.error(f"Something went wrong: {e}")
@@ -250,7 +273,7 @@ mcp = FastMCP("KG-Search-Server", lifespan=server_lifespan)
 def get_embedding(client: OpenAI, text: str) -> list[float]:
     text = text.replace("\n", " ")
     response = client.embeddings.create(
-        model=OPENROUTER_MODEL,
+        model=EMBEDDING_MODEL,
         input=[text],
         encoding_format="float"
     )
@@ -422,11 +445,11 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
 
     messages = [{"role": "system", "content": prompt}]
     try:
-        # Use the OpenAI client from the app_context
-        response = app_context.openai.chat.completions.create(
+        # Use the chat client from the app_context
+        response = app_context.chat_client.chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
-            temperature=0.2,  # Low temperature for classification stability
+            temperature=CHAT_TEMPERATURE,
         )
 
         # Parse the standard OpenAI object response
@@ -486,35 +509,40 @@ def ManageJournal(
     return session_journal.to_str()
 
 
-# @mcp.tool
-# def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
-#     """
-#     Extracts entities/concepts and relations from a natural language query
-#     using structured output.
-#     """
-#     app_context: AppContext = context.request_context.lifespan_context
+@mcp.tool
+@log_tool_duration
+def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
+    """
+    Extracts entities/concepts and relations from a natural language query
+    using structured output.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
 
-#     model = CHAT_MODEL
+    model = CHAT_MODEL
 
-#     try:
-#         completion = app_context.openai.beta.chat.completions.parse(
-#             model=model,
-#             messages=[
-#                 {
-#                     "role": "system",
-#                     "content": "Extract the semantic entities/concepts and relations from the user query."
-#                 },
-#                 {"role": "user", "content": query}
-#             ],
-#             response_format=ExtractionResponse,
-#         )
+    try:
+        logger.info(f"EntityExtraction called with query: {query[:100]}...")
 
-#         return completion.choices[0].message.parsed
+        completion = app_context.chat_client.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Extract the semantic entities/concepts and relations from the user query."
+                },
+                {"role": "user", "content": query}
+            ],
+            response_format=ExtractionResponse,
+            timeout=30.0  # Add 30-second timeout
+        )
 
-#     except Exception as e:
-#         logger.error(f"Entity Extraction failed: {e}")
-#         # Return empty lists on failure to maintain type safety
-#         return ExtractionResponse(**{"entities/concepts": [], "relations": []})
+        logger.info(f"EntityExtraction completed successfully")
+        return completion.choices[0].message.parsed
+
+    except Exception as e:
+        logger.error(f"Entity Extraction failed: {e}")
+        # Return empty lists on failure to maintain type safety
+        return ExtractionResponse(**{"entities/concepts": [], "relations": []})
 
 
 @mcp.tool
@@ -542,7 +570,7 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
 
     try:
         # 2. Generate Embedding
-        vector = get_embedding(app_context.openai, semantic_node_name)
+        vector = get_embedding(app_context.embedding_client, semantic_node_name)
 
         # 3. Search Qdrant
         # We request the payload explicitly (though it is True by default)
@@ -597,7 +625,7 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
     sparql: SPARQLWrapper = ctx.sparql
 
     # 1. Embed the relation query
-    vector = get_embedding(ctx.openai, semantic_relation_name)
+    vector = get_embedding(ctx.embedding_client, semantic_relation_name)
 
     # 2. Find candidates in Qdrant
     candidates = ctx.qdrant.search(
