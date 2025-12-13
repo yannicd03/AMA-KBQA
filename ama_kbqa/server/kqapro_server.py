@@ -1,3 +1,18 @@
+from ama_kbqa.config import (
+    get_chat_client,
+    get_embedding_client,
+    get_chat_model_name,
+    get_embedding_model_name,
+    get_chat_temperature,
+    get_chat_max_tokens,
+    get_qdrant_host,
+    get_qdrant_port,
+    get_virtuoso_endpoint,
+    get_collection_entities,
+    get_collection_relations,
+    get_top_n,
+    get_score_threshold,
+)
 import os
 import sys
 import time
@@ -23,21 +38,6 @@ FEWSHOT_EXAMPLES_DIR = REPO_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examp
 
 # Import configuration utilities
 sys.path.insert(0, str(REPO_ROOT))
-from ama_kbqa.config import (
-    get_chat_client,
-    get_embedding_client,
-    get_chat_model_name,
-    get_embedding_model_name,
-    get_chat_temperature,
-    get_chat_max_tokens,
-    get_qdrant_host,
-    get_qdrant_port,
-    get_virtuoso_endpoint,
-    get_collection_entities,
-    get_collection_relations,
-    get_top_n,
-    get_score_threshold,
-)
 
 # Configure logger
 log_dir = REPO_ROOT / "logs"
@@ -107,10 +107,14 @@ class NodeMatch(BaseModel):
         ...,
         description="Vector similarity score (0-1), higher is better."
     )
-    # --- NEW FIELD FOR SHAPE INFORMED PROMPTING ---
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
-        description="The full node payload containing attributes, relations, and schema info."
+    # --- REDUCED METADATA FOR CONTEXT EFFICIENCY ---
+    available_attributes: list[str] = Field(
+        default_factory=list,
+        description="List of unique attribute keys available for this node (e.g., 'population', 'area', 'inception')."
+    )
+    available_predicates: list[str] = Field(
+        default_factory=list,
+        description="List of unique relation predicates available for this node (e.g., 'country', 'located in time zone')."
     )
 
 
@@ -167,7 +171,7 @@ class SPARQLResponse(BaseModel):
 
 
 class QtypePredictionResponse(BaseModel):
-    """Predicted question type classification."""
+    """Predicted question type classification with curated examples."""
     question_type: Literal[
         "Count",
         "Verify",
@@ -179,6 +183,10 @@ class QtypePredictionResponse(BaseModel):
         "QueryRelationQualifier",
         "QueryName"
     ] = Field(..., description="The classified question type from KQAPro taxonomy.")
+    fewshot_examples: str = Field(
+        default="",
+        description="Curated few-shot examples for this question type to guide the agent in answering effectively."
+    )
 
 
 class JournalState(BaseModel):
@@ -303,7 +311,7 @@ def log_tool_duration(func):
     return wrapper
 
 
-def load_fewshot_examples(max_per_type: int = 10) -> str:
+def load_fewshot_examples(max_per_type: int = 10, specific_qtype: Optional[str] = None) -> str:
     """
     Load few-shot examples from the fewshot-examples directory.
 
@@ -312,6 +320,7 @@ def load_fewshot_examples(max_per_type: int = 10) -> str:
 
     Args:
         max_per_type: Maximum number of examples to load per question type
+        specific_qtype: If provided, only load examples for this specific question type
 
     Returns:
         Formatted string containing few-shot examples, or empty string if none available
@@ -320,11 +329,15 @@ def load_fewshot_examples(max_per_type: int = 10) -> str:
         logger.warning(f"Few-shot examples directory not found: {FEWSHOT_EXAMPLES_DIR}")
         return ""
 
-    qtypes = [
-        "Count", "Verify", "SelectBetween", "SelectAmong",
-        "QueryAttr", "QueryAttrQualifier", "QueryRelation",
-        "QueryRelationQualifier", "QueryName"
-    ]
+    # If specific_qtype is provided, only load that type's examples
+    if specific_qtype:
+        qtypes = [specific_qtype]
+    else:
+        qtypes = [
+            "Count", "Verify", "SelectBetween", "SelectAmong",
+            "QueryAttr", "QueryAttrQualifier", "QueryRelation",
+            "QueryRelationQualifier", "QueryName"
+        ]
 
     all_examples = []
 
@@ -389,34 +402,38 @@ def load_fewshot_examples(max_per_type: int = 10) -> str:
 
 # --- 5. Refactored Tool using Context ---
 
+class _QtypeClassification(BaseModel):
+    """Internal model for structured qtype classification output."""
+    question_type: Literal[
+        "Count",
+        "Verify",
+        "SelectBetween",
+        "SelectAmong",
+        "QueryAttr",
+        "QueryAttrQualifier",
+        "QueryRelation",
+        "QueryRelationQualifier",
+        "QueryName"
+    ] = Field(..., description="The classified question type from KQAPro taxonomy.")
 
-@mcp.tool
-@log_tool_duration
-def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredictionResponse:
+
+def _build_classification_prompt(question: str, fewshot_examples: str = "") -> str:
     """
-    Classifies a single question using the LLM with curated few-shot examples.
-
-    Loads up to 10 examples per question type from db/datasets/kqapro/fewshot-examples
-    to improve classification accuracy through few-shot learning.
+    Build the classification prompt with optional few-shot examples.
 
     Args:
-        question_to_classify (str): The question to classify.
+        question: The question to classify
+        fewshot_examples: Pre-formatted few-shot examples section (optional)
 
     Returns:
-        QtypePredictionResponse: The predicted question type classification.
+        The complete prompt string
     """
-    app_context: AppContext = context.request_context.lifespan_context
-
-    # Load few-shot examples from curated files
-    fewshot_examples = load_fewshot_examples(max_per_type=10)
-
-    # The prompt now uses the pre-formatted examples directly
-    prompt = f"""
+    return f"""
         ### Task
         You are a question classification assistant.
-        
+
         Your goal is to classify the following question into **exactly one** of the 9 KQA-Pro categories:
-        
+
         - Count
         - Verify
         - SelectBetween
@@ -426,56 +443,53 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
         - QueryRelation
         - QueryRelationQualifier
         - QueryName
-        
-        You must reason through a structured decision process before answering.  
-        At each step, evaluate whether a specific type fits based on the question's content.  
+
+        You must reason through a structured decision process before answering.
+        At each step, evaluate whether a specific type fits based on the question's content.
         If a later step reveals a better fit, you are allowed to go back and revise the earlier decision.
-        
-        Your final answer must be a **single line**:
-        Qtype: <TYPE>
-        
-        
+
+
         ────────────────────────────────────────
         ### Explanation of Each Question Type
-        
-        1. **Count** Use this type if the question asks directly for a **number or quantity** of things.  
-        Typical phrases include “How many…?”, “What is the number of…?”, or “Count the…”.  
-        The expected answer is a non-negative integer.  
+
+        1. **Count** Use this type if the question asks directly for a **number or quantity** of things.
+        Typical phrases include "How many…?", "What is the number of…?", or "Count the…".
+        The expected answer is a non-negative integer.
         Note: even if entities are mentioned, the focus must be on **counting** them, not on what they are or when something happened.
-        
-        2. **Verify** Choose this type if the question can be answered with a clear “yes” or “no”.  
-        It will usually be phrased as a **factual check**, e.g., “Is…?”, “Did…?”, “Was…?”, and refers to a full statement.  
+
+        2. **Verify** Choose this type if the question can be answered with a clear "yes" or "no".
+        It will usually be phrased as a **factual check**, e.g., "Is…?", "Did…?", "Was…?", and refers to a full statement.
         Only use Verify if the statement is **complete enough** to verify independently — no missing subjects or vague phrases.
-        
-        3. **SelectBetween** This type applies when the question explicitly names **exactly two distinct entities** and compares them on a **single measurable attribute**.  
-        Comparative words such as “more”, “older”, “faster”, or “better” must appear.  
+
+        3. **SelectBetween** This type applies when the question explicitly names **exactly two distinct entities** and compares them on a **single measurable attribute**.
+        Comparative words such as "more", "older", "faster", or "better" must appear.
         Avoid choosing SelectBetween if more than two entities are listed or if no comparison is being made.
-        
-        4. **SelectAmong** Use this type when a group or class of entities is involved and the question asks which one has an **extreme property** (e.g., the biggest, fastest, most successful).  
-        A superlative is usually present — “most”, “least”, “biggest”, “oldest”, etc.  
-        If a list is given or a general class (e.g., “Which planet…”), and only one is being selected as “best” or “most”, this is SelectAmong.
-        
-        5. **QueryAttr** Select this type if the question names a specific entity (like a person, company, city) and asks for a **literal attribute** (date, population, height, etc.).  
-        Examples include “What is the population of Tokyo?” or “When was Google founded?”  
+
+        4. **SelectAmong** Use this type when a group or class of entities is involved and the question asks which one has an **extreme property** (e.g., the biggest, fastest, most successful).
+        A superlative is usually present — "most", "least", "biggest", "oldest", etc.
+        If a list is given or a general class (e.g., "Which planet…"), and only one is being selected as "best" or "most", this is SelectAmong.
+
+        5. **QueryAttr** Select this type if the question names a specific entity (like a person, company, city) and asks for a **literal attribute** (date, population, height, etc.).
+        Examples include "What is the population of Tokyo?" or "When was Google founded?"
         Do not choose QueryAttr if the question also includes a time or place constraint — in that case, prefer QueryAttrQualifier.
-        
-        6. **QueryAttrQualifier** This type is a refinement of QueryAttr: it still asks for a property of a single entity, but now with a **qualifying context** like “in 2020”, “at night”, or “during WWII”.  
+
+        6. **QueryAttrQualifier** This type is a refinement of QueryAttr: it still asks for a property of a single entity, but now with a **qualifying context** like "in 2020", "at night", or "during WWII".
         The key difference is that QueryAttrQualifier adds a **constraint or filter** to the value being requested.
-        
-        7. **QueryRelation** Use this type if the question involves two entities and asks **what connects them**.  
-        Typical patterns include: “Who directed Inception?”, “How is X related to Y?”, “Who founded Tesla?”  
+
+        7. **QueryRelation** Use this type if the question involves two entities and asks **what connects them**.
+        Typical patterns include: "Who directed Inception?", "How is X related to Y?", "Who founded Tesla?"
         The expected answer is the **name of the relation** or **the entity that serves as a link**.
-        
-        8. **QueryRelationQualifier** This type builds on QueryRelation. Use it when the relation is already assumed or known, and the question now asks about **its context** — such as when it occurred, in what role, or under what conditions.  
-        For example: “When did X direct Y?” or “In what role did X work at Y?”
-        
-        9. **QueryName** This applies when the question gives a description (using attributes, relations, or actions) and asks **who or what entity** matches it.  
-        Examples: “Who discovered penicillin?”, “Which scientist developed relativity?”  
+
+        8. **QueryRelationQualifier** This type builds on QueryRelation. Use it when the relation is already assumed or known, and the question now asks about **its context** — such as when it occurred, in what role, or under what conditions.
+        For example: "When did X direct Y?" or "In what role did X work at Y?"
+
+        9. **QueryName** This applies when the question gives a description (using attributes, relations, or actions) and asks **who or what entity** matches it.
+        Examples: "Who discovered penicillin?", "Which scientist developed relativity?"
         Here, the subject or object is **unknown**, and the question seeks the **name of the entity**.
-        
+
         ────────────────────────────────────────
         ### Structural Comparison Table (Yes/No Logic)
-        
+
         | Type                  | Asks count | Yes/No | Attribute | Needs qualifier | Two entities | Superlative | Comparison | Needs name |
         |-----------------------|------------|--------|-----------|------------------|---------------|-------------|------------|-------------|
         | Count                 | Yes        | No     | No        | No               | No            | No          | No         | No          |
@@ -492,78 +506,115 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
         {fewshot_examples}
         ────────────────────────────────────────
         ### Classification Logic: Step-by-Step Reasoning
-        
+
         You must now classify the input question by walking through this chain of thought:
-        
-        **Step 1** Is the question primarily asking for a **number** of things?  
-        → If yes, the correct type is likely **Count**.  
-        → However, if it adds time/place context (e.g. “in 2020”), consider revisiting this as **QueryAttrQualifier**.
-        
-        **Step 2** Is the question a **yes/no statement** that can be verified as true or false?  
-        → If yes, this points to **Verify**.  
+
+        **Step 1** Is the question primarily asking for a **number** of things?
+        → If yes, the correct type is likely **Count**.
+        → However, if it adds time/place context (e.g. "in 2020"), consider revisiting this as **QueryAttrQualifier**.
+
+        **Step 2** Is the question a **yes/no statement** that can be verified as true or false?
+        → If yes, this points to **Verify**.
         → But if it instead expects a specific name or value, this is incorrect.
-        
-        **Step 3** Does the question mention **exactly two entities**, and compare them on a property?  
-        → If yes, and words like “more”, “less”, “faster” appear → choose **SelectBetween**.  
+
+        **Step 3** Does the question mention **exactly two entities**, and compare them on a property?
+        → If yes, and words like "more", "less", "faster" appear → choose **SelectBetween**.
         → If only one item is selected from a group → go to Step 4 instead.
-        
-        **Step 4** Does the question include a **superlative** like “most”, “least”, “biggest”, or refer to a group/list of candidates?  
+
+        **Step 4** Does the question include a **superlative** like "most", "least", "biggest", or refer to a group/list of candidates?
         → If yes → this is likely **SelectAmong**.
-        
-        **Step 5** Does the question involve **two named entities** and ask what **relation** connects them?  
-        → If yes → choose **QueryRelation**.  
+
+        **Step 5** Does the question involve **two named entities** and ask what **relation** connects them?
+        → If yes → choose **QueryRelation**.
         → If the question asks **when/where/how** that relation took place → choose **QueryRelationQualifier**.
-        
-        **Step 6** Does the question mention **one entity** and ask for a **specific value** (e.g., date, amount, status)?  
-        → If yes, and no qualifier is present → this is **QueryAttr**.  
+
+        **Step 6** Does the question mention **one entity** and ask for a **specific value** (e.g., date, amount, status)?
+        → If yes, and no qualifier is present → this is **QueryAttr**.
         → If there is a time/place condition → switch to **QueryAttrQualifier**.
-        
-        **Step 7** Does the question ask **who or what** matches a description, where the entity is **not explicitly named**?  
+
+        **Step 7** Does the question ask **who or what** matches a description, where the entity is **not explicitly named**?
         → If yes → this is **QueryName**.
-        
+
         You may revisit previous steps if you realize a better fit based on qualifiers, phrasing, or intent.
-        
+
         ────────────────────────────────────────
-        ### Scratchpad (internal reasoning — DO NOT SHOW TO USER)
-        <scratch>
-        
-        ────────────────────────────────────────
-        ### Final
-        Output exactly one line:
-        Qtype: <TYPE>
-        
-        ────────────────────────────────────────
-        ### Question
-        {question_to_classify}
+        ### Question to Classify
+        {question}
     """
 
+
+def _classify_question(app_context: AppContext, question: str, fewshot_examples: str) -> str:
+    """
+    Helper function to classify a question using the LLM with structured output.
+
+    Args:
+        app_context: The application context with LLM clients
+        question: The question to classify
+        fewshot_examples: Pre-formatted few-shot examples (can be empty)
+
+    Returns:
+        The predicted question type as a string
+    """
+    prompt = _build_classification_prompt(question, fewshot_examples)
     messages = [{"role": "system", "content": prompt}]
+
     try:
-        # Use the chat client from the app_context
-        response = app_context.chat_client.chat.completions.create(
+        # Use structured output for robust extraction
+        completion = app_context.chat_client.beta.chat.completions.parse(
             model=CHAT_MODEL,
             messages=messages,
             temperature=CHAT_TEMPERATURE,
+            response_format=_QtypeClassification, #TODO: Optional: Add reasoning key to see the models internal reasoning process for better tracability
         )
 
-        # Parse the standard OpenAI object response
-        content = response.choices[0].message.content.strip()
-
-        # Extract the type after "Qtype: "
-        if "Qtype: " in content:
-            choice = content.split("Qtype: ")[-1].strip()
-        else:
-            # Fallback if the model outputted just the type directly
-            choice = content
-
-        logger.info(f"Question: {question_to_classify}")
-        logger.info(f"Predicted qtype: {choice}")
-
-        return QtypePredictionResponse(question_type=choice)
+        parsed_response = completion.choices[0].message.parsed
+        return parsed_response.question_type
 
     except Exception as e:
-        logger.error(f"Error in QtypePrediction: {e}")
+        logger.error(f"Error during classification: {e}")
         raise
+
+
+@mcp.tool
+@log_tool_duration
+def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredictionResponse:
+    """
+    Classifies a question and returns curated few-shot examples for that question type.
+
+    This tool first classifies the question WITHOUT few-shot examples to identify its type.
+    Then it loads curated examples specific to that question type to provide guidance
+    for the agent in answering the question effectively.
+
+    The few-shot examples are NOT used to improve classification accuracy, but rather
+    to provide the agent with relevant context about how to approach questions of this type.
+
+    Args:
+        question_to_classify (str): The question to classify.
+
+    Returns:
+        QtypePredictionResponse: Contains the predicted question type and curated examples
+                                 specific to that type to guide the agent.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+
+    # Classify the question WITHOUT few-shot examples
+    logger.info(f"Classifying question: {question_to_classify}")
+    predicted_qtype = _classify_question(app_context, question_to_classify, fewshot_examples="")
+    logger.info(f"Predicted qtype: {predicted_qtype}")
+
+    # Load few-shot examples specific to this question type
+    logger.info(f"Loading few-shot examples for {predicted_qtype}")
+    specific_examples = load_fewshot_examples(max_per_type=10, specific_qtype=predicted_qtype)
+
+    if specific_examples:
+        logger.info(f"Loaded examples for {predicted_qtype}")
+    else:
+        logger.info(f"No few-shot examples available for {predicted_qtype}")
+
+    return QtypePredictionResponse(
+        question_type=predicted_qtype,
+        fewshot_examples=specific_examples
+    )
 
 
 @mcp.tool
@@ -645,19 +696,21 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     """
     Performs a semantic vector search to identify relevant nodes (Entities or Concepts) within the Knowledge Graph.
 
-    Use this tool to resolve natural language descriptions into concrete Knowledge Graph nodes. 
-    It retrieves the top matches based on vector similarity and returns their full context.
+    Use this tool to resolve natural language descriptions into concrete Knowledge Graph nodes.
+    It retrieves the top matches based on vector similarity and returns their schema information.
 
     Key Features:
     - **Semantic Resolution:** Can find nodes even without exact name matches (e.g., inputting "The capital of France" will find "Paris").
-    - **Shape Retrieval:** Returns the full `metadata` payload (attributes and relations) for every match. This payload provides the "Shape" required for generating accurate, schema-aware SPARQL queries or answers.
+    - **Schema Discovery:** Returns lists of available attributes and predicates for each node. This provides schema awareness without overwhelming context with full payload data.
+    - **Context Efficient:** Returns only unique attribute keys and relation predicates, not full values or nested structures.
 
     Args:
         semantic_node_name (str): The search query. This can be a specific entity name (e.g., "Berlin") or a descriptive phrase (e.g., "German cities with a population over 3 million").
         context (Context): The FastMCP request context containing the active database connections.
 
     Returns:
-        SearchResponse: A structured object containing a list of `NodeMatch` items, each with its original ID, relevance score, and full metadata payload.
+        SearchResponse: A structured object containing a list of `NodeMatch` items, each with its original ID, relevance score,
+                       available attribute keys, and available relation predicates.
     """
     # 1. Get Context
     app_context: AppContext = context.request_context.lifespan_context
@@ -681,13 +734,29 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
         for point in search_results:
             payload = point.payload or {}
 
+            # Extract unique attribute keys from attributes list
+            attributes = payload.get("attributes", [])
+            unique_attributes = sorted(list(set(
+                attr.get("key")
+                for attr in attributes
+                if isinstance(attr, dict) and attr.get("key")
+            )))
+
+            # Extract unique relation predicates from relations list
+            relations = payload.get("relations", [])
+            unique_predicates = sorted(list(set(
+                rel.get("predicate")
+                for rel in relations
+                if isinstance(rel, dict) and rel.get("predicate")
+            )))
+
             match = NodeMatch(
                 original_id=payload.get("original_id", "N/A"),
                 name=payload.get("name", "Unknown"),
                 node_type=payload.get("node_type", "unknown"),
                 relevance_score=point.score,
-                # Pass the entire dictionary as metadata
-                metadata=payload
+                available_attributes=unique_attributes,
+                available_predicates=unique_predicates
             )
             matches.append(match)
 
