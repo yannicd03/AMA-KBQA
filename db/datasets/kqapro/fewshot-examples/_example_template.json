@@ -1,0 +1,10 @@
+[
+  {
+    "question": "Example question here",
+    "reasoning": "Explanation of why this question was classified as this type",
+    "correct_qtype": "Count",
+    "lesson_learned": "Key insight or pattern to remember for future classifications",
+    "argumentation_score": 5,
+    "exported_at": "2025-01-15T10:30:00.000000"
+  }
+]
