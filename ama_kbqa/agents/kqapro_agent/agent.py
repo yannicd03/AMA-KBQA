@@ -18,6 +18,15 @@ from asyncio.exceptions import CancelledError
 
 load_dotenv(override=True)
 
+# Import configuration utilities
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from ama_kbqa.config import (
+    get_chat_client,
+    get_chat_model_name,
+    get_chat_temperature,
+    get_chat_max_tokens,
+)
+
 # --- TRACING & COLORS ---
 
 COLOR_BLUE = '\033[94m'
@@ -45,11 +54,8 @@ ama_kbqa_root = current_file.parents[2]
 default_subagent_server_path = ama_kbqa_root / "server" / "kqapro_server.py"
 
 # --- CONFIGURATION ---
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "arcee-ai/trinity-mini")
+# Configuration is now loaded from config.toml via ama_kbqa.config
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
-
 MCP_SERVER_PATH = os.getenv("SUBAGENT_SERVER_PATH", str(default_subagent_server_path))
 
 
@@ -111,19 +117,19 @@ class MCPClient:
 class KQAProAgent:
 
     def __init__(self, name: str = "kqapro_agent", session_id: str = "default"):
-        if not OPENROUTER_API_KEY:
-            raise RuntimeError("OPENROUTER_API_KEY missing in .env")
-
         self.name = name
         self.session_id = session_id
         self.mcp: Optional[MCPClient] = None
 
-        self.client = OpenAI(
-            base_url=OPENROUTER_BASE_URL,
-            api_key=OPENROUTER_API_KEY
-        )
+        # Get chat client and model from config.toml
+        try:
+            self.client = get_chat_client()
+            self.model = get_chat_model_name()
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise RuntimeError(
+                f"Failed to initialize LLM client from config.toml: {e}"
+            )
 
-        self.model = MODEL_NAME
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
         # NEW: Token Tracking

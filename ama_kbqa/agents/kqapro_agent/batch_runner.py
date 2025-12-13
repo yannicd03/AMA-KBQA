@@ -5,8 +5,7 @@ This script processes a random sample of questions from the validation dataset
 and saves detailed results including metadata for analysis.
 
 Usage:
-    python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42
-    --postprocessing_mode sparql 
+    python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42 --postprocessing_mode sparql 
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ import json
 import random
 import time
 import argparse
+import toml
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -25,6 +25,7 @@ from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 from SPARQLWrapper import SPARQLWrapper, JSON
+from pydantic import BaseModel, Field
 
 # Load environment variables
 load_dotenv(override=True)
@@ -68,8 +69,84 @@ BATCH_RESULTS_BASE_DIR.mkdir(exist_ok=True)
 
 
 # ============================================================================
+# PYDANTIC MODELS FOR STRUCTURED OUTPUT
+# ============================================================================
+
+class AnswerJudgment(BaseModel):
+    """Structured judgment of an answer's correctness and quality."""
+
+    is_correct: bool = Field(
+        description="Whether the predicted answer matches the gold answer (semantically equivalent)"
+    )
+
+    correctness_reasoning: str = Field(
+        description="Detailed explanation of why the answer is correct or incorrect, comparing predicted vs. gold answer"
+    )
+
+    argumentation_quality: str = Field(
+        description="Assessment of the agent's reasoning structure: Was it logical? Did it follow sound steps? Were there gaps or errors in reasoning?"
+    )
+
+    argumentation_score: int = Field(
+        ge=1, le=5,
+        description="Numeric score for argumentation quality (1=very poor, 2=poor, 3=acceptable, 4=good, 5=excellent)"
+    )
+
+    suggested_improvement: str = Field(
+        description="Specific, actionable suggestion for how the agent could improve its approach for similar questions in the future"
+    )
+
+
+# ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
+
+def load_judge_config() -> Dict[str, Any]:
+    """
+    Load judge configuration from config.toml.
+
+    Returns:
+        Dictionary with judge configuration
+    """
+    config_path = project_root / "config.toml"
+    if not config_path.exists():
+        print("[WARNING] config.toml not found, using defaults")
+        return {
+            "provider": "openrouter",
+            "model": "minimax/minimax-m2",
+            "temperature": 0.0
+        }
+
+    try:
+        config = toml.load(config_path)
+        postprocessing = config.get("postprocessing", {})
+
+        # Get provider-specific settings
+        provider = postprocessing.get("judge_provider", "openrouter")
+        provider_config = config.get(provider, {})
+
+        judge_model = postprocessing.get("judge_model")
+        if not judge_model:
+            # Fallback to chat_model from the provider
+            judge_model = provider_config.get("chat_model", "minimax/minimax-m2")
+
+        return {
+            "provider": provider,
+            "model": judge_model,
+            "temperature": postprocessing.get("judge_temperature", 0.0),
+            "base_url": provider_config.get("base_url", "https://openrouter.ai/api/v1"),
+            "api_key_env": f"{provider.upper()}_API_KEY" if provider != "openrouter" else "OPENROUTER_API_KEY"
+        }
+    except Exception as e:
+        print(f"[WARNING] Failed to load judge config: {e}, using defaults")
+        return {
+            "provider": "openrouter",
+            "model": "minimax/minimax-m2",
+            "temperature": 0.0,
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_env": "OPENROUTER_API_KEY"
+        }
+
 
 def get_next_batch_folder() -> Path:
     """
@@ -525,6 +602,126 @@ def execute_sparql_postprocessing(
         return None, query
 
 
+def execute_llm_judge_postprocessing(
+    question: str,
+    gold_answer: str,
+    predicted_answer: str,
+    agent_messages: List[Any],
+    client: OpenAI,
+    model_name: str
+) -> tuple[Optional[AnswerJudgment], bool]:
+    """
+    Use an LLM with structured output to judge answer correctness and quality.
+
+    Args:
+        question: The original question
+        gold_answer: The correct answer from the dataset
+        predicted_answer: The agent's predicted answer
+        agent_messages: The agent's message history for reasoning analysis
+        client: OpenAI client for LLM calls
+        model_name: Model to use for judging
+
+    Returns:
+        Tuple of (judgment, accuracy)
+    """
+    # Extract the agent's reasoning from message history
+    reasoning_steps = []
+    for msg in agent_messages:
+        # Handle both dict and object-based messages
+        if isinstance(msg, dict):
+            role = msg.get("role")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls", [])
+        else:
+            role = getattr(msg, "role", None)
+            content = getattr(msg, "content", "")
+            tool_calls = getattr(msg, "tool_calls", [])
+
+        if role == "assistant":
+            if content and content.strip():
+                reasoning_steps.append(f"Agent reasoning: {content[:500]}")
+            if tool_calls:
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        tool_name = tc.get('function', {}).get('name')
+                    else:
+                        tool_name = tc.function.name
+                    reasoning_steps.append(f"Tool used: {tool_name}")
+
+    reasoning_context = "\n".join(reasoning_steps) if reasoning_steps else "No detailed reasoning available"
+
+    # Build the judgment prompt
+    prompt = f"""You are an expert evaluator for a knowledge base question answering system. Your task is to judge the quality of the agent's answer and reasoning process.
+
+Question: {question}
+
+Gold (Correct) Answer: {gold_answer}
+
+Agent's Predicted Answer: {predicted_answer}
+
+Agent's Reasoning Process:
+{reasoning_context}
+
+Evaluate the following:
+
+1. **Correctness**: Does the predicted answer match the gold answer? Consider semantic equivalence, not just exact string matching. For example, "yes" and "Yes, it is true" should both be considered correct if the gold answer is "yes".
+
+2. **Correctness Reasoning**: Explain in detail why you judged the answer as correct or incorrect. Compare the predicted answer to the gold answer.
+
+3. **Argumentation Quality**: Analyze the agent's reasoning process. Was it:
+   - Logical and coherent?
+   - Following sound reasoning steps?
+   - Using appropriate tools?
+   - Making any logical errors or gaps?
+   - Efficient or unnecessarily complex?
+
+4. **Argumentation Score**: Rate the reasoning quality from 1-5:
+   - 1: Very poor (major logical errors, nonsensical approach)
+   - 2: Poor (significant gaps in reasoning, inefficient)
+   - 3: Acceptable (reaches answer but with some issues)
+   - 4: Good (solid reasoning with minor issues)
+   - 5: Excellent (flawless, efficient, well-structured)
+
+5. **Suggested Improvement**: Provide ONE specific, actionable suggestion for how the agent could improve its approach for this type of question in the future.
+
+Provide your judgment in structured format."""
+
+    try:
+        # Use structured output with Pydantic model
+        response = client.beta.chat.completions.parse(
+            model=model_name,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert evaluator for KBQA systems. Provide detailed, fair, and constructive judgments."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            response_format=AnswerJudgment,
+            temperature=0.0  # Deterministic judgments
+        )
+
+        judgment = response.choices[0].message.parsed
+
+        if judgment:
+            print(f"[JUDGE] Correctness: {'✓ CORRECT' if judgment.is_correct else '✗ INCORRECT'}")
+            print(f"[JUDGE] Argumentation Score: {judgment.argumentation_score}/5")
+            print(f"[JUDGE] Reasoning: {judgment.correctness_reasoning[:100]}...")
+            return judgment, judgment.is_correct
+        else:
+            print("[ERROR] Failed to parse judgment from LLM")
+            return None, False
+
+    except Exception as e:
+        print(f"[ERROR] LLM judge failed: {e}")
+        # Fallback to simple string matching
+        simple_match = predicted_answer.lower().strip() == gold_answer.lower().strip()
+        return None, simple_match
+
+
 async def process_question(
     agent: KQAProAgent,
     item: Dict[str, Any],
@@ -532,7 +729,8 @@ async def process_question(
     total_questions: int,
     client: OpenAI,
     postprocessing_mode: str = "choice",
-    sparql_wrapper: Optional[SPARQLWrapper] = None
+    sparql_wrapper: Optional[SPARQLWrapper] = None,
+    judge_model_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Process a single question through the agent and collect metadata.
@@ -542,9 +740,10 @@ async def process_question(
         item: The question item from the validation set
         question_idx: Current question index (0-based)
         total_questions: Total number of questions being processed
-        client: OpenAI client for answer selection
-        postprocessing_mode: Either "choice" (multiple choice selection) or "sparql" (SPARQL synthesis)
+        client: OpenAI client for answer selection/judging
+        postprocessing_mode: "choice" (multiple choice), "sparql" (SPARQL synthesis), or "llm_judge" (LLM evaluation)
         sparql_wrapper: SPARQLWrapper instance (required if postprocessing_mode is "sparql")
+        judge_model_name: Model name for LLM judge (required if postprocessing_mode is "llm_judge")
 
     Returns:
         Dictionary with results and metadata
@@ -577,6 +776,7 @@ async def process_question(
         selected_answer = None
         accuracy = False
         synthesized_sparql = None
+        judgment = None
 
         if postprocessing_mode == "sparql":
             # SPARQL-based postprocessing
@@ -600,6 +800,27 @@ async def process_question(
                         accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
                 else:
                     accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
+
+        elif postprocessing_mode == "llm_judge":
+            # LLM-based judgment postprocessing
+            if judge_model_name is None:
+                raise ValueError("Judge model name is required for llm_judge postprocessing mode")
+
+            # Use the predicted answer directly
+            selected_answer = predicted_answer
+
+            # Get LLM judgment
+            if gold_answer:
+                judgment, accuracy = execute_llm_judge_postprocessing(
+                    question=question,
+                    gold_answer=gold_answer,
+                    predicted_answer=predicted_answer,
+                    agent_messages=agent._messages,
+                    client=client,
+                    model_name=judge_model_name
+                )
+            else:
+                print("[WARNING] No gold answer available for judging")
 
         else:
             # Choice-based postprocessing (original behavior)
@@ -635,7 +856,9 @@ async def process_question(
             "program": program,
             "choices": choices,
             "success": True,
-            "error": None
+            "error": None,
+            # LLM Judge fields (only populated if postprocessing_mode == "llm_judge")
+            "judgment": judgment.model_dump() if judgment else None
         }
 
         print(f"[OK] Predicted: {predicted_answer[:100]}...")
@@ -666,13 +889,14 @@ async def process_question(
             "program": program,
             "choices": choices,
             "success": False,
-            "error": str(e)
+            "error": str(e),
+            "judgment": None
         }
 
         print(f"[ERROR] {e}")
 
     # Reset agent for next question
-    agent.reset()
+    await agent.reset()
 
     return result
 
@@ -769,6 +993,47 @@ def save_batch_results(
 
     print(f"[OK] Saved summary to: {summary_file}")
 
+    # Save judgments if llm_judge mode was used
+    if config.get("postprocessing_mode") == "llm_judge":
+        judgments_with_results = []
+        avg_argumentation_score = 0
+        judgment_count = 0
+
+        for r in results:
+            if r.get("judgment"):
+                judgment_entry = {
+                    "question": r["question"],
+                    "gold_answer": r["answer"],
+                    "predicted_answer": r["predicted_answer"],
+                    "judgment": r["judgment"],
+                    "accuracy": r["accuracy"],
+                    "qtype": r["qtype"]
+                }
+                judgments_with_results.append(judgment_entry)
+
+                # Track average argumentation score
+                if r["judgment"].get("argumentation_score"):
+                    avg_argumentation_score += r["judgment"]["argumentation_score"]
+                    judgment_count += 1
+
+        avg_argumentation_score = avg_argumentation_score / judgment_count if judgment_count > 0 else 0
+
+        judgments_file = batch_folder / "judgments.json"
+        with open(judgments_file, "w", encoding="utf-8") as f:
+            json.dump({
+                "config": config,
+                "timestamp": datetime.now().isoformat(),
+                "statistics": {
+                    "total_judgments": len(judgments_with_results),
+                    "average_argumentation_score": round(avg_argumentation_score, 2),
+                    "accuracy_rate": accuracy_rate
+                },
+                "judgments": judgments_with_results
+            }, f, indent=2, ensure_ascii=False)
+
+        print(f"[OK] Saved LLM judgments to: {judgments_file}")
+        print(f"[OK] Average Argumentation Score: {avg_argumentation_score:.2f}/5")
+
     # Print summary to console
     print(f"\n{'='*80}")
     print("BATCH SUMMARY")
@@ -806,7 +1071,7 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
     Args:
         n_questions: Number of questions to sample and process
         seed: Random seed for reproducibility
-        postprocessing_mode: Postprocessing method - "choice" (multiple choice) or "sparql" (SPARQL synthesis)
+        postprocessing_mode: Postprocessing method - "choice" (multiple choice), "sparql" (SPARQL synthesis), or "llm_judge" (LLM evaluation)
     """
     print(f"\n{'='*80}")
     print("KQAPro Batch Runner")
@@ -845,6 +1110,14 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
         sparql_wrapper.setReturnFormat(JSON)
         print(f"[OK] Connected to Virtuoso endpoint: {VIRTUOSO_ENDPOINT}\n")
 
+    # Load judge configuration if needed for llm_judge mode
+    judge_model_name = None
+    if postprocessing_mode == "llm_judge":
+        judge_config = load_judge_config()
+        judge_model_name = judge_config["model"]
+        print(f"[OK] Using LLM judge: {judge_model_name}")
+        print(f"[OK] Judge provider: {judge_config['provider']}\n")
+
     # Process all questions
     results = []
     for i, item in enumerate(sampled_questions):
@@ -855,7 +1128,8 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
             total_questions=len(sampled_questions),
             client=client,
             postprocessing_mode=postprocessing_mode,
-            sparql_wrapper=sparql_wrapper
+            sparql_wrapper=sparql_wrapper,
+            judge_model_name=judge_model_name
         )
         results.append(result)
 
@@ -899,9 +1173,9 @@ def main():
     parser.add_argument(
         "--postprocessing_mode",
         type=str,
-        choices=["choice", "sparql"],
+        choices=["choice", "sparql", "llm_judge"],
         default="choice",
-        help="Postprocessing method: 'choice' for multiple choice selection, 'sparql' for SPARQL synthesis (default: choice)"
+        help="Postprocessing method: 'choice' for multiple choice selection, 'sparql' for SPARQL synthesis, 'llm_judge' for LLM-based evaluation (default: choice)"
     )
 
     args = parser.parse_args()
