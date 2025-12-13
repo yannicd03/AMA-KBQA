@@ -162,6 +162,28 @@ class NeighborhoodResponse(BaseModel):
     status: str = Field(..., description="Status message.")
 
 
+class AttributeDetailsResponse(BaseModel):
+    """Response containing full attribute details from the knowledge graph."""
+    node_id: str = Field(..., description="The node ID queried.")
+    attribute_name: str = Field(..., description="The attribute name queried.")
+    values: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of attribute value bindings from SPARQL query."
+    )
+    status: str = Field(..., description="Status message.")
+
+
+class RelationDetailsResponse(BaseModel):
+    """Response containing full relation details from the knowledge graph."""
+    node_id: str = Field(..., description="The node ID queried.")
+    relation_name: str = Field(..., description="The relation/predicate name queried.")
+    triples: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of related nodes and their details from SPARQL query."
+    )
+    status: str = Field(..., description="Status message.")
+
+
 class SPARQLResponse(BaseModel):
     """Raw results from a SPARQL query."""
     vars: list[str] = Field(..., description="List of variable names in the SELECT clause.")
@@ -214,6 +236,9 @@ session_journal = JournalState()
 
 def format_entity_uri(node_id: str) -> str:
     """Formats a raw ID (e.g. 'Q64') into a KQAPRO Entity URI."""
+
+    node_id = node_id.replace(" ", "_")
+
     if node_id.startswith("<") and node_id.endswith(">"):
         return node_id  # Already a URI
     if "http" in node_id:
@@ -225,6 +250,9 @@ def format_entity_uri(node_id: str) -> str:
 
 def format_property_uri(predicate_id: str) -> str:
     """Formats a raw ID (e.g. 'P1082' or 'has_name') into a KQAPRO Property URI."""
+
+    predicate_id = predicate_id.replace(" ", "_")
+
     if predicate_id.startswith("<") and predicate_id.endswith(">"):
         return predicate_id
     if "http" in predicate_id:
@@ -564,7 +592,8 @@ def _classify_question(app_context: AppContext, question: str, fewshot_examples:
             model=CHAT_MODEL,
             messages=messages,
             temperature=CHAT_TEMPERATURE,
-            response_format=_QtypeClassification, #TODO: Optional: Add reasoning key to see the models internal reasoning process for better tracability
+            # TODO: Optional: Add reasoning key to see the models internal reasoning process for better tracability
+            response_format=_QtypeClassification,
         )
 
         parsed_response = completion.choices[0].message.parsed
@@ -769,6 +798,186 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     except Exception as e:
         logger.error(f"Search failed: {e}")
         return SearchResponse(matches=[], result_count=0)
+
+
+@mcp.tool
+@log_tool_duration
+def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context) -> AttributeDetailsResponse:
+    """
+    Retrieves the full details of a specific attribute for a given node from the knowledge graph.
+
+    Use this tool when you need the actual value(s) of an attribute that was discovered via FindNode.
+    This queries Virtuoso directly to get all values, types, units, and qualifiers for the specified attribute.
+
+    Args:
+        base_node_id (str): The unique ID of the node (e.g., "Q100").
+        attribute_name (str): The attribute key to query (e.g., "population", "area", "inception").
+        context (Context): The FastMCP request context.
+
+    Returns:
+        AttributeDetailsResponse: Contains all values found for this attribute, including qualifiers.
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    # Format the entity URI
+    base_uri = format_entity_uri(base_node_id)
+
+    # Construct attribute URI - attributes use the attr: prefix
+    attr_uri = f"<http://kqapro.org/attribute/{attribute_name}>"
+
+    logger.info(f"Querying attribute details: {base_uri} -> {attribute_name}")
+
+    # Query for attribute values
+    # This gets the direct attribute values - structure may vary based on how kb.json was converted
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT ?value ?type WHERE {{
+        {base_uri} {attr_uri} ?value .
+        OPTIONAL {{ ?value rdf:type ?type }}
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.info(f"No attribute values found for {attribute_name} on {base_node_id}")
+            return AttributeDetailsResponse(
+                node_id=base_node_id,
+                attribute_name=attribute_name,
+                values=[],
+                status=f"No values found for attribute '{attribute_name}' on node {base_node_id}"
+            )
+
+        # Simplify bindings
+        simplified_values = []
+        for binding in bindings:
+            simple_val = {}
+            for var in ["value", "type"]:
+                if var in binding:
+                    simple_val[var] = binding[var]["value"]
+            simplified_values.append(simple_val)
+
+        logger.info(f"Found {len(simplified_values)} value(s) for {attribute_name}")
+
+        return AttributeDetailsResponse(
+            node_id=base_node_id,
+            attribute_name=attribute_name,
+            values=simplified_values,
+            status=f"Found {len(simplified_values)} value(s)"
+        )
+
+    except Exception as e:
+        logger.error(f"Error querying attribute details: {e}")
+        return AttributeDetailsResponse(
+            node_id=base_node_id,
+            attribute_name=attribute_name,
+            values=[],
+            status=f"Error: {str(e)}"
+        )
+
+
+@mcp.tool
+@log_tool_duration
+def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) -> RelationDetailsResponse:
+    """
+    Retrieves the full details of a specific relation for a given node from the knowledge graph.
+
+    Use this tool when you need to find what nodes are connected via a specific relation that was
+    discovered via FindNode. This queries Virtuoso directly to get all connected nodes.
+
+    The tool automatically checks both forward (subject -> object) and backward (object <- subject)
+    directions to find all connections.
+
+    Args:
+        base_node_id (str): The unique ID of the node (e.g., "Q100").
+        relation_name (str): The relation predicate to query (e.g., "country", "capital of").
+        context (Context): The FastMCP request context.
+
+    Returns:
+        RelationDetailsResponse: Contains all nodes connected via this relation.
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    # Format the entity URI
+    base_uri = format_entity_uri(base_node_id)
+
+    # Construct property URI - relations use the prop: prefix
+    prop_uri = f"<http://kqapro.org/property/{relation_name}>"
+
+    logger.info(f"Querying relation details: {base_uri} -> {relation_name}")
+
+    # Query for both forward and backward relations
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT ?related ?direction WHERE {{
+        {{
+            {base_uri} {prop_uri} ?related .
+            BIND("forward" AS ?direction)
+        }}
+        UNION
+        {{
+            ?related {prop_uri} {base_uri} .
+            BIND("backward" AS ?direction)
+        }}
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.info(f"No relations found for {relation_name} on {base_node_id}")
+            return RelationDetailsResponse(
+                node_id=base_node_id,
+                relation_name=relation_name,
+                triples=[],
+                status=f"No relations found for '{relation_name}' on node {base_node_id}"
+            )
+
+        # Simplify bindings and extract entity IDs
+        simplified_triples = []
+        for binding in bindings:
+            triple = {}
+            if "related" in binding:
+                related_uri = binding["related"]["value"]
+                # Extract entity ID from URI (e.g., http://kqapro.org/entity/Q30 -> Q30)
+                if "/entity/" in related_uri:
+                    triple["related_id"] = related_uri.split("/entity/")[-1]
+                else:
+                    triple["related_id"] = related_uri
+                triple["related_uri"] = related_uri
+
+            if "direction" in binding:
+                triple["direction"] = binding["direction"]["value"]
+
+            simplified_triples.append(triple)
+
+        logger.info(f"Found {len(simplified_triples)} relation(s) for {relation_name}")
+
+        return RelationDetailsResponse(
+            node_id=base_node_id,
+            relation_name=relation_name,
+            triples=simplified_triples,
+            status=f"Found {len(simplified_triples)} relation(s)"
+        )
+
+    except Exception as e:
+        logger.error(f"Error querying relation details: {e}")
+        return RelationDetailsResponse(
+            node_id=base_node_id,
+            relation_name=relation_name,
+            triples=[],
+            status=f"Error: {str(e)}"
+        )
 
 
 @mcp.tool
