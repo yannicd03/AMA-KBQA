@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator
@@ -18,6 +19,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+FEWSHOT_EXAMPLES_DIR = REPO_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
 
 # Import configuration utilities
 sys.path.insert(0, str(REPO_ROOT))
@@ -301,6 +303,90 @@ def log_tool_duration(func):
     return wrapper
 
 
+def load_fewshot_examples(max_per_type: int = 10) -> str:
+    """
+    Load few-shot examples from the fewshot-examples directory.
+
+    Loads up to max_per_type examples for each question type from JSON files.
+    Returns a formatted string to be injected into the classification prompt.
+
+    Args:
+        max_per_type: Maximum number of examples to load per question type
+
+    Returns:
+        Formatted string containing few-shot examples, or empty string if none available
+    """
+    if not FEWSHOT_EXAMPLES_DIR.exists():
+        logger.warning(f"Few-shot examples directory not found: {FEWSHOT_EXAMPLES_DIR}")
+        return ""
+
+    qtypes = [
+        "Count", "Verify", "SelectBetween", "SelectAmong",
+        "QueryAttr", "QueryAttrQualifier", "QueryRelation",
+        "QueryRelationQualifier", "QueryName"
+    ]
+
+    all_examples = []
+
+    for qtype in qtypes:
+        example_file = FEWSHOT_EXAMPLES_DIR / f"{qtype}.json"
+
+        if not example_file.exists():
+            logger.debug(f"Few-shot file not found: {example_file}")
+            continue
+
+        try:
+            with open(example_file, "r", encoding="utf-8") as f:
+                examples = json.load(f)
+
+            if not examples:
+                continue
+
+            # Limit to max_per_type examples
+            examples = examples[:max_per_type]
+
+            for example in examples:
+                all_examples.append({
+                    "qtype": qtype,
+                    "question": example.get("question", ""),
+                    "reasoning": example.get("reasoning", ""),
+                    "lesson_learned": example.get("lesson_learned", "")
+                })
+
+            logger.info(f"Loaded {len(examples)} few-shot examples for {qtype}")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in {example_file}: {e}")
+            continue
+        except Exception as e:
+            logger.error(f"Error loading {example_file}: {e}")
+            continue
+
+    if not all_examples:
+        logger.info("No few-shot examples available")
+        return ""
+
+    # Format examples for the prompt
+    formatted_examples = "\n\n### Few-Shot Examples (Curated from Past Classifications)\n\n"
+    formatted_examples += "Here are examples of correctly classified questions with reasoning:\n\n"
+
+    for i, example in enumerate(all_examples, 1):
+        formatted_examples += f"**Example {i}:**\n"
+        formatted_examples += f"Question: {example['question']}\n"
+        formatted_examples += f"Correct Type: {example['qtype']}\n"
+
+        if example['reasoning']:
+            formatted_examples += f"Reasoning: {example['reasoning']}\n"
+
+        if example['lesson_learned']:
+            formatted_examples += f"Lesson Learned: {example['lesson_learned']}\n"
+
+        formatted_examples += "\n"
+
+    logger.info(f"Loaded total of {len(all_examples)} few-shot examples across all question types")
+    return formatted_examples
+
+
 # --- 5. Refactored Tool using Context ---
 
 
@@ -308,7 +394,10 @@ def log_tool_duration(func):
 @log_tool_duration
 def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredictionResponse:
     """
-    Classifies a single question using the LLM with a pre-formatted string of few-shot examples.
+    Classifies a single question using the LLM with curated few-shot examples.
+
+    Loads up to 10 examples per question type from db/datasets/kqapro/fewshot-examples
+    to improve classification accuracy through few-shot learning.
 
     Args:
         question_to_classify (str): The question to classify.
@@ -317,6 +406,9 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
         QtypePredictionResponse: The predicted question type classification.
     """
     app_context: AppContext = context.request_context.lifespan_context
+
+    # Load few-shot examples from curated files
+    fewshot_examples = load_fewshot_examples(max_per_type=10)
 
     # The prompt now uses the pre-formatted examples directly
     prompt = f"""
@@ -395,7 +487,9 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
         | QueryRelation         | No         | No     | No        | No               | Yes           | No          | No         | No          |
         | QueryRelationQualif.  | No         | No     | No        | Yes              | Yes           | No          | No         | No          |
         | QueryName             | No         | No     | No        | No               | No            | No          | No         | Yes         |
-        
+
+        ────────────────────────────────────────
+        {fewshot_examples}
         ────────────────────────────────────────
         ### Classification Logic: Step-by-Step Reasoning
         
