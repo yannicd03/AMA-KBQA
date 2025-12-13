@@ -101,6 +101,104 @@ class AnswerJudgment(BaseModel):
 # UTILITY FUNCTIONS
 # ============================================================================
 
+def export_fewshot_examples_from_judgments(
+    results: List[Dict[str, Any]],
+    output_dir: Path = None,
+    min_argumentation_score: int = 4
+) -> Dict[str, int]:
+    """
+    Export successful classifications as few-shot examples for future use.
+
+    Extracts high-quality question classifications from batch results and saves them
+    to the fewshot-examples directory, grouped by question type.
+
+    Args:
+        results: List of batch processing results with judgments
+        output_dir: Directory to save examples (defaults to db/datasets/kqapro/fewshot-examples)
+        min_argumentation_score: Minimum argumentation score to include (1-5)
+
+    Returns:
+        Dictionary mapping question types to number of examples exported
+    """
+    if output_dir is None:
+        output_dir = project_root / "db" / "datasets" / "kqapro" / "fewshot-examples"
+
+    output_dir.mkdir(exist_ok=True, parents=True)
+
+    # Group examples by question type
+    examples_by_type = {}
+
+    for result in results:
+        # Only export correct answers with high argumentation scores
+        if not result.get("accuracy", False):
+            continue
+
+        judgment = result.get("judgment")
+        if not judgment:
+            continue
+
+        if judgment.get("argumentation_score", 0) < min_argumentation_score:
+            continue
+
+        qtype = result.get("qtype", "Unknown")
+        if qtype == "Unknown":
+            continue
+
+        # Create the example entry
+        example = {
+            "question": result["question"],
+            "reasoning": judgment.get("correctness_reasoning", ""),
+            "correct_qtype": qtype,
+            "lesson_learned": judgment.get("suggested_improvement", ""),
+            "argumentation_score": judgment.get("argumentation_score", 0),
+            "exported_at": datetime.now().isoformat()
+        }
+
+        if qtype not in examples_by_type:
+            examples_by_type[qtype] = []
+
+        examples_by_type[qtype].append(example)
+
+    # Save examples to files
+    export_counts = {}
+
+    for qtype, examples in examples_by_type.items():
+        example_file = output_dir / f"{qtype}.json"
+
+        # Load existing examples
+        existing_examples = []
+        if example_file.exists():
+            try:
+                with open(example_file, "r", encoding="utf-8") as f:
+                    existing_examples = json.load(f)
+            except json.JSONDecodeError:
+                print(f"[WARNING] Could not load existing examples from {example_file}, overwriting")
+
+        # Merge with new examples (avoid duplicates based on question text)
+        existing_questions = {ex.get("question", "") for ex in existing_examples}
+        new_examples = [ex for ex in examples if ex["question"] not in existing_questions]
+
+        if new_examples:
+            all_examples = existing_examples + new_examples
+
+            # Sort by argumentation score (highest first)
+            all_examples.sort(key=lambda x: x.get("argumentation_score", 0), reverse=True)
+
+            # Limit to top 10 examples per type
+            all_examples = all_examples[:10]
+
+            # Save to file
+            with open(example_file, "w", encoding="utf-8") as f:
+                json.dump(all_examples, f, indent=2, ensure_ascii=False)
+
+            export_counts[qtype] = len(new_examples)
+            print(f"[OK] Exported {len(new_examples)} new examples for {qtype} (total: {len(all_examples)})")
+        else:
+            export_counts[qtype] = 0
+
+    return export_counts
+
+
 def load_judge_config() -> Dict[str, Any]:
     """
     Load judge configuration from config.toml.
@@ -1033,6 +1131,22 @@ def save_batch_results(
 
         print(f"[OK] Saved LLM judgments to: {judgments_file}")
         print(f"[OK] Average Argumentation Score: {avg_argumentation_score:.2f}/5")
+
+        # Export high-quality examples as few-shot examples
+        print(f"\n[INFO] Exporting high-quality examples as few-shot examples...")
+        export_counts = export_fewshot_examples_from_judgments(
+            results=results,
+            min_argumentation_score=4  # Only export examples with argumentation score >= 4
+        )
+
+        total_exported = sum(export_counts.values())
+        if total_exported > 0:
+            print(f"[OK] Exported {total_exported} new few-shot examples:")
+            for qtype, count in export_counts.items():
+                if count > 0:
+                    print(f"  - {qtype}: {count} examples")
+        else:
+            print(f"[INFO] No new high-quality examples to export")
 
     # Print summary to console
     print(f"\n{'='*80}")
