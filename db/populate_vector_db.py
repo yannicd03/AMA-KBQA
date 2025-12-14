@@ -25,6 +25,8 @@ VECTOR_DIMENSION = 4096
 # The Distance Measure has to fir the Embedding Model used, in most modern models like Qwen3-Embedding Cosine Similarity is the standard.
 DISTANCE_MEASURE = models.Distance.COSINE
 
+# TODO: Modify this seeding script to no longer add all of the metadata to the payload, only the available keys to save storage space.
+
 # Get API Key
 try:
     OPENROUTER_API_KEY = os.environ['OPENROUTER_API_KEY']
