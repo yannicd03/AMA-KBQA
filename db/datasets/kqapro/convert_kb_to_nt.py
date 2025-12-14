@@ -3,7 +3,7 @@ from rdflib import Graph, Literal, BNode
 from rdflib.namespace import RDF, RDFS, XSD, Namespace
 from pathlib import Path
 
-"""This File converts the original kb.json file into kb.nt, a Fileformat which can be read by rdf based vector databases like Qlever. """
+"""This File converts the original kb.json file into kb.nt, a Fileformat which can be read by rdf based vector databases like Qlever or Virtuoso. """
 
 # --- 1. Setup Namespaces ---
 # We create base URIs for our data.
