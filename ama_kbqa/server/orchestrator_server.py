@@ -11,6 +11,11 @@ from dotenv import load_dotenv, find_dotenv
 from pydantic import BaseModel, ConfigDict
 from fastmcp import Context
 from loguru import logger
+from ama_kbqa.config import (
+    get_chat_client,
+    get_chat_model_name,
+    get_provider_preferences
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -28,7 +33,7 @@ logger.add(
 # 1. Load environment variables
 load_dotenv(find_dotenv())
 
-# Constants
+# Constants TODO: Get config parameters from config.toml instead of here
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 YOUR_SITE_URL = "https://my-mcp-server.local"
 YOUR_SITE_NAME = "KBQA MCP Tool"
@@ -131,14 +136,23 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
     logger.info(f"Analyzing: '{question}' ...")
 
     try:
-        completion = client.chat.completions.create(
-            model=CHAT_MODEL_ID,
-            messages=[
+        # Build API call parameters
+        call_params = {
+            "model": CHAT_MODEL_ID,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": question}
             ],
-            response_format={"type": "json_object"}
-        )
+            "response_format": {"type": "json_object"}
+        }
+
+        # Add OpenRouter provider preferences if configured
+        provider_prefs = get_provider_preferences()
+        if provider_prefs:
+            call_params["extra_body"] = {"provider": provider_prefs}
+            logger.debug(f"Using provider preferences: {provider_prefs}")
+
+        completion = client.chat.completions.create(**call_params)
 
         # result_content = completion.choices[0].message.content
         return json.loads(completion.choices[0].message.content)
