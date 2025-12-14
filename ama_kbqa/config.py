@@ -141,6 +141,61 @@ def get_chat_max_tokens() -> int:
     return config["llm"].get("chat_max_tokens", 4000)
 
 
+def get_chat_model_provider() -> Optional[str]:
+    """Get the configured chat model provider preference.
+
+    This is used for OpenRouter provider routing to target specific
+    provider endpoints (e.g., "minimax/fp8", "deepinfra/turbo").
+
+    Returns:
+        Optional[str]: The provider preference string, or None if not configured
+    """
+    config = load_config()
+    provider = config["llm"]["chat_provider"]
+
+    # Only relevant for OpenRouter
+    if provider != "openrouter":
+        return None
+
+    return config.get("openrouter", {}).get("chat_model_provider")
+
+
+def get_provider_preferences() -> Optional[dict]:
+    """Build OpenRouter provider preferences object based on configuration.
+
+    This constructs the 'provider' parameter for OpenRouter API requests
+    according to the chat_model_provider setting in config.toml.
+
+    Returns:
+        Optional[dict]: Provider preferences dict for OpenRouter, or None if not applicable
+
+    Example return value:
+        {
+            "order": ["minimax/fp8"],
+            "allow_fallbacks": False
+        }
+    """
+    config = load_config()
+    provider = config["llm"]["chat_provider"]
+
+    # Only relevant for OpenRouter
+    if provider != "openrouter":
+        return None
+
+    provider_pref = get_chat_model_provider()
+    if not provider_pref:
+        # No specific provider preference, use default load balancing
+        return None
+
+    # Build provider preferences object
+    # When a specific provider variant is specified, disable fallbacks
+    # to ensure we only use that specific endpoint
+    return {
+        "order": [provider_pref],
+        "allow_fallbacks": False
+    }
+
+
 def _create_client(
     provider: str,
     model_type: Literal["chat", "embedding"] = "chat"
@@ -173,12 +228,21 @@ def _create_client(
     api_key = _get_api_key(provider, provider_config)
 
     # Create OpenAI client with provider-specific settings
-    client = OpenAI(
-        base_url=base_url,
-        api_key=api_key,
-        timeout=60.0,
-        max_retries=3
-    )
+    client_kwargs = {
+        "base_url": base_url,
+        "api_key": api_key,
+        "timeout": 60.0,
+        "max_retries": 3
+    }
+
+    # Add OpenRouter-specific headers for rankings
+    if provider == "openrouter":
+        client_kwargs["default_headers"] = {
+            "HTTP-Referer": "https://github.com/MaxKlat29/AMAKBQA",
+            "X-Title": "ama-kbqa"
+        }
+
+    client = OpenAI(**client_kwargs)
 
     logger.info(
         f"Created {model_type} client for provider '{provider}' "
