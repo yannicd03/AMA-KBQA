@@ -25,6 +25,7 @@ from functools import wraps
 
 from fastmcp import FastMCP, Context
 from qdrant_client import QdrantClient
+from qdrant_client.http import models
 from openai import OpenAI
 from loguru import logger
 from pydantic import BaseModel, Field, ConfigDict
@@ -211,20 +212,138 @@ class QtypePredictionResponse(BaseModel):
     )
 
 
+class QualifierResponse(BaseModel):
+    """Response containing qualifiers for a specific statement/fact."""
+    base_node_id: str = Field(..., description="The Subject ID.")
+    predicate: str = Field(..., description="The relation name.")
+    target_node: str = Field(..., description="The Object/Value ID or string.")
+    qualifiers: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of qualifiers found (e.g. time, location, role)."
+    )
+    status: str = Field(..., description="Status message.")
+
+
+class NumericComparisonResponse(BaseModel):
+    """Response from numeric/date comparison verification."""
+    verdict: Literal["TRUE", "FALSE", "ERROR"] = Field(..., description="The comparison result.")
+    explanation: str = Field(..., description="Human-readable explanation of the comparison.")
+    value1: str = Field(..., description="First value (normalized).")
+    value2: str = Field(..., description="Second value (normalized).")
+    operator: str = Field(..., description="Comparison operator used.")
+
+
+class ComparisonResult(BaseModel):
+    """Single entity's attribute value in a comparison."""
+    entity_id: str = Field(..., description="Entity ID.")
+    entity_name: str = Field(..., description="Human-readable entity name.")
+    value: Any = Field(..., description="The attribute value (numeric, string, or dict with value/unit).")
+    normalized_value: Optional[float] = Field(None, description="Numeric value for sorting (if applicable).")
+
+
+class CompareEntitiesResponse(BaseModel):
+    """Response from comparing an attribute across multiple entities."""
+    attribute_name: str = Field(..., description="The attribute being compared.")
+    results: list[ComparisonResult] = Field(default_factory=list, description="Sorted list of entities with values.")
+    sorted_by: str = Field(..., description="How the results are sorted.")
+    status: str = Field(..., description="Status message.")
+
+
 class JournalState(BaseModel):
     """The scratchpad state for the current reasoning session."""
-    visited_nodes: list[str] = Field(default_factory=list, description="IDs of nodes already explored.")
-    verified_facts: list[str] = Field(default_factory=list, description="Triples that have been verified via SPARQL.")
-    current_plan: list[str] = Field(default_factory=list, description="Step-by-step plan for the remaining steps.")
+
+    # Question Understanding (Phase 2)
+    question_text: str = Field(default="", description="The original question being answered")
+    question_type: str = Field(default="", description="Question type: Count, Verify, SelectBetween, etc.")
+    target_entities: list[str] = Field(default_factory=list, description="Entity names we're looking for")
+    target_attributes: list[str] = Field(default_factory=list, description="Attributes we need to find")
+
+    # Exploration Tracking (Phase 1 + 2)
+    visited_nodes: dict[str, str] = Field(
+        default_factory=dict, description="Map of {node_id: node_name} already explored")
+    verified_facts: list[dict] = Field(default_factory=list, description="Verified facts with structure")
+    failed_attempts: list[str] = Field(default_factory=list, description="Track what didn't work to avoid repeating")
+
+    # Intermediate Results (Phase 1 - CRITICAL!)
+    found_values: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Map of {entity_id: {attribute: value}} storing all discovered values"
+    )
+
+    # Reasoning Chain (Phase 2)
+    current_plan: list[str] = Field(default_factory=list, description="Step-by-step plan for remaining steps")
+    completed_steps: list[str] = Field(default_factory=list, description="Steps that have been completed")
+
+    # Answer Building (Phase 2)
+    partial_answer: str = Field(default="", description="Intermediate answer being constructed")
 
     def to_str(self) -> str:
-        return (
-            f"--- CURRENT JOURNAL ---\n"
-            f"VISITED NODES: {', '.join(self.visited_nodes)}\n"
-            f"VERIFIED FACTS: {'; '.join(self.verified_facts)}\n"
-            f"NEXT STEPS: {'; '.join(self.current_plan)}\n"
-            f"-----------------------"
-        )
+        """Enhanced visualization with better structure and readability."""
+        lines = ["=" * 70]
+        lines.append("SCRATCHPAD STATE")
+        lines.append("=" * 70)
+
+        # Question context
+        if self.question_type:
+            lines.append(f"Question Type: {self.question_type}")
+        if self.target_entities:
+            lines.append(f"Target Entities: {', '.join(self.target_entities)}")
+
+        # Explored nodes
+        if self.visited_nodes:
+            lines.append(f"\nEXPLORED NODES ({len(self.visited_nodes)}):")
+            for node_id, node_name in list(self.visited_nodes.items())[:5]:
+                lines.append(f"  • {node_name} ({node_id})")
+            if len(self.visited_nodes) > 5:
+                lines.append(f"  ... and {len(self.visited_nodes) - 5} more")
+
+        # Discovered values (MOST IMPORTANT!)
+        if self.found_values:
+            lines.append(f"\nDISCOVERED VALUES:")
+            for entity_id, attrs in self.found_values.items():
+                entity_name = self.visited_nodes.get(entity_id, entity_id)
+                lines.append(f"  {entity_name}:")
+                for attr_name, attr_data in attrs.items():
+                    if isinstance(attr_data, list) and attr_data:
+                        # Handle list of values (from GetAttributeDetails)
+                        for val_item in attr_data[:3]:  # Show first 3
+                            if isinstance(val_item, dict):
+                                val_str = val_item.get("value", "?")
+                                unit_str = val_item.get("unit", "")
+                                lines.append(f"    - {attr_name}: {val_str} {unit_str}".strip())
+                            else:
+                                lines.append(f"    - {attr_name}: {val_item}")
+                    else:
+                        lines.append(f"    - {attr_name}: {attr_data}")
+
+        # Progress tracking
+        if self.completed_steps:
+            lines.append(f"\nCOMPLETED STEPS ({len(self.completed_steps)}):")
+            for step in self.completed_steps[-3:]:  # Last 3
+                lines.append(f"  ✓ {step}")
+
+        # Current plan
+        if self.current_plan:
+            lines.append(f"\nNEXT STEPS:")
+            for i, step in enumerate(self.current_plan[:3], 1):  # Next 3
+                lines.append(f"  {i}. {step}")
+
+        # Failed attempts (for debugging)
+        if self.failed_attempts:
+            lines.append(f"\nFAILED ATTEMPTS ({len(self.failed_attempts)}):")
+            for attempt in self.failed_attempts[-2:]:  # Last 2
+                lines.append(f"  ✗ {attempt}")
+
+        # Partial answer
+        if self.partial_answer:
+            lines.append(f"\nPARTIAL ANSWER: {self.partial_answer}")
+
+        # Statistics
+        lines.append(
+            f"\nSTATS: {len(self.visited_nodes)} nodes, {len(self.found_values)} entities with data, {len(self.completed_steps)} steps done")
+
+        lines.append("=" * 70)
+        return "\n".join(lines)
 
 
 # Global state container (resets when the agent process restarts the server)
@@ -271,6 +390,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """
     logger.info("Starting up: Connecting to Qdrant & LLM providers...")
 
+    qdrant = None
     try:
         # Initialize Clients using config.toml
         qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)  # TODO Use Async Client instead?
@@ -293,14 +413,14 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         )
 
     except Exception as e:
-        logger.error(f"Something went wrong: {e}")
+        logger.error(f"Startup error: {e}")
+        sys.exit(1)
 
     finally:
         # Cleanup code (runs on shutdown)
-        logger.error("🔌 Shutting down: Closing connections...")
-        # Qdrant client handles its own closing usually, but you can add explicit closes here if needed
-        qdrant.close()
-        sys.exit(1)
+        logger.info("🔌 Shutting down: Closing connections...")
+        if qdrant is not None:
+            qdrant.close()
 
 # --- 3. Initialize FastMCP with Lifespan ---
 mcp = FastMCP("KG-Search-Server", lifespan=server_lifespan)
@@ -324,16 +444,41 @@ def log_tool_duration(func):
     def wrapper(*args, **kwargs):
         tool_name = func.__name__
         start_time = time.time()
-        logger.info(f"[{tool_name}] Starting execution...")
+
+        # Extract and log key parameters (first 2 non-context args)
+        param_info = ""
+        if args:
+            # Skip 'self' if it's a method
+            arg_start = 1 if hasattr(args[0], '__class__') else 0
+            # Get up to 2 args, avoiding Context objects
+            display_args = []
+            for arg in args[arg_start:arg_start+3]:
+                if not isinstance(arg, Context):
+                    arg_repr = str(arg)[:50]  # Truncate long args
+                    display_args.append(arg_repr)
+            if display_args:
+                param_info = f" with params: {', '.join(display_args)}"
+
+        logger.info(f"[{tool_name}] ▶️  Starting execution{param_info}")
 
         try:
             result = func(*args, **kwargs)
             duration = time.time() - start_time
-            logger.info(f"[{tool_name}] Completed in {duration:.2f}s")
+
+            # Log result size/type
+            result_info = ""
+            if isinstance(result, str):
+                result_info = f" (returned {len(result)} chars)"
+            elif isinstance(result, dict):
+                result_info = f" (returned dict with {len(result)} keys)"
+            elif hasattr(result, '__dict__'):
+                result_info = f" (returned {type(result).__name__})"
+
+            logger.info(f"[{tool_name}] ✅ Completed in {duration:.2f}s{result_info}")
             return result
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"[{tool_name}] Failed after {duration:.2f}s - Error: {e}")
+            logger.error(f"[{tool_name}] ❌ Failed after {duration:.2f}s - Error: {e}", exc_info=True)
             raise
 
     return wrapper
@@ -573,7 +718,7 @@ def _build_classification_prompt(question: str, fewshot_examples: str = "") -> s
 
 def _classify_question(app_context: AppContext, question: str, fewshot_examples: str) -> str:
     """
-    Helper function to classify a question using the LLM with structured output.
+    Helper function to classify a question using the LLM with JSON mode.
 
     Args:
         app_context: The application context with LLM clients
@@ -584,19 +729,34 @@ def _classify_question(app_context: AppContext, question: str, fewshot_examples:
         The predicted question type as a string
     """
     prompt = _build_classification_prompt(question, fewshot_examples)
-    messages = [{"role": "system", "content": prompt}]
+
+    # Add JSON schema instruction to the prompt
+    json_instruction = """
+
+You MUST respond with a valid JSON object matching this exact schema:
+{
+    "question_type": "one of: Count, Verify, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName"
+}
+
+Respond ONLY with the JSON object, no additional text."""
+
+    messages = [{"role": "system", "content": prompt + json_instruction}]
 
     try:
-        # Use structured output for robust extraction
-        completion = app_context.chat_client.beta.chat.completions.parse(
+        # Use JSON mode instead of structured output
+        completion = app_context.chat_client.chat.completions.create(
             model=CHAT_MODEL,
             messages=messages,
             temperature=CHAT_TEMPERATURE,
-            # TODO: Optional: Add reasoning key to see the models internal reasoning process for better tracability
-            response_format=_QtypeClassification,
+            response_format={"type": "json_object"},
         )
 
-        parsed_response = completion.choices[0].message.parsed
+        # Parse JSON response
+        json_content = completion.choices[0].message.content
+        response_dict = json.loads(json_content)
+
+        # Validate against Pydantic model
+        parsed_response = _QtypeClassification(**response_dict)
         return parsed_response.question_type
 
     except Exception as e:
@@ -649,34 +809,54 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
 @mcp.tool
 @log_tool_duration
 def ManageJournal(
-    action: Literal["add_visited", "add_fact", "update_plan", "read"],
+    action: Literal["add_visited", "add_fact", "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"],
     content: str,
     context: Context
 ) -> str:
     """
-    Use this tool to keep track of your progress. 
-    ALWAYS use this after verifying a fact or exploring a node to prevent loops.
+    Use this tool to keep track of your progress and prevent loops.
+
+    NOTE: Most updates happen automatically via tools. Use this mainly for planning and partial answers.
 
     Args:
-        action: The type of update to perform.
-        content: The text content to add (e.g., node ID, fact, or plan step).
+        action: The type of update to perform:
+            - "add_visited": (DEPRECATED - auto-updated by FindNode) Log a visited node
+            - "add_fact": (DEPRECATED - auto-updated by tools) Save a verified fact
+            - "update_plan": Update your reasoning plan (manual)
+            - "set_qtype": Set the question type (e.g., "Count", "SelectBetween")
+            - "set_target": Add a target entity or attribute you're looking for
+            - "set_partial_answer": Store your intermediate answer reasoning
+            - "read": Read the current journal state
+        content: The text content to add. Can be empty string for "read".
 
     Returns:
         The FULL current content of the journal to refresh your memory.
     """
-    global session_journal
 
     if action == "add_visited":
-        if content not in session_journal.visited_nodes:
-            session_journal.visited_nodes.append(content)
+        # Backward compatibility - but tools now auto-update this
+        node_id = content.strip()
+        if node_id and node_id not in session_journal.visited_nodes:
+            session_journal.visited_nodes[node_id] = node_id  # Store as {id: name}, name will be updated by FindNode
 
     elif action == "add_fact":
-        if content not in session_journal.verified_facts:
-            session_journal.verified_facts.append(content)
+        # Backward compatibility - but tools now auto-update this
+        if content and content not in [str(f) for f in session_journal.verified_facts]:
+            session_journal.verified_facts.append({"fact": content, "source": "manual"})
 
     elif action == "update_plan":
         # We overwrite the plan as it changes dynamically
-        session_journal.current_plan = [content]
+        session_journal.current_plan = [content] if content else []
+
+    elif action == "set_qtype":
+        session_journal.question_type = content
+
+    elif action == "set_target":
+        if content and content not in session_journal.target_entities:
+            session_journal.target_entities.append(content)
+
+    elif action == "set_partial_answer":
+        session_journal.partial_answer = content
 
     # 'read' action just falls through to return the state
 
@@ -685,10 +865,88 @@ def ManageJournal(
 
 @mcp.tool
 @log_tool_duration
+def GetJournalSummary(context: Context) -> str:
+    """
+    Get a formatted summary of everything discovered so far in the scratchpad.
+
+    **CRITICAL: Use this tool before formulating your final answer!**
+
+    This tool shows you all the values you've discovered, which nodes you've visited,
+    and what facts have been verified. Your answer MUST be based on what's in the journal.
+
+    Returns:
+        Formatted summary of all discoveries, ready to use for answering the question.
+    """
+
+    summary_lines = ["=" * 70]
+    summary_lines.append("JOURNAL SUMMARY - EVERYTHING DISCOVERED SO FAR")
+    summary_lines.append("=" * 70)
+
+    # Question context
+    if session_journal.question_type:
+        summary_lines.append(f"\nQuestion Type: {session_journal.question_type}")
+    if session_journal.target_entities:
+        summary_lines.append(f"Looking for: {', '.join(session_journal.target_entities)}")
+
+    # Most important: DISCOVERED VALUES
+    if session_journal.found_values:
+        summary_lines.append(f"\n📊 DISCOVERED VALUES (USE THESE FOR YOUR ANSWER!):")
+        for entity_id, attrs in session_journal.found_values.items():
+            entity_name = session_journal.visited_nodes.get(entity_id, entity_id)
+            summary_lines.append(f"\n  {entity_name} ({entity_id}):")
+            for attr_name, attr_data in attrs.items():
+                if isinstance(attr_data, list) and attr_data:
+                    for val_item in attr_data[:3]:
+                        if isinstance(val_item, dict):
+                            val_str = val_item.get("value", "?")
+                            unit_str = val_item.get("unit", "")
+                            summary_lines.append(f"    ✓ {attr_name}: {val_str} {unit_str}".strip())
+                        else:
+                            summary_lines.append(f"    ✓ {attr_name}: {val_item}")
+                else:
+                    summary_lines.append(f"    ✓ {attr_name}: {attr_data}")
+    else:
+        summary_lines.append(f"\n⚠️  NO VALUES DISCOVERED YET - You need to call GetAttributeDetails!")
+
+    # Progress
+    summary_lines.append(f"\n📈 PROGRESS:")
+    summary_lines.append(f"  • Nodes explored: {len(session_journal.visited_nodes)}")
+    summary_lines.append(f"  • Facts verified: {len(session_journal.verified_facts)}")
+    summary_lines.append(f"  • Steps completed: {len(session_journal.completed_steps)}")
+
+    # What we found
+    if session_journal.visited_nodes:
+        summary_lines.append(f"\n🔍 EXPLORED NODES:")
+        for node_id, node_name in list(session_journal.visited_nodes.items())[:5]:
+            has_data = "✓ HAS DATA" if node_id in session_journal.found_values else "○ no data yet"
+            summary_lines.append(f"  • {node_name} ({node_id}) - {has_data}")
+
+    # Partial answer
+    if session_journal.partial_answer:
+        summary_lines.append(f"\n💭 PARTIAL ANSWER: {session_journal.partial_answer}")
+
+    # Next steps
+    if session_journal.current_plan:
+        summary_lines.append(f"\n📋 NEXT STEPS:")
+        for i, step in enumerate(session_journal.current_plan[:3], 1):
+            summary_lines.append(f"  {i}. {step}")
+
+    summary_lines.append("=" * 70)
+    summary_lines.append("✅ Use the DISCOVERED VALUES above to formulate your final answer.")
+    summary_lines.append("=" * 70)
+
+    summary_text = "\n".join(summary_lines)
+    logger.info(f"GetJournalSummary called - {len(session_journal.found_values)} entities with data")
+
+    return summary_text
+
+
+@mcp.tool
+@log_tool_duration
 def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
     """
     Extracts entities/concepts and relations from a natural language query
-    using structured output.
+    using JSON mode.
     """
     app_context: AppContext = context.request_context.lifespan_context
 
@@ -697,21 +955,38 @@ def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
     try:
         logger.info(f"EntityExtraction called with query: {query[:100]}...")
 
-        completion = app_context.chat_client.beta.chat.completions.parse(
+        system_prompt = """Extract the semantic entities/concepts and relations from the user query.
+
+You MUST respond with a valid JSON object matching this exact schema:
+{
+    "entities/concepts": ["list of specific entities or general concepts"],
+    "relations": ["list of relationship predicates or actions"]
+}
+
+Respond ONLY with the JSON object, no additional text."""
+
+        completion = app_context.chat_client.chat.completions.create(
             model=model,
             messages=[
                 {
                     "role": "system",
-                    "content": "Extract the semantic entities/concepts and relations from the user query."
+                    "content": system_prompt
                 },
                 {"role": "user", "content": query}
             ],
-            response_format=ExtractionResponse,
+            response_format={"type": "json_object"},
             timeout=30.0  # Add 30-second timeout
         )
 
+        # Parse JSON response
+        json_content = completion.choices[0].message.content
+        response_dict = json.loads(json_content)
+
+        # Validate against Pydantic model
+        parsed_response = ExtractionResponse(**response_dict)
+
         logger.info(f"EntityExtraction completed successfully")
-        return completion.choices[0].message.parsed
+        return parsed_response
 
     except Exception as e:
         logger.error(f"Entity Extraction failed: {e}")
@@ -723,81 +998,105 @@ def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
 @log_tool_duration
 def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     """
-    Performs a semantic vector search to identify relevant nodes (Entities or Concepts) within the Knowledge Graph.
+    Performs a HYBRID search (Qdrant Filters + Semantic Vectors) to find nodes.
 
-    Use this tool to resolve natural language descriptions into concrete Knowledge Graph nodes.
-    It retrieves the top matches based on vector similarity and returns their schema information.
-
-    Key Features:
-    - **Semantic Resolution:** Can find nodes even without exact name matches (e.g., inputting "The capital of France" will find "Paris").
-    - **Schema Discovery:** Returns lists of available attributes and predicates for each node. This provides schema awareness without overwhelming context with full payload data.
-    - **Context Efficient:** Returns only unique attribute keys and relation predicates, not full values or nested structures.
-
-    Args:
-        semantic_node_name (str): The search query. This can be a specific entity name (e.g., "Berlin") or a descriptive phrase (e.g., "German cities with a population over 3 million").
-        context (Context): The FastMCP request context containing the active database connections.
-
-    Returns:
-        SearchResponse: A structured object containing a list of `NodeMatch` items, each with its original ID, relevance score,
-                       available attribute keys, and available relation predicates.
+    This tool is ROBUST: It uses exact filtering to find Technical IDs (e.g. "GGZX52", "UKE11")
+    and Vector Search to find semantic concepts (e.g. "Boston").
     """
-    # 1. Get Context
     app_context: AppContext = context.request_context.lifespan_context
 
-    try:
-        # 2. Generate Embedding
-        vector = get_embedding(app_context.embedding_client, semantic_node_name)
+    search_term_clean = semantic_node_name.strip()
+    logger.info(f"FindNode: Searching for '{search_term_clean}'")
 
-        # 3. Search Qdrant
-        # We request the payload explicitly (though it is True by default)
-        search_results = app_context.qdrant.search(
+    exact_matches = []
+
+    try:
+        # PHASE 1: Qdrant Exact Filter (Robust Match)
+        # We look in 'original_id', 'name', AND deep inside 'attributes' values
+
+        # Note: 'attributes.value.value' path works if Qdrant indexed the JSON payload structure
+        should_conditions = [
+            models.FieldCondition(key="original_id", match=models.MatchValue(value=search_term_clean)),
+            models.FieldCondition(key="name", match=models.MatchValue(value=search_term_clean)),
+            # Searching inside nested attributes for IDs (e.g. searching a Visa Number or GameID)
+            models.FieldCondition(key="attributes.value.value", match=models.MatchValue(value=search_term_clean))
+        ]
+
+        filter_query = models.Filter(should=should_conditions)
+
+        # Use scroll to get exact matches ignoring vector score
+        scroll_results, _ = app_context.qdrant.scroll(
             collection_name=COLLECTION_ENTITIES,
-            query_vector=vector,
-            limit=TOP_N,
-            with_payload=True,
-            score_threshold=SCORE_THRESHHOLD
+            scroll_filter=filter_query,
+            limit=5,
+            with_payload=True
         )
 
-        # 4. Map to Pydantic Models
-        matches = []
-        for point in search_results:
+        for point in scroll_results:
             payload = point.payload or {}
 
-            # Extract unique attribute keys from attributes list
+            # Extract schema info (same as before)
             attributes = payload.get("attributes", [])
-            unique_attributes = sorted(list(set(
-                attr.get("key")
-                for attr in attributes
-                if isinstance(attr, dict) and attr.get("key")
-            )))
-
-            # Extract unique relation predicates from relations list
+            unique_attrs = sorted(list(set(a.get("key") for a in attributes if a.get("key"))))
             relations = payload.get("relations", [])
-            unique_predicates = sorted(list(set(
-                rel.get("predicate")
-                for rel in relations
-                if isinstance(rel, dict) and rel.get("predicate")
-            )))
+            unique_preds = sorted(list(set(r.get("predicate") for r in relations if r.get("predicate"))))
 
-            match = NodeMatch(
+            exact_matches.append(NodeMatch(
                 original_id=payload.get("original_id", "N/A"),
                 name=payload.get("name", "Unknown"),
-                node_type=payload.get("node_type", "unknown"),
-                relevance_score=point.score,
-                available_attributes=unique_attributes,
-                available_predicates=unique_predicates
-            )
-            matches.append(match)
+                node_type=payload.get("node_type", "entity"),
+                relevance_score=1.0,
+                available_attributes=unique_attrs,
+                available_predicates=unique_preds
+            ))
 
-        # 5. Return Structured Response
-        return SearchResponse(
-            matches=matches,
-            result_count=len(matches)
-        )
+        logger.info(f"FindNode: Phase 1 (Qdrant Filter) found {len(exact_matches)} matches")
 
     except Exception as e:
-        logger.error(f"Search failed: {e}")
-        return SearchResponse(matches=[], result_count=0)
+        logger.warning(f"FindNode: Phase 1 (Filter) failed: {e}")
+
+    # PHASE 2: Semantic Search (Vector)
+    vector = get_embedding(app_context.embedding_client, semantic_node_name)
+    search_results = app_context.qdrant.search(
+        collection_name=COLLECTION_ENTITIES,
+        query_vector=vector,
+        limit=TOP_N,
+        with_payload=True,
+        score_threshold=SCORE_THRESHHOLD
+    )
+
+    semantic_matches = []
+    for point in search_results:
+        payload = point.payload or {}
+        attributes = payload.get("attributes", [])
+        unique_attrs = sorted(list(set(a.get("key") for a in attributes if a.get("key"))))
+        relations = payload.get("relations", [])
+        unique_preds = sorted(list(set(r.get("predicate") for r in relations if r.get("predicate"))))
+
+        semantic_matches.append(NodeMatch(
+            original_id=payload.get("original_id", "N/A"),
+            name=payload.get("name", "Unknown"),
+            node_type=payload.get("node_type", "unknown"),
+            relevance_score=point.score,
+            available_attributes=unique_attrs,
+            available_predicates=unique_preds
+        ))
+
+    # PHASE 3: Merge (Exact matches first)
+    combined = {m.original_id: m for m in exact_matches}
+    for m in semantic_matches:
+        if m.original_id not in combined:
+            combined[m.original_id] = m
+
+    matches = sorted(combined.values(), key=lambda x: x.relevance_score, reverse=True)[:TOP_N]
+
+    # Auto-update Journal (no `global` needed - only modifying attributes)
+    if matches:
+        for m in matches[:5]:
+            session_journal.visited_nodes[m.original_id] = m.name
+        session_journal.completed_steps.append(f"Found {len(matches)} nodes for '{semantic_node_name}'")
+
+    return SearchResponse(matches=matches, result_count=len(matches))
 
 
 @mcp.tool
@@ -809,13 +1108,18 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
     Use this tool when you need the actual value(s) of an attribute that was discovered via FindNode.
     This queries Virtuoso directly to get all values, types, units, and qualifiers for the specified attribute.
 
+    **Automatic Blank Node Resolution**: If the attribute value is stored as an RDF blank node
+    (common for quantities with units like "150 million dollars" or "146 minutes"), this tool
+    automatically resolves the blank node and returns the numeric value and unit separately.
+
     Args:
         base_node_id (str): The unique ID of the node (e.g., "Q100").
-        attribute_name (str): The attribute key to query (e.g., "population", "area", "inception").
+        attribute_name (str): The attribute key to query (e.g., "population", "area", "cost", "duration").
         context (Context): The FastMCP request context.
 
     Returns:
-        AttributeDetailsResponse: Contains all values found for this attribute, including qualifiers.
+        AttributeDetailsResponse: Contains all values found for this attribute. For quantities,
+                                 returns dict with "value" (numeric) and "unit" (string) keys.
     """
     ctx: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = ctx.sparql
@@ -824,18 +1128,24 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
     base_uri = format_entity_uri(base_node_id)
 
     # Construct attribute URI - attributes use the attr: prefix
-    attr_uri = f"<http://kqapro.org/attribute/{attribute_name}>"
+    # Replace spaces with underscores to ensure valid URI
+    sanitized_attr_name = attribute_name.replace(" ", "_")
+    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr_name}>"
 
     logger.info(f"Querying attribute details: {base_uri} -> {attribute_name}")
 
-    # Query for attribute values
-    # This gets the direct attribute values - structure may vary based on how kb.json was converted
+    # Query for attribute values with blank node resolution in one query
+    # This handles both direct values and blank nodes with rdf:value and unit
     query = f"""
     {SPARQL_PREFIXES}
 
-    SELECT ?value ?type WHERE {{
+    SELECT ?value ?type ?numericValue ?unit WHERE {{
         {base_uri} {attr_uri} ?value .
         OPTIONAL {{ ?value rdf:type ?type }}
+        OPTIONAL {{
+            ?value rdf:value ?numericValue .
+            OPTIONAL {{ ?value unit:unit ?unit }}
+        }}
     }}
     """
 
@@ -853,16 +1163,77 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
                 status=f"No values found for attribute '{attribute_name}' on node {base_node_id}"
             )
 
-        # Simplify bindings
+        # Simplify bindings - blank nodes are now automatically resolved in the query
         simplified_values = []
         for binding in bindings:
             simple_val = {}
-            for var in ["value", "type"]:
-                if var in binding:
-                    simple_val[var] = binding[var]["value"]
+            value_data = binding.get("value", {})
+            value_str = value_data.get("value", "")
+            value_type = value_data.get("type", "")
+
+            # Check if we have a resolved numeric value (from blank node)
+            if "numericValue" in binding and binding["numericValue"].get("value"):
+                # This was a blank node, and we successfully resolved it in the query
+                numeric_value = binding["numericValue"]["value"]
+                simple_val["value"] = numeric_value
+
+                # Add unit if present
+                if "unit" in binding and binding["unit"].get("value"):
+                    unit_uri = binding["unit"]["value"]
+                    # Extract unit name from URI (e.g., http://kqapro.org/unit/minute → minute)
+                    if "/" in unit_uri:
+                        simple_val["unit"] = unit_uri.split("/")[-1]
+                    else:
+                        simple_val["unit"] = unit_uri
+
+                simple_val["resolved_from_bnode"] = value_str
+                logger.info(f"Resolved blank node {value_str}: {numeric_value} {simple_val.get('unit', '')}")
+
+            elif value_type == "bnode" or value_str.startswith("nodeID://"):
+                # This is a blank node but we couldn't resolve it (no rdf:value found)
+                simple_val["value"] = value_str
+                simple_val["type"] = "bnode (unresolved)"
+                logger.warning(f"Could not resolve blank node {value_str}")
+
+            else:
+                # Regular value, not a blank node
+                simple_val["value"] = value_str
+                if "type" in binding:
+                    simple_val["type"] = binding["type"]["value"]
+
             simplified_values.append(simple_val)
 
         logger.info(f"Found {len(simplified_values)} value(s) for {attribute_name}")
+
+        # AUTO-UPDATE JOURNAL (Phase 1 - CRITICAL!) (no `global` needed - only modifying attributes)
+        if simplified_values:
+            # Initialize entity in found_values if not present
+            if base_node_id not in session_journal.found_values:
+                session_journal.found_values[base_node_id] = {}
+
+            # Store the attribute values
+            session_journal.found_values[base_node_id][attribute_name] = simplified_values
+
+            # Log as verified fact
+            for val in simplified_values[:3]:  # First 3 values
+                fact_entry = {
+                    "subject": base_node_id,
+                    "attribute": attribute_name,
+                    "value": val.get("value") if isinstance(val, dict) else val,
+                    "source": "GetAttributeDetails"
+                }
+                if isinstance(val, dict) and "unit" in val:
+                    fact_entry["unit"] = val["unit"]
+
+                session_journal.verified_facts.append(fact_entry)
+
+            # Log completion
+            node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
+            session_journal.completed_steps.append(
+                f"Retrieved {attribute_name} for {node_name}"
+            )
+
+            logger.info(f"Journal auto-updated: Stored {attribute_name} values for {base_node_id}")
 
         return AttributeDetailsResponse(
             node_id=base_node_id,
@@ -873,6 +1244,10 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
 
     except Exception as e:
         logger.error(f"Error querying attribute details: {e}")
+        # Log failure
+        session_journal.failed_attempts.append(
+            f"GetAttributeDetails({base_node_id}, {attribute_name}): {str(e)[:100]}"
+        )
         return AttributeDetailsResponse(
             node_id=base_node_id,
             attribute_name=attribute_name,
@@ -908,7 +1283,9 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
     base_uri = format_entity_uri(base_node_id)
 
     # Construct property URI - relations use the prop: prefix
-    prop_uri = f"<http://kqapro.org/property/{relation_name}>"
+    # Replace spaces with underscores to ensure valid URI
+    sanitized_relation_name = relation_name.replace(" ", "_")
+    prop_uri = f"<http://kqapro.org/property/{sanitized_relation_name}>"
 
     logger.info(f"Querying relation details: {base_uri} -> {relation_name}")
 
@@ -963,6 +1340,25 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
 
         logger.info(f"Found {len(simplified_triples)} relation(s) for {relation_name}")
 
+        # Auto-update Journal (no `global` needed - only modifying attributes)
+        if simplified_triples:
+            for triple in simplified_triples[:5]:  # Log first 5 relations
+                fact_entry = {
+                    "subject": base_node_id,
+                    "relation": relation_name,
+                    "related_id": triple.get("related_id"),
+                    "direction": triple.get("direction"),
+                    "source": "GetRelationDetails"
+                }
+                session_journal.verified_facts.append(fact_entry)
+
+            node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
+            session_journal.completed_steps.append(
+                f"Found {len(simplified_triples)} relations for {node_name} -> {relation_name}"
+            )
+
+            logger.info(f"Journal auto-updated: Stored {len(simplified_triples)} relations for {base_node_id}")
+
         return RelationDetailsResponse(
             node_id=base_node_id,
             relation_name=relation_name,
@@ -972,10 +1368,95 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
 
     except Exception as e:
         logger.error(f"Error querying relation details: {e}")
+        # Log failure
+        session_journal.failed_attempts.append(
+            f"GetRelationDetails({base_node_id}, {relation_name}): {str(e)[:100]}"
+        )
         return RelationDetailsResponse(
             node_id=base_node_id,
             relation_name=relation_name,
             triples=[],
+            status=f"Error: {str(e)}"
+        )
+
+
+@mcp.tool
+@log_tool_duration
+def GetEdgeQualifiers(subject_id: str, predicate_name: str, target_id: str, context: Context) -> QualifierResponse:
+    """
+    Retrieves 'facts about a fact' (Qualifiers) for a specific relationship.
+
+    Use this when you have found a relation (e.g., Movie -> has_website -> URL) but need
+    extra context like 'language', 'start time', 'location', or 'role'.
+
+    Args:
+        subject_id: The Entity ID (e.g. "Q100").
+        predicate_name: The relation name (e.g. "official website").
+        target_id: The specific value or Entity ID of the target (e.g. "http://..." or "Q30").
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    subject_uri = format_entity_uri(subject_id)
+    sanitized_pred = predicate_name.replace(" ", "_")
+
+    # Heuristic for target: if it looks like a URI/ID, wrap it. Else treat as string.
+    if target_id.startswith("http") or target_id.startswith("Q"):
+        # For URIs, we don't quote, but we need to ensure correct format
+        target_filter = f'?target = <{target_id}> || ?target = <{NS_ENTITY}{target_id}> || STR(?target) = "{target_id}"'
+    else:
+        # For literals
+        target_filter = f'STR(?target) = "{target_id}"'
+
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT DISTINCT ?qualifier_pred ?qualifier_val WHERE {{
+        # Find the Fact Node (Reified Statement)
+        ?fact_node prop:fact_h {subject_uri} .
+        ?fact_node prop:fact_r prop:{sanitized_pred} .
+        ?fact_node prop:fact_t ?target .
+
+        FILTER({target_filter})
+
+        # Get qualifiers
+        ?fact_node ?qualifier_pred ?qualifier_val .
+
+        # Exclude system predicates
+        FILTER(?qualifier_pred != prop:fact_h && ?qualifier_pred != prop:fact_r && ?qualifier_pred != prop:fact_t)
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        qualifiers = []
+        for b in bindings:
+            # Clean up predicate name for display
+            pred_raw = b['qualifier_pred']['value']
+            pred_name = pred_raw.split('/')[-1]
+            val = b['qualifier_val']['value']
+            qualifiers.append({"qualifier": pred_name, "value": val})
+
+        # Auto-update journal (no `global` needed - only modifying attributes)
+        if qualifiers:
+            fact_str = f"Qualifiers for {subject_id} -> {predicate_name} -> {target_id}: {qualifiers}"
+            session_journal.verified_facts.append({"fact": fact_str, "source": "GetEdgeQualifiers"})
+
+        return QualifierResponse(
+            base_node_id=subject_id,
+            predicate=predicate_name,
+            target_node=target_id,
+            qualifiers=qualifiers,
+            status=f"Found {len(qualifiers)} qualifiers"
+        )
+    except Exception as e:
+        logger.error(f"GetEdgeQualifiers failed: {e}")
+        return QualifierResponse(
+            base_node_id=subject_id,
+            predicate=predicate_name,
+            target_node=target_id,
             status=f"Error: {str(e)}"
         )
 
@@ -1046,6 +1527,23 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 
                 logger.info(f"Verified match: {pred_uri} -> {len(objects_found)} objects")
 
+                # Auto-update Journal (no `global` needed - only modifying attributes)
+                fact_entry = {
+                    "subject": base_node_id,
+                    "predicate": predicate_raw,
+                    "objects": objects_found[:5],  # Store first 5 objects
+                    "confidence": candidate.score,
+                    "source": "ExploreNeighborhood"
+                }
+                session_journal.verified_facts.append(fact_entry)
+
+                node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
+                session_journal.completed_steps.append(
+                    f"Explored {node_name} -> {predicate_raw}: found {len(objects_found)} objects"
+                )
+
+                logger.info(f"Journal auto-updated: Stored ExploreNeighborhood results for {base_node_id}")
+
                 return NeighborhoodResponse(
                     base_node=base_node_id,
                     verified_match=RelationMatch(
@@ -1062,6 +1560,11 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
             logger.warning(f"SPARQL Error checking {pred_uri}: {e}")
             continue
 
+    # Log failed exploration attempt
+    session_journal.failed_attempts.append(
+        f"ExploreNeighborhood({base_node_id}, {semantic_relation_name}): No match found"
+    )
+
     return NeighborhoodResponse(
         base_node=base_node_id,
         verified_match=None,
@@ -1076,7 +1579,7 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
     """
     Executes an arbitrary SPARQL query against the Knowledge Graph.
 
-    Use this tool when you need complex logic (aggregations, multi-hop, filters) 
+    Use this tool when you need complex logic (aggregations, multi-hop, filters)
     that cannot be satisfied by simple neighborhood exploration.
 
     Args:
@@ -1093,16 +1596,20 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
     if "PREFIX" not in query:
         full_query = f"{SPARQL_PREFIXES}\n{query}"
 
-    logger.info(f"Executing arbitrary SPARQL query:\n{full_query}")
+    logger.info(f"RunSPARQL: Executing query (length: {len(full_query)} chars)")
+    logger.debug(f"RunSPARQL: Full query:\n{full_query}")
 
     try:
         sparql.setQuery(full_query)
+        logger.debug(f"RunSPARQL: Query set, executing...")
         # Convert result to Python dict
         raw_results = sparql.query().convert()
+        logger.debug(f"RunSPARQL: Query executed successfully")
 
         # Parse standard SPARQL JSON format
         head_vars = raw_results.get("head", {}).get("vars", [])
         bindings = raw_results.get("results", {}).get("bindings", [])
+        logger.info(f"RunSPARQL: Query returned {len(bindings)} result(s) with variables: {head_vars}")
 
         # Simplify bindings for the LLM (extract just the values)
         simplified_rows = []
@@ -1113,6 +1620,26 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
                     simple_row[var] = row[var]["value"]
             simplified_rows.append(simple_row)
 
+        if not bindings:
+            logger.warning(f"RunSPARQL: Query returned NO results (0 bindings)")
+        else:
+            # Auto-update Journal with SPARQL results (no `global` needed - only modifying attributes)
+            fact_entry = {
+                "query_type": "SPARQL",
+                "variables": head_vars,
+                "result_count": len(simplified_rows),
+                "results": simplified_rows[:10],  # Store first 10 results to avoid bloat
+                "source": "RunSPARQL"
+            }
+            session_journal.verified_facts.append(fact_entry)
+
+            # Add completion step
+            session_journal.completed_steps.append(
+                f"Executed SPARQL query: {len(simplified_rows)} results with variables {head_vars}"
+            )
+
+            logger.info(f"Journal auto-updated: Stored {len(simplified_rows)} SPARQL results")
+
         return SPARQLResponse(
             vars=head_vars,
             bindings=simplified_rows,
@@ -1120,12 +1647,441 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
         )
 
     except Exception as e:
-        logger.error(f"SPARQL Execution Error: {e}")
+        logger.error(f"RunSPARQL: SPARQL Execution Error: {e}", exc_info=True)
+        logger.error(f"RunSPARQL: Failed query was:\n{full_query}")
+
+        # Log failure
+        session_journal.failed_attempts.append(
+            f"RunSPARQL failed: {str(e)[:100]}"
+        )
+
         # Return empty/error structure so the agent knows it failed
         return SPARQLResponse(
             vars=[],
             bindings=[],
             raw_json={"error": str(e)}
+        )
+
+
+@mcp.tool
+@log_tool_duration
+def FindByAttribute(value: str, attribute_name: str, context: Context) -> SearchResponse:
+    """
+    Performs a reverse lookup: finds entities by their attribute VALUE instead of name.
+
+    This tool is designed for searching technical IDs, codes, URLs, and other non-semantic values
+    where vector search fails (e.g., NUTS codes like "UKE11", ISBN numbers, Game IDs, URLs).
+
+    **When to use:**
+    - User provides a specific code, ID, or technical identifier
+    - Searching for entities by URL (e.g., official website)
+    - Searching for entities with specific attribute values (e.g., "population of 1000000")
+
+    **Examples:**
+    - "What city has NUTS code UKE11?" → FindByAttribute(value="UKE11", attribute_name="NUTS code")
+    - "Which entity has official website http://...?" → FindByAttribute(value="http://...", attribute_name="official website")
+
+    Args:
+        value (str): The attribute value to search for (e.g., "UKE11", "94332", "http://...")
+        attribute_name (str): The attribute name (e.g., "NUTS code", "population", "official website")
+
+    Returns:
+        SearchResponse: List of entities that have this attribute value.
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    logger.info(f"FindByAttribute: Searching for entities with {attribute_name}={value}")
+
+    # Sanitize attribute name for URI
+    sanitized_attr_name = attribute_name.replace(" ", "_")
+    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr_name}>"
+
+    # Build SPARQL query to find entities with this attribute value
+    # We need to handle both direct values and blank nodes
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT DISTINCT ?entity ?entityName WHERE {{
+        ?entity {attr_uri} ?attrValue .
+        OPTIONAL {{ ?entity rdfs:label ?entityName }}
+
+        # Match direct string/URI values
+        FILTER(
+            STR(?attrValue) = "{value}" ||
+            ?attrValue = <{value}> ||
+            # Also check if it's a blank node with rdf:value
+            EXISTS {{
+                ?attrValue rdf:value ?numVal .
+                FILTER(STR(?numVal) = "{value}")
+            }}
+        )
+    }}
+    LIMIT 50
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.info(f"No entities found with {attribute_name}={value}")
+            return SearchResponse(matches=[], result_count=0)
+
+        # Convert SPARQL results to NodeMatch objects
+        matches = []
+        for binding in bindings:
+            entity_uri = binding.get("entity", {}).get("value", "")
+            entity_name = binding.get("entityName", {}).get("value", "Unknown")
+
+            # Extract entity ID from URI
+            if "/entity/" in entity_uri:
+                entity_id = entity_uri.split("/entity/")[-1]
+            else:
+                entity_id = entity_uri
+
+            # We don't have full metadata here, so we'll fetch it from Qdrant if needed
+            # For now, create a basic NodeMatch
+            matches.append(NodeMatch(
+                original_id=entity_id,
+                name=entity_name,
+                node_type="entity",
+                relevance_score=1.0,  # Exact match
+                available_attributes=[],  # Could be populated if needed
+                available_predicates=[]
+            ))
+
+        # Auto-update Journal (no `global` needed - only modifying attributes)
+        for m in matches[:5]:
+            session_journal.visited_nodes[m.original_id] = m.name
+        session_journal.completed_steps.append(
+            f"Found {len(matches)} entities with {attribute_name}={value}"
+        )
+
+        logger.info(f"FindByAttribute: Found {len(matches)} entities")
+        return SearchResponse(matches=matches, result_count=len(matches))
+
+    except Exception as e:
+        logger.error(f"FindByAttribute failed: {e}")
+        session_journal.failed_attempts.append(
+            f"FindByAttribute({attribute_name}={value}): {str(e)[:100]}"
+        )
+        return SearchResponse(matches=[], result_count=0)
+
+
+@mcp.tool
+@log_tool_duration
+def VerifyNumericCondition(
+    value1: str,
+    operator: Literal["<", ">", "<=", ">=", "==", "!="],
+    value2: str,
+    unit: str = "",
+    context: Context = None
+) -> NumericComparisonResponse:
+    """
+    Performs deterministic mathematical comparison between two values.
+
+    This tool is the "Math Judge" - it returns a definitive TRUE/FALSE verdict for numeric
+    comparisons, solving the problem where LLMs are bad at precise math or forget to state
+    the final answer.
+
+    **When to use:**
+    - Any "Verify" question involving numbers, dates, or counts
+    - Questions asking "Is X greater/less than Y?"
+    - Questions comparing durations, populations, areas, costs, etc.
+
+    **Supported comparisons:**
+    - Numbers (including decimals)
+    - Dates (ISO format: YYYY-MM-DD)
+    - Values with units (e.g., "150 million", "146 minutes")
+
+    **Examples:**
+    - "Is the duration less than 238.9 minutes?" → VerifyNumericCondition("146", "<", "238.9", "minutes")
+    - "Is the population greater than 1 million?" → VerifyNumericCondition("1500000", ">", "1000000", "people")
+    - "Was it released before 2020?" → VerifyNumericCondition("2019-05-15", "<", "2020-01-01")
+
+    Args:
+        value1 (str): First value (can include units like "150 million")
+        operator (str): Comparison operator: <, >, <=, >=, ==, !=
+        value2 (str): Second value (can include units)
+        unit (str): Optional unit description for context (e.g., "dollars", "minutes", "people")
+
+    Returns:
+        NumericComparisonResponse: Verdict (TRUE/FALSE/ERROR) with explanation.
+    """
+    logger.info(f"VerifyNumericCondition: {value1} {operator} {value2} ({unit})")
+
+    def parse_numeric(val: str) -> float:
+        """Parse numeric value, handling common formats like '150 million', '1.5k', dates."""
+        val = val.strip().lower()
+
+        # Handle dates (convert to timestamp for comparison)
+        if "-" in val and len(val) >= 10:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(val.split("T")[0])
+                return dt.timestamp()
+            except:
+                pass
+
+        # Handle multipliers
+        multipliers = {
+            "trillion": 1e12, "billion": 1e9, "million": 1e6,
+            "thousand": 1e3, "hundred": 1e2,
+            "k": 1e3, "m": 1e6, "b": 1e9, "t": 1e12
+        }
+
+        # Extract number and multiplier
+        import re
+        match = re.match(r"([+-]?[\d.,]+)\s*([a-z]+)?", val)
+        if match:
+            num_str = match.group(1).replace(",", "")
+            mult_str = match.group(2) or ""
+
+            num = float(num_str)
+            mult = multipliers.get(mult_str, 1.0)
+            return num * mult
+
+        # Fallback: try direct conversion
+        return float(val.replace(",", ""))
+
+    try:
+        # Parse both values
+        num1 = parse_numeric(value1)
+        num2 = parse_numeric(value2)
+
+        # Perform comparison
+        comparisons = {
+            "<": num1 < num2,
+            ">": num1 > num2,
+            "<=": num1 <= num2,
+            ">=": num1 >= num2,
+            "==": abs(num1 - num2) < 1e-9,  # Float equality tolerance
+            "!=": abs(num1 - num2) >= 1e-9
+        }
+
+        result = comparisons[operator]
+        verdict = "TRUE" if result else "FALSE"
+
+        # Build explanation
+        unit_str = f" {unit}" if unit else ""
+        explanation = f"{value1}{unit_str} {operator} {value2}{unit_str} → {num1} {operator} {num2} = {verdict}"
+
+        logger.info(f"VerifyNumericCondition result: {verdict}")
+
+        # Auto-update Journal (no `global` needed - only modifying attributes)
+        session_journal.verified_facts.append({
+            "fact": explanation,
+            "source": "VerifyNumericCondition"
+        })
+        session_journal.completed_steps.append(f"Verified: {explanation}")
+
+        return NumericComparisonResponse(
+            verdict=verdict,
+            explanation=explanation,
+            value1=f"{num1}{unit_str}",
+            value2=f"{num2}{unit_str}",
+            operator=operator
+        )
+
+    except Exception as e:
+        logger.error(f"VerifyNumericCondition failed: {e}")
+        session_journal.failed_attempts.append(
+            f"VerifyNumericCondition({value1} {operator} {value2}): {str(e)[:100]}"
+        )
+        return NumericComparisonResponse(
+            verdict="ERROR",
+            explanation=f"Could not compare values: {str(e)}",
+            value1=value1,
+            value2=value2,
+            operator=operator
+        )
+
+
+@mcp.tool
+@log_tool_duration
+def CompareEntities(
+    entity_ids: list[str],
+    attribute_name: str,
+    context: Context
+) -> CompareEntitiesResponse:
+    """
+    Simultaneously compares an attribute across multiple entities and returns sorted results.
+
+    This is the "Leaderboard" tool - instead of fetching attributes one-by-one (which causes
+    context drift), it batches all requests and returns a sorted comparison.
+
+    **When to use:**
+    - "SelectBetween" questions (comparing two items)
+    - "SelectAmong" questions (finding the best in a group)
+    - Any question asking "which is bigger/longer/more expensive/etc."
+
+    **Examples:**
+    - "Which movie is longer, X or Y?" → CompareEntities(ids=["Q1", "Q2"], attribute_name="duration")
+    - "Which of these cities has the highest population?" → CompareEntities(ids=["Q64", "Q100", "Q90"], attribute_name="population")
+    - "Which film cost more?" → CompareEntities(ids=["Q123", "Q456"], attribute_name="cost")
+
+    Args:
+        entity_ids (list[str]): List of entity IDs to compare (e.g., ["Q100", "Q64"])
+        attribute_name (str): The attribute to compare (e.g., "population", "duration", "cost")
+
+    Returns:
+        CompareEntitiesResponse: Sorted list of entities with their attribute values.
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    logger.info(f"CompareEntities: Comparing {attribute_name} for {len(entity_ids)} entities")
+
+    # Sanitize attribute name
+    sanitized_attr_name = attribute_name.replace(" ", "_")
+    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr_name}>"
+
+    # Build SPARQL query with VALUES clause for multiple entities
+    entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
+
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT ?entity ?entityName ?value ?numericValue ?unit WHERE {{
+        VALUES ?entity {{ {entity_uris} }}
+
+        ?entity {attr_uri} ?value .
+        OPTIONAL {{ ?entity rdfs:label ?entityName }}
+
+        # Try to resolve blank nodes
+        OPTIONAL {{
+            ?value rdf:value ?numericValue .
+            OPTIONAL {{ ?value unit:unit ?unit }}
+        }}
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.warning(f"No attribute values found for {attribute_name}")
+            return CompareEntitiesResponse(
+                attribute_name=attribute_name,
+                results=[],
+                sorted_by="none",
+                status=f"No values found for attribute '{attribute_name}'"
+            )
+
+        # Process results
+        entity_values = {}
+        for binding in bindings:
+            entity_uri = binding.get("entity", {}).get("value", "")
+            entity_name = binding.get("entityName", {}).get("value", "Unknown")
+
+            # Extract entity ID
+            if "/entity/" in entity_uri:
+                entity_id = entity_uri.split("/entity/")[-1]
+            else:
+                entity_id = entity_uri
+
+            # Get value (prefer numeric resolution from blank nodes)
+            if "numericValue" in binding and binding["numericValue"].get("value"):
+                numeric_val = binding["numericValue"]["value"]
+                unit_val = binding.get("unit", {}).get("value", "")
+
+                # Extract unit name from URI
+                if "/" in unit_val:
+                    unit_val = unit_val.split("/")[-1]
+
+                value_obj = {
+                    "value": numeric_val,
+                    "unit": unit_val
+                }
+
+                # Try to parse as float for sorting
+                try:
+                    normalized_val = float(numeric_val)
+                except:
+                    normalized_val = None
+            else:
+                # Direct value (string or number)
+                value_str = binding.get("value", {}).get("value", "")
+                value_obj = value_str
+
+                # Try to parse as float for sorting
+                try:
+                    normalized_val = float(value_str)
+                except:
+                    normalized_val = None
+
+            # Store (use first value if multiple)
+            if entity_id not in entity_values:
+                entity_values[entity_id] = {
+                    "name": entity_name,
+                    "value": value_obj,
+                    "normalized": normalized_val
+                }
+
+        # Create comparison results
+        comparison_results = []
+        for eid in entity_ids:
+            if eid in entity_values:
+                data = entity_values[eid]
+                comparison_results.append(ComparisonResult(
+                    entity_id=eid,
+                    entity_name=data["name"],
+                    value=data["value"],
+                    normalized_value=data["normalized"]
+                ))
+            else:
+                # Entity not found or no value
+                comparison_results.append(ComparisonResult(
+                    entity_id=eid,
+                    entity_name=session_journal.visited_nodes.get(eid, eid),
+                    value="N/A",
+                    normalized_value=None
+                ))
+
+        # Sort by normalized value (descending)
+        sorted_results = sorted(
+            comparison_results,
+            key=lambda x: x.normalized_value if x.normalized_value is not None else float('-inf'),
+            reverse=True
+        )
+
+        # Auto-update Journal (no `global` needed - only modifying attributes)
+        for result in sorted_results:
+            if result.entity_id not in session_journal.found_values:
+                session_journal.found_values[result.entity_id] = {}
+            session_journal.found_values[result.entity_id][attribute_name] = result.value
+
+        session_journal.completed_steps.append(
+            f"Compared {attribute_name} for {len(entity_ids)} entities"
+        )
+
+        # Build status message
+        sorted_by = "numeric value (descending)" if any(
+            r.normalized_value for r in sorted_results) else "order provided"
+
+        logger.info(f"CompareEntities: Successfully compared {len(comparison_results)} entities")
+
+        return CompareEntitiesResponse(
+            attribute_name=attribute_name,
+            results=sorted_results,
+            sorted_by=sorted_by,
+            status=f"Successfully compared {len(comparison_results)} entities"
+        )
+
+    except Exception as e:
+        logger.error(f"CompareEntities failed: {e}")
+        session_journal.failed_attempts.append(
+            f"CompareEntities({attribute_name}): {str(e)[:100]}"
+        )
+        return CompareEntitiesResponse(
+            attribute_name=attribute_name,
+            results=[],
+            sorted_by="error",
+            status=f"Error: {str(e)}"
         )
 
 
