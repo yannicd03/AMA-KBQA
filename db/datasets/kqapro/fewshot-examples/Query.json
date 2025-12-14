@@ -1,0 +1,26 @@
+[
+  {
+    "question": "What is the ISO 3166-2 code of the city with NUTS code UKE11 (the start time of this statement is 1999-01-01)?",
+    "reasoning": "The predicted answer 'The ISO 3166-2 code of the city with NUTS code UKE11 is GB-KHL.' matches the gold answer 'GB-KHL' semantically. The agent correctly identified the ISO 3166-2 code as GB-KHL, which is the core information required by the question.",
+    "correct_qtype": "Query",
+    "lesson_learned": "The agent could improve by explicitly mentioning the city name (Kingston upon Hull) in the final answer to provide more context, even though the question only asks for the ISO 3166-2 code.",
+    "argumentation_score": 5,
+    "exported_at": "2025-12-14T01:19:25.584546"
+  },
+  {
+    "question": "What visual artwork is titled Milan and is distributed by Star Cinema?",
+    "reasoning": "The predicted answer correctly identifies 'Milan' as the visual artwork distributed by Star Cinema, which matches the gold answer. The additional information about the entity ID (Q6850484) is supplementary but does not contradict the core answer.",
+    "correct_qtype": "Query",
+    "lesson_learned": "Reduce redundancy by avoiding repeated tool calls (e.g., multiple RunSPARQL queries) and focus on a more direct path to the answer, such as querying for the specific relationship between 'Milan' and 'Star Cinema' upfront.",
+    "argumentation_score": 4,
+    "exported_at": "2025-12-13T22:22:10.455573"
+  },
+  {
+    "question": "What is the release date of the visual artwork that received an Academy Award for Best Film Editing involving the winner Barbara McLean?",
+    "reasoning": "The agent's predicted answer correctly identifies the release date as 1944, which matches the gold answer '1944-01-01'. While the agent expresses uncertainty about the connection to Barbara McLean due to her absence in the knowledge graph, it correctly identifies the film 'Wilson' as the winner of the Academy Award for Best Film Editing in 1944. The core factual answer (the release date) is correct and semantically equivalent to the gold answer.",
+    "correct_qtype": "Query",
+    "lesson_learned": "The agent should prioritize searching for the award category first (Academy Award for Best Film Editing) and then explore its winners by year, rather than starting with the person's name which may not be in the knowledge graph. This would be more efficient for questions involving awards and dates.",
+    "argumentation_score": 4,
+    "exported_at": "2025-12-14T01:19:25.584546"
+  }
+]
