@@ -29,7 +29,7 @@ from qdrant_client.http import models
 from openai import OpenAI
 from loguru import logger
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Literal, Any, Optional
+from typing import Literal, Any, Optional, Dict
 from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
@@ -1101,6 +1101,206 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
 
 @mcp.tool
 @log_tool_duration
+def GetNodeSummary(node_id: str, context: Context) -> Dict[str, Any]:
+    """
+    Get a comprehensive summary of a node with ALL its data in ONE call.
+
+    🎯 Use this when you need to fully explore a node's attributes and relations.
+
+    Instead of:
+      1. FindNode → get node metadata
+      2. For each attribute: GetAttributeDetails
+      3. For each relation: GetRelationDetails
+
+    This tool fetches EVERYTHING at once, dramatically reducing iterations.
+
+    ✅ WHEN TO USE:
+    - After finding a node, when you need to explore what data it has
+    - When you need multiple attributes/relations from the same node
+    - To get a complete picture before deciding what to query next
+
+    📝 EXAMPLES:
+
+    Example 1: Explore an entity
+    Q: "Tell me about Barnstable County"
+    → GetNodeSummary("Q54089")
+    → Returns: All attributes (population, area, FIPS code, etc.) and relations
+
+    Example 2: Multi-attribute question
+    Q: "What is the population and area of Tokyo?"
+    → GetNodeSummary("Q1490")
+    → Get both population and area values in one call
+
+    Args:
+        node_id (str): The entity ID (e.g., "Q54089")
+
+    Returns:
+        Dict with:
+        - node_id: The queried node
+        - name: Human-readable name
+        - node_type: "entity" or "concept"
+        - attributes: Dict of {attribute_name: [values]}
+        - relations: Dict of {relation_name: [related_node_ids]}
+        - summary_stats: Counts of attributes and relations
+        - status: Success/error message
+
+    Example return:
+    {
+      "node_id": "Q54089",
+      "name": "Barnstable County",
+      "node_type": "entity",
+      "attributes": {
+        "population": ["215918", "214990"],
+        "area": ["1000.5 square_kilometre"],
+        "FIPS 6-4 (US counties)": ["25001"]
+      },
+      "relations": {
+        "country": ["Q30"],
+        "located in time zone": ["Q941"]
+      },
+      "summary_stats": {
+        "attribute_count": 8,
+        "relation_count": 5
+      },
+      "status": "Success"
+    }
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    base_uri = format_entity_uri(node_id)
+    logger.info(f"GetNodeSummary: Fetching complete data for {node_id}")
+
+    # Query to get ALL attributes and relations in one SPARQL query
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT ?pred ?obj ?objValue ?objUnit WHERE {{
+        # Get all predicates from this node
+        {base_uri} ?pred ?obj .
+
+        # Try to resolve blank nodes for attributes
+        OPTIONAL {{
+            ?obj rdf:value ?objValue .
+            OPTIONAL {{ ?obj unit:unit ?objUnit }}
+        }}
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        # Also get node name from Qdrant
+        node_name = session_journal.visited_nodes.get(node_id, node_id)
+
+        # If not in journal, try to find it
+        if node_name == node_id:
+            search_result = FindNode(node_id, context)
+            if search_result.matches:
+                node_name = search_result.matches[0].name
+                node_type = search_result.matches[0].node_type
+            else:
+                node_type = "unknown"
+        else:
+            node_type = "entity"  # Assume entity if in journal
+
+        # Organize results into attributes and relations
+        attributes = {}
+        relations = {}
+
+        for binding in bindings:
+            pred_uri = binding.get("pred", {}).get("value", "")
+
+            # Skip RDF system predicates
+            if pred_uri.startswith("http://www.w3.org/1999/02/22-rdf-syntax-ns#") or \
+               pred_uri.startswith("http://www.w3.org/2000/01/rdf-schema#label"):
+                continue
+
+            # Extract predicate name
+            pred_name = pred_uri.split("/")[-1]
+
+            # Determine if this is an attribute or relation
+            is_attribute = "/attribute/" in pred_uri
+            is_relation = "/property/" in pred_uri
+
+            # Get the object value
+            if "objValue" in binding and binding["objValue"].get("value"):
+                # Resolved blank node
+                value = binding["objValue"]["value"]
+                if "objUnit" in binding and binding["objUnit"].get("value"):
+                    unit_uri = binding["objUnit"]["value"]
+                    unit = unit_uri.split("/")[-1] if "/" in unit_uri else unit_uri
+                    value = f"{value} {unit}"
+            else:
+                # Direct value or unresolved
+                value = binding.get("obj", {}).get("value", "")
+
+            # Categorize
+            if is_attribute:
+                if pred_name not in attributes:
+                    attributes[pred_name] = []
+                if value not in attributes[pred_name]:  # Avoid duplicates
+                    attributes[pred_name].append(value)
+
+            elif is_relation:
+                # Extract entity ID if it's a URI
+                if value.startswith("http://kqapro.org/entity/"):
+                    value = value.split("/entity/")[-1]
+
+                if pred_name not in relations:
+                    relations[pred_name] = []
+                if value not in relations[pred_name]:  # Avoid duplicates
+                    relations[pred_name].append(value)
+
+        logger.info(f"GetNodeSummary: Found {len(attributes)} attributes, {len(relations)} relations")
+
+        # Auto-update journal with all discovered data
+        if attributes:
+            if node_id not in session_journal.found_values:
+                session_journal.found_values[node_id] = {}
+
+            for attr_name, attr_values in attributes.items():
+                session_journal.found_values[node_id][attr_name] = attr_values
+
+        session_journal.completed_steps.append(
+            f"Explored {node_name}: {len(attributes)} attributes, {len(relations)} relations"
+        )
+
+        return {
+            "node_id": node_id,
+            "name": node_name,
+            "node_type": node_type,
+            "attributes": attributes,
+            "relations": relations,
+            "summary_stats": {
+                "attribute_count": len(attributes),
+                "relation_count": len(relations),
+                "total_attribute_values": sum(len(v) for v in attributes.values()),
+                "total_related_nodes": sum(len(v) for v in relations.values())
+            },
+            "status": "Success"
+        }
+
+    except Exception as e:
+        logger.error(f"GetNodeSummary failed: {e}")
+        session_journal.failed_attempts.append(
+            f"GetNodeSummary({node_id}): {str(e)[:100]}"
+        )
+        return {
+            "node_id": node_id,
+            "name": node_name if 'node_name' in locals() else node_id,
+            "node_type": "unknown",
+            "attributes": {},
+            "relations": {},
+            "summary_stats": {"attribute_count": 0, "relation_count": 0},
+            "status": f"Error: {str(e)}"
+        }
+
+
+@mcp.tool
+@log_tool_duration
 def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context) -> AttributeDetailsResponse:
     """
     Retrieves the full details of a specific attribute for a given node from the knowledge graph.
@@ -1254,6 +1454,439 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
             values=[],
             status=f"Error: {str(e)}"
         )
+
+
+@mcp.tool
+@log_tool_duration
+def GetAttributeWithQualifiers(
+    base_node_id: str,
+    attribute_name: str,
+    context: Context
+) -> Dict[str, Any]:
+    """
+    Retrieves attribute values INCLUDING all their qualifiers (dates, locations, roles, etc.).
+
+    🎯 This is the ONE-STOP tool for temporal queries and qualified facts.
+
+    Instead of the old workflow:
+      1. GetAttributeDetails → get bnode IDs
+      2. For each bnode, call GetEdgeQualifiers
+
+    You get EVERYTHING in ONE call with this tool.
+
+    ✅ WHEN TO USE:
+    - Questions with temporal constraints: "as of 2015", "in 2020", "on January 1st"
+    - Questions about qualified facts: "population at a specific time"
+    - Any attribute that might have context (date, location, role, determination method, etc.)
+    - When you need to filter by qualifier value (e.g., find population value for 2015)
+
+    📝 EXAMPLES:
+
+    Example 1: Temporal population query
+    Q: "What was the population of Barnstable County in 2015?"
+    → GetAttributeWithQualifiers("Q54089", "population")
+    → Returns all population values with their "point in time" qualifiers
+    → You can then filter for date matching 2015
+
+    Example 2: Director with time context
+    Q: "When did Christopher Nolan direct Inception?"
+    → GetAttributeWithQualifiers("Q25188", "director")
+    → Returns directors with their "start time" qualifiers
+
+    Example 3: Population with determination method
+    Q: "What census data exists for Tokyo?"
+    → GetAttributeWithQualifiers("Q1490", "population")
+    → Returns population values with qualifiers like "determination method": "census"
+
+    Args:
+        base_node_id (str): The entity ID (e.g., "Q54089" for Barnstable County)
+        attribute_name (str): The attribute name (e.g., "population", "director")
+
+    Returns:
+        Dict with:
+        - node_id: The entity queried
+        - attribute_name: The attribute queried
+        - values: List of value objects, each containing:
+          - value: The attribute value (numeric or string)
+          - unit: (if applicable) The unit of measurement
+          - qualifiers: Dict of qualifier names → values
+            e.g., {"point in time": "2015-01-01", "determination method": "United States Census"}
+        - status: Success/error message
+
+    Example return value:
+    {
+      "node_id": "Q54089",
+      "attribute_name": "population",
+      "values": [
+        {
+          "value": "215918",
+          "unit": "1",
+          "qualifiers": {
+            "point in time": "2015-01-01",
+            "determination method": "United States Census"
+          }
+        },
+        {
+          "value": "214990",
+          "unit": "1",
+          "qualifiers": {
+            "point in time": "2014-01-01"
+          }
+        }
+      ],
+      "status": "Found 2 value(s) with qualifiers"
+    }
+
+    💡 TIP: After getting the results, you can filter the values list by qualifier.
+    For example, to find the 2015 population, look for the value where
+    qualifiers["point in time"] starts with "2015".
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    # Format the entity URI
+    base_uri = format_entity_uri(base_node_id)
+
+    # Construct attribute URI
+    sanitized_attr_name = attribute_name.replace(" ", "_")
+    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr_name}>"
+
+    logger.info(f"GetAttributeWithQualifiers: {base_uri} -> {attribute_name}")
+
+    # Comprehensive query that gets values AND their qualifiers in one go
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT ?valueNode ?value ?numericValue ?unit ?qualPred ?qualVal WHERE {{
+        {base_uri} {attr_uri} ?valueNode .
+
+        # Resolve blank nodes (for quantities with units)
+        OPTIONAL {{
+            ?valueNode rdf:value ?numericValue .
+            OPTIONAL {{ ?valueNode unit:unit ?unit }}
+        }}
+
+        # Get all qualifiers for this value
+        OPTIONAL {{
+            ?valueNode ?qualPred ?qualVal .
+            # Filter out structural predicates
+            FILTER(?qualPred != rdf:type && ?qualPred != rdf:value && ?qualPred != unit:unit)
+        }}
+
+        # Determine the actual value to return
+        BIND(IF(BOUND(?numericValue), ?numericValue, ?valueNode) AS ?value)
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.info(f"No values found for {attribute_name} on {base_node_id}")
+            return {
+                "node_id": base_node_id,
+                "attribute_name": attribute_name,
+                "values": [],
+                "status": f"No values found for attribute '{attribute_name}' on node {base_node_id}"
+            }
+
+        # Group results by value node (each value can have multiple qualifiers)
+        value_groups = {}
+        for binding in bindings:
+            value_node = binding.get("valueNode", {}).get("value", "")
+
+            # Initialize this value group if not seen
+            if value_node not in value_groups:
+                value_obj = {}
+
+                # Get the actual value
+                if "numericValue" in binding and binding["numericValue"].get("value"):
+                    value_obj["value"] = binding["numericValue"]["value"]
+
+                    # Add unit if present
+                    if "unit" in binding and binding["unit"].get("value"):
+                        unit_uri = binding["unit"]["value"]
+                        value_obj["unit"] = unit_uri.split("/")[-1] if "/" in unit_uri else unit_uri
+                    else:
+                        value_obj["unit"] = ""
+
+                    value_obj["resolved_from_bnode"] = value_node
+                    logger.debug(f"Resolved blank node {value_node}: {value_obj['value']}")
+                else:
+                    # Direct value (not a blank node)
+                    value_obj["value"] = binding.get("value", {}).get("value", "")
+
+                value_obj["qualifiers"] = {}
+                value_groups[value_node] = value_obj
+
+            # Add qualifier if present
+            if "qualPred" in binding and "qualVal" in binding:
+                qual_pred_uri = binding["qualPred"]["value"]
+                qual_val = binding["qualVal"]["value"]
+
+                # Extract readable predicate name
+                qual_pred_name = qual_pred_uri.split("/")[-1]
+
+                # Handle common qualifiers specially for readability
+                qualifier_mappings = {
+                    "P585": "point in time",
+                    "P459": "determination method",
+                    "P580": "start time",
+                    "P582": "end time",
+                    "P276": "location",
+                    "P805": "statement is subject of",
+                    "P1932": "object has role",
+                }
+
+                display_name = qualifier_mappings.get(qual_pred_name, qual_pred_name)
+                value_groups[value_node]["qualifiers"][display_name] = qual_val
+
+        # Convert to list format
+        values_list = list(value_groups.values())
+
+        logger.info(f"Found {len(values_list)} value(s) with qualifiers for {attribute_name}")
+
+        # AUTO-UPDATE JOURNAL
+        if values_list:
+            # Store in found_values
+            if base_node_id not in session_journal.found_values:
+                session_journal.found_values[base_node_id] = {}
+
+            session_journal.found_values[base_node_id][attribute_name] = values_list
+
+            # Log as verified facts
+            for val in values_list[:3]:  # First 3 values
+                fact_entry = {
+                    "subject": base_node_id,
+                    "attribute": attribute_name,
+                    "value": val.get("value"),
+                    "qualifiers": val.get("qualifiers", {}),
+                    "source": "GetAttributeWithQualifiers"
+                }
+                if "unit" in val:
+                    fact_entry["unit"] = val["unit"]
+
+                session_journal.verified_facts.append(fact_entry)
+
+            # Log completion
+            node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
+            session_journal.completed_steps.append(
+                f"Retrieved {attribute_name} with qualifiers for {node_name}"
+            )
+
+            logger.info(f"Journal auto-updated: Stored {attribute_name} with qualifiers for {base_node_id}")
+
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "values": values_list,
+            "status": f"Found {len(values_list)} value(s) with qualifiers"
+        }
+
+    except Exception as e:
+        logger.error(f"GetAttributeWithQualifiers failed: {e}")
+        session_journal.failed_attempts.append(
+            f"GetAttributeWithQualifiers({base_node_id}, {attribute_name}): {str(e)[:100]}"
+        )
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "values": [],
+            "status": f"Error: {str(e)}"
+        }
+
+
+@mcp.tool
+@log_tool_duration
+def TemporalAttributeQuery(
+    base_node_id: str,
+    attribute_name: str,
+    target_date: str,
+    tolerance_days: int = 365,
+    context: Context = None
+) -> Dict[str, Any]:
+    """
+    Get an attribute value as of a specific date (temporal query made easy).
+
+    🎯 This is the EASIEST way to answer "What was X's Y in 2015?" questions.
+
+    Instead of:
+      1. GetAttributeWithQualifiers → get all values with dates
+      2. Manually filter by date
+      3. Handle date parsing and comparison
+
+    This tool does ALL of that for you automatically.
+
+    ✅ WHEN TO USE:
+    - Questions with specific dates: "on 2015-01-01", "in 2020", "as of January 1st"
+    - Questions asking for values at a point in time
+    - When you need the closest value to a specific date
+
+    📝 EXAMPLES:
+
+    Example 1: Population on specific date
+    Q: "What was the population of Barnstable County on 2015-01-01?"
+    → TemporalAttributeQuery("Q54089", "population", "2015-01-01")
+    → Returns: The population value closest to that date
+
+    Example 2: Value in a year (finds closest)
+    Q: "What was Tokyo's population in 2020?"
+    → TemporalAttributeQuery("Q1490", "population", "2020-01-01", tolerance_days=365)
+    → Returns: Population value from 2020 (within 1 year tolerance)
+
+    Example 3: Boolean check with date
+    Q: "On 2015-01-01 was the population of X greater than 56000?"
+    1. result = TemporalAttributeQuery("Q54089", "population", "2015-01-01")
+    2. VerifyNumericCondition(result["value"], ">", "56000")
+
+    Args:
+        base_node_id (str): The entity ID (e.g., "Q54089")
+        attribute_name (str): The attribute name (e.g., "population")
+        target_date (str): Target date in ISO format (YYYY-MM-DD) or just year (YYYY)
+        tolerance_days (int): Max days difference to accept (default: 365 days = 1 year)
+
+    Returns:
+        Dict with:
+        - node_id: The entity queried
+        - attribute_name: The attribute queried
+        - target_date: The date you asked for
+        - found_date: The actual date of the value found (might be slightly different)
+        - value: The attribute value
+        - unit: (if applicable) The unit
+        - date_difference_days: How many days between target and found date
+        - all_qualifiers: All other qualifiers for this value
+        - status: Success/error message
+
+    Example return:
+    {
+      "node_id": "Q54089",
+      "attribute_name": "population",
+      "target_date": "2015-01-01",
+      "found_date": "2015-01-01",
+      "value": "215918",
+      "unit": "1",
+      "date_difference_days": 0,
+      "all_qualifiers": {"determination method": "United States Census"},
+      "status": "Found exact match"
+    }
+    """
+    from datetime import datetime, timedelta
+
+    logger.info(f"TemporalAttributeQuery: {base_node_id} -> {attribute_name} @ {target_date}")
+
+    # First, get all values with qualifiers using our other tool
+    qualified_response = GetAttributeWithQualifiers(base_node_id, attribute_name, context)
+
+    if not qualified_response.get("values"):
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "target_date": target_date,
+            "status": f"No values found for '{attribute_name}' on node {base_node_id}"
+        }
+
+    # Parse target date (handle both YYYY and YYYY-MM-DD)
+    try:
+        if len(target_date) == 4:  # Just year
+            target_dt = datetime(int(target_date), 1, 1)
+        else:
+            target_dt = datetime.fromisoformat(target_date.split("T")[0])
+    except Exception as e:
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "target_date": target_date,
+            "status": f"Invalid date format '{target_date}'. Use YYYY or YYYY-MM-DD"
+        }
+
+    # Find values with "point in time" qualifiers
+    temporal_values = []
+    for val_obj in qualified_response["values"]:
+        qualifiers = val_obj.get("qualifiers", {})
+
+        # Look for temporal qualifiers (point in time, start time, end time)
+        date_str = qualifiers.get("point in time") or qualifiers.get("start time") or qualifiers.get("end time")
+
+        if date_str:
+            try:
+                # Parse the qualifier date
+                val_dt = datetime.fromisoformat(date_str.split("T")[0])
+
+                # Calculate difference
+                diff_days = abs((val_dt - target_dt).days)
+
+                temporal_values.append({
+                    "value_obj": val_obj,
+                    "date": val_dt,
+                    "date_str": date_str,
+                    "diff_days": diff_days
+                })
+            except Exception as e:
+                logger.warning(f"Could not parse date qualifier '{date_str}': {e}")
+                continue
+
+    if not temporal_values:
+        # No temporal qualifiers found - return first value with a warning
+        first_val = qualified_response["values"][0]
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "target_date": target_date,
+            "value": first_val.get("value"),
+            "unit": first_val.get("unit", ""),
+            "all_qualifiers": first_val.get("qualifiers", {}),
+            "status": "No temporal qualifiers found - returning first value (may not match date)"
+        }
+
+    # Sort by date difference (closest first)
+    temporal_values.sort(key=lambda x: x["diff_days"])
+
+    # Get the closest match
+    best_match = temporal_values[0]
+
+    # Check if within tolerance
+    if best_match["diff_days"] > tolerance_days:
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "target_date": target_date,
+            "found_date": best_match["date_str"],
+            "value": best_match["value_obj"].get("value"),
+            "unit": best_match["value_obj"].get("unit", ""),
+            "date_difference_days": best_match["diff_days"],
+            "all_qualifiers": best_match["value_obj"].get("qualifiers", {}),
+            "status": f"Closest value is {best_match['diff_days']} days away (exceeds tolerance of {tolerance_days} days)"
+        }
+
+    # Found a match within tolerance
+    val_obj = best_match["value_obj"]
+    other_qualifiers = {k: v for k, v in val_obj.get("qualifiers", {}).items()
+                       if k not in ["point in time", "start time", "end time"]}
+
+    status_msg = "Found exact match" if best_match["diff_days"] == 0 else f"Found value {best_match['diff_days']} days away"
+
+    result = {
+        "node_id": base_node_id,
+        "attribute_name": attribute_name,
+        "target_date": target_date,
+        "found_date": best_match["date_str"],
+        "value": val_obj.get("value"),
+        "unit": val_obj.get("unit", ""),
+        "date_difference_days": best_match["diff_days"],
+        "all_qualifiers": other_qualifiers,
+        "status": status_msg
+    }
+
+    # Auto-update journal
+    session_journal.verified_facts.append({
+        "fact": f"{attribute_name} of {base_node_id} on {target_date} = {result['value']}",
+        "source": "TemporalAttributeQuery"
+    })
+
+    logger.info(f"TemporalAttributeQuery: {status_msg}")
+    return result
 
 
 @mcp.tool
@@ -1575,15 +2208,278 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 
 @mcp.tool
 @log_tool_duration
-def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
+def FindEntitiesByRelationPath(
+    start_node_id: str,
+    relation_path: list[Dict[str, str]],
+    context: Context
+) -> Dict[str, Any]:
     """
-    Executes an arbitrary SPARQL query against the Knowledge Graph.
+    Navigate multi-hop relation paths to find connected entities.
 
-    Use this tool when you need complex logic (aggregations, multi-hop, filters)
-    that cannot be satisfied by simple neighborhood exploration.
+    🎯 Use this for questions that require following relationships across multiple nodes.
+
+    Instead of:
+      1. GetRelationDetails(A, "rel1") → get B
+      2. GetRelationDetails(B, "rel2") → get C
+      3. GetRelationDetails(C, "rel3") → get D
+
+    This tool does multi-hop navigation in ONE SPARQL query.
+
+    ✅ WHEN TO USE:
+    - Questions with nested relationships: "X's Y's Z"
+    - Multi-hop queries: "county that borders the county that borders X"
+    - Finding entities via indirect connections
+
+    📝 EXAMPLES:
+
+    Example 1: Two-hop navigation
+    Q: "What is the local dialing code of the county town that is the formation location of Marillion?"
+    Step 1: Marillion → location_of_formation → ?location
+    Step 2: ?location → local_dialing_code → ?code
+
+    → FindEntitiesByRelationPath("Q678410", [
+        {"relation": "location of formation", "direction": "forward"},
+      ])
+    → Then get attribute from the result
+
+    Example 2: Border relationships
+    Q: "Which counties border the county that borders Cecil County?"
+
+    → FindEntitiesByRelationPath("Q385365", [
+        {"relation": "shares border with", "direction": "forward"},
+        {"relation": "shares border with", "direction": "forward"}
+      ])
+    → Returns all counties 2 hops away via "shares border with"
+
+    Example 3: Ownership chain
+    Q: "What companies are owned by companies owned by X?"
+
+    → FindEntitiesByRelationPath("Q23844", [
+        {"relation": "owner of", "direction": "forward"},
+        {"relation": "owner of", "direction": "forward"}
+      ])
 
     Args:
-        query (str): A valid SPARQL query string.
+        start_node_id (str): Starting entity ID (e.g., "Q678410")
+        relation_path (list[Dict]): List of relation steps, each with:
+          - relation (str): Relation name (e.g., "location of formation")
+          - direction (str): "forward" (A→B) or "backward" (B→A)
+
+    Returns:
+        Dict with:
+        - start_node_id: The starting entity
+        - relation_path: The path you requested
+        - entities_found: List of entity IDs reached at the end of the path
+        - path_length: Number of hops
+        - intermediate_nodes: Dict showing nodes at each hop (for debugging)
+        - status: Success/error message
+
+    Example return:
+    {
+      "start_node_id": "Q678410",
+      "relation_path": [{"relation": "location of formation", "direction": "forward"}],
+      "entities_found": ["Q213474"],
+      "path_length": 1,
+      "intermediate_nodes": {
+        "hop_0": ["Q678410"],
+        "hop_1": ["Q213474"]
+      },
+      "status": "Found 1 entity/entities"
+    }
+    """
+    ctx: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = ctx.sparql
+
+    logger.info(f"FindEntitiesByRelationPath: Starting from {start_node_id}, {len(relation_path)} hops")
+
+    # Build SPARQL query dynamically based on path
+    start_uri = format_entity_uri(start_node_id)
+
+    # Initialize query
+    query_parts = [SPARQL_PREFIXES]
+
+    # Build SELECT clause (select all intermediate variables)
+    hop_vars = [f"?hop{i}" for i in range(len(relation_path) + 1)]
+    select_clause = "SELECT DISTINCT " + " ".join(hop_vars)
+    query_parts.append(select_clause)
+
+    # Build WHERE clause
+    where_clauses = []
+    where_clauses.append(f"BIND({start_uri} AS ?hop0)")
+
+    for i, step in enumerate(relation_path):
+        relation_name = step["relation"]
+        direction = step.get("direction", "forward")
+
+        # Sanitize relation name and create URI
+        sanitized_relation = relation_name.replace(" ", "_")
+        relation_uri = f"<http://kqapro.org/property/{sanitized_relation}>"
+
+        current_var = f"?hop{i}"
+        next_var = f"?hop{i+1}"
+
+        if direction == "forward":
+            where_clauses.append(f"{current_var} {relation_uri} {next_var} .")
+        else:  # backward
+            where_clauses.append(f"{next_var} {relation_uri} {current_var} .")
+
+    query_parts.append("WHERE {")
+    query_parts.extend([f"  {clause}" for clause in where_clauses])
+    query_parts.append("}")
+    query_parts.append("LIMIT 100")
+
+    full_query = "\n".join(query_parts)
+
+    try:
+        sparql.setQuery(full_query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.info("FindEntitiesByRelationPath: No entities found")
+            return {
+                "start_node_id": start_node_id,
+                "relation_path": relation_path,
+                "entities_found": [],
+                "path_length": len(relation_path),
+                "intermediate_nodes": {},
+                "status": "No entities found following this path"
+            }
+
+        # Extract entities at each hop
+        intermediate_nodes = {f"hop_{i}": set() for i in range(len(relation_path) + 1)}
+
+        for binding in bindings:
+            for i in range(len(relation_path) + 1):
+                hop_var = f"hop{i}"
+                if hop_var in binding:
+                    uri = binding[hop_var]["value"]
+                    # Extract entity ID from URI
+                    if "/entity/" in uri:
+                        entity_id = uri.split("/entity/")[-1]
+                    else:
+                        entity_id = uri
+                    intermediate_nodes[f"hop_{i}"].add(entity_id)
+
+        # Convert sets to lists
+        intermediate_nodes = {k: list(v) for k, v in intermediate_nodes.items()}
+
+        # Final hop contains the target entities
+        final_entities = intermediate_nodes[f"hop_{len(relation_path)}"]
+
+        logger.info(f"FindEntitiesByRelationPath: Found {len(final_entities)} entities")
+
+        # Auto-update journal
+        session_journal.verified_facts.append({
+            "fact": f"Multi-hop path from {start_node_id}: {len(final_entities)} entities found",
+            "path": relation_path,
+            "results": final_entities[:10],  # First 10
+            "source": "FindEntitiesByRelationPath"
+        })
+
+        session_journal.completed_steps.append(
+            f"Navigated {len(relation_path)}-hop path from {start_node_id}: found {len(final_entities)} entities"
+        )
+
+        return {
+            "start_node_id": start_node_id,
+            "relation_path": relation_path,
+            "entities_found": final_entities,
+            "path_length": len(relation_path),
+            "intermediate_nodes": intermediate_nodes,
+            "status": f"Found {len(final_entities)} entity/entities"
+        }
+
+    except Exception as e:
+        logger.error(f"FindEntitiesByRelationPath failed: {e}")
+        session_journal.failed_attempts.append(
+            f"FindEntitiesByRelationPath({start_node_id}): {str(e)[:100]}"
+        )
+        return {
+            "start_node_id": start_node_id,
+            "relation_path": relation_path,
+            "entities_found": [],
+            "path_length": len(relation_path),
+            "intermediate_nodes": {},
+            "status": f"Error: {str(e)}"
+        }
+
+
+@mcp.tool
+@log_tool_duration
+def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
+    """
+    Executes a SPARQL query against the KQAPro knowledge graph.
+
+    ⚠️ IMPORTANT NAMESPACE RULES (REQUIRED FOR ALL QUERIES):
+    The system auto-injects these prefixes - you MUST use them correctly:
+
+    - Entities:    ex:Q12345        (e.g., ex:Q23844 for George Clooney)
+    - Properties:  prop:P1082       (e.g., prop:P1082 for population relation)
+    - Attributes:  attr:population  (e.g., attr:population for population attribute)
+    - Qualifiers:  qual:P585        (e.g., qual:P585 for "point in time")
+    - Units:       unit:minute      (e.g., unit:square_kilometre)
+    - Standard:    rdf:value, rdfs:label
+
+    ❌ DO NOT USE:
+    - Bare IDs: Q54089 (WRONG - will cause syntax error)
+    - Full URIs: <http://kqapro.org/entity/Q54089> (WRONG - unnecessary)
+    - Wrong prefixes: wdt:, wd:, kqapro: (WRONG - these don't exist)
+
+    📚 COMMON QUERY PATTERNS (COPY THESE):
+
+    1️⃣ Get all values for an attribute:
+       SELECT ?value WHERE {
+         ex:Q54089 attr:population ?value .
+       }
+
+    2️⃣ Get attribute values WITH qualifiers (FOR TEMPORAL QUERIES):
+       SELECT ?value ?date WHERE {
+         ex:Q54089 attr:population ?popNode .
+         ?popNode rdf:value ?value .
+         ?popNode qual:P585 ?date .
+       }
+
+    3️⃣ Filter by date/year:
+       SELECT ?value WHERE {
+         ex:Q54089 attr:population ?popNode .
+         ?popNode rdf:value ?value .
+         ?popNode qual:P585 ?date .
+         FILTER(YEAR(?date) = 2015)
+       }
+
+    4️⃣ Find entities by attribute value:
+       SELECT ?entity WHERE {
+         ?entity attr:FIPS_6-4_(US_counties) "24031" .
+       }
+
+    5️⃣ Multi-hop relation navigation:
+       SELECT ?dialingCode WHERE {
+         ex:Q678410 prop:location_of_formation ?location .
+         ?location attr:local_dialing_code ?dialingCode .
+       }
+
+    6️⃣ Count with filters:
+       SELECT (COUNT(?business) as ?count) WHERE {
+         ?business prop:owned_by ex:Q23844 .
+         ?business prop:parent_organization ex:Q1164779 .
+       }
+
+    ⚠️ BEFORE USING THIS TOOL:
+    - Try GetAttributeDetails, GetRelationDetails, or FindNode first
+    - Use GetAttributeWithQualifiers for temporal queries (easier than SPARQL)
+    - Only use RunSPARQL for complex queries those tools cannot handle
+    - If you get a syntax error, use the simpler tools instead
+
+    🔧 SYNTAX ERROR RECOVERY:
+    If you get "Error calling tool 'RunSPARQL'":
+    - Your query had syntax issues (usually wrong namespace prefix)
+    - Check you're using ex:, prop:, attr:, qual:, unit: correctly
+    - Try using GetAttributeDetails or GetRelationDetails instead
+    - Don't retry the same failed query - use a different approach
+
+    Args:
+        query (str): A valid SPARQL SELECT query using the prefixes above.
 
     Returns:
         SPARQLResponse: The structured results containing variables and bindings.

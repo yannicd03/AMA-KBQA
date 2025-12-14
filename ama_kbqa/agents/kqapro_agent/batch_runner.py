@@ -58,6 +58,7 @@ class DualOutputLogger:
     def clear(self):
         self.log_buffer = StringIO()
 
+
 # Add parent directory to path for imports
 current_file = Path(__file__).resolve()
 ama_kbqa_root = current_file.parents[2]
@@ -244,7 +245,8 @@ def load_judge_config() -> Dict[str, Any]:
         return {
             "provider": "openrouter",
             "model": "minimax/minimax-m2",
-            "temperature": 0.0
+            "temperature": 0.0,
+            "chat_model_provider": ""
         }
 
     try:
@@ -260,12 +262,16 @@ def load_judge_config() -> Dict[str, Any]:
             # Fallback to chat_model from the provider
             judge_model = provider_config.get("chat_model", "minimax/minimax-m2")
 
+        # Get judge-specific provider preference (separate from global provider)
+        chat_model_provider = postprocessing.get("chat_model_provider", "")
+
         return {
             "provider": provider,
             "model": judge_model,
             "temperature": postprocessing.get("judge_temperature", 0.0),
             "base_url": provider_config.get("base_url", "https://openrouter.ai/api/v1"),
-            "api_key_env": f"{provider.upper()}_API_KEY" if provider != "openrouter" else "OPENROUTER_API_KEY"
+            "api_key_env": f"{provider.upper()}_API_KEY" if provider != "openrouter" else "OPENROUTER_API_KEY",
+            "chat_model_provider": chat_model_provider
         }
     except Exception as e:
         print(f"[WARNING] Failed to load judge config: {e}, using defaults")
@@ -274,7 +280,8 @@ def load_judge_config() -> Dict[str, Any]:
             "model": "minimax/minimax-m2",
             "temperature": 0.0,
             "base_url": "https://openrouter.ai/api/v1",
-            "api_key_env": "OPENROUTER_API_KEY"
+            "api_key_env": "OPENROUTER_API_KEY",
+            "chat_model_provider": ""
         }
 
 
@@ -809,7 +816,8 @@ def execute_llm_judge_postprocessing(
     predicted_answer: str,
     agent_messages: List[Any],
     client: OpenAI,
-    model_name: str
+    model_name: str,
+    chat_model_provider: str = ""
 ) -> tuple[Optional[AnswerJudgment], bool]:
     """
     Use an LLM with structured output to judge answer correctness and quality.
@@ -821,6 +829,7 @@ def execute_llm_judge_postprocessing(
         agent_messages: The agent's message history for reasoning analysis
         client: OpenAI client for LLM calls
         model_name: Model to use for judging
+        chat_model_provider: Judge-specific provider preference (OpenRouter only, optional)
 
     Returns:
         Tuple of (judgment, accuracy)
@@ -913,14 +922,14 @@ Respond ONLY with the JSON object, no additional text."""
             ],
             "response_format": {"type": "json_object"},
             "temperature": 0.0,  # Deterministic judgments
-            "max_tokens": 2000,  # Limit output
+            "max_tokens": 8000,  # Limit output
             "timeout": 60.0  # 60 second timeout
         }
 
-        # Add OpenRouter provider preferences if configured
-        provider_prefs = get_provider_preferences()
-        if provider_prefs:
-            call_params["extra_body"] = {"provider": provider_prefs}
+        # Add OpenRouter provider preferences if configured for the judge
+        # Only set if chat_model_provider is not empty
+        if chat_model_provider:
+            call_params["extra_body"] = {"provider": {"order": [chat_model_provider]}}
 
         # Use JSON mode instead of structured output
         response = client.chat.completions.create(**call_params)
@@ -976,7 +985,8 @@ async def process_question(
     postprocessing_mode: str = "choice",
     sparql_wrapper: Optional[SPARQLWrapper] = None,
     judge_model_name: Optional[str] = None,
-    judge_client: Optional[OpenAI] = None
+    judge_client: Optional[OpenAI] = None,
+    judge_chat_model_provider: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Process a single question through the agent and collect metadata.
@@ -991,6 +1001,7 @@ async def process_question(
         sparql_wrapper: SPARQLWrapper instance (required if postprocessing_mode is "sparql")
         judge_model_name: Model name for LLM judge (required if postprocessing_mode is "llm_judge")
         judge_client: OpenAI client for LLM judge (required if postprocessing_mode is "llm_judge")
+        judge_chat_model_provider: Judge-specific provider preference (optional)
 
     Returns:
         Dictionary with results and metadata
@@ -1066,7 +1077,8 @@ async def process_question(
                     predicted_answer=predicted_answer,
                     agent_messages=agent._messages,
                     client=judge_client,  # Use the judge-specific client!
-                    model_name=judge_model_name
+                    model_name=judge_model_name,
+                    chat_model_provider=judge_chat_model_provider or ""
                 )
             else:
                 print("[WARNING] No gold answer available for judging")
@@ -1458,9 +1470,11 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
     # Load judge configuration if needed for llm_judge mode
     judge_model_name = None
     judge_client = None
+    judge_chat_model_provider = None
     if postprocessing_mode == "llm_judge":
         judge_config = load_judge_config()
         judge_model_name = judge_config["model"]
+        judge_chat_model_provider = judge_config.get("chat_model_provider", "")
 
         # Create the appropriate client for the judge
         judge_api_key = os.getenv(judge_config["api_key_env"])
@@ -1473,7 +1487,10 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
         )
         print(f"[OK] Using LLM judge: {judge_model_name}")
         print(f"[OK] Judge provider: {judge_config['provider']}")
-        print(f"[OK] Judge endpoint: {judge_config['base_url']}\n")
+        print(f"[OK] Judge endpoint: {judge_config['base_url']}")
+        if judge_chat_model_provider:
+            print(f"[OK] Judge model provider: {judge_chat_model_provider}")
+        print()
 
     # Process all questions
     results = []
@@ -1487,7 +1504,8 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
             postprocessing_mode=postprocessing_mode,
             sparql_wrapper=sparql_wrapper,
             judge_model_name=judge_model_name,
-            judge_client=judge_client
+            judge_client=judge_client,
+            judge_chat_model_provider=judge_chat_model_provider
         )
         results.append(result)
 
