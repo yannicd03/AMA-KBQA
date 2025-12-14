@@ -1,0 +1,18 @@
+[
+  {
+    "question": "Which has less cost, Wonder Woman that is 141 minutes long or Sucker Punch?",
+    "reasoning": "The gold answer is \"Sucker Punch\". The agent's predicted answer states that the film with the lower production cost is Sucker Punch, directly naming the same film. This is semantically equivalent to the gold answer, so the prediction is correct.",
+    "correct_qtype": "Select",
+    "lesson_learned": "When multiple cost metrics exist (e.g., production cost vs. budget vs. box‑office), the agent should explicitly state which metric it is using to avoid ambiguity in future questions.",
+    "argumentation_score": 5,
+    "exported_at": "2025-12-13T19:13:28.442333"
+  },
+  {
+    "question": "Which movie is longer, Transamerica or Mr. Smith Goes to Washington (the one whose color is black-and-white)?",
+    "reasoning": "The predicted answer correctly identifies 'Mr. Smith Goes to Washington' as the longer movie, which matches the gold answer. The agent also provides additional context by stating the runtimes of both movies, which supports the correctness of the answer.",
+    "correct_qtype": "Select",
+    "lesson_learned": "The agent could improve by explicitly mentioning how it verified that 'Mr. Smith Goes to Washington' is the black-and-white version, as this was part of the question's condition.",
+    "argumentation_score": 5,
+    "exported_at": "2025-12-13T22:22:10.455573"
+  }
+]
