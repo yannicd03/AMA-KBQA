@@ -6,6 +6,7 @@ and saves detailed results including metadata for analysis.
 
 Usage:
     python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42 --postprocessing_mode sparql 
+    python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42 --postprocessing_mode llm_judge 
 """
 
 from __future__ import annotations
@@ -21,14 +22,41 @@ import toml
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from io import StringIO
 
 from dotenv import load_dotenv
 from openai import OpenAI
 from SPARQLWrapper import SPARQLWrapper, JSON
 from pydantic import BaseModel, Field
+from ama_kbqa.config import get_provider_preferences
 
 # Load environment variables
 load_dotenv(override=True)
+
+
+# ============================================================================
+# DUAL OUTPUT LOGGER
+# ============================================================================
+
+class DualOutputLogger:
+    """Captures console output to both stdout and a file buffer."""
+
+    def __init__(self):
+        self.terminal = sys.stdout
+        self.log_buffer = StringIO()
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_buffer.write(message)
+
+    def flush(self):
+        self.terminal.flush()
+
+    def get_log(self):
+        return self.log_buffer.getvalue()
+
+    def clear(self):
+        self.log_buffer = StringIO()
 
 # Add parent directory to path for imports
 current_file = Path(__file__).resolve()
@@ -40,6 +68,10 @@ sys.path.insert(0, str(ama_kbqa_root))
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
+
+# Color codes for terminal output
+COLOR_RED = '\033[91m'
+COLOR_END = '\033[0m'
 
 VALIDATION_DATASET_PATH = project_root / "db" / "datasets" / "kqapro" / "val.json"
 BATCH_RESULTS_BASE_DIR = project_root / "batch_results"
@@ -424,15 +456,22 @@ CRITICAL INSTRUCTIONS:
 Your selection:"""
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
+        call_params = {
+            "model": MODEL_NAME,
+            "messages": [
                 {"role": "system", "content": "You are a precise answer selector. Respond with only the number or exact text of the matching choice."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0,  # Deterministic selection
-            max_tokens=100
-        )
+            "temperature": 0.0,  # Deterministic selection
+            "max_tokens": 100
+        }
+
+        # Add OpenRouter provider preferences if configured
+        provider_prefs = get_provider_preferences()
+        if provider_prefs:
+            call_params["extra_body"] = {"provider": provider_prefs}
+
+        response = client.chat.completions.create(**call_params)
 
         selected = response.choices[0].message.content.strip()
         print(f"[DEBUG] LLM selected: '{selected}'")
@@ -590,15 +629,22 @@ Example correct queries:
 Your SPARQL query:"""
 
     try:
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
+        call_params = {
+            "model": MODEL_NAME,
+            "messages": [
                 {"role": "system", "content": "You are a SPARQL query expert. Generate precise, executable SPARQL queries based on conversation context."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0,
-            max_tokens=500
-        )
+            "temperature": 0.0,
+            "max_tokens": 500
+        }
+
+        # Add OpenRouter provider preferences if configured
+        provider_prefs = get_provider_preferences()
+        if provider_prefs:
+            call_params["extra_body"] = {"provider": provider_prefs}
+
+        response = client.chat.completions.create(**call_params)
 
         query = response.choices[0].message.content.strip()
 
@@ -700,6 +746,63 @@ def execute_sparql_postprocessing(
         return None, query
 
 
+def extract_intermediate_thinking(agent_messages: List[Any]) -> str:
+    """
+    Extract intermediate thinking steps from agent message history.
+
+    This includes:
+    - Assistant reasoning text (non-tool-call content)
+    - Tool calls and their results
+    - Scratchpad/journal entries
+
+    Args:
+        agent_messages: The full message history from the agent
+
+    Returns:
+        Formatted string of all intermediate thinking steps
+    """
+    thinking_steps = []
+
+    for i, msg in enumerate(agent_messages):
+        # Handle both dict and object-based messages
+        if isinstance(msg, dict):
+            role = msg.get("role")
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls", [])
+            tool_call_id = msg.get("tool_call_id")
+        else:
+            role = getattr(msg, "role", None)
+            content = getattr(msg, "content", "")
+            tool_calls = getattr(msg, "tool_calls", [])
+            tool_call_id = getattr(msg, "tool_call_id", None)
+
+        # Capture assistant reasoning
+        if role == "assistant":
+            if content and content.strip():
+                thinking_steps.append(f"\n=== Agent Reasoning (Turn {i+1}) ===")
+                thinking_steps.append(content)
+
+            # Capture tool calls
+            if tool_calls:
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        tool_name = tc.get('function', {}).get('name', 'unknown')
+                        tool_args = tc.get('function', {}).get('arguments', '{}')
+                    else:
+                        tool_name = tc.function.name
+                        tool_args = tc.function.arguments
+
+                    thinking_steps.append(f"\n=== Tool Call: {tool_name} ===")
+                    thinking_steps.append(f"Arguments: {tool_args}")
+
+        # Capture tool results (no truncation for file)
+        elif role == "tool" and content:
+            thinking_steps.append(f"\n=== Tool Result ===")
+            thinking_steps.append(content)
+
+    return "\n".join(thinking_steps) if thinking_steps else "No intermediate thinking recorded"
+
+
 def execute_llm_judge_postprocessing(
     question: str,
     gold_answer: str,
@@ -748,8 +851,8 @@ def execute_llm_judge_postprocessing(
 
     reasoning_context = "\n".join(reasoning_steps) if reasoning_steps else "No detailed reasoning available"
 
-    # Build the judgment prompt
-    prompt = f"""You are an expert evaluator for a knowledge base question answering system. Your task is to judge the quality of the agent's answer and reasoning process.
+    # Build the judgment prompt with JSON schema instructions
+    prompt = f"""You are an expert evaluator for a knowledge base question answering system.
 
 Question: {question}
 
@@ -782,32 +885,57 @@ Evaluate the following:
 
 5. **Suggested Improvement**: Provide ONE specific, actionable suggestion for how the agent could improve its approach for this type of question in the future.
 
-Provide your judgment in structured format."""
+You MUST respond with a valid JSON object matching this exact schema:
+{{
+    "is_correct": boolean,
+    "correctness_reasoning": "string",
+    "argumentation_quality": "string",
+    "argumentation_score": integer (1-5),
+    "suggested_improvement": "string"
+}}
 
+Respond ONLY with the JSON object, no additional text."""
+
+    response = None  # Initialize to avoid UnboundLocalError in except block
     try:
-        # Use structured output with Pydantic model
-        response = client.beta.chat.completions.parse(
-            model=model_name,
-            messages=[
+        # Build call parameters
+        call_params = {
+            "model": model_name,
+            "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert evaluator for KBQA systems. Provide detailed, fair, and constructive judgments."
+                    "content": "You are an expert evaluator for KBQA systems. You must respond with valid JSON only."
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            response_format=AnswerJudgment,
-            temperature=0.0  # Deterministic judgments
-        )
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,  # Deterministic judgments
+            "max_tokens": 2000,  # Limit output
+            "timeout": 60.0  # 60 second timeout
+        }
 
-        judgment = response.choices[0].message.parsed
+        # Add OpenRouter provider preferences if configured
+        provider_prefs = get_provider_preferences()
+        if provider_prefs:
+            call_params["extra_body"] = {"provider": provider_prefs}
+
+        # Use JSON mode instead of structured output
+        response = client.chat.completions.create(**call_params)
+
+        # Parse JSON response
+        json_content = response.choices[0].message.content
+        judgment_dict = json.loads(json_content)
+
+        # Validate against Pydantic model
+        judgment = AnswerJudgment(**judgment_dict)
 
         if judgment:
-            print(f"[JUDGE] Correctness: {'✓ CORRECT' if judgment.is_correct else '✗ INCORRECT'}")
-            print(f"[JUDGE] Argumentation Score: {judgment.argumentation_score}/5")
-            print(f"[JUDGE] Reasoning: {judgment.correctness_reasoning[:100]}...")
+            print(f"{COLOR_RED}[JUDGE] Correctness: {'✓ CORRECT' if judgment.is_correct else '✗ INCORRECT'}{COLOR_END}")
+            print(f"{COLOR_RED}[JUDGE] Argumentation Score: {judgment.argumentation_score}/5{COLOR_END}")
+            print(f"{COLOR_RED}[JUDGE] Reasoning: {judgment.correctness_reasoning}{COLOR_END}")
             return judgment, judgment.is_correct
         else:
             print("[ERROR] Failed to parse judgment from LLM")
@@ -815,8 +943,27 @@ Provide your judgment in structured format."""
 
     except Exception as e:
         print(f"[ERROR] LLM judge failed: {e}")
-        # Fallback to simple string matching
+
+        # Try to extract information from the raw content if available
+        if response is not None:
+            try:
+                raw_content = response.choices[0].message.content if response.choices else None
+                if raw_content:
+                    print(f"[WARNING] Judge returned unparsed content (markdown), attempting fallback analysis")
+                    # Simple heuristic: look for correctness indicators in markdown
+                    content_lower = raw_content.lower()
+                    is_correct = (
+                        "correct" in content_lower and "incorrect" not in content_lower or
+                        predicted_answer.lower().strip() == gold_answer.lower().strip()
+                    )
+                    print(f"[FALLBACK] Heuristic correctness: {'✓ CORRECT' if is_correct else '✗ INCORRECT'}")
+                    return None, is_correct
+            except Exception as fallback_error:
+                print(f"[WARNING] Fallback analysis also failed: {fallback_error}")
+
+        # Final fallback to simple string matching
         simple_match = predicted_answer.lower().strip() == gold_answer.lower().strip()
+        print(f"[FALLBACK] Using simple string matching: {'✓ MATCH' if simple_match else '✗ NO MATCH'}")
         return None, simple_match
 
 
@@ -828,7 +975,8 @@ async def process_question(
     client: OpenAI,
     postprocessing_mode: str = "choice",
     sparql_wrapper: Optional[SPARQLWrapper] = None,
-    judge_model_name: Optional[str] = None
+    judge_model_name: Optional[str] = None,
+    judge_client: Optional[OpenAI] = None
 ) -> Dict[str, Any]:
     """
     Process a single question through the agent and collect metadata.
@@ -838,10 +986,11 @@ async def process_question(
         item: The question item from the validation set
         question_idx: Current question index (0-based)
         total_questions: Total number of questions being processed
-        client: OpenAI client for answer selection/judging
+        client: OpenAI client for answer selection (used in "choice" mode)
         postprocessing_mode: "choice" (multiple choice), "sparql" (SPARQL synthesis), or "llm_judge" (LLM evaluation)
         sparql_wrapper: SPARQLWrapper instance (required if postprocessing_mode is "sparql")
         judge_model_name: Model name for LLM judge (required if postprocessing_mode is "llm_judge")
+        judge_client: OpenAI client for LLM judge (required if postprocessing_mode is "llm_judge")
 
     Returns:
         Dictionary with results and metadata
@@ -899,10 +1048,12 @@ async def process_question(
                 else:
                     accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
 
-        elif postprocessing_mode == "llm_judge":
+        elif postprocessing_mode in ["llm_judge", "llm-judge"]:
             # LLM-based judgment postprocessing
             if judge_model_name is None:
                 raise ValueError("Judge model name is required for llm_judge postprocessing mode")
+            if judge_client is None:
+                raise ValueError("Judge client is required for llm_judge postprocessing mode")
 
             # Use the predicted answer directly
             selected_answer = predicted_answer
@@ -914,7 +1065,7 @@ async def process_question(
                     gold_answer=gold_answer,
                     predicted_answer=predicted_answer,
                     agent_messages=agent._messages,
-                    client=client,
+                    client=judge_client,  # Use the judge-specific client!
                     model_name=judge_model_name
                 )
             else:
@@ -932,6 +1083,9 @@ async def process_question(
                 # Calculate accuracy by comparing selected answer to gold answer (case-insensitive)
                 if gold_answer and selected_answer:
                     accuracy = selected_answer.lower().strip() == gold_answer.lower().strip()
+
+        # Extract intermediate thinking (saved to file but not printed)
+        intermediate_thinking = extract_intermediate_thinking(agent._messages)
 
         # Collect metadata
         result = {
@@ -956,16 +1110,21 @@ async def process_question(
             "success": True,
             "error": None,
             # LLM Judge fields (only populated if postprocessing_mode == "llm_judge")
-            "judgment": judgment.model_dump() if judgment else None
+            "judgment": judgment.model_dump() if judgment else None,
+            # Intermediate thinking (saved but not printed to console)
+            "intermediate_thinking": intermediate_thinking
         }
 
-        print(f"[OK] Predicted: {predicted_answer[:100]}...")
-        print(f"[OK] Selected Answer: {selected_answer} | Accuracy: {'[OK]' if accuracy else '[ERROR]'}")
+        print(f"[OK] Predicted: {predicted_answer}")
+        print(f"[OK] Accuracy: {'✓ CORRECT' if accuracy else '✗ INCORRECT'}")
         print(f"[OK] Duration: {duration:.2f}s | Tokens: {agent.token_usage.get('total_tokens', 0)}")
 
     except Exception as e:
         end_time = time.time()
         duration = end_time - start_time
+
+        # Extract intermediate thinking even on error
+        intermediate_thinking = extract_intermediate_thinking(agent._messages)
 
         result = {
             "question": question,
@@ -988,7 +1147,8 @@ async def process_question(
             "choices": choices,
             "success": False,
             "error": str(e),
-            "judgment": None
+            "judgment": None,
+            "intermediate_thinking": intermediate_thinking
         }
 
         print(f"[ERROR] {e}")
@@ -1003,7 +1163,8 @@ def save_batch_results(
     batch_folder: Path,
     sampled_questions: List[Dict[str, Any]],
     results: List[Dict[str, Any]],
-    config: Dict[str, Any]
+    config: Dict[str, Any],
+    console_log: str = None
 ):
     """
     Save all batch results to files.
@@ -1013,18 +1174,84 @@ def save_batch_results(
         sampled_questions: The sampled questions
         results: Processing results
         config: Configuration used for this batch
+        console_log: Complete console output (optional)
     """
+    # Save complete console output to txt file
+    if console_log:
+        console_log_file = batch_folder / "console_output.txt"
+        with open(console_log_file, "w", encoding="utf-8") as f:
+            f.write(console_log)
+        print(f"\n[OK] Saved console output to: {console_log_file}")
+
+    # Save detailed log with intermediate thinking
+    detailed_log_file = batch_folder / "detailed_log.txt"
+    with open(detailed_log_file, "w", encoding="utf-8") as f:
+        f.write("="*80 + "\n")
+        f.write("DETAILED BATCH PROCESSING LOG\n")
+        f.write("="*80 + "\n\n")
+
+        for i, result in enumerate(results, 1):
+            f.write(f"\n{'='*80}\n")
+            f.write(f"QUESTION {i}/{len(results)}\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(f"Question: {result['question']}\n")
+            f.write(f"Type: {result['qtype']}\n")
+            f.write(f"Gold Answer: {result['answer']}\n\n")
+
+            # Write predicted answer (no truncation)
+            f.write(f"--- Predicted Answer ---\n")
+            f.write(f"{result.get('predicted_answer', 'N/A')}\n\n")
+
+            # Write accuracy
+            f.write(f"--- Accuracy ---\n")
+            f.write(f"{'✓ CORRECT' if result.get('accuracy', False) else '✗ INCORRECT'}\n\n")
+
+            # Write intermediate thinking (full, no truncation)
+            f.write(f"--- Intermediate Thinking Process ---\n")
+            f.write(f"{result.get('intermediate_thinking', 'No thinking recorded')}\n\n")
+
+            # Write judgment if available (no truncation)
+            if result.get('judgment'):
+                judgment = result['judgment']
+                f.write(f"--- LLM Judge Evaluation ---\n")
+                f.write(f"Correctness: {'✓ CORRECT' if judgment.get('is_correct', False) else '✗ INCORRECT'}\n")
+                f.write(f"Argumentation Score: {judgment.get('argumentation_score', 'N/A')}/5\n\n")
+                f.write(f"Correctness Reasoning:\n{judgment.get('correctness_reasoning', 'N/A')}\n\n")
+                f.write(f"Argumentation Quality:\n{judgment.get('argumentation_quality', 'N/A')}\n\n")
+                f.write(f"Suggested Improvement:\n{judgment.get('suggested_improvement', 'N/A')}\n\n")
+
+            # Write metadata
+            f.write(f"--- Metadata ---\n")
+            f.write(f"Duration: {result.get('duration', 'N/A')}\n")
+            f.write(f"Tokens Used: {result.get('tokens_used', 0)}\n")
+            f.write(f"Prompt Tokens: {result.get('prompt_tokens', 0)}\n")
+            f.write(f"Completion Tokens: {result.get('completion_tokens', 0)}\n")
+            f.write(f"Number of Turns: {result.get('number_of_turns_used', 0)}\n")
+            f.write(f"Success: {result.get('success', False)}\n")
+            if result.get('error'):
+                f.write(f"Error: {result['error']}\n")
+            f.write("\n")
+
+    print(f"[OK] Saved detailed log to: {detailed_log_file}")
+
     # Save sampled questions
     sampled_file = batch_folder / "sampled_questions.json"
     with open(sampled_file, "w", encoding="utf-8") as f:
         json.dump(sampled_questions, f, indent=2, ensure_ascii=False)
 
-    print(f"\n[OK] Saved sampled questions to: {sampled_file}")
+    print(f"[OK] Saved sampled questions to: {sampled_file}")
 
-    # Save individual results
+    # Save individual results (exclude intermediate_thinking to avoid bloating JSON)
     results_file = batch_folder / "results.json"
+    results_for_json = []
+    for result in results:
+        result_copy = result.copy()
+        # Remove intermediate_thinking from JSON (it's in detailed_log.txt)
+        result_copy.pop('intermediate_thinking', None)
+        results_for_json.append(result_copy)
+
     with open(results_file, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
+        json.dump(results_for_json, f, indent=2, ensure_ascii=False)
 
     print(f"[OK] Saved detailed results to: {results_file}")
 
@@ -1187,6 +1414,10 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
         seed: Random seed for reproducibility
         postprocessing_mode: Postprocessing method - "choice" (multiple choice), "sparql" (SPARQL synthesis), or "llm_judge" (LLM evaluation)
     """
+    # Initialize dual output logger to capture console output
+    dual_logger = DualOutputLogger()
+    sys.stdout = dual_logger
+
     print(f"\n{'='*80}")
     print("KQAPro Batch Runner")
     print(f"{'='*80}")
@@ -1226,11 +1457,23 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
 
     # Load judge configuration if needed for llm_judge mode
     judge_model_name = None
+    judge_client = None
     if postprocessing_mode == "llm_judge":
         judge_config = load_judge_config()
         judge_model_name = judge_config["model"]
+
+        # Create the appropriate client for the judge
+        judge_api_key = os.getenv(judge_config["api_key_env"])
+        if not judge_api_key:
+            raise RuntimeError(f"{judge_config['api_key_env']} missing in .env for judge")
+
+        judge_client = OpenAI(
+            base_url=judge_config["base_url"],
+            api_key=judge_api_key
+        )
         print(f"[OK] Using LLM judge: {judge_model_name}")
-        print(f"[OK] Judge provider: {judge_config['provider']}\n")
+        print(f"[OK] Judge provider: {judge_config['provider']}")
+        print(f"[OK] Judge endpoint: {judge_config['base_url']}\n")
 
     # Process all questions
     results = []
@@ -1243,7 +1486,8 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
             client=client,
             postprocessing_mode=postprocessing_mode,
             sparql_wrapper=sparql_wrapper,
-            judge_model_name=judge_model_name
+            judge_model_name=judge_model_name,
+            judge_client=judge_client
         )
         results.append(result)
 
@@ -1256,12 +1500,20 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
         "total_available": len(validation_data)
     }
 
-    save_batch_results(batch_folder, sampled_questions, results, config)
+    # Get the console log if dual logger is active
+    console_log = None
+    if hasattr(sys.stdout, 'get_log'):
+        console_log = sys.stdout.get_log()
+
+    save_batch_results(batch_folder, sampled_questions, results, config, console_log)
 
     print(f"\n{'='*80}")
     print(f"[OK] Batch processing complete!")
     print(f"[OK] Results saved to: {batch_folder}")
     print(f"{'='*80}\n")
+
+    # Restore original stdout
+    sys.stdout = dual_logger.terminal
 
 
 # ============================================================================
