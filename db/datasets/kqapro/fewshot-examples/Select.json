@@ -22,5 +22,13 @@
     "lesson_learned": "To improve efficiency, the agent could use a single FindNode query with a well-crafted filter to retrieve a comprehensive list of European islands at once, then batch-process area retrieval, reducing the number of tool calls and potential for oversight.",
     "argumentation_score": 4,
     "exported_at": "2025-12-14T20:23:11.284460"
+  },
+  {
+    "question": "Which Maryland county that borders the Kent County bordering Cecil County occupies the biggest area?",
+    "reasoning": "The predicted answer includes 'Baltimore County', which matches the gold answer. The extra information about area does not affect correctness; the answer is semantically equivalent.",
+    "correct_qtype": "Select",
+    "lesson_learned": "After identifying Kent County, use GetRelationDetails to retrieve all bordering counties in one call, then filter those by checking the 'located in the administrative territorial entity' attribute (or FIPS code) to ensure they are Maryland counties, rather than performing multiple separate searches for each potential county. This would reduce tool calls and improve efficiency.",
+    "argumentation_score": 4,
+    "exported_at": "2025-12-14T21:14:29.997721"
   }
 ]
