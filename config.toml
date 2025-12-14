@@ -28,9 +28,9 @@ api_key = "lm-studio"
 base_url = "https://openrouter.ai/api/v1"
 # Model identifiers (use OpenRouter model names)
 # Examples: deepseek/deepseek-v3.2-speciale
-chat_model = "z-ai/glm-4.6"
+chat_model = "minimax/minimax-m2"
 embedding_model = "qwen/qwen3-embedding-8b"
-chat_model_provider= "novita/bf16" #novita/bf16
+chat_model_provider= "minimax/fp8" #novita/bf16
 # API key will be read from OPENROUTER_API_KEY environment variable
 
 [kit_ollama]
@@ -79,5 +79,6 @@ level = "INFO"
 # LLM Judge configuration for batch processing
 # The judge evaluates answer correctness, reasoning quality, and provides improvement suggestions
 judge_provider = "openrouter"  # Which LLM provider to use for judging
-judge_model = "z-ai/glm-4.6"  # Model for judging (can be different from chat_model)
+judge_model = "deepseek/deepseek-v3.2-speciale"  # Model for judging (can be different from chat_model)
+chat_model_provider = ""
 judge_temperature = 0.0  # Lower temperature for more consistent judgments

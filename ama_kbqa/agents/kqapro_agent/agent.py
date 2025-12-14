@@ -143,10 +143,16 @@ class KQAProAgent:
         "Count": """
         STRATEGY: Count (Aggregation)
         Topology: [Entity] -> [Predicate] -> [Target_Nodes]
-        Strategy:
-            1. **Small Sets (Estimate < 20 items):** Use `GetRelationDetails` to fetch the connected nodes, then count the length of the list in your final answer.
-            2. **Large/Global Sets (Unknown size):** DO NOT attempt to fetch all items (e.g., "How many cities in China?"). You must use `RunSPARQL` to perform the count database-side.
-        SPARQL Fallback:
+
+        **DECISION TREE:**
+        1. **Can you estimate the set size from the question?**
+           - Small/Bounded (< 20 items, e.g., "How many children does X have?") → Use `GetRelationDetails` and count
+           - Large/Unknown (e.g., "How many cities in China?") → IMMEDIATELY use `RunSPARQL` with COUNT()
+
+        2. **Multi-hop count** (e.g., "How many actors in films directed by X?")
+           - **Strongly recommended:** Use `RunSPARQL` with JOIN + COUNT instead of fetching intermediate lists
+
+        SPARQL Pattern:
         SELECT (COUNT(DISTINCT ?target) AS ?count) WHERE {
         ex:ENTITY_ID prop:PREDICATE ?target .
         # Optional: ?target prop:instance_of ex:TARGET_TYPE .
@@ -156,9 +162,16 @@ class KQAProAgent:
         "QueryAttr": """
         STRATEGY: QueryAttr (Direct Lookup)
         Topology: [Entity] -> [Predicate] -> [Target]
-        Strategy:
-            1. **Standard Lookup:** If you have the Entity ID and need an attribute, use `GetAttributeDetails` (for literals) or `GetRelationDetails` (for linked entities).
-            2. **Reverse Lookup:** If you have a unique value (e.g., "UKE11", "ISBN-13", "http://...") and need the Entity, use `FindByAttribute`.
+
+        **APPROACH:**
+        1. **Standard Lookup:** If you have the Entity ID and need an attribute, use `GetAttributeDetails` (for literals) or `GetRelationDetails` (for linked entities).
+        2. **Reverse Lookup:** If you have a unique value (e.g., "UKE11", "ISBN-13", "http://...") and need the Entity, use `FindByAttribute`.
+
+        **Schema Introspection (if exact attribute fails):**
+        - When `GetAttributeDetails("GameID")` fails, review the `available_attributes` from your previous `FindNode` call
+        - Look for semantic matches: "GameID" might be "game_identifier", "product_code", "catalog_id", etc.
+        - Try the closest match based on naming similarity
+
         SPARQL Fallback:
         SELECT ?value WHERE {
         ex:ENTITY_ID prop:PREDICATE ?value .
@@ -168,15 +181,27 @@ class KQAProAgent:
         "QueryAttrQualifier": """
         STRATEGY: QueryAttrQualifier (Contextual Fact)
         Topology: [Entity] <-[is_subject_of]- [Fact_Node] -[has_qualifier]-> [Value]
-        Strategy:
-            1. **Primary Tool:** Use `GetEdgeQualifiers`. This tool is specifically designed to fetch metadata (time, location, role) attached to a specific relationship.
-            2. **Pre-requisite:** You must first find the target value of the main relation (via `GetRelationDetails`) before you can query its qualifiers.
-        SPARQL Fallback:
+
+        **CRITICAL DISTINCTION - READ THIS FIRST:**
+        - Question: "What is the movie's language?" → Node Attribute (general property)
+        - Question: "What is the language of the website dated 1998-04-09?" → Edge Qualifier (property of specific relationship)
+
+        **MANDATORY STEPS:**
+        1. **Identify the Context:** Does the question specify WHEN/WHERE for the fact?
+           - YES → This is an Edge Qualifier question
+           - NO → This is a regular QueryAttr question (wrong classification)
+
+        2. **Find the Base Fact:** Use `GetRelationDetails` or `GetAttributeDetails` to find the target value
+           - Example: Movie → publication_date → "1998-04-09"
+
+        3. **Query the Qualifier:** Use `GetEdgeQualifiers(subject_id, predicate, target_value)` to get context
+           - Example: GetEdgeQualifiers("Q123", "publication_date", "1998-04-09") → returns location qualifier
+
+        SPARQL Pattern:
         SELECT ?qualifier_value WHERE {
-        # Reified statement pattern
         ?fact_node pred:fact_h ex:ENTITY_ID ;
                     pred:fact_r prop:PREDICATE ;
-                    pred:fact_t "TARGET_VALUE" . # or <TARGET_URI>
+                    pred:fact_t "TARGET_VALUE" .
         ?fact_node qual:QUALIFIER_PREDICATE ?qualifier_value .
         }
         """,
@@ -184,10 +209,20 @@ class KQAProAgent:
         "QueryName": """
         STRATEGY: QueryName (Reverse Lookup / Identification)
         Topology: [Target?] -> [Predicate] -> [Known_Object]
-        Strategy:
-            1. **Unique ID/Code:** If the question contains a unique identifier (ID, code, URL), use `FindByAttribute` immediately.
-            2. **Multi-Condition/Intersection:** If the question implies a complex filter (e.g., "Actors born in Boston who played Batman"), DO NOT fetch lists and intersect them manually. Use `RunSPARQL` to handle the intersection efficiently.
-        SPARQL Fallback:
+
+        **DECISION TREE:**
+        1. **Does the question contain a UNIQUE identifier?** (ID, code, URL, technical string)
+           - YES → Use `FindByAttribute` immediately (fastest, most accurate)
+           - Example: "What has GameID GGZX52?" → FindByAttribute("GGZX52", "game_id")
+
+        2. **Single condition** (e.g., "Who directed Inception?")
+           - Use `FindNode` + `GetRelationDetails` (standard approach)
+
+        3. **Multiple conditions** (e.g., "Film editor who won Oscar in 1944")
+           - **STRONGLY RECOMMENDED:** Use `RunSPARQL` with multiple WHERE clauses
+           - **AVOID:** Fetching full lists and intersecting manually (causes timeouts on large sets)
+
+        SPARQL Pattern (Multi-Condition):
         SELECT ?subjectLabel WHERE {
         ?subject prop:PREDICATE_1 ex:OBJECT_ID_1 .
         ?subject prop:PREDICATE_2 ex:OBJECT_ID_2 .
@@ -228,10 +263,19 @@ class KQAProAgent:
         "SelectAmong": """
         STRATEGY: SelectAmong (Superlative/Sorting)
         Topology: [Group] -> [Member] -> [Value]
-        Strategy:
-            1. **Closed Group (< 20 items):** If the group is small (e.g., "Who is the tallest of these 3 brothers?"), use `CompareEntities` to sort them.
-            2. **Open/Global Group:** If the group is large (e.g., "Longest movie ever"), DO NOT fetch all items. Use `RunSPARQL` with `ORDER BY` and `LIMIT 1`.
-        SPARQL Fallback:
+
+        **DECISION TREE:**
+        1. **Is the group small and explicitly listed?** (e.g., "tallest of these 3 brothers")
+           - YES, and < 20 items → Use `CompareEntities` to fetch and sort
+
+        2. **Is the group large or open-ended?** (e.g., "longest movie ever", "highest mountain in Asia")
+           - YES → **IMMEDIATELY use `RunSPARQL`** with ORDER BY and LIMIT 1
+           - **CRITICAL:** DO NOT attempt to fetch all items with GetRelationDetails (will cause timeout)
+
+        3. **Are there additional constraints?** (e.g., "longest movie directed by Spielberg")
+           - **STRONGLY RECOMMENDED:** Use `RunSPARQL` to combine filters efficiently
+
+        SPARQL Pattern:
         SELECT ?itemLabel ?value WHERE {
         ?item prop:instance_of ex:GROUP_ID .
         ?item attr:SORT_ATTRIBUTE ?value .
@@ -244,10 +288,22 @@ class KQAProAgent:
         "SelectBetween": """
         STRATEGY: SelectBetween (Binary Comparison)
         Topology: [Entity_A/B] -> [Attribute] -> [Value]
-        Strategy:
-            1. **Primary Tool:** ALWAYS use `CompareEntities`. This handles fetching and sorting in a single step.
-            2. **Avoid:** Do not use `GetAttributeDetails` individually for each entity, as this increases cognitive load and risks "forgetting" to compare.
-        SPARQL Fallback:
+
+        **MANDATORY PRE-FLIGHT CHECKS:**
+        1. **Extract ALL constraints from the question:**
+           - "Wonder Woman that is 141 minutes" → Need to verify duration = 141 before comparing
+           - "Mr. Smith (the black-and-white one)" → Need to verify color = "black-and-white"
+
+        2. **Verify constraints FIRST:**
+           - Use `GetAttributeDetails` to confirm BOTH entities match ALL specified constraints
+           - If multiple matches exist, disambiguate before proceeding
+           - Example: If searching "Wonder Woman" returns 3 versions, filter by duration FIRST
+
+        3. **Then compare:**
+           - Use `CompareEntities([verified_id_A, verified_id_B], comparison_attribute)`
+           - This handles fetching and sorting in a single step
+
+        SPARQL Pattern:
         SELECT ?itemLabel ?value WHERE {
         VALUES ?item { ex:ENTITY_A_ID ex:ENTITY_B_ID }
         ?item attr:ATTRIBUTE ?value .
@@ -272,12 +328,29 @@ class KQAProAgent:
 
         "Query": """
         STRATEGY: General Query
-        Strategy:
-            1. Use FindNode to locate relevant entities.
-            2. Use `GetAttributeDetails` and `GetRelationDetails` to gather information.
-            3. Use `ExploreNeighborhood` if you need to find related entities via semantic search.
-            4. Use `RunSPARQL` as a fallback for complex queries that don't fit the patterns above.
-            5. Accumulate findings in your journal and review before answering.
+
+        **EXECUTION CHECKLIST:**
+        1. **Extract constraints:** List ALL identifying details in the question (duration, year, color, etc.)
+
+        2. **Locate entities:**
+           - Unique ID/code → Use `FindByAttribute`
+           - Named entity → Use `FindNode`
+           - Review `available_attributes` for schema introspection
+
+        3. **Verify constraints:** Use `GetAttributeDetails` to confirm entities match ALL constraints before proceeding
+
+        4. **Gather information:**
+           - Single-hop → Use `GetAttributeDetails` or `GetRelationDetails`
+           - Multi-hop (>2 hops) → Strongly consider `RunSPARQL` with JOIN
+           - Unknown predicate → Use `ExploreNeighborhood` for semantic search
+
+        5. **Check for qualifiers:** Does question specify TIME/PLACE for a fact?
+           - YES → Use `GetEdgeQualifiers`
+           - NO → Use `GetAttributeDetails`
+
+        6. **Inference (if data missing):** You may make ONE-HOP logical inferences if explicitly labeled as [INFERRED]
+
+        7. **Review and answer:** Call `GetJournalSummary` and formulate answer based on discovered values
         """
     }
 
@@ -304,19 +377,27 @@ class KQAProAgent:
             "total_tokens": 0
         }
 
-        # Stuck Loop Detection: Track recent tool calls to prevent infinite loops
+        # Multi-Layered Loop Detection: Track multiple loop patterns
         self.tool_call_history = []  # List of (tool_name, args_json_str) tuples
+        self.tool_sequence = []  # Track sequence of tool names (for oscillation detection)
+        self.empty_result_count = 0  # Track consecutive empty/failed results
+        self.last_journal_state = None  # Snapshot of journal to detect lack of progress
 
         self.system_prompt = """SYSTEM ROLE
             You are the KQAPro Execution Agent. Your goal is to answer natural language questions by querying a Knowledge Graph (KG).
 
             CRITICAL RULES
             1.  **No Hallucination:** You have NO internal knowledge. You MUST verify every fact using the tools. NEVER answer without using tools.
+                * *Exception:* You MAY make ONE-HOP logical inferences (e.g., if Website belongs to Movie, and Movie is in English, then Website language is likely English).
+                * *Requirement:* When making inferences, you MUST explicitly label them as "[INFERRED]" and state the reasoning chain.
             2.  **Schema Compliance:** You must use the valid predicates returned by tools. Do not guess predicate names (e.g., do not guess `wdt:P123`, find it first).
+                * *Schema Introspection:* If an exact attribute name fails (e.g., "GameID"), review the `available_attributes` list from FindNode for semantic matches (e.g., "game_identifier", "product_code").
             3.  **State Management:** Use `ManageJournal` to track progress and avoid loops.
             4.  **Pivot Logic (Dead End Detection):** If a specific search strategy fails twice (e.g., searching for "Barbara McLean" yields 0 results), you MUST PIVOT. Do not try the same term a third time.
                 * *Pivot Strategy:* Switch to searching for the *connected* entity (e.g., search for the Award name instead of the Person) and filter down.
+                * *SPARQL Pivot:* For multi-hop queries (>2 hops), strongly consider using RunSPARQL to construct a JOIN query instead of iterative GetRelationDetails calls.
             5.  **Complete Retrieval:** After FindNode returns available attributes/predicates, you MUST call GetAttributeDetails or GetRelationDetails to get actual values.
+            6.  **Constraint Verification:** If the question contains MULTIPLE identifying constraints (e.g., "Wonder Woman that is 141 minutes", "the one whose color is black-and-white"), you MUST verify ALL constraints before proceeding with the main query.
 
             KNOWLEDGE GRAPH SPECIFICS (CRITICAL)
             You are operating on a specific ontology. You MUST use the following prefixes in your thought process and SPARQL construction. DO NOT define these in your `RunSPARQL` calls; the server injects them automatically.
@@ -364,24 +445,77 @@ class KQAProAgent:
               Use this when you don't know the exact predicate name and need to find it semantically.
 
             TIER 3 - QUALIFIERS & METADATA (Contextual Data):
-            **CRITICAL FOR ACCURACY:** If the question asks for "when", "where", "language of", or "role" concerning a specific link (e.g., "language of the website", "publication date in Germany"):
+            **CRITICAL FOR ACCURACY - MANDATORY DECISION POINT:**
+
             • GetEdgeQualifiers(subject_id, predicate_name, target_id): Retrieves 'facts about a fact'.
-              * *Rule:* If you find a relation (e.g., Movie -> website -> URL) and need details *about* that link (like its language), you MUST use this tool. The language is likely a qualifier on the website edge, not a global attribute of the movie.
+
+            **WHEN TO USE (Check BEFORE using GetAttributeDetails):**
+            - Question contains TEMPORAL context: "in 1998", "on [specific date]", "during", "when"
+            - Question contains SPATIAL context: "where [event] happened", "location of [specific event]"
+            - Question asks about RELATIONSHIP DETAILS: "role in", "capacity as", "language of [specific thing]"
+
+            **CRITICAL DISTINCTION:**
+            - Node Attributes = Facts ABOUT an entity (e.g., "Movie's country of origin")
+            - Edge Qualifiers = Facts ABOUT a specific relationship (e.g., "Movie's release date IN Germany" - the location is on the date edge, not the movie node)
+
+            **DECISION TREE:**
+            1. Does the question specify a TIME/PLACE for a specific fact? → Use GetEdgeQualifiers
+            2. Is it a general property of the entity? → Use GetAttributeDetails
 
             TIER 4 - VERIFICATION (The Math Judge):
             • VerifyNumericCondition(value1, operator, value2):
               * *Rule:* NEVER perform mental math comparison. If the question asks "Is X > Y?", retrieve X and Y, then pass them to this tool. Trust the tool's True/False verdict over your own generation.
 
+            COMPLEX QUESTION DECOMPOSITION
+            For questions with nested constraints, work inside-out systematically:
+
+            **Pattern Recognition:**
+            • "Which X that [constraint1] has [constraint2]?" → Two-stage filtering
+            • "X of the Y that Z" → Navigate backward from Z→Y then Y→X
+            • "Maryland county that borders [the Kent County bordering Cecil County]" → Resolve innermost clause first
+
+            **Decomposition Strategy:**
+            1. **Identify innermost constraint** (usually in brackets or "that" clauses)
+               Example: "Kent County bordering Cecil County" comes before "Maryland county"
+
+            2. **Work outward step by step**
+               Step 1: Resolve innermost → "Kent County bordering Cecil County"
+                      FindNode("Cecil County") → Q385365
+                      GetRelationDetails(Q385365, "shares border with") → Find Kent County
+               Step 2: Apply outer constraint → "Maryland county that borders [that Kent County]"
+                      GetRelationDetails([Kent County from step 1], "shares border with") → Get bordering counties
+                      Filter for Maryland counties
+
+            3. **Use ManageJournal to track intermediate results**
+               Store each step's findings before moving to the next level
+
+            **Multi-hop Tools:**
+            • FindEntitiesByRelationPath - For following relation chains (A→B→C)
+            • GetNodeSummary - Get all data about a node in ONE call (reduces iterations)
+            • CompareEntities - Compare attribute across multiple entities at once
+
             EXECUTION LOOP (General Strategy)
             1. **Analyze Strategy:** Read the pre-analysis provided in the chat history.
-            2. **Identify Entry Point:**
+            2. **Question Complexity Check:**
+               * Simple question (one entity, one fact) → Direct retrieval
+               * Complex question (nested constraints, multi-hop) → Use decomposition strategy above
+            3. **Constraint Check:** If the question has multiple identifying details (duration, color, year), list them and plan to verify ALL before proceeding.
+            4. **Identify Entry Point:**
                * If Unique ID present -> `FindByAttribute`.
                * If Named Entity -> `FindNode`.
-            3. **Retrieve Values:** Fetch actual data using Tier 2 tools.
-            4. **Check Qualifiers:** If the question implies context (time, place, language of a specific thing), use `GetEdgeQualifiers`.
-            5. **Pivot if Stuck:** If a search returns 0 results twice, STOP searching that term. Try a neighbor or a broader category.
-            6. **Verify:** Use `VerifyNumericCondition` for any numbers/dates.
-            7. **Synthesize:** Call `GetJournalSummary` and formulate your answer.
+               * If Multi-hop query (>2 hops) -> Consider `FindEntitiesByRelationPath` or `RunSPARQL`.
+            5. **Retrieve Values:** Fetch actual data using Tier 2 tools.
+               * For multiple attributes from same node -> `GetNodeSummary` (ONE call vs. many)
+               * For single attribute -> `GetAttributeDetails`
+            6. **Temporal Queries (EASY MODE):**
+               * Question has "in 2015", "on date", "as of" → Use `TemporalAttributeQuery`
+               * This tool handles date filtering automatically - NO manual SPARQL needed
+            7. **Qualifier Decision:** MANDATORY CHECK - Does question specify TIME/PLACE for a fact?
+               * YES → Use `GetAttributeWithQualifiers` or `TemporalAttributeQuery`
+               * NO → Use `GetAttributeDetails`
+            8. **Pivot if Stuck:** If a search returns 0 results twice, STOP searching that term. Try a neighbor or use `RunSPARQL` to join data.
+            9. **Verify:** Use `VerifyNumericCondition` for any numbers/dates.
+            10. **Synthesize:** Call `GetJournalSummary` and formulate your answer.
             """
 
         self._messages: List[Dict[str, Any]] = [
@@ -391,37 +525,152 @@ class KQAProAgent:
     def _trace(self, msg: str, color: str = COLOR_GREEN):
         trace(self.name, msg, color)
 
-    def _detect_stuck_loop(self, func_name: str, func_args: dict, threshold: int = 3) -> bool:
+    def _detect_loops(self, func_name: str, func_args: dict) -> tuple[bool, str]:
         """
-        Detect if the agent is stuck calling the same tool with same parameters.
+        Multi-layered loop detection to catch various infinite loop patterns.
 
         Args:
             func_name: Name of the tool being called
             func_args: Arguments for the tool call
-            threshold: Number of identical calls to trigger detection (default: 3)
 
         Returns:
-            True if stuck loop detected, False otherwise
+            Tuple of (loop_detected: bool, reason: str)
         """
         # Create a hashable representation of this tool call
-        # Sort keys to ensure consistent comparison
         args_str = json.dumps(func_args, sort_keys=True)
         current_call = (func_name, args_str)
 
         # Add to history
         self.tool_call_history.append(current_call)
+        self.tool_sequence.append(func_name)
 
-        # Keep only recent history (last 10 calls to avoid memory bloat)
-        if len(self.tool_call_history) > 10:
+        # Keep only recent history (last 12 calls to avoid memory bloat)
+        if len(self.tool_call_history) > 12:
             self.tool_call_history.pop(0)
+        if len(self.tool_sequence) > 12:
+            self.tool_sequence.pop(0)
 
-        # Check if the last N calls are identical
-        if len(self.tool_call_history) >= threshold:
-            recent_calls = self.tool_call_history[-threshold:]
+        # DETECTION 1: Identical Repeated Calls (same tool + same params)
+        if len(self.tool_call_history) >= 3:
+            recent_calls = self.tool_call_history[-3:]
             if all(call == current_call for call in recent_calls):
-                return True
+                return True, f"Identical call repeated 3 times: {func_name}({list(func_args.keys())})"
 
-        return False
+        # DETECTION 2: Oscillating Pattern (A-B-A-B or A-B-C-A-B-C)
+        if len(self.tool_sequence) >= 6:
+            # Check for 2-tool oscillation (A-B-A-B-A-B)
+            last_6 = self.tool_sequence[-6:]
+            if last_6[0] == last_6[2] == last_6[4] and last_6[1] == last_6[3] == last_6[5] and last_6[0] != last_6[1]:
+                return True, f"Oscillating between {last_6[0]} and {last_6[1]} (A-B-A-B-A-B pattern)"
+
+            # Check for 3-tool oscillation (A-B-C-A-B-C)
+            if last_6[0] == last_6[3] and last_6[1] == last_6[4] and last_6[2] == last_6[5]:
+                return True, f"Oscillating between {last_6[0]}, {last_6[1]}, {last_6[2]} (A-B-C-A-B-C pattern)"
+
+        # DETECTION 3: Same tool called 5+ times in last 6 calls (even with different params)
+        if len(self.tool_sequence) >= 6:
+            last_6 = self.tool_sequence[-6:]
+            tool_counts = {}
+            for t in last_6:
+                tool_counts[t] = tool_counts.get(t, 0) + 1
+            for tool, count in tool_counts.items():
+                if count >= 5:
+                    return True, f"Tool '{tool}' called {count} times in last 6 iterations"
+
+        return False, ""
+
+    def _get_tool_specific_loop_guidance(self, func_name: str) -> str:
+        """
+        Provide tool-specific guidance when a loop is detected.
+
+        Args:
+            func_name: Name of the tool that's looping
+
+        Returns:
+            Specific recovery guidance for this tool
+        """
+        guidance_map = {
+            "RunSPARQL": (
+                "**RunSPARQL Loop Recovery:**\n"
+                "   ❌ Your SPARQL queries have syntax errors or return no results\n"
+                "   ✅ STOP using RunSPARQL - Use simpler tools instead:\n"
+                "      • GetAttributeDetails - for getting attribute values\n"
+                "      • GetRelationDetails - for navigating relationships\n"
+                "      • GetAttributeWithQualifiers - for temporal data\n"
+                "      • FindNode - to search for entities\n"
+                "   💡 Tip: Check your namespace prefixes (ex:, prop:, attr:, qual:)"
+            ),
+            "GetAttributeDetails": (
+                "**GetAttributeDetails Loop Recovery:**\n"
+                "   ❌ Repeatedly calling same attributes or attribute doesn't exist\n"
+                "   ✅ Try alternatives:\n"
+                "      • Check available_attributes from FindNode results\n"
+                "      • Try GetNodeSummary to see ALL attributes at once\n"
+                "      • Use RunSPARQL if the attribute name is complex\n"
+                "      • The attribute might not exist - use what you have"
+            ),
+            "GetRelationDetails": (
+                "**GetRelationDetails Loop Recovery:**\n"
+                "   ❌ Repeatedly calling same relations or relation doesn't exist\n"
+                "   ✅ Try alternatives:\n"
+                "      • Check available_predicates from FindNode results\n"
+                "      • Try GetNodeSummary to see ALL relations at once\n"
+                "      • Try ExploreNeighborhood with semantic matching\n"
+                "      • The relation might not exist - answer with available data"
+            ),
+            "FindNode": (
+                "**FindNode Loop Recovery:**\n"
+                "   ❌ Can't find the entity you're searching for\n"
+                "   ✅ Try alternatives:\n"
+                "      • Search for a related entity instead (e.g., search for film instead of person)\n"
+                "      • Try different search terms (synonyms, abbreviations)\n"
+                "      • Use FindByAttribute if you have a specific ID/code\n"
+                "      • The entity might not exist in this dataset - acknowledge this"
+            ),
+            "FindByAttribute": (
+                "**FindByAttribute Loop Recovery:**\n"
+                "   ❌ Can't find entity by the attribute value\n"
+                "   ✅ Try alternatives:\n"
+                "      • Use FindNode with semantic search instead\n"
+                "      • Try RunSPARQL with a broader filter\n"
+                "      • The value might not exist - use different approach"
+            ),
+            "ExploreNeighborhood": (
+                "**ExploreNeighborhood Loop Recovery:**\n"
+                "   ❌ Can't find the semantic relation you're looking for\n"
+                "   ✅ Try alternatives:\n"
+                "      • Use GetRelationDetails with exact relation name\n"
+                "      • Check available_predicates from FindNode\n"
+                "      • Use GetNodeSummary to see what relations exist\n"
+                "      • Try a different phrasing for the relation"
+            ),
+            "GetAttributeWithQualifiers": (
+                "**GetAttributeWithQualifiers Loop Recovery:**\n"
+                "   ❌ Not finding qualified values or temporal data\n"
+                "   ✅ Try alternatives:\n"
+                "      • Use GetAttributeDetails (values might not have qualifiers)\n"
+                "      • Try TemporalAttributeQuery for date-specific queries\n"
+                "      • The data might not have temporal qualifiers - use any value"
+            ),
+            "TemporalAttributeQuery": (
+                "**TemporalAttributeQuery Loop Recovery:**\n"
+                "   ❌ Can't find value for the specific date\n"
+                "   ✅ Try alternatives:\n"
+                "      • Increase tolerance_days parameter\n"
+                "      • Use GetAttributeWithQualifiers and filter manually\n"
+                "      • Use any available value if date-specific not found\n"
+                "      • The temporal data might not exist for that date"
+            ),
+        }
+
+        # Return specific guidance or generic fallback
+        return guidance_map.get(func_name, (
+            "**Generic Recovery Strategies:**\n"
+            "   • Try a completely different tool category\n"
+            "   • Review your journal to see what you already know\n"
+            "   • Answer based on available data if you can't find more\n"
+            "   • Consider that the data might not exist in the knowledge graph"
+        ))
 
     def _mcp_tool_to_openai(self, mcp_tool: McpTool) -> Dict:
         return {
@@ -574,21 +823,49 @@ Now proceed with your investigation using the available tools."""
                     self._trace(
                         f"📊 Status: {self.token_usage['total_tokens']} tokens used, {len(self._messages)} messages in history", COLOR_CYAN)
 
-                # Periodic journal refresh (every 5 iterations)
+                # Periodic journal refresh (every 5 iterations) + PROGRESS CHECK
                 if iteration_count % 5 == 0 and iteration_count > 0:
                     self._trace("🔄 Injecting journal summary for working memory refresh", COLOR_CYAN)
                     try:
                         journal_refresh = await self.mcp.call_tool("GetJournalSummary", {})
-                        self._messages.append({
-                            "role": "user",
-                            "content": f"""📋 WORKING MEMORY REFRESH (Iteration {iteration_count})
+
+                        # DETECTION 4: Check if journal has changed since last check (progress detection)
+                        if self.last_journal_state is not None and journal_refresh == self.last_journal_state:
+                            self._trace("⚠️  WARNING: Journal unchanged for 5 iterations - no progress!", COLOR_YELLOW)
+                            # Inject a stronger intervention prompt
+                            self._messages.append({
+                                "role": "user",
+                                "content": f"""⚠️ **NO PROGRESS DETECTED** (Iteration {iteration_count})
+
+Your journal has NOT changed in the last 5 iterations. You are NOT making progress.
+
+Current journal state:
+{journal_refresh}
+
+**IMMEDIATE ACTIONS REQUIRED:**
+1. If you've been searching unsuccessfully, STOP and try RunSPARQL instead
+2. If you can't find an entity, search for a CONNECTED entity (e.g., search for Award instead of Person)
+3. If you can't find an attribute, review available_attributes from your last FindNode call
+4. If the data simply doesn't exist, acknowledge this and provide your best answer based on what you HAVE found
+
+You MUST change your approach NOW or acknowledge the limitation."""
+                            })
+                        else:
+                            # Normal refresh
+                            self._messages.append({
+                                "role": "user",
+                                "content": f"""📋 WORKING MEMORY REFRESH (Iteration {iteration_count})
 
 Here's everything you've discovered so far:
 
 {journal_refresh}
 
 Continue your investigation using this information. Avoid revisiting nodes or queries you've already completed."""
-                        })
+                            })
+
+                        # Update last state for next comparison
+                        self.last_journal_state = journal_refresh
+
                     except Exception as e:
                         self._trace(f"⚠️ Failed to inject journal refresh: {e}", COLOR_YELLOW)
 
@@ -690,45 +967,45 @@ Continue your investigation using this information. Avoid revisiting nodes or qu
                     args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
                     self._trace(f"🛠️  Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
 
-                    # STUCK LOOP DETECTION: Check if this tool+params has been called 3 times
-                    if self._detect_stuck_loop(func_name, func_args):
+                    # MULTI-LAYERED LOOP DETECTION
+                    loop_detected, loop_reason = self._detect_loops(func_name, func_args)
+
+                    if loop_detected:
                         self._trace(
-                            f"🔄 STUCK LOOP DETECTED: {func_name} called 3 times with identical parameters!",
+                            f"🔄 INFINITE LOOP DETECTED: {loop_reason}",
                             COLOR_RED
                         )
 
                         # Fetch current journal state to help agent recover
                         try:
                             journal_state = await self.mcp.call_tool("GetJournalSummary", {})
-                            self._trace("📋 Fetched journal summary for stuck loop recovery", COLOR_CYAN)
+                            self._trace("📋 Fetched journal summary for loop recovery", COLOR_CYAN)
                         except Exception as e:
-                            self._trace(f"⚠️ Failed to fetch journal for stuck loop: {e}", COLOR_YELLOW)
+                            self._trace(f"⚠️ Failed to fetch journal for loop recovery: {e}", COLOR_YELLOW)
                             journal_state = "(Journal unavailable)"
 
-                        # Don't execute the tool - instead provide intervention message with journal
+                        # Provide tool-specific intervention message
+                        tool_specific_guidance = self._get_tool_specific_loop_guidance(func_name)
+
                         tool_result = (
-                            f"⚠️ **STUCK LOOP DETECTED**\n\n"
-                            f"You have called `{func_name}` with the same parameters 3 times in a row. "
-                            f"This suggests your current approach is not working.\n\n"
-                            f"**Please try a different strategy:**\n"
-                            f"- Use a different tool to gather information\n"
-                            f"- Modify your search parameters (try synonyms, broader/narrower terms)\n"
-                            f"- Change your reasoning approach\n"
-                            f"- Use RunSPARQL as a fallback for direct queries\n\n"
-                            f"**Repeated parameters were:**\n{args_pretty}\n\n"
+                            f"⚠️ **INFINITE LOOP DETECTED**\n\n"
+                            f"**Detected Pattern:** {loop_reason}\n\n"
+                            f"Your current approach is not making progress. You MUST change strategy.\n\n"
+                            f"**Required Actions:**\n"
+                            f"1. STOP using '{func_name}' - it's not working\n"
+                            f"2. Review what you've already discovered (see below)\n"
+                            f"3. Try a FUNDAMENTALLY different approach:\n\n"
+                            f"{tool_specific_guidance}\n\n"
                             f"═══════════════════════════════════════════════════════════════════════\n"
-                            f"📋 HERE'S WHAT YOU'VE ALREADY DISCOVERED:\n"
+                            f"📋 WHAT YOU'VE ALREADY DISCOVERED:\n"
                             f"═══════════════════════════════════════════════════════════════════════\n\n"
                             f"{journal_state}\n\n"
-                            f"Use this information to try a completely different approach."
+                            f"Based on the above, formulate a DIFFERENT strategy or acknowledge if the data doesn't exist."
                         )
 
-                        # Clear history for this specific call to allow different attempts
-                        args_str = json.dumps(func_args, sort_keys=True)
-                        self.tool_call_history = [
-                            call for call in self.tool_call_history
-                            if call != (func_name, args_str)
-                        ]
+                        # Clear recent history to allow fresh attempts
+                        self.tool_call_history = []
+                        self.tool_sequence = []
                     else:
                         # Normal execution - no loop detected
                         # Execution with error handling
@@ -914,7 +1191,11 @@ YOUR FINAL ANSWER:"""
             "completion_tokens": 0,
             "total_tokens": 0
         }
-        self.tool_call_history = []  # Clear stuck loop detection history
+        # Clear all loop detection tracking
+        self.tool_call_history = []
+        self.tool_sequence = []
+        self.empty_result_count = 0
+        self.last_journal_state = None
         if self.mcp:
             await self.mcp.close()
             self.mcp = None
