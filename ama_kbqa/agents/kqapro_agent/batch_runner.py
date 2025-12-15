@@ -80,7 +80,7 @@ BATCH_RESULTS_BASE_DIR = project_root / "batch_results"
 # OpenRouter configuration for answer selection
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "arcee-ai/trinity-mini")
+MODEL_NAME = "meta-llama/llama-3.3-70b-instruct"
 
 # Virtuoso SPARQL endpoint configuration
 VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
@@ -257,7 +257,9 @@ def load_judge_config() -> Dict[str, Any]:
         provider = postprocessing.get("judge_provider", "openrouter")
         provider_config = config.get(provider, {})
 
-        judge_model = postprocessing.get("judge_model")
+        judge_model = "meta-llama/llama-3.3-70b-instruct"
+        # Optional: Damit OpenRouter freie Wahl beim Provider hat (vermeidet 404):
+        chat_model_provider = ""
         if not judge_model:
             # Fallback to chat_model from the provider
             judge_model = provider_config.get("chat_model", "minimax/minimax-m2")
@@ -936,7 +938,20 @@ Respond ONLY with the JSON object, no additional text."""
 
         # Parse JSON response
         json_content = response.choices[0].message.content
-        judgment_dict = json.loads(json_content)
+        
+        # --- FIX START: Robust Markdown Parsing ---
+        # This handles cases where LLMs wrap JSON in ```json ... ``` despite instructions
+        if json_content:
+            if "```json" in json_content:
+                json_content = json_content.split("```json")[1].split("```")[0].strip()
+            elif "```" in json_content:
+                parts = json_content.split("```")
+                if len(parts) > 1:
+                    json_content = parts[1].strip()
+        
+        # strict=False allows control characters (newlines, tabs) inside JSON strings
+        judgment_dict = json.loads(json_content, strict=False)
+        # --- FIX END ---
 
         # Validate against Pydantic model
         judgment = AnswerJudgment(**judgment_dict)

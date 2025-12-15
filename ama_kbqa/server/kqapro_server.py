@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator
 from pathlib import Path
 from functools import wraps
+import qdrant_client
 
 from fastmcp import FastMCP, Context
 from qdrant_client import QdrantClient
@@ -764,9 +765,684 @@ Respond ONLY with the JSON object, no additional text."""
         raise
 
 
+
+@mcp.tool()
+async def GetNodeLabel(
+    app_context: Context,
+    node_id: str
+) -> str:
+    """
+    Resolve entity ID (e.g., Q1860) to human-readable label.
+    
+    **CRITICAL for Qualifier Handling:**
+    - ALWAYS use this when you encounter entity IDs in qualifiers
+    - Common pattern: "original_language: Q1860" → call GetNodeLabel("Q1860") → "English"
+    
+    Args:
+        node_id: Entity ID to resolve (e.g., "Q1860", "Q217008")
+    
+    Returns:
+        JSON with node_id, label, and status
+    """
+    app = app_context.request_context.lifespan_context
+    
+    try:
+        session_journal.visited_nodes[node_id] = f"(resolving label)"
+        
+        query = f"""
+        SELECT ?label WHERE {{
+            ex:{node_id} rdfs:label ?label .
+        }}
+        """
+        
+        full_query = SPARQL_PREFIXES + query
+        
+        # FIX: sparql direkt vom app context nutzen, NICHT app.qdrant.sparql
+        app.sparql.setQuery(full_query)
+        app.sparql.setReturnFormat(JSON)
+        
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+        
+        if not bindings:
+            response = {
+                "node_id": node_id,
+                "label": None,
+                "node_type": "unknown",
+                "status": f"No label found for {node_id}"
+            }
+            logger.warning(f"GetNodeLabel: No label found for {node_id}")
+            return json.dumps(response, indent=2)
+        
+        label = bindings[0].get("label", {}).get("value", "")
+        session_journal.visited_nodes[node_id] = label
+        
+        # Type check
+        type_query = f"""
+        SELECT ?type WHERE {{
+            ex:{node_id} rdf:type ?type .
+        }} LIMIT 1
+        """
+        type_full_query = SPARQL_PREFIXES + type_query
+        app.sparql.setQuery(type_full_query)
+        type_results = app.sparql.query().convert()
+        type_bindings = type_results.get("results", {}).get("bindings", [])
+        
+        node_type = "entity"
+        if type_bindings:
+            type_uri = type_bindings[0].get("type", {}).get("value", "")
+            if "concept" in type_uri.lower():
+                node_type = "concept"
+        
+        response = {
+            "node_id": node_id,
+            "label": label,
+            "node_type": node_type,
+            "status": f"Found label for {node_id}"
+        }
+        
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error resolving label for {node_id}: {str(e)}"
+        logger.error(error_msg)
+        return json.dumps({"error": error_msg, "node_id": node_id}, indent=2)
+
+
+# ============================================================================
+# TOOL 2: BatchGetNodeLabels
+# ============================================================================
+
+@mcp.tool()
+async def BatchGetNodeLabels(
+    app_context: Context,
+    node_ids: list[str]
+) -> str:
+    """
+    Efficiently resolve MULTIPLE entity IDs to labels in a single SPARQL call.
+    
+    **Performance Optimization:**
+    - Use this instead of calling GetNodeLabel multiple times
+    - Single SPARQL query resolves all IDs at once
+    
+    Args:
+        node_ids: List of entity IDs to resolve (e.g., ["Q1860", "Q217008", "Q699224"])
+    
+    Returns:
+        JSON with resolved labels and not_found list
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        if not node_ids:
+            return json.dumps({"status": "No IDs"}, indent=2)
+        
+        unique_ids = list(set(node_ids))
+        values_clause = " ".join([f"ex:{nid}" for nid in unique_ids])
+        
+        query = f"""
+        SELECT ?entity ?label WHERE {{
+            VALUES ?entity {{ {values_clause} }}
+            OPTIONAL {{ ?entity rdfs:label ?label . }}
+        }}
+        """
+        
+        full_query = SPARQL_PREFIXES + query
+        
+        # FIX: sparql vom app context
+        app.sparql.setQuery(full_query)
+        app.sparql.setReturnFormat(JSON)
+        
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+        
+        resolved = {}
+        found_ids = set()
+        
+        for binding in bindings:
+            entity_uri = binding.get("entity", {}).get("value", "")
+            label = binding.get("label", {}).get("value", None)
+            
+            # Extract entity ID from URI
+            entity_id = entity_uri.split("/")[-1]
+            
+            if label:
+                resolved[entity_id] = label
+                found_ids.add(entity_id)
+                # Update journal
+                session_journal.visited_nodes[entity_id] = label
+        
+        not_found = [nid for nid in unique_ids if nid not in found_ids]
+        
+        # Log failed resolutions
+        for nid in not_found:
+            session_journal.failed_attempts.append(f"BatchGetNodeLabels: {nid} not found")
+        
+        response = {
+            "resolved": resolved,
+            "not_found": not_found,
+            "status": f"Resolved {len(resolved)}/{len(unique_ids)} entities"
+        }
+        
+        logger.info(f"BatchGetNodeLabels: Resolved {len(resolved)}/{len(unique_ids)} IDs")
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error in batch label resolution: {str(e)}"
+        logger.error(error_msg)
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ============================================================================
+# TOOL 3: GetSchemaForAttribute
+# ============================================================================
+
+@mcp.tool()
+async def GetSchemaForAttribute(
+    app_context: Context,
+    attribute_name: str,
+    fuzzy: bool = True
+) -> str:
+    """
+    Validate and fuzzy-match attribute names before using FindByAttribute.
+    
+    **CRITICAL for Attribute Searches:**
+    - ALWAYS use this BEFORE FindByAttribute with technical IDs
+    - Prevents failures from wrong attribute names (e.g., "GameID" vs "Nintendo GameID")
+    
+    Args:
+        attribute_name: Attribute to search for (e.g., "GameID", "NUTS code")
+        fuzzy: Enable fuzzy matching (default: True)
+    
+    Returns:
+        JSON with exact_match, fuzzy_matches, and recommendation
+    """
+    try:
+        # Query all distinct attributes from Virtuoso
+        query = """
+        SELECT DISTINCT ?attr WHERE {
+            ?s ?attr ?o .
+            FILTER(STRSTARTS(STR(?attr), "http://kqapro.org/attribute/"))
+        }
+        """
+        
+        full_query = SPARQL_PREFIXES + query
+        app_context = app_context.request_context.lifespan_context
+        app_context.sparql.setQuery(full_query)         # ✅ CORRECT!
+        app_context.sparql.setReturnFormat(JSON)        # ✅ CORRECT!
+    
+        results = app_context.sparql.query().convert()  # ✅ CORRECT!
+        bindings = results.get("results", {}).get("bindings", [])
+        
+        # Extract attribute names
+        all_attributes = []
+        for binding in bindings:
+            attr_uri = binding.get("attr", {}).get("value", "")
+            attr_name = attr_uri.split("/")[-1].replace("_", " ")
+            all_attributes.append(attr_name)
+        
+        # Normalize query
+        query_normalized = attribute_name.lower().strip().replace("_", " ")
+        
+        # Check for exact match
+        exact_match = None
+        for attr in all_attributes:
+            if attr.lower() == query_normalized:
+                exact_match = attr
+                break
+        
+        if exact_match:
+            response = {
+                "query": attribute_name,
+                "exact_match": exact_match,
+                "fuzzy_matches": [],
+                "recommendation": exact_match,
+                "status": f"Found exact match: {exact_match}"
+            }
+            logger.info(f"GetSchemaForAttribute: Exact match for '{attribute_name}' → {exact_match}")
+            return json.dumps(response, indent=2)
+        
+        if not fuzzy:
+            response = {
+                "query": attribute_name,
+                "exact_match": None,
+                "fuzzy_matches": [],
+                "recommendation": None,
+                "status": f"No exact match found for '{attribute_name}' (fuzzy disabled)"
+            }
+            return json.dumps(response, indent=2)
+        
+        # Fuzzy matching using embeddings
+        # Generate embedding for query
+        emb_response = app_context.embedding_client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=[query_normalized]
+        )
+        query = emb_response.data[0].embedding
+        
+        # Generate embeddings for all attributes
+        attr_embeddings = app_context.embedding_client.embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=all_attributes[:100]  # Limit to avoid API limits
+        )
+        
+        # Compute cosine similarities
+        from numpy import dot
+        from numpy.linalg import norm
+        
+        similarities = []
+        for i, attr in enumerate(all_attributes[:100]):
+            attr_vec = attr_embeddings.data[i].embedding
+            similarity = dot(query, attr_vec) / (norm(query) * norm(attr_vec))
+            similarities.append((attr, float(similarity)))
+        
+        # Sort by similarity
+        similarities.sort(key=lambda x: x[1], reverse=True)
+        
+        # Get top 3 fuzzy matches
+        fuzzy_matches = []
+        for attr, sim in similarities[:3]:
+            if sim > 0.6:  # Threshold for relevance
+                # Count usage in KB
+                count_query = f"""
+                SELECT (COUNT(?s) AS ?count) WHERE {{
+                    ?s attr:{attr.replace(" ", "_")} ?o .
+                }}
+                """
+                count_full_query = SPARQL_PREFIXES + count_query
+                app_context.sparql.setQuery(count_full_query)        # ✅ CORRECT!
+                count_results = app_context.sparql.query().convert() # ✅ CORRECT!
+                count_bindings = count_results.get("results", {}).get("bindings", [])
+                
+                usage_count = 0
+                if count_bindings:
+                    usage_count = int(count_bindings[0].get("count", {}).get("value", 0))
+                
+                fuzzy_matches.append({
+                    "attribute": attr,
+                    "similarity": round(sim, 3),
+                    "sample_usage": f"Used in {usage_count} entities"
+                })
+        
+        recommendation = fuzzy_matches[0]["attribute"] if fuzzy_matches else None
+        
+        response = {
+            "query": attribute_name,
+            "exact_match": None,
+            "fuzzy_matches": fuzzy_matches,
+            "recommendation": recommendation,
+            "status": f"Found {len(fuzzy_matches)} fuzzy matches"
+        }
+        
+        logger.info(f"GetSchemaForAttribute: Fuzzy matches for '{attribute_name}' → {[m['attribute'] for m in fuzzy_matches]}")
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error in schema validation: {str(e)}"
+        logger.error(error_msg)
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ============================================================================
+# TOOL 4: GetEdgeQualifiers
+# ============================================================================
+
+@mcp.tool()
+async def GetEdgeQualifiers(
+    app_context: Context,
+    base_node_id: str,
+    attribute_name: str,
+    attribute_value: Optional[str] = None
+) -> str:
+    """
+    Extract ALL qualifiers from a specific attribute statement.
+    
+    **CRITICAL for QueryAttrQualifier Questions:**
+    - Use this when questions ask about metadata/context of an attribute
+    - Examples: "What language is associated with website X?", "Where was X published on date Y?"
+    - Automatically resolves entity IDs in qualifiers to labels
+    
+    Args:
+        base_node_id: Entity ID (e.g., "Q217008")
+        attribute_name: Attribute name (e.g., "official website")
+        attribute_value: Optional specific value to filter by
+    
+    Returns:
+        JSON with base_node, attribute, value, qualifiers, and status
+    """
+    try:
+        # Normalize attribute name
+        attr_normalized = attribute_name.replace(" ", "_")
+        
+        # Build SPARQL query
+        value_filter = ""
+        if attribute_value:
+            value_filter = f'FILTER(?value = "{attribute_value}")'
+        
+        query = f"""
+        SELECT ?value ?qkey ?qval ?qlabel WHERE {{
+            ex:{base_node_id} attr:{attr_normalized} ?bnode .
+            ?bnode rdf:value ?value .
+            {value_filter}
+            
+            # Find the statement node
+            ?stmt rdf:subject ex:{base_node_id} ;
+                  rdf:predicate attr:{attr_normalized} ;
+                  rdf:object ?bnode .
+            
+            # Get qualifiers
+            ?stmt ?qprop ?qval .
+            FILTER(STRSTARTS(STR(?qprop), "http://kqapro.org/qualifier/"))
+            
+            # Extract qualifier key name
+            BIND(REPLACE(STR(?qprop), ".*/(.*)", "$1") AS ?qkey)
+            
+            # Try to resolve entity labels
+            OPTIONAL {{
+                ?qval rdfs:label ?qlabel .
+            }}
+        }}
+        """
+        
+        full_query = SPARQL_PREFIXES + query
+        app_context = app_context.request_context.lifespan_context
+        app_context.sparql.setQuery(full_query)             # ✅ CORRECT!
+        app_context.sparql.setReturnFormat(JSON)            # ✅ CORRECT!
+
+        results = app_context.sparql.query().convert()      # ✅ CORRECT!
+        bindings = results.get("results", {}).get("bindings", [])
+        
+        if not bindings:
+            # Try alternative query pattern (for relations instead of attributes)
+            query_alt = f"""
+            SELECT ?value ?qkey ?qval ?qlabel WHERE {{
+                ex:{base_node_id} prop:{attr_normalized} ?target .
+                
+                # Find the statement node
+                ?stmt rdf:subject ex:{base_node_id} ;
+                      rdf:predicate prop:{attr_normalized} ;
+                      rdf:object ?target .
+                
+                # Get qualifiers
+                ?stmt ?qprop ?qval .
+                FILTER(STRSTARTS(STR(?qprop), "http://kqapro.org/qualifier/"))
+                
+                BIND(REPLACE(STR(?qprop), ".*/(.*)", "$1") AS ?qkey)
+                
+                OPTIONAL {{
+                    ?qval rdfs:label ?qlabel .
+                }}
+                
+                # Get target label as value
+                OPTIONAL {{
+                    ?target rdfs:label ?value .
+                }}
+            }}
+            """
+            
+            full_query_alt = SPARQL_PREFIXES + query_alt
+            app_context.sparql.setQuery(full_query_alt)     # ✅ CORRECT!
+            results = app_context.sparql.query().convert()  # ✅ CORRECT!
+            bindings = results.get("results", {}).get("bindings", [])
+        
+        if not bindings:
+            response = {
+                "base_node": base_node_id,
+                "attribute": attribute_name,
+                "value": attribute_value,
+                "qualifiers": {},
+                "status": f"No qualifiers found for {attribute_name} on {base_node_id}"
+            }
+            logger.warning(f"GetEdgeQualifiers: No qualifiers found")
+            session_journal.failed_attempts.append(f"GetEdgeQualifiers({base_node_id}, {attribute_name}): No qualifiers")
+            return json.dumps(response, indent=2)
+        
+        # Parse qualifiers
+        attr_value = bindings[0].get("value", {}).get("value", attribute_value)
+        qualifiers = {}
+        entity_ids_to_resolve = []
+        
+        for binding in bindings:
+            qkey = binding.get("qkey", {}).get("value", "")
+            qval_node = binding.get("qval", {})
+            qlabel = binding.get("qlabel", {}).get("value", None)
+            
+            qval_uri = qval_node.get("value", "")
+            qval_type = qval_node.get("type", "literal")
+            
+            if qkey not in qualifiers:
+                qualifiers[qkey] = []
+            
+            # Determine qualifier value type
+            if qval_type == "uri" and not qlabel:
+                # Entity ID without label - need to resolve
+                entity_id = qval_uri.split("/")[-1]
+                entity_ids_to_resolve.append(entity_id)
+                qualifiers[qkey].append({
+                    "entity_id": entity_id,
+                    "type": "entity"
+                })
+            elif qlabel:
+                # Entity with label already resolved
+                entity_id = qval_uri.split("/")[-1]
+                qualifiers[qkey].append({
+                    "entity_id": entity_id,
+                    "entity_label": qlabel,
+                    "type": "entity"
+                })
+            else:
+                # Literal value (string, date, number)
+                qualifiers[qkey].append({
+                    "value": qval_uri,
+                    "type": "literal"
+                })
+        
+        # Batch resolve entity IDs
+        if entity_ids_to_resolve:
+            batch_result = await BatchGetNodeLabels(app_context, entity_ids_to_resolve)
+            batch_data = json.loads(batch_result)
+            resolved = batch_data.get("resolved", {})
+            
+            # Inject labels
+            for qkey, qvalues in qualifiers.items():
+                for qval in qvalues:
+                    if qval.get("type") == "entity" and "entity_label" not in qval:
+                        entity_id = qval["entity_id"]
+                        if entity_id in resolved:
+                            qval["entity_label"] = resolved[entity_id]
+        
+        # Log to journal
+        session_journal.verified_facts.append({
+            "type": "edge_qualifiers",
+            "node": base_node_id,
+            "attribute": attribute_name,
+            "qualifiers": list(qualifiers.keys())
+        })
+        
+        response = {
+            "base_node": base_node_id,
+            "attribute": attribute_name,
+            "value": attr_value,
+            "qualifiers": qualifiers,
+            "status": f"Found {len(qualifiers)} qualifier types"
+        }
+        
+        logger.info(f"GetEdgeQualifiers: Found qualifiers for {base_node_id}.{attribute_name}")
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error extracting edge qualifiers: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(f"GetEdgeQualifiers: {str(e)}")
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ============================================================================
+# TOOL 5: GetQualifiersByPredicate
+# ============================================================================
+
+@mcp.tool()
+async def GetQualifiersByPredicate(
+    app_context: Context,
+    base_node_id: str,
+    relation_name: str,
+    target_node_id: Optional[str] = None
+) -> str:
+    """
+    Find ALL qualifiers for a specific RELATION statement (not attribute).
+    
+    **CRITICAL for Complex Award/Relation Questions:**
+    - Use when questions ask about context of a relationship
+    - Example: "What film won award X with winner Y?"
+    - Automatically resolves entity IDs to labels
+    
+    Args:
+        base_node_id: Source entity ID (e.g., "Q100")
+        relation_name: Relation/predicate name (e.g., "award received")
+        target_node_id: Optional target entity to filter by
+    
+    Returns:
+        JSON with base_node, relation, target, qualifiers, and status
+    """
+    try:
+        # Normalize relation name
+        rel_normalized = relation_name.replace(" ", "_")
+        
+        # Build target filter
+        target_filter = ""
+        if target_node_id:
+            target_filter = f"FILTER(?target = ex:{target_node_id})"
+        
+        query = f"""
+        SELECT ?target ?targetLabel ?qkey ?qval ?qlabel WHERE {{
+            ex:{base_node_id} prop:{rel_normalized} ?target .
+            {target_filter}
+            
+            # Get target label
+            OPTIONAL {{ ?target rdfs:label ?targetLabel . }}
+            
+            # Find the statement node
+            ?stmt rdf:subject ex:{base_node_id} ;
+                  rdf:predicate prop:{rel_normalized} ;
+                  rdf:object ?target .
+            
+            # Get qualifiers
+            ?stmt ?qprop ?qval .
+            FILTER(STRSTARTS(STR(?qprop), "http://kqapro.org/qualifier/"))
+            
+            BIND(REPLACE(STR(?qprop), ".*/(.*)", "$1") AS ?qkey)
+            
+            # Try to resolve qualifier entity labels
+            OPTIONAL {{
+                ?qval rdfs:label ?qlabel .
+            }}
+        }}
+        """
+        
+        full_query = SPARQL_PREFIXES + query
+        app_context = app_context.request_context.lifespan_context
+        app_context.sparql.setQuery(full_query)             # ✅ CORRECT!
+        app_context.sparql.setReturnFormat(JSON)            # ✅ CORRECT!
+
+        results = app_context.sparql.query().convert()      # ✅ CORRECT!
+        bindings = results.get("results", {}).get("bindings", [])
+        
+        if not bindings:
+            response = {
+                "base_node": base_node_id,
+                "relation": relation_name,
+                "target": target_node_id,
+                "qualifiers": {},
+                "status": f"No qualifiers found for {relation_name} from {base_node_id}"
+            }
+            logger.warning(f"GetQualifiersByPredicate: No qualifiers found")
+            session_journal.failed_attempts.append(f"GetQualifiersByPredicate({base_node_id}, {relation_name}): No qualifiers")
+            return json.dumps(response, indent=2)
+        
+        # Parse results
+        target_uri = bindings[0].get("target", {}).get("value", "")
+        target_id = target_uri.split("/")[-1] if target_uri else target_node_id
+        target_label = bindings[0].get("targetLabel", {}).get("value", target_id)
+        
+        qualifiers = {}
+        entity_ids_to_resolve = []
+        
+        for binding in bindings:
+            qkey = binding.get("qkey", {}).get("value", "")
+            qval_node = binding.get("qval", {})
+            qlabel = binding.get("qlabel", {}).get("value", None)
+            
+            qval_uri = qval_node.get("value", "")
+            qval_type = qval_node.get("type", "literal")
+            
+            if qkey not in qualifiers:
+                qualifiers[qkey] = []
+            
+            if qval_type == "uri" and not qlabel:
+                entity_id = qval_uri.split("/")[-1]
+                entity_ids_to_resolve.append(entity_id)
+                qualifiers[qkey].append({
+                    "entity_id": entity_id,
+                    "type": "entity"
+                })
+            elif qlabel:
+                entity_id = qval_uri.split("/")[-1]
+                qualifiers[qkey].append({
+                    "entity_id": entity_id,
+                    "label": qlabel,
+                    "type": "entity"
+                })
+            else:
+                qualifiers[qkey].append({
+                    "value": qval_uri,
+                    "type": "literal"
+                })
+        
+        # Batch resolve entity IDs
+        if entity_ids_to_resolve:
+            batch_result = await BatchGetNodeLabels(app_context, entity_ids_to_resolve)
+            batch_data = json.loads(batch_result)
+            resolved = batch_data.get("resolved", {})
+            
+            for qkey, qvalues in qualifiers.items():
+                for qval in qvalues:
+                    if qval.get("type") == "entity" and "label" not in qval:
+                        entity_id = qval["entity_id"]
+                        if entity_id in resolved:
+                            qval["label"] = resolved[entity_id]
+        
+        # Log to journal
+        session_journal.verified_facts.append({
+            "type": "relation_qualifiers",
+            "node": base_node_id,
+            "relation": relation_name,
+            "target": target_id,
+            "qualifiers": list(qualifiers.keys())
+        })
+        
+        response = {
+            "base_node": base_node_id,
+            "relation": relation_name,
+            "target": target_id,
+            "target_label": target_label,
+            "qualifiers": qualifiers,
+            "status": f"Found qualifiers for {relation_name} statement"
+        }
+        
+        logger.info(f"GetQualifiersByPredicate: Found qualifiers for {base_node_id} -> {relation_name} -> {target_id}")
+        return json.dumps(response, indent=2)
+        
+    except Exception as e:
+        error_msg = f"Error extracting relation qualifiers: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(f"GetQualifiersByPredicate: {str(e)}")
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+
 @mcp.tool
 @log_tool_duration
-def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredictionResponse:
+def QtypePrediction(question: str, context: Context) -> QtypePredictionResponse:
     """
     Classifies a question and returns curated few-shot examples for that question type.
 
@@ -787,8 +1463,10 @@ def QtypePrediction(question_to_classify: str, context: Context) -> QtypePredict
     app_context: AppContext = context.request_context.lifespan_context
 
     # Classify the question WITHOUT few-shot examples
-    logger.info(f"Classifying question: {question_to_classify}")
-    predicted_qtype = _classify_question(app_context, question_to_classify, fewshot_examples="")
+    logger.info(f"Classifying question: {question}")
+    
+    # FIX: Hier auch 'question' übergeben
+    predicted_qtype = _classify_question(app_context, question, fewshot_examples="")
     logger.info(f"Predicted qtype: {predicted_qtype}")
 
     # Load few-shot examples specific to this question type
@@ -943,17 +1621,17 @@ def GetJournalSummary(context: Context) -> str:
 
 @mcp.tool
 @log_tool_duration
-def EntityExtraction(query: str, context: Context) -> ExtractionResponse:
+def EntityExtraction(question: str, context: Context) -> ExtractionResponse:
     """
     Extracts entities/concepts and relations from a natural language query
     using JSON mode.
     """
     app_context: AppContext = context.request_context.lifespan_context
-
     model = CHAT_MODEL
 
     try:
-        logger.info(f"EntityExtraction called with query: {query[:100]}...")
+        # WICHTIG: Variable 'question' nutzen
+        logger.info(f"EntityExtraction called with query: {question[:100]}...")
 
         system_prompt = """Extract the semantic entities/concepts and relations from the user query.
 
@@ -968,21 +1646,15 @@ Respond ONLY with the JSON object, no additional text."""
         completion = app_context.chat_client.chat.completions.create(
             model=model,
             messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {"role": "user", "content": query}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question} # Variable 'question' nutzen
             ],
             response_format={"type": "json_object"},
-            timeout=30.0  # Add 30-second timeout
+            timeout=30.0
         )
 
-        # Parse JSON response
         json_content = completion.choices[0].message.content
         response_dict = json.loads(json_content)
-
-        # Validate against Pydantic model
         parsed_response = ExtractionResponse(**response_dict)
 
         logger.info(f"EntityExtraction completed successfully")
@@ -990,81 +1662,80 @@ Respond ONLY with the JSON object, no additional text."""
 
     except Exception as e:
         logger.error(f"Entity Extraction failed: {e}")
-        # Return empty lists on failure to maintain type safety
         return ExtractionResponse(**{"entities/concepts": [], "relations": []})
-
 
 @mcp.tool
 @log_tool_duration
 def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     """
-    Performs a HYBRID search (Qdrant Filters + Semantic Vectors) to find nodes.
-
-    This tool is ROBUST: It uses exact filtering to find Technical IDs (e.g. "GGZX52", "UKE11")
-    and Vector Search to find semantic concepts (e.g. "Boston").
+    Performs a HYBRID search (Qdrant Filters + Semantic Vectors).
+    Optimized for qdrant-client 1.16+.
     """
     app_context: AppContext = context.request_context.lifespan_context
-
     search_term_clean = semantic_node_name.strip()
     logger.info(f"FindNode: Searching for '{search_term_clean}'")
 
+    # Debugging: Version prüfen
+    try:
+        logger.info(f"DEBUG: Qdrant Client Version: {qdrant_client.__version__}")
+    except:
+        pass
+
     exact_matches = []
 
+    # --- PHASE 1: Exact Filter ---
     try:
-        # PHASE 1: Qdrant Exact Filter (Robust Match)
-        # We look in 'original_id', 'name', AND deep inside 'attributes' values
-
-        # Note: 'attributes.value.value' path works if Qdrant indexed the JSON payload structure
         should_conditions = [
             models.FieldCondition(key="original_id", match=models.MatchValue(value=search_term_clean)),
             models.FieldCondition(key="name", match=models.MatchValue(value=search_term_clean)),
-            # Searching inside nested attributes for IDs (e.g. searching a Visa Number or GameID)
             models.FieldCondition(key="attributes.value.value", match=models.MatchValue(value=search_term_clean))
         ]
-
         filter_query = models.Filter(should=should_conditions)
-
-        # Use scroll to get exact matches ignoring vector score
+        
+        # .scroll() ist stabil
         scroll_results, _ = app_context.qdrant.scroll(
             collection_name=COLLECTION_ENTITIES,
             scroll_filter=filter_query,
             limit=5,
             with_payload=True
         )
-
+        
         for point in scroll_results:
             payload = point.payload or {}
-
-            # Extract schema info (same as before)
             attributes = payload.get("attributes", [])
             unique_attrs = sorted(list(set(a.get("key") for a in attributes if a.get("key"))))
             relations = payload.get("relations", [])
             unique_preds = sorted(list(set(r.get("predicate") for r in relations if r.get("predicate"))))
-
+            
             exact_matches.append(NodeMatch(
                 original_id=payload.get("original_id", "N/A"),
                 name=payload.get("name", "Unknown"),
-                node_type=payload.get("node_type", "entity"),
+                node_type="entity",
                 relevance_score=1.0,
                 available_attributes=unique_attrs,
                 available_predicates=unique_preds
             ))
-
-        logger.info(f"FindNode: Phase 1 (Qdrant Filter) found {len(exact_matches)} matches")
-
     except Exception as e:
-        logger.warning(f"FindNode: Phase 1 (Filter) failed: {e}")
+        logger.warning(f"FindNode: Phase 1 failed: {e}")
 
-    # PHASE 2: Semantic Search (Vector)
+    # --- PHASE 2: Semantic Search ---
     vector = get_embedding(app_context.embedding_client, semantic_node_name)
-    search_results = app_context.qdrant.search(
-        collection_name=COLLECTION_ENTITIES,
-        query_vector=vector,
-        limit=TOP_N,
-        with_payload=True,
-        score_threshold=SCORE_THRESHHOLD
-    )
+    search_results = []
 
+    try:
+        # Nur Standard .search() nutzen - kein Legacy Fallback mehr!
+        search_results = app_context.qdrant.search(
+            collection_name=COLLECTION_ENTITIES,
+            query=vector,
+            limit=TOP_N,
+            with_payload=True,
+            score_threshold=SCORE_THRESHHOLD
+        )
+    except Exception as e:
+        logger.error(f"FindNode: Semantic search failed: {e}")
+        search_results = []
+
+    # Mapping logic
     semantic_matches = []
     for point in search_results:
         payload = point.payload or {}
@@ -1076,21 +1747,20 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
         semantic_matches.append(NodeMatch(
             original_id=payload.get("original_id", "N/A"),
             name=payload.get("name", "Unknown"),
-            node_type=payload.get("node_type", "unknown"),
+            node_type="unknown",
             relevance_score=point.score,
             available_attributes=unique_attrs,
             available_predicates=unique_preds
         ))
 
-    # PHASE 3: Merge (Exact matches first)
+    # Merge & Sort
     combined = {m.original_id: m for m in exact_matches}
     for m in semantic_matches:
         if m.original_id not in combined:
             combined[m.original_id] = m
 
     matches = sorted(combined.values(), key=lambda x: x.relevance_score, reverse=True)[:TOP_N]
-
-    # Auto-update Journal (no `global` needed - only modifying attributes)
+    
     if matches:
         for m in matches[:5]:
             session_journal.visited_nodes[m.original_id] = m.name
@@ -1165,8 +1835,8 @@ def GetNodeSummary(node_id: str, context: Context) -> Dict[str, Any]:
       "status": "Success"
     }
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     base_uri = format_entity_uri(node_id)
     logger.info(f"GetNodeSummary: Fetching complete data for {node_id}")
@@ -1321,8 +1991,8 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
         AttributeDetailsResponse: Contains all values found for this attribute. For quantities,
                                  returns dict with "value" (numeric) and "unit" (string) keys.
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     # Format the entity URI
     base_uri = format_entity_uri(base_node_id)
@@ -1541,8 +2211,8 @@ def GetAttributeWithQualifiers(
     For example, to find the 2015 population, look for the value where
     qualifiers["point in time"] starts with "2015".
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     # Format the entity URI
     base_uri = format_entity_uri(base_node_id)
@@ -1909,8 +2579,8 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
     Returns:
         RelationDetailsResponse: Contains all nodes connected via this relation.
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     # Format the entity URI
     base_uri = format_entity_uri(base_node_id)
@@ -2027,8 +2697,8 @@ def GetEdgeQualifiers(subject_id: str, predicate_name: str, target_id: str, cont
         predicate_name: The relation name (e.g. "official website").
         target_id: The specific value or Entity ID of the target (e.g. "http://..." or "Q30").
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     subject_uri = format_entity_uri(subject_id)
     sanitized_pred = predicate_name.replace(" ", "_")
@@ -2094,32 +2764,45 @@ def GetEdgeQualifiers(subject_id: str, predicate_name: str, target_id: str, cont
         )
 
 
+from qdrant_client import models
+# Stelle sicher, dass du das importiert hast: 
+# from qdrant_client import QdrantClient (nur für Typing nötig, nicht zur Laufzeit hier)
+
 @mcp.tool
 @log_tool_duration
 def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context: Context) -> NeighborhoodResponse:
     """
     Finds specific facts about a node by semantically matching relations and verifying them in the Graph DB.
-
-    Args:
-        base_node_id (str): The unique ID of the node (e.g., "Q64") found via FindNode.
-        semantic_relation_name (str): The relation to find (e.g., "population", "born in").
-
-    Returns:
-        NeighborhoodResponse: Verified triples found in the Virtuoso database.
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context  # ✅ Named 'app_context'
+    sparql: SPARQLWrapper = app_context.sparql
+    
+    # --- DEBUGGING START ---
+    # Wir prüfen, was app_context.qdrant wirklich ist.
+    client_type = type(app_context.sparql).__name__
+    logger.info(f"🔍 Debug: app_context.qdrant is of type '{client_type}'")
+    logger.info(f"🔍 Debug: Available methods: {[m for m in dir(app_context.sparql) if not m.startswith('_')][:5]}...")
+    # --- DEBUGGING END ---
 
     # 1. Embed the relation query
-    vector = get_embedding(ctx.embedding_client, semantic_relation_name)
+    vector = get_embedding(app_context.embedding_client, semantic_relation_name)  # ✅ Using 'app_context'
 
     # 2. Find candidates in Qdrant
-    candidates = ctx.qdrant.search(
-        collection_name=COLLECTION_RELATIONS,
-        query_vector=vector,
-        limit=TOP_N,
-        with_payload=True
-    )
+    # HINWEIS: Wenn dies fehlschlägt, ist app_context.qdrant falsch initialisiert (siehe unten).
+    try:
+        candidates = app_context.qdrant.search(  # ✅ CORRECT!
+            collection_name=COLLECTION_RELATIONS,
+            query=vector,
+            limit=TOP_N,
+            with_payload=True
+        )
+    except AttributeError:
+        # Fallback: Falls es ein LangChain-Objekt ist oder der Client 'query_points' nutzt
+        logger.error(f"⚠️ 'search' method missing on {client_type}. Trying fallback/checking imports.")
+        raise RuntimeError(
+            f"Der Qdrant-Client ({client_type}) hat keine 'search'-Methode. "
+            "Prüfe 'kqapro_server.py': Importiere 'from qdrant_client import QdrantClient'."
+        )
 
     checked_log = []
 
@@ -2130,14 +2813,24 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 
     # 3. Iterate and Verify via SPARQL
     for candidate in candidates:
-        predicate_raw = candidate.payload.get('predicate')
+        # Handle payload access safely (manche Clients geben dicts, manche Objekte zurück)
+        payload = candidate.payload if hasattr(candidate, 'payload') else candidate
+        if not isinstance(payload, dict): 
+             # Falls es ein ScoredPoint Objekt ist
+             payload = payload.dict() if hasattr(payload, 'dict') else {}
+
+        predicate_raw = payload.get('predicate')
+
+        if not predicate_raw:
+            continue
 
         # Apply Property formatting to the Predicate
         pred_uri = format_property_uri(predicate_raw)
 
-        checked_log.append(f"{predicate_raw} ({candidate.score:.2f})")
+        score = candidate.score if hasattr(candidate, 'score') else 0.0
+        checked_log.append(f"{predicate_raw} ({score:.2f})")
 
-        # Construct SPARQL query with prefixes
+        # Construct SPARQL query
         query = f"""
         {SPARQL_PREFIXES}
         
@@ -2160,12 +2853,12 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 
                 logger.info(f"Verified match: {pred_uri} -> {len(objects_found)} objects")
 
-                # Auto-update Journal (no `global` needed - only modifying attributes)
+                # Auto-update Journal
                 fact_entry = {
                     "subject": base_node_id,
                     "predicate": predicate_raw,
-                    "objects": objects_found[:5],  # Store first 5 objects
-                    "confidence": candidate.score,
+                    "objects": objects_found[:5],
+                    "confidence": score,
                     "source": "ExploreNeighborhood"
                 }
                 session_journal.verified_facts.append(fact_entry)
@@ -2175,15 +2868,13 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
                     f"Explored {node_name} -> {predicate_raw}: found {len(objects_found)} objects"
                 )
 
-                logger.info(f"Journal auto-updated: Stored ExploreNeighborhood results for {base_node_id}")
-
                 return NeighborhoodResponse(
                     base_node=base_node_id,
                     verified_match=RelationMatch(
                         predicate_used=predicate_raw,
                         semantic_label=predicate_raw,
                         objects=objects_found,
-                        confidence=candidate.score
+                        confidence=score
                     ),
                     candidates_checked=checked_log,
                     status="Match Found"
@@ -2193,7 +2884,6 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
             logger.warning(f"SPARQL Error checking {pred_uri}: {e}")
             continue
 
-    # Log failed exploration attempt
     session_journal.failed_attempts.append(
         f"ExploreNeighborhood({base_node_id}, {semantic_relation_name}): No match found"
     )
@@ -2287,8 +2977,8 @@ def FindEntitiesByRelationPath(
       "status": "Found 1 entity/entities"
     }
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     logger.info(f"FindEntitiesByRelationPath: Starting from {start_node_id}, {len(relation_path)} hops")
 
@@ -2484,30 +3174,30 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
     Returns:
         SPARQLResponse: The structured results containing variables and bindings.
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
-    # Auto-inject prefixes if they aren't present
+    # Auto-inject prefixes
     full_query = query
     if "PREFIX" not in query:
         full_query = f"{SPARQL_PREFIXES}\n{query}"
 
     logger.info(f"RunSPARQL: Executing query (length: {len(full_query)} chars)")
-    logger.debug(f"RunSPARQL: Full query:\n{full_query}")
+    
+    # FIX: Sicherer Log-Aufruf für Queries mit geschweiften Klammern
+    logger.debug("RunSPARQL: Full query:\n{}", full_query)
 
     try:
         sparql.setQuery(full_query)
-        logger.debug(f"RunSPARQL: Query set, executing...")
-        # Convert result to Python dict
+        logger.debug("RunSPARQL: Query set, executing...")
+        
         raw_results = sparql.query().convert()
-        logger.debug(f"RunSPARQL: Query executed successfully")
+        logger.debug("RunSPARQL: Query executed successfully")
 
-        # Parse standard SPARQL JSON format
         head_vars = raw_results.get("head", {}).get("vars", [])
         bindings = raw_results.get("results", {}).get("bindings", [])
         logger.info(f"RunSPARQL: Query returned {len(bindings)} result(s) with variables: {head_vars}")
 
-        # Simplify bindings for the LLM (extract just the values)
         simplified_rows = []
         for row in bindings:
             simple_row = {}
@@ -2516,24 +3206,18 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
                     simple_row[var] = row[var]["value"]
             simplified_rows.append(simple_row)
 
-        if not bindings:
-            logger.warning(f"RunSPARQL: Query returned NO results (0 bindings)")
-        else:
-            # Auto-update Journal with SPARQL results (no `global` needed - only modifying attributes)
+        if bindings:
             fact_entry = {
                 "query_type": "SPARQL",
                 "variables": head_vars,
                 "result_count": len(simplified_rows),
-                "results": simplified_rows[:10],  # Store first 10 results to avoid bloat
+                "results": simplified_rows[:10],
                 "source": "RunSPARQL"
             }
             session_journal.verified_facts.append(fact_entry)
-
-            # Add completion step
             session_journal.completed_steps.append(
-                f"Executed SPARQL query: {len(simplified_rows)} results with variables {head_vars}"
+                f"Executed SPARQL query: {len(simplified_rows)} results"
             )
-
             logger.info(f"Journal auto-updated: Stored {len(simplified_rows)} SPARQL results")
 
         return SPARQLResponse(
@@ -2543,15 +3227,12 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
         )
 
     except Exception as e:
-        logger.error(f"RunSPARQL: SPARQL Execution Error: {e}", exc_info=True)
-        logger.error(f"RunSPARQL: Failed query was:\n{full_query}")
+        logger.error(f"RunSPARQL: SPARQL Execution Error: {e}")
+        # Auch hier sicheres Logging im Fehlerfall
+        logger.error("RunSPARQL: Failed query was:\n{}", full_query)
 
-        # Log failure
-        session_journal.failed_attempts.append(
-            f"RunSPARQL failed: {str(e)[:100]}"
-        )
+        session_journal.failed_attempts.append(f"RunSPARQL failed: {str(e)[:100]}")
 
-        # Return empty/error structure so the agent knows it failed
         return SPARQLResponse(
             vars=[],
             bindings=[],
@@ -2584,8 +3265,8 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
     Returns:
         SearchResponse: List of entities that have this attribute value.
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     logger.info(f"FindByAttribute: Searching for entities with {attribute_name}={value}")
 
@@ -2595,6 +3276,9 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
 
     # Build SPARQL query to find entities with this attribute value
     # We need to handle both direct values and blank nodes
+
+    safe_value = value.replace('"', '\\"')
+
     query = f"""
     {SPARQL_PREFIXES}
 
@@ -2602,14 +3286,16 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
         ?entity {attr_uri} ?attrValue .
         OPTIONAL {{ ?entity rdfs:label ?entityName }}
 
-        # Match direct string/URI values
         FILTER(
-            STR(?attrValue) = "{value}" ||
-            ?attrValue = <{value}> ||
-            # Also check if it's a blank node with rdf:value
+            STR(?attrValue) = "{safe_value}" ||  # HIER: Anführungszeichen waren wichtig!
+            # ?attrValue = <{value}> ||  <-- DAS LÖSCHEN! Das verursacht den Syntaxfehler bei Strings mit Leerzeichen!
+            
+            # Nur checken wenn es wie eine URI aussieht (keine Leerzeichen)
+            ( !CONTAINS("{safe_value}", " ") && ?attrValue = <{NS_ENTITY}{safe_value}> ) ||
+            
             EXISTS {{
                 ?attrValue rdf:value ?numVal .
-                FILTER(STR(?numVal) = "{value}")
+                FILTER(STR(?numVal) = "{safe_value}")
             }}
         )
     }}
@@ -2825,8 +3511,8 @@ def CompareEntities(
     Returns:
         CompareEntitiesResponse: Sorted list of entities with their attribute values.
     """
-    ctx: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = ctx.sparql
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
 
     logger.info(f"CompareEntities: Comparing {attribute_name} for {len(entity_ids)} entities")
 
