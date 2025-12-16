@@ -47,7 +47,7 @@ The KQAProAgent is an iterative tool-calling agent that uses:
 
 ## Pre-Agent Hook System
 
-**Location:** `ama_kbqa/agents/kqapro_agent/agent.py:717-801`
+**Location:** `ama_kbqa/agents/kqapro_agent/agent.py:731-816`
 
 ### Purpose
 
@@ -135,7 +135,7 @@ Pre-agent hook uses:
 
 ## Main Agent Loop
 
-**Location:** `ama_kbqa/agents/kqapro_agent/agent.py:803-1047`
+**Location:** `ama_kbqa/agents/kqapro_agent/agent.py:817-1061`
 
 ### Loop Structure
 
@@ -404,7 +404,7 @@ Allows agent to make fresh attempts without being penalized
 
 ## Post-Agent Hook (Deterministic Synthesis)
 
-**Location:** `ama_kbqa/agents/kqapro_agent/agent.py:1048-1103`
+**Location:** `ama_kbqa/agents/kqapro_agent/agent.py:1062-1118`
 
 ### Purpose
 
@@ -440,7 +440,7 @@ Gets ALL discovered information:
 **Step 3: Inject Synthesis Prompt**
 
 ```python
-synthesis_prompt = f"""You have completed your tool-based investigation. Here is EVERYTHING you discovered:
+synthesis_prompt = f"""You have completed your tool-based investigation. Here is EVERYTHING you discovered during your research:
 
 ═══════════════════════════════════════════════════════════════════════
 JOURNAL SUMMARY - ALL DISCOVERED INFORMATION
@@ -452,26 +452,43 @@ JOURNAL SUMMARY - ALL DISCOVERED INFORMATION
 YOUR TASK
 ═══════════════════════════════════════════════════════════════════════
 
-Based ONLY on the information shown above in your journal, provide a clear, direct, and complete answer to:
+Based on the information in your journal summary above AND the reasoning steps in the conversation history, provide a clear, direct, and complete answer to this question:
 
 "{query}"
 
 INSTRUCTIONS:
-- Use ONLY the facts and values from your journal summary above
-- Provide a direct answer without explaining your process
-- If the information is insufficient, state exactly what is missing
+- Use the facts and values from your journal summary as the primary source
+- You may reference the reasoning process from your chat history to provide context
+- Provide a direct answer without unnecessarily explaining your entire investigation process
+- If the information is insufficient to answer completely, state exactly what is missing
 - Be concise but complete
 
 YOUR FINAL ANSWER:"""
 ```
 
-**Step 4: Make Final LLM Call (Text-Only)**
+**Step 4: Make Final LLM Call (Synthesis-Specific)**
 
 ```python
-final_answer = self._llm_call_text_only()
+final_answer = self._llm_call_synthesis()
 ```
 
-LLM generates answer WITHOUT access to tools (prevents infinite loops)
+Uses a **separate synthesis client and model** configured in `config.toml` under `[synthesis]` section:
+
+```python
+# _llm_call_synthesis() parameters (lines 1200-1233)
+response = self.synthesis_client.chat.completions.create(
+    model=self.synthesis_model,              # From [synthesis] section
+    messages=self._messages,                 # Full conversation history
+    temperature=get_synthesis_temperature(), # Default: 0.2
+    max_tokens=get_synthesis_max_tokens(),   # Default: 8000
+)
+```
+
+This allows:
+- Different model for synthesis vs. tool-calling (e.g., faster/cheaper model for final answer)
+- Different temperature settings (synthesis may need lower temperature for consistency)
+- Separate token limits for synthesis
+- LLM generates answer WITHOUT access to tools (prevents infinite loops)
 
 **Step 5: Validate and Return**
 
@@ -488,6 +505,8 @@ else:
 2. **Journal-Based:** Answer is grounded in discovered data, not hallucination
 3. **Concise:** Forces LLM to synthesize without rambling
 4. **Traceable:** Journal shows exactly what was used to form answer
+5. **Flexible Model Selection:** Can use different model for synthesis (e.g., faster/cheaper model)
+6. **Optimized Configuration:** Synthesis-specific temperature/token settings independent of tool-calling phase
 
 ---
 
@@ -884,6 +903,46 @@ chat_model_provider = "minimax/fp8"  # Optional routing
 - DeepSeek (DeepSeek API)
 - z.ai (GLM models)
 
+### Synthesis Configuration
+
+**File:** `config.toml`
+
+The agent uses a **separate LLM configuration** for the final synthesis step (post-agent hook):
+
+```toml
+[synthesis]
+synthesis_provider = "openrouter"           # Which LLM provider to use for synthesis
+synthesis_model = "google/gemini-2.5-flash" # Model for synthesis (can differ from chat_model)
+synthesis_model_provider = ""               # Optional: provider-specific routing
+synthesis_temperature = 0.2                 # Temperature for synthesis generation
+synthesis_max_tokens = 8000                 # Max tokens for final answer
+```
+
+**Why Separate Synthesis Configuration?**
+
+1. **Cost Optimization:** Use a faster/cheaper model for synthesis while using powerful models for tool-calling
+2. **Performance Tuning:** Synthesis may need different temperature (lower for consistency)
+3. **Token Management:** Final answers typically need fewer tokens than reasoning steps
+4. **Model Specialization:** Some models excel at summarization vs. complex reasoning
+
+**Code Implementation:**
+
+```python
+# In __init__ (lines 376-383)
+self.synthesis_client = get_synthesis_client()
+self.synthesis_model = get_synthesis_model_name()
+
+# In _llm_call_synthesis (lines 1200-1233)
+response = self.synthesis_client.chat.completions.create(
+    model=self.synthesis_model,
+    messages=self._messages,
+    temperature=get_synthesis_temperature(),
+    max_tokens=get_synthesis_max_tokens(),
+)
+```
+
+**Token Tracking:** Synthesis tokens are tracked separately and added to the total token usage for the question.
+
 ### Agent Parameters
 
 **File:** `ama_kbqa/agents/kqapro_agent/agent.py`
@@ -906,7 +965,8 @@ chat_model_provider = "minimax/fp8"  # Optional routing
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ 1. INITIALIZATION                                               │
-│  - Load LLM client from config.toml                             │
+│  - Load chat LLM client from config.toml                        │
+│  - Load synthesis LLM client from config.toml (separate config) │
 │  - Initialize MCP server connection                             │
 │  - Load system prompt with KBQA guidelines                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -940,7 +1000,8 @@ chat_model_provider = "minimax/fp8"  # Optional routing
 │ 4. POST-AGENT HOOK (Deterministic Synthesis)                   │
 │  - Fetch complete GetJournalSummary                             │
 │  - Inject synthesis prompt with all discovered data             │
-│  - Make final LLM call (text-only, no tools)                    │
+│  - Make final LLM call using SYNTHESIS client/model (no tools)  │
+│  - Track synthesis token usage                                  │
 │  - Validate and return final answer                             │
 └─────────────────────────────────────────────────────────────────┘
                             │
