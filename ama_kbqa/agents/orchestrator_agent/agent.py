@@ -43,7 +43,12 @@ COLOR_END = '\033[0m'
 def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
     """Standardized tracing with timestamp and agent prefix."""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {msg}")
+    try:
+        print(f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {msg}")
+    except UnicodeEncodeError:
+        # Fallback to ASCII-safe output on Windows
+        safe_msg = msg.encode('ascii', 'replace').decode('ascii')
+        print(f"[{color}{timestamp}{COLOR_END}] {color}[{agent_name}]{COLOR_END} -> {safe_msg}")
 
 # --- MCP CLIENT ---
 
@@ -143,13 +148,14 @@ class Orchestrator:
                 except:
                     pass  # Just a normal string
 
-            pretty_json = json.dumps(data, indent=2, ensure_ascii=False)
+            # Use ensure_ascii=True to avoid Unicode encoding issues on Windows
+            pretty_json = json.dumps(data, indent=2, ensure_ascii=True)
             # Indent the JSON so it appears cleanly under the label
             indented_json = "\n".join([f"    {line}" for line in pretty_json.splitlines()])
             print(f"{color}    {label}:{COLOR_END}\n{color}{indented_json}{COLOR_END}")
-        except Exception:
-            # Fallback
-            print(f"{color}    {label}: {data}{COLOR_END}")
+        except Exception as e:
+            # Fallback with ASCII-safe output
+            print(f"{color}    {label}: {str(data).encode('ascii', 'replace').decode('ascii')}{COLOR_END}")
 
     def _mcp_tool_to_openai(self, mcp_tool: McpTool) -> Dict:
         return {
@@ -287,14 +293,14 @@ class Orchestrator:
                             answer = agent.ask(query)
                     except Exception as e:
                         self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
-                        self._trace("Executing LLM fallback.")
-                        answer = self._fallback_llm(query)
+                        self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
+                        answer = await self._fallback_kqapro(query)
                 else:
-                    self._trace("Agent could not be loaded. Fallback.")
-                    answer = self._fallback_llm(query)
+                    self._trace("Agent could not be loaded. Fallback to KQAPro.", COLOR_YELLOW)
+                    answer = await self._fallback_kqapro(query)
             else:
-                self._trace("Routing failed. Fallback.")
-                answer = self._fallback_llm(query)
+                self._trace("Routing failed. Fallback to KQAPro agent.", COLOR_YELLOW)
+                answer = await self._fallback_kqapro(query)
 
             return answer
 
@@ -303,7 +309,26 @@ class Orchestrator:
                 await self.mcp.close()
                 self._trace("Orchestrator MCP server cleanly terminated")
 
+    async def _fallback_kqapro(self, query: str) -> str:
+        """Fallback to KQAPro agent for knowledge base queries."""
+        try:
+            self._trace("Loading KQAPro agent as fallback...", COLOR_CYAN)
+            agent = self._load_agent("kqapro_agent")
+
+            if agent:
+                if inspect.iscoroutinefunction(agent.ask):
+                    return await agent.ask(query)
+                else:
+                    return agent.ask(query)
+            else:
+                self._trace(f"{COLOR_RED}KQAPro agent failed to load. Using LLM fallback.{COLOR_END}", COLOR_RED)
+                return self._fallback_llm(query)
+        except Exception as e:
+            self._trace(f"{COLOR_RED}KQAPro fallback error: {e}. Using LLM fallback.{COLOR_END}", COLOR_RED)
+            return self._fallback_llm(query)
+
     def _fallback_llm(self, query: str) -> str:
+        """Last resort: Use LLM directly without knowledge base."""
         return self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": query}]
@@ -315,7 +340,13 @@ async def main():
     # Test question adapted to trigger routing
     result = await orchestrator.ask("How many heavy metal groups are in the genre of Queen (the one famous for heavy metal) ?")
     print("-" * 50)
-    print(f"\n[{COLOR_GREEN}FINALE ANTWORT{COLOR_END}]\n{result}")
+    # Use safe encoding for Windows console
+    try:
+        print(f"\n[{COLOR_GREEN}FINALE ANTWORT{COLOR_END}]\n{result}")
+    except UnicodeEncodeError:
+        # Fallback to ASCII-safe output
+        safe_result = result.encode('ascii', 'replace').decode('ascii') if result else ""
+        print(f"\n[{COLOR_GREEN}FINAL ANSWER{COLOR_END}]\n{safe_result}")
 
 
 if __name__ == "__main__":
