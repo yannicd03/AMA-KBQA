@@ -120,19 +120,6 @@ class NodeMatch(BaseModel):
     )
 
 
-class ExtractionResponse(BaseModel):
-    """Structured response for entity and relation extraction."""
-    entities_concepts: list[str] = Field(
-        ...,
-        alias="entities/concepts",
-        description="List of specific entities or general concepts identified in the query."
-    )
-    relations: list[str] = Field(
-        ...,
-        description="List of relationship predicates or actions identified in the query."
-    )
-
-
 class SearchResponse(BaseModel):
     """The top-level response object for the search tool."""
     matches: list[NodeMatch] = Field(
@@ -192,25 +179,6 @@ class SPARQLResponse(BaseModel):
     bindings: list[dict[str, Any]
                    ] = Field(..., description="List of rows. Each row is a dict mapping variable name to value.")
     raw_json: dict[str, Any] = Field(..., description="The full raw JSON response from Virtuoso.")
-
-
-class QtypePredictionResponse(BaseModel):
-    """Predicted question type classification with curated examples."""
-    question_type: Literal[
-        "Count",
-        "Verify",
-        "SelectBetween",
-        "SelectAmong",
-        "QueryAttr",
-        "QueryAttrQualifier",
-        "QueryRelation",
-        "QueryRelationQualifier",
-        "QueryName"
-    ] = Field(..., description="The classified question type from KQAPro taxonomy.")
-    fewshot_examples: str = Field(
-        default="",
-        description="Curated few-shot examples for this question type to guide the agent in answering effectively."
-    )
 
 
 class QualifierResponse(BaseModel):
@@ -483,287 +451,6 @@ def log_tool_duration(func):
             raise
 
     return wrapper
-
-
-def load_fewshot_examples(max_per_type: int = 10, specific_qtype: Optional[str] = None) -> str:
-    """
-    Load few-shot examples from the fewshot-examples directory.
-
-    Loads up to max_per_type examples for each question type from JSON files.
-    Returns a formatted string to be injected into the classification prompt.
-
-    Args:
-        max_per_type: Maximum number of examples to load per question type
-        specific_qtype: If provided, only load examples for this specific question type
-
-    Returns:
-        Formatted string containing few-shot examples, or empty string if none available
-    """
-    if not FEWSHOT_EXAMPLES_DIR.exists():
-        logger.warning(f"Few-shot examples directory not found: {FEWSHOT_EXAMPLES_DIR}")
-        return ""
-
-    # If specific_qtype is provided, only load that type's examples
-    if specific_qtype:
-        qtypes = [specific_qtype]
-    else:
-        qtypes = [
-            "Count", "Verify", "SelectBetween", "SelectAmong",
-            "QueryAttr", "QueryAttrQualifier", "QueryRelation",
-            "QueryRelationQualifier", "QueryName"
-        ]
-
-    all_examples = []
-
-    for qtype in qtypes:
-        example_file = FEWSHOT_EXAMPLES_DIR / f"{qtype}.json"
-
-        if not example_file.exists():
-            logger.debug(f"Few-shot file not found: {example_file}")
-            continue
-
-        try:
-            with open(example_file, "r", encoding="utf-8") as f:
-                examples = json.load(f)
-
-            if not examples:
-                continue
-
-            # Limit to max_per_type examples
-            examples = examples[:max_per_type]
-
-            for example in examples:
-                all_examples.append({
-                    "qtype": qtype,
-                    "question": example.get("question", ""),
-                    "reasoning": example.get("reasoning", ""),
-                    "lesson_learned": example.get("lesson_learned", "")
-                })
-
-            logger.info(f"Loaded {len(examples)} few-shot examples for {qtype}")
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in {example_file}: {e}")
-            continue
-        except Exception as e:
-            logger.error(f"Error loading {example_file}: {e}")
-            continue
-
-    if not all_examples:
-        logger.info("No few-shot examples available")
-        return ""
-
-    # Format examples for the prompt
-    formatted_examples = "\n\n### Few-Shot Examples (Curated from Past Classifications)\n\n"
-    formatted_examples += "Here are examples of correctly classified questions with reasoning:\n\n"
-
-    for i, example in enumerate(all_examples, 1):
-        formatted_examples += f"**Example {i}:**\n"
-        formatted_examples += f"Question: {example['question']}\n"
-        formatted_examples += f"Correct Type: {example['qtype']}\n"
-
-        if example['reasoning']:
-            formatted_examples += f"Reasoning: {example['reasoning']}\n"
-
-        if example['lesson_learned']:
-            formatted_examples += f"Lesson Learned: {example['lesson_learned']}\n"
-
-        formatted_examples += "\n"
-
-    logger.info(f"Loaded total of {len(all_examples)} few-shot examples across all question types")
-    return formatted_examples
-
-
-# --- 5. Refactored Tool using Context ---
-
-class _QtypeClassification(BaseModel):
-    """Internal model for structured qtype classification output."""
-    question_type: Literal[
-        "Count",
-        "Verify",
-        "SelectBetween",
-        "SelectAmong",
-        "QueryAttr",
-        "QueryAttrQualifier",
-        "QueryRelation",
-        "QueryRelationQualifier",
-        "QueryName"
-    ] = Field(..., description="The classified question type from KQAPro taxonomy.")
-
-
-def _build_classification_prompt(question: str, fewshot_examples: str = "") -> str:
-    """
-    Build the classification prompt with optional few-shot examples.
-
-    Args:
-        question: The question to classify
-        fewshot_examples: Pre-formatted few-shot examples section (optional)
-
-    Returns:
-        The complete prompt string
-    """
-    return f"""
-        ### Task
-        You are a question classification assistant.
-
-        Your goal is to classify the following question into **exactly one** of the 9 KQA-Pro categories:
-
-        - Count
-        - Verify
-        - SelectBetween
-        - SelectAmong
-        - QueryAttr
-        - QueryAttrQualifier
-        - QueryRelation
-        - QueryRelationQualifier
-        - QueryName
-
-        You must reason through a structured decision process before answering.
-        At each step, evaluate whether a specific type fits based on the question's content.
-        If a later step reveals a better fit, you are allowed to go back and revise the earlier decision.
-
-
-        ────────────────────────────────────────
-        ### Explanation of Each Question Type
-
-        1. **Count** Use this type if the question asks directly for a **number or quantity** of things.
-        Typical phrases include "How many…?", "What is the number of…?", or "Count the…".
-        The expected answer is a non-negative integer.
-        Note: even if entities are mentioned, the focus must be on **counting** them, not on what they are or when something happened.
-
-        2. **Verify** Choose this type if the question can be answered with a clear "yes" or "no".
-        It will usually be phrased as a **factual check**, e.g., "Is…?", "Did…?", "Was…?", and refers to a full statement.
-        Only use Verify if the statement is **complete enough** to verify independently — no missing subjects or vague phrases.
-
-        3. **SelectBetween** This type applies when the question explicitly names **exactly two distinct entities** and compares them on a **single measurable attribute**.
-        Comparative words such as "more", "older", "faster", or "better" must appear.
-        Avoid choosing SelectBetween if more than two entities are listed or if no comparison is being made.
-
-        4. **SelectAmong** Use this type when a group or class of entities is involved and the question asks which one has an **extreme property** (e.g., the biggest, fastest, most successful).
-        A superlative is usually present — "most", "least", "biggest", "oldest", etc.
-        If a list is given or a general class (e.g., "Which planet…"), and only one is being selected as "best" or "most", this is SelectAmong.
-
-        5. **QueryAttr** Select this type if the question names a specific entity (like a person, company, city) and asks for a **literal attribute** (date, population, height, etc.).
-        Examples include "What is the population of Tokyo?" or "When was Google founded?"
-        Do not choose QueryAttr if the question also includes a time or place constraint — in that case, prefer QueryAttrQualifier.
-
-        6. **QueryAttrQualifier** This type is a refinement of QueryAttr: it still asks for a property of a single entity, but now with a **qualifying context** like "in 2020", "at night", or "during WWII".
-        The key difference is that QueryAttrQualifier adds a **constraint or filter** to the value being requested.
-
-        7. **QueryRelation** Use this type if the question involves two entities and asks **what connects them**.
-        Typical patterns include: "Who directed Inception?", "How is X related to Y?", "Who founded Tesla?"
-        The expected answer is the **name of the relation** or **the entity that serves as a link**.
-
-        8. **QueryRelationQualifier** This type builds on QueryRelation. Use it when the relation is already assumed or known, and the question now asks about **its context** — such as when it occurred, in what role, or under what conditions.
-        For example: "When did X direct Y?" or "In what role did X work at Y?"
-
-        9. **QueryName** This applies when the question gives a description (using attributes, relations, or actions) and asks **who or what entity** matches it.
-        Examples: "Who discovered penicillin?", "Which scientist developed relativity?"
-        Here, the subject or object is **unknown**, and the question seeks the **name of the entity**.
-
-        ────────────────────────────────────────
-        ### Structural Comparison Table (Yes/No Logic)
-
-        | Type                  | Asks count | Yes/No | Attribute | Needs qualifier | Two entities | Superlative | Comparison | Needs name |
-        |-----------------------|------------|--------|-----------|------------------|---------------|-------------|------------|-------------|
-        | Count                 | Yes        | No     | No        | No               | No            | No          | No         | No          |
-        | Verify                | No         | Yes    | No        | No               | No            | No          | No         | No          |
-        | SelectBetween         | No         | No     | No        | No               | Yes           | No          | Yes        | No          |
-        | SelectAmong           | No         | No     | No        | No               | Often         | Yes         | No         | No          |
-        | QueryAttr             | No         | No     | Yes       | No               | No            | No          | No         | No          |
-        | QueryAttrQualifier    | No         | No     | Yes       | Yes              | No            | No          | No         | No          |
-        | QueryRelation         | No         | No     | No        | No               | Yes           | No          | No         | No          |
-        | QueryRelationQualif.  | No         | No     | No        | Yes              | Yes           | No          | No         | No          |
-        | QueryName             | No         | No     | No        | No               | No            | No          | No         | Yes         |
-
-        ────────────────────────────────────────
-        {fewshot_examples}
-        ────────────────────────────────────────
-        ### Classification Logic: Step-by-Step Reasoning
-
-        You must now classify the input question by walking through this chain of thought:
-
-        **Step 1** Is the question primarily asking for a **number** of things?
-        → If yes, the correct type is likely **Count**.
-        → However, if it adds time/place context (e.g. "in 2020"), consider revisiting this as **QueryAttrQualifier**.
-
-        **Step 2** Is the question a **yes/no statement** that can be verified as true or false?
-        → If yes, this points to **Verify**.
-        → But if it instead expects a specific name or value, this is incorrect.
-
-        **Step 3** Does the question mention **exactly two entities**, and compare them on a property?
-        → If yes, and words like "more", "less", "faster" appear → choose **SelectBetween**.
-        → If only one item is selected from a group → go to Step 4 instead.
-
-        **Step 4** Does the question include a **superlative** like "most", "least", "biggest", or refer to a group/list of candidates?
-        → If yes → this is likely **SelectAmong**.
-
-        **Step 5** Does the question involve **two named entities** and ask what **relation** connects them?
-        → If yes → choose **QueryRelation**.
-        → If the question asks **when/where/how** that relation took place → choose **QueryRelationQualifier**.
-
-        **Step 6** Does the question mention **one entity** and ask for a **specific value** (e.g., date, amount, status)?
-        → If yes, and no qualifier is present → this is **QueryAttr**.
-        → If there is a time/place condition → switch to **QueryAttrQualifier**.
-
-        **Step 7** Does the question ask **who or what** matches a description, where the entity is **not explicitly named**?
-        → If yes → this is **QueryName**.
-
-        You may revisit previous steps if you realize a better fit based on qualifiers, phrasing, or intent.
-
-        ────────────────────────────────────────
-        ### Question to Classify
-        {question}
-    """
-
-
-def _classify_question(app_context: AppContext, question: str, fewshot_examples: str) -> str:
-    """
-    Helper function to classify a question using the LLM with JSON mode.
-
-    Args:
-        app_context: The application context with LLM clients
-        question: The question to classify
-        fewshot_examples: Pre-formatted few-shot examples (can be empty)
-
-    Returns:
-        The predicted question type as a string
-    """
-    prompt = _build_classification_prompt(question, fewshot_examples)
-
-    # Add JSON schema instruction to the prompt
-    json_instruction = """
-
-You MUST respond with a valid JSON object matching this exact schema:
-{
-    "question_type": "one of: Count, Verify, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName"
-}
-
-Respond ONLY with the JSON object, no additional text."""
-
-    messages = [{"role": "system", "content": prompt + json_instruction}]
-
-    try:
-        # Use JSON mode instead of structured output
-        completion = app_context.chat_client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=messages,
-            temperature=CHAT_TEMPERATURE,
-            response_format={"type": "json_object"},
-        )
-
-        # Parse JSON response
-        json_content = completion.choices[0].message.content
-        response_dict = json.loads(json_content)
-
-        # Validate against Pydantic model
-        parsed_response = _QtypeClassification(**response_dict)
-        return parsed_response.question_type
-
-    except Exception as e:
-        logger.error(f"Error during classification: {e}")
-        raise
-
 
 
 @mcp.tool()
@@ -1442,50 +1129,6 @@ async def GetQualifiersByPredicate(
 
 @mcp.tool
 @log_tool_duration
-def QtypePrediction(question: str, context: Context) -> QtypePredictionResponse:
-    """
-    Classifies a question and returns curated few-shot examples for that question type.
-
-    This tool first classifies the question WITHOUT few-shot examples to identify its type.
-    Then it loads curated examples specific to that question type to provide guidance
-    for the agent in answering the question effectively.
-
-    The few-shot examples are NOT used to improve classification accuracy, but rather
-    to provide the agent with relevant context about how to approach questions of this type.
-
-    Args:
-        question_to_classify (str): The question to classify.
-
-    Returns:
-        QtypePredictionResponse: Contains the predicted question type and curated examples
-                                 specific to that type to guide the agent.
-    """
-    app_context: AppContext = context.request_context.lifespan_context
-
-    # Classify the question WITHOUT few-shot examples
-    logger.info(f"Classifying question: {question}")
-    
-    # FIX: Hier auch 'question' übergeben
-    predicted_qtype = _classify_question(app_context, question, fewshot_examples="")
-    logger.info(f"Predicted qtype: {predicted_qtype}")
-
-    # Load few-shot examples specific to this question type
-    logger.info(f"Loading few-shot examples for {predicted_qtype}")
-    specific_examples = load_fewshot_examples(max_per_type=10, specific_qtype=predicted_qtype)
-
-    if specific_examples:
-        logger.info(f"Loaded examples for {predicted_qtype}")
-    else:
-        logger.info(f"No few-shot examples available for {predicted_qtype}")
-
-    return QtypePredictionResponse(
-        question_type=predicted_qtype,
-        fewshot_examples=specific_examples
-    )
-
-
-@mcp.tool
-@log_tool_duration
 def ManageJournal(
     action: Literal["add_visited", "add_fact", "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"],
     content: str,
@@ -1618,51 +1261,6 @@ def GetJournalSummary(context: Context) -> str:
 
     return summary_text
 
-
-@mcp.tool
-@log_tool_duration
-def EntityExtraction(question: str, context: Context) -> ExtractionResponse:
-    """
-    Extracts entities/concepts and relations from a natural language query
-    using JSON mode.
-    """
-    app_context: AppContext = context.request_context.lifespan_context
-    model = CHAT_MODEL
-
-    try:
-        # WICHTIG: Variable 'question' nutzen
-        logger.info(f"EntityExtraction called with query: {question[:100]}...")
-
-        system_prompt = """Extract the semantic entities/concepts and relations from the user query.
-
-You MUST respond with a valid JSON object matching this exact schema:
-{
-    "entities/concepts": ["list of specific entities or general concepts"],
-    "relations": ["list of relationship predicates or actions"]
-}
-
-Respond ONLY with the JSON object, no additional text."""
-
-        completion = app_context.chat_client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question} # Variable 'question' nutzen
-            ],
-            response_format={"type": "json_object"},
-            timeout=30.0
-        )
-
-        json_content = completion.choices[0].message.content
-        response_dict = json.loads(json_content)
-        parsed_response = ExtractionResponse(**response_dict)
-
-        logger.info(f"EntityExtraction completed successfully")
-        return parsed_response
-
-    except Exception as e:
-        logger.error(f"Entity Extraction failed: {e}")
-        return ExtractionResponse(**{"entities/concepts": [], "relations": []})
 
 @mcp.tool
 @log_tool_duration
@@ -2683,87 +2281,6 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
         )
 
 
-@mcp.tool
-@log_tool_duration
-def GetEdgeQualifiers(subject_id: str, predicate_name: str, target_id: str, context: Context) -> QualifierResponse:
-    """
-    Retrieves 'facts about a fact' (Qualifiers) for a specific relationship.
-
-    Use this when you have found a relation (e.g., Movie -> has_website -> URL) but need
-    extra context like 'language', 'start time', 'location', or 'role'.
-
-    Args:
-        subject_id: The Entity ID (e.g. "Q100").
-        predicate_name: The relation name (e.g. "official website").
-        target_id: The specific value or Entity ID of the target (e.g. "http://..." or "Q30").
-    """
-    app_context: AppContext = context.request_context.lifespan_context
-    sparql: SPARQLWrapper = app_context.sparql
-
-    subject_uri = format_entity_uri(subject_id)
-    sanitized_pred = predicate_name.replace(" ", "_")
-
-    # Heuristic for target: if it looks like a URI/ID, wrap it. Else treat as string.
-    if target_id.startswith("http") or target_id.startswith("Q"):
-        # For URIs, we don't quote, but we need to ensure correct format
-        target_filter = f'?target = <{target_id}> || ?target = <{NS_ENTITY}{target_id}> || STR(?target) = "{target_id}"'
-    else:
-        # For literals
-        target_filter = f'STR(?target) = "{target_id}"'
-
-    query = f"""
-    {SPARQL_PREFIXES}
-    SELECT DISTINCT ?qualifier_pred ?qualifier_val WHERE {{
-        # Find the Fact Node (Reified Statement)
-        ?fact_node prop:fact_h {subject_uri} .
-        ?fact_node prop:fact_r prop:{sanitized_pred} .
-        ?fact_node prop:fact_t ?target .
-
-        FILTER({target_filter})
-
-        # Get qualifiers
-        ?fact_node ?qualifier_pred ?qualifier_val .
-
-        # Exclude system predicates
-        FILTER(?qualifier_pred != prop:fact_h && ?qualifier_pred != prop:fact_r && ?qualifier_pred != prop:fact_t)
-    }}
-    """
-
-    try:
-        sparql.setQuery(query)
-        results = sparql.query().convert()
-        bindings = results.get("results", {}).get("bindings", [])
-
-        qualifiers = []
-        for b in bindings:
-            # Clean up predicate name for display
-            pred_raw = b['qualifier_pred']['value']
-            pred_name = pred_raw.split('/')[-1]
-            val = b['qualifier_val']['value']
-            qualifiers.append({"qualifier": pred_name, "value": val})
-
-        # Auto-update journal (no `global` needed - only modifying attributes)
-        if qualifiers:
-            fact_str = f"Qualifiers for {subject_id} -> {predicate_name} -> {target_id}: {qualifiers}"
-            session_journal.verified_facts.append({"fact": fact_str, "source": "GetEdgeQualifiers"})
-
-        return QualifierResponse(
-            base_node_id=subject_id,
-            predicate=predicate_name,
-            target_node=target_id,
-            qualifiers=qualifiers,
-            status=f"Found {len(qualifiers)} qualifiers"
-        )
-    except Exception as e:
-        logger.error(f"GetEdgeQualifiers failed: {e}")
-        return QualifierResponse(
-            base_node_id=subject_id,
-            predicate=predicate_name,
-            target_node=target_id,
-            status=f"Error: {str(e)}"
-        )
-
-
 from qdrant_client import models
 # Stelle sicher, dass du das importiert hast: 
 # from qdrant_client import QdrantClient (nur für Typing nötig, nicht zur Laufzeit hier)
@@ -2772,8 +2289,20 @@ from qdrant_client import models
 @log_tool_duration
 def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context: Context) -> NeighborhoodResponse:
     """
+    **DEPRECATED: This tool will be removed in a future version.**
+
+    This functionality is redundant. Use instead:
+    - GetNodeSummary(node_id) to get ALL relations at once
+    - GetRelationDetails(node_id, relation_name) for specific relations
+    - FindNode already returns available_predicates for semantic matching
+
     Finds specific facts about a node by semantically matching relations and verifying them in the Graph DB.
     """
+    logger.warning(
+        f"⚠️ DEPRECATED: ExploreNeighborhood is deprecated and will be removed. "
+        f"Use GetNodeSummary or GetRelationDetails instead."
+    )
+
     app_context: AppContext = context.request_context.lifespan_context  # ✅ Named 'app_context'
     sparql: SPARQLWrapper = app_context.sparql
     

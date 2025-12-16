@@ -5,6 +5,11 @@ from ama_kbqa.config import (
     get_chat_temperature,
     get_chat_max_tokens,
     get_provider_preferences,
+    get_synthesis_client,
+    get_synthesis_model_name,
+    get_synthesis_temperature,
+    get_synthesis_max_tokens,
+    get_synthesis_provider_preferences,
 )
 import os
 import sys
@@ -342,7 +347,7 @@ class KQAProAgent:
         4. **Gather information:**
            - Single-hop → Use `GetAttributeDetails` or `GetRelationDetails`
            - Multi-hop (>2 hops) → Strongly consider `RunSPARQL` with JOIN
-           - Unknown predicate → Use `ExploreNeighborhood` for semantic search
+           - Unknown predicate → Use `GetNodeSummary` to see all available relations (deprecated: ~~ExploreNeighborhood~~)
 
         5. **Check for qualifiers:** Does question specify TIME/PLACE for a fact?
            - YES → Use `GetEdgeQualifiers`
@@ -366,6 +371,15 @@ class KQAProAgent:
         except (FileNotFoundError, ValueError, KeyError) as e:
             raise RuntimeError(
                 f"Failed to initialize LLM client from config.toml: {e}"
+            )
+
+        # Get synthesis cPient and model from config.toml
+        try:
+            self.synthesis_client = get_synthesis_client()
+            self.synthesis_model = get_synthesis_model_name()
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise RuntimeError(
+                f"Failed to initialize synthesis LLM client from config.toml: {e}"
             )
 
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
@@ -441,8 +455,8 @@ class KQAProAgent:
             • GetRelationDetails(base_node_id, relation_name): Queries Virtuoso for nodes connected via a relation.
               Use this when you need to find what entities are connected via a specific relation.
 
-            • ExploreNeighborhood(base_node_id, semantic_relation_name): Semantic search + SPARQL verification.
-              Use this when you don't know the exact predicate name and need to find it semantically.
+            • ExploreNeighborhood(base_node_id, semantic_relation_name): **⚠️ DEPRECATED - Use GetNodeSummary instead**
+              This tool is redundant. GetNodeSummary gets all relations at once more efficiently.
 
             TIER 3 - QUALIFIERS & METADATA (Contextual Data):
             **CRITICAL FOR ACCURACY - MANDATORY DECISION POINT:**
@@ -524,6 +538,280 @@ class KQAProAgent:
 
     def _trace(self, msg: str, color: str = COLOR_GREEN):
         trace(self.name, msg, color)
+
+    def _load_fewshot_examples(self, max_per_type: int = 10, specific_qtype: Optional[str] = None) -> str:
+        """
+        Load few-shot examples from the fewshot-examples directory.
+
+        Args:
+            max_per_type: Maximum number of examples to load per question type
+            specific_qtype: If provided, only load examples for this specific question type
+
+        Returns:
+            Formatted string containing few-shot examples, or empty string if none available
+        """
+        # Determine the fewshot examples directory
+        repo_root = Path(__file__).resolve().parents[3]
+        fewshot_dir = repo_root / "db" / "datasets" / "kqapro" / "fewshot-examples"
+
+        if not fewshot_dir.exists():
+            self._trace(f"Few-shot examples directory not found: {fewshot_dir}", COLOR_YELLOW)
+            return ""
+
+        # If specific_qtype is provided, only load that type's examples
+        if specific_qtype:
+            qtypes = [specific_qtype]
+        else:
+            qtypes = [
+                "Count", "Verify", "SelectBetween", "SelectAmong",
+                "QueryAttr", "QueryAttrQualifier", "QueryRelation",
+                "QueryRelationQualifier", "QueryName"
+            ]
+
+        all_examples = []
+
+        for qtype in qtypes:
+            example_file = fewshot_dir / f"{qtype}.json"
+
+            if not example_file.exists():
+                continue
+
+            try:
+                with open(example_file, "r", encoding="utf-8") as f:
+                    examples = json.load(f)
+
+                if not examples:
+                    continue
+
+                # Limit to max_per_type examples
+                examples = examples[:max_per_type]
+
+                for example in examples:
+                    all_examples.append({
+                        "qtype": qtype,
+                        "question": example.get("question", ""),
+                        "reasoning": example.get("reasoning", ""),
+                        "lesson_learned": example.get("lesson_learned", "")
+                    })
+
+            except (json.JSONDecodeError, Exception) as e:
+                self._trace(f"Error loading {example_file}: {e}", COLOR_YELLOW)
+                continue
+
+        if not all_examples:
+            return ""
+
+        # Format examples for the prompt
+        formatted_examples = "\n\n### Few-Shot Examples (Curated from Past Classifications)\n\n"
+        formatted_examples += "Here are examples of correctly classified questions with reasoning:\n\n"
+
+        for i, example in enumerate(all_examples, 1):
+            formatted_examples += f"**Example {i}:**\n"
+            formatted_examples += f"Question: {example['question']}\n"
+            formatted_examples += f"Correct Type: {example['qtype']}\n"
+
+            if example['reasoning']:
+                formatted_examples += f"Reasoning: {example['reasoning']}\n"
+
+            if example['lesson_learned']:
+                formatted_examples += f"Lesson Learned: {example['lesson_learned']}\n"
+
+            formatted_examples += "\n"
+
+        return formatted_examples
+
+    def _classify_question(self, question: str) -> Dict[str, str]:
+        """
+        Classify a question into KQAPro taxonomy and load relevant few-shot examples.
+
+        Args:
+            question: The question to classify
+
+        Returns:
+            Dict with 'question_type' and 'fewshot_examples' keys
+        """
+        # Build classification prompt
+        prompt = f"""
+### Task
+You are a question classification assistant.
+
+Your goal is to classify the following question into **exactly one** of the 9 KQA-Pro categories:
+
+- Count
+- Verify
+- SelectBetween
+- SelectAmong
+- QueryAttr
+- QueryAttrQualifier
+- QueryRelation
+- QueryRelationQualifier
+- QueryName
+
+You must reason through a structured decision process before answering.
+At each step, evaluate whether a specific type fits based on the question's content.
+If a later step reveals a better fit, you are allowed to go back and revise the earlier decision.
+
+
+────────────────────────────────────────
+### Explanation of Each Question Type
+
+1. **Count** Use this type if the question asks directly for a **number or quantity** of things.
+Typical phrases include "How many…?", "What is the number of…?", or "Count the…".
+The expected answer is a non-negative integer.
+Note: even if entities are mentioned, the focus must be on **counting** them, not on what they are or when something happened.
+
+2. **Verify** Choose this type if the question can be answered with a clear "yes" or "no".
+It will usually be phrased as a **factual check**, e.g., "Is…?", "Did…?", "Was…?", and refers to a full statement.
+Only use Verify if the statement is **complete enough** to verify independently — no missing subjects or vague phrases.
+
+3. **SelectBetween** This type applies when the question explicitly names **exactly two distinct entities** and compares them on a **single measurable attribute**.
+Comparative words such as "more", "older", "faster", or "better" must appear.
+Avoid choosing SelectBetween if more than two entities are listed or if no comparison is being made.
+
+4. **SelectAmong** Use this type when a group or class of entities is involved and the question asks which one has an **extreme property** (e.g., the biggest, fastest, most successful).
+A superlative is usually present — "most", "least", "biggest", "oldest", etc.
+If a list is given or a general class (e.g., "Which planet…"), and only one is being selected as "best" or "most", this is SelectAmong.
+
+5. **QueryAttr** Select this type if the question names a specific entity (like a person, company, city) and asks for a **literal attribute** (date, population, height, etc.).
+Examples include "What is the population of Tokyo?" or "When was Google founded?"
+Do not choose QueryAttr if the question also includes a time or place constraint — in that case, prefer QueryAttrQualifier.
+
+6. **QueryAttrQualifier** This type is a refinement of QueryAttr: it still asks for a property of a single entity, but now with a **qualifying context** like "in 2020", "at night", or "during WWII".
+The key difference is that QueryAttrQualifier adds a **constraint or filter** to the value being requested.
+
+7. **QueryRelation** Use this type if the question involves two entities and asks **what connects them**.
+Typical patterns include: "Who directed Inception?", "How is X related to Y?", "Who founded Tesla?"
+The expected answer is the **name of the relation** or **the entity that serves as a link**.
+
+8. **QueryRelationQualifier** This type builds on QueryRelation. Use it when the relation is already assumed or known, and the question now asks about **its context** — such as when it occurred, in what role, or under what conditions.
+For example: "When did X direct Y?" or "In what role did X work at Y?"
+
+9. **QueryName** This applies when the question gives a description (using attributes, relations, or actions) and asks **who or what entity** matches it.
+Examples: "Who discovered penicillin?", "Which scientist developed relativity?"
+Here, the subject or object is **unknown**, and the question seeks the **name of the entity**.
+
+────────────────────────────────────────
+### Classification Logic: Step-by-Step Reasoning
+
+You must now classify the input question by walking through this chain of thought:
+
+**Step 1** Is the question primarily asking for a **number** of things?
+→ If yes, the correct type is likely **Count**.
+→ However, if it adds time/place context (e.g. "in 2020"), consider revisiting this as **QueryAttrQualifier**.
+
+**Step 2** Is the question a **yes/no statement** that can be verified as true or false?
+→ If yes, this points to **Verify**.
+→ But if it instead expects a specific name or value, this is incorrect.
+
+**Step 3** Does the question mention **exactly two entities**, and compare them on a property?
+→ If yes, and words like "more", "less", "faster" appear → choose **SelectBetween**.
+→ If only one item is selected from a group → go to Step 4 instead.
+
+**Step 4** Does the question include a **superlative** like "most", "least", "biggest", or refer to a group/list of candidates?
+→ If yes → this is likely **SelectAmong**.
+
+**Step 5** Does the question involve **two named entities** and ask what **relation** connects them?
+→ If yes → choose **QueryRelation**.
+→ If the question asks **when/where/how** that relation took place → choose **QueryRelationQualifier**.
+
+**Step 6** Does the question mention **one entity** and ask for a **specific value** (e.g., date, amount, status)?
+→ If yes, and no qualifier is present → this is **QueryAttr**.
+→ If there is a time/place condition → switch to **QueryAttrQualifier**.
+
+**Step 7** Does the question ask **who or what** matches a description, where the entity is **not explicitly named**?
+→ If yes → this is **QueryName**.
+
+You may revisit previous steps if you realize a better fit based on qualifiers, phrasing, or intent.
+
+────────────────────────────────────────
+### Question to Classify
+{question}
+
+You MUST respond with a valid JSON object matching this exact schema:
+{{
+    "question_type": "one of: Count, Verify, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName"
+}}
+
+Respond ONLY with the JSON object, no additional text.
+"""
+
+        try:
+            # Call LLM with JSON mode
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": prompt}],
+                temperature=get_chat_temperature(),
+                response_format={"type": "json_object"},
+                timeout=30.0
+            )
+
+            # Parse response
+            json_content = response.choices[0].message.content
+            result = json.loads(json_content)
+            question_type = result.get("question_type", "Query")
+
+            # Load few-shot examples for this question type
+            fewshot_examples = self._load_fewshot_examples(max_per_type=10, specific_qtype=question_type)
+
+            return {
+                "question_type": question_type,
+                "fewshot_examples": fewshot_examples
+            }
+
+        except Exception as e:
+            self._trace(f"Question classification failed: {e}", COLOR_YELLOW)
+            return {
+                "question_type": "Query",
+                "fewshot_examples": ""
+            }
+
+    def _extract_entities(self, question: str) -> Dict[str, List[str]]:
+        """
+        Extract entities/concepts and relations from a natural language query.
+
+        Args:
+            question: The question to analyze
+
+        Returns:
+            Dict with 'entities' and 'relations' keys, each containing a list of strings
+        """
+        system_prompt = """Extract the semantic entities/concepts and relations from the user query.
+
+You MUST respond with a valid JSON object matching this exact schema:
+{
+    "entities": ["list of specific entities or general concepts"],
+    "relations": ["list of relationship predicates or actions"]
+}
+
+Respond ONLY with the JSON object, no additional text."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": question}
+                ],
+                temperature=get_chat_temperature(),
+                response_format={"type": "json_object"},
+                timeout=30.0
+            )
+
+            # Parse response
+            json_content = response.choices[0].message.content
+            result = json.loads(json_content)
+
+            return {
+                "entities": result.get("entities", []),
+                "relations": result.get("relations", [])
+            }
+
+        except Exception as e:
+            self._trace(f"Entity extraction failed: {e}", COLOR_YELLOW)
+            return {
+                "entities": [],
+                "relations": []
+            }
 
     def _detect_loops(self, func_name: str, func_args: dict) -> tuple[bool, str]:
         """
@@ -615,7 +903,6 @@ class KQAProAgent:
                 "   ✅ Try alternatives:\n"
                 "      • Check available_predicates from FindNode results\n"
                 "      • Try GetNodeSummary to see ALL relations at once\n"
-                "      • Try ExploreNeighborhood with semantic matching\n"
                 "      • The relation might not exist - answer with available data"
             ),
             "FindNode": (
@@ -637,11 +924,12 @@ class KQAProAgent:
             ),
             "ExploreNeighborhood": (
                 "**ExploreNeighborhood Loop Recovery:**\n"
+                "   ⚠️ DEPRECATED: This tool is redundant - use GetNodeSummary instead\n"
                 "   ❌ Can't find the semantic relation you're looking for\n"
                 "   ✅ Try alternatives:\n"
+                "      • Use GetNodeSummary to see ALL available relations\n"
                 "      • Use GetRelationDetails with exact relation name\n"
                 "      • Check available_predicates from FindNode\n"
-                "      • Use GetNodeSummary to see what relations exist\n"
                 "      • Try a different phrasing for the relation"
             ),
             "GetAttributeWithQualifiers": (
@@ -720,36 +1008,18 @@ class KQAProAgent:
             # ═══════════════════════════════════════════════════════════════════════
             self._trace("🎯 Starting pre-agent classification hook", COLOR_CYAN)
 
-            # Step 1: Run QtypePrediction and EntityExtraction
-            self._trace("🔍 Running QtypePrediction and EntityExtraction...", COLOR_YELLOW)
+            # Step 1: Run classification and entity extraction (using internal methods)
+            self._trace("🔍 Running question classification and entity extraction...", COLOR_YELLOW)
 
-            # Call both tools (they're independent, could be parallelized in future)
-            # For now, call sequentially for clear error handling and logging
-            try:
-                qtype_result = await self.mcp.call_tool("QtypePrediction", {"question": query})
-                self._trace(f"✓ QtypePrediction complete", COLOR_GREEN)
-            except Exception as e:
-                self._trace(f"⚠️ QtypePrediction failed: {e}", COLOR_YELLOW)
-                qtype_result = json.dumps({"qtype": "Query", "fewshot_examples": ""})
+            # Call internal methods (no longer using MCP tools)
+            qtype_data = self._classify_question(query)
+            self._trace(f"✓ Question classification complete: {qtype_data['question_type']}", COLOR_GREEN)
 
-            try:
-                entities_result = await self.mcp.call_tool("EntityExtraction", {"question": query})
-                self._trace(f"✓ EntityExtraction complete", COLOR_GREEN)
-            except Exception as e:
-                self._trace(f"⚠️ EntityExtraction failed: {e}", COLOR_YELLOW)
-                entities_result = json.dumps({"entities": [], "relations": []})
+            entities_data = self._extract_entities(query)
+            self._trace(f"✓ Entity extraction complete: {len(entities_data['entities'])} entities, {len(entities_data['relations'])} relations", COLOR_GREEN)
 
-            # Step 2: Parse results (tools return JSON strings)
-            try:
-                qtype_data = json.loads(qtype_result) if isinstance(qtype_result, str) else qtype_result
-                entities_data = json.loads(entities_result) if isinstance(entities_result, str) else entities_result
-            except json.JSONDecodeError as e:
-                self._trace(f"⚠️ Failed to parse pre-hook results: {e}", COLOR_YELLOW)
-                qtype_data = {"qtype": "Query", "fewshot_examples": ""}
-                entities_data = {"entities": [], "relations": []}
-
-            # Step 3: Extract and format the analysis data
-            qtype = qtype_data.get("qtype", "Query")
+            # Step 2: Extract and format the analysis data
+            qtype = qtype_data.get("question_type", "Query")
             fewshot_examples = qtype_data.get("fewshot_examples", "")
             entities = entities_data.get("entities", [])
             relations = entities_data.get("relations", [])
@@ -1069,13 +1339,14 @@ JOURNAL SUMMARY - ALL DISCOVERED INFORMATION
 YOUR TASK
 ═══════════════════════════════════════════════════════════════════════
 
-Based ONLY on the information shown above in your journal, provide a clear, direct, and complete answer to this question:
+Based on the information in your journal summary above AND the reasoning steps in the conversation history, provide a clear, direct, and complete answer to this question:
 
 "{query}"
 
 INSTRUCTIONS:
-- Use ONLY the facts and values from your journal summary above
-- Provide a direct answer without explaining your process
+- Use the facts and values from your journal summary as the primary source
+- You may reference the reasoning process from your chat history to provide context
+- Provide a direct answer without unnecessarily explaining your entire investigation process
 - If the information is insufficient to answer completely, state exactly what is missing
 - Be concise but complete
 
@@ -1086,9 +1357,9 @@ YOUR FINAL ANSWER:"""
                 "content": synthesis_prompt
             })
 
-            # Step 3: Make final synthesis call (text-only, no tools)
-            self._trace("🤖 Making final synthesis LLM call (text-only)...", COLOR_YELLOW)
-            final_answer = self._llm_call_text_only()
+            # Step 3: Make final synthesis call using synthesis-specific configuration
+            self._trace("🤖 Making final synthesis LLM call (using synthesis config)...", COLOR_YELLOW)
+            final_answer = self._llm_call_synthesis()
 
             # Step 4: Validate and return
             if final_answer and final_answer.strip():
@@ -1180,6 +1451,41 @@ YOUR FINAL ANSWER:"""
             return response.choices[0].message.content
         except Exception as e:
             self._trace(f"❌ LLM text-only call failed: {e}", COLOR_RED)
+            raise
+
+    def _llm_call_synthesis(self):
+        """Executes the synthesis API call using synthesis-specific configuration."""
+        call_params = {
+            "model": self.synthesis_model,
+            "messages": self._messages,
+            "timeout": self.request_timeout,
+            "temperature": get_synthesis_temperature(),
+            "max_tokens": get_synthesis_max_tokens(),
+        }
+
+        # Add OpenRouter provider preferences if configured
+        provider_prefs = get_synthesis_provider_preferences()
+        if provider_prefs:
+            call_params["extra_body"] = {"provider": provider_prefs}
+
+        self._trace(
+            f"⏳ Calling {self.synthesis_model} for synthesis "
+            f"(timeout: {self.request_timeout}s, max_tokens: {call_params['max_tokens']})",
+            COLOR_CYAN
+        )
+
+        try:
+            response = self.synthesis_client.chat.completions.create(**call_params)
+            self._trace(f"✅ Synthesis LLM call completed", COLOR_GREEN)
+
+            if response.usage:
+                self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+                self.token_usage["completion_tokens"] += response.usage.completion_tokens
+                self.token_usage["total_tokens"] += response.usage.total_tokens
+
+            return response.choices[0].message.content
+        except Exception as e:
+            self._trace(f"❌ Synthesis LLM call failed: {e}", COLOR_RED)
             raise
 
     async def reset(self):
