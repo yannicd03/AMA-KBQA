@@ -33,23 +33,21 @@ logger.add(
 # 1. Load environment variables
 load_dotenv(find_dotenv())
 
-# Constants TODO: Get config parameters from config.toml instead of here
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
-YOUR_SITE_URL = "https://my-mcp-server.local"
-YOUR_SITE_NAME = "KBQA MCP Tool"
+# Get all configuration from centralized config
+from ama_kbqa.config import (
+    get_qdrant_host,
+    get_qdrant_port,
+    get_top_n,
+    get_score_threshold,
+    get_embedding_model_name,
+)
 
-# Note: Check OpenRouter for the exact model ID.
-# As of now, common IDs are 'alibaba/gte-qwen2-7b-instruct' or similar.
-# I kept your requested ID, but if it fails, check the OpenRouter model list.
-EMBEDDING_MODEL_ID = "qwen/qwen3-embedding-8b"
-CHAT_MODEL_ID = "arcee-ai/trinity-mini"
-
-# Qdrant Config
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
+# Qdrant Config (from centralized config)
+QDRANT_HOST = get_qdrant_host()
+QDRANT_PORT = get_qdrant_port()
 COLLECTION_NAME = "wikidata_entities"  # Ensure this exists in your Qdrant
-TOP_N = 3                             # Candidates to retrieve per word
-SCORE_THRESHOLD = 0.70                # Minimum similarity (Cosine)
+TOP_N = get_top_n()
+SCORE_THRESHOLD = get_score_threshold()
 
 
 # --- 1. Define a Context Class for Type Safety ---
@@ -72,31 +70,27 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     logger.info("Starting up: Connecting to Qdrant & OpenAI...")
 
     try:
-        # Initialize Clients
-        if not OPENROUTER_API_KEY:
-            raise ValueError("OPENROUTER_API_KEY is missing in environment variables.")
-
+        # Initialize Clients using centralized config
         qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
 
         # Quick connectivity check
         qdrant.get_collections()
 
-        openai = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY,
-        )
+        # Use centralized config to get the chat client
+        # (Note: This assumes chat and embedding providers are the same)
+        openai = get_chat_client()
 
         # Yield the context so tools can access it
         yield AppContext(qdrant=qdrant, openai=openai)
 
     except Exception as e:
-        logger.error(f"Something went wrong: {e}")
+        logger.error(f"Something went wrong during startup: {e}")
+        raise  # Re-raise to properly signal startup failure
 
     finally:
         # Cleanup code (runs on shutdown)
-        logger.info("🔌 Shutting down: Closing connections...")
+        logger.info("Shutting down: Closing connections...")
         qdrant.close()
-        sys.exit(1)
 
 
 # --- 3. Initialize FastMCP with Lifespan ---
@@ -136,9 +130,9 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
     logger.info(f"Analyzing: '{question}' ...")
 
     try:
-        # Build API call parameters
+        # Build API call parameters using centralized config
         call_params = {
-            "model": CHAT_MODEL_ID,
+            "model": get_chat_model_name(),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": question}
@@ -162,9 +156,10 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
         # return json.dumps(json_check, ensure_ascii=False)
 
     except Exception as e:
-        # return json.dumps({"error": f"Error while analyzing: {str(e)}"})
-        logger.error(f"[_extract_semantics] Error: {e}")
-        return {}
+        error_msg = str(e)
+        logger.error(f"[_extract_semantics] Error: {error_msg}")
+        # Return error details instead of empty dict so caller can handle it
+        return {"error": error_msg}
 
 
 def generate_embeddings(client: OpenAI, terms: list[str]) -> dict:
@@ -203,7 +198,7 @@ def generate_embeddings(client: OpenAI, terms: list[str]) -> dict:
     # Try batch processing first (much faster)
     try:
         response = client.embeddings.create(
-            model=EMBEDDING_MODEL_ID,
+            model=get_embedding_model_name(),
             input=clean_texts  # Pass entire list at once
         )
 
@@ -218,7 +213,7 @@ def generate_embeddings(client: OpenAI, terms: list[str]) -> dict:
         for text in clean_texts:
             try:
                 response = client.embeddings.create(
-                    model=EMBEDDING_MODEL_ID,
+                    model=get_embedding_model_name(),
                     input=text
                 )
                 results[text] = response.data[0].embedding
@@ -299,8 +294,16 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
     extract_start = time.time()
     semantics = extract_semantics(app_context.openai, question)
     logger.debug(f"[TIMING] Semantic extraction took {time.time() - extract_start:.2f}s")
-    if not semantics:
-        return json.dumps({"error": "Failed to extract semantics."})
+
+    # Check for errors in semantic extraction
+    if not semantics or "error" in semantics:
+        error_detail = semantics.get("error", "Unknown error") if semantics else "No response from LLM"
+        logger.error(f"Semantic extraction failed: {error_detail}")
+        return json.dumps({
+            "error": "Failed to extract semantics",
+            "details": error_detail,
+            "suggestion": "Check your LLM configuration and API key in config.toml"
+        })
 
     # Prepare list for embedding
     terms_to_embed = []

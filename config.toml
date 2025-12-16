@@ -39,7 +39,9 @@ base_url = "https://openrouter.ai/api/v1"
 # Examples: deepseek/deepseek-v3.2-speciale
 chat_model = "minimax/minimax-m2"
 embedding_model = "qwen/qwen3-embedding-8b"
-chat_model_provider= "minimax/fp8" #novita/bf16
+# Provider preference disabled - let OpenRouter use default routing
+# The minimax/fp8 endpoint doesn't exist for minimax-m2 model
+chat_model_provider = ""  # Empty = use OpenRouter's default routing
 # API key will be read from OPENROUTER_API_KEY environment variable
 
 [kit_ollama]
