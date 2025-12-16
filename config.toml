@@ -41,7 +41,7 @@ chat_model = "minimax/minimax-m2"
 embedding_model = "qwen/qwen3-embedding-8b"
 # Provider preference disabled - let OpenRouter use default routing
 # The minimax/fp8 endpoint doesn't exist for minimax-m2 model
-chat_model_provider = ""  # Empty = use OpenRouter's default routing
+chat_model_provider = ""  # minimax/fp8, Empty = use OpenRouter's default routing
 # API key will be read from OPENROUTER_API_KEY environment variable
 
 [kit_ollama]
