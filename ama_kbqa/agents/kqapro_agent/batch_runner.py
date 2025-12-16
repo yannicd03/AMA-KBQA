@@ -28,7 +28,11 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from SPARQLWrapper import SPARQLWrapper, JSON
 from pydantic import BaseModel, Field
-from ama_kbqa.config import get_provider_preferences
+from ama_kbqa.config import (
+    get_provider_preferences,
+    get_chat_client,
+    get_chat_model_name,
+)
 
 # Load environment variables
 load_dotenv(override=True)
@@ -76,11 +80,6 @@ COLOR_END = '\033[0m'
 
 VALIDATION_DATASET_PATH = project_root / "db" / "datasets" / "kqapro" / "val.json"
 BATCH_RESULTS_BASE_DIR = project_root / "batch_results"
-
-# OpenRouter configuration for answer selection
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = "meta-llama/llama-3.3-70b-instruct"
 
 # Virtuoso SPARQL endpoint configuration
 VIRTUOSO_ENDPOINT = "http://localhost:8890/sparql"
@@ -466,7 +465,7 @@ Your selection:"""
 
     try:
         call_params = {
-            "model": MODEL_NAME,
+            "model": get_chat_model_name(),
             "messages": [
                 {"role": "system", "content": "You are a precise answer selector. Respond with only the number or exact text of the matching choice."},
                 {"role": "user", "content": prompt}
@@ -639,7 +638,7 @@ Your SPARQL query:"""
 
     try:
         call_params = {
-            "model": MODEL_NAME,
+            "model": get_chat_model_name(),
             "messages": [
                 {"role": "system", "content": "You are a SPARQL query expert. Generate precise, executable SPARQL queries based on conversation context."},
                 {"role": "user", "content": prompt}
@@ -1466,14 +1465,8 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
     # Create agent
     agent = KQAProAgent(name="batch_runner")
 
-    # Create OpenAI client for answer selection
-    if not OPENROUTER_API_KEY:
-        raise RuntimeError("OPENROUTER_API_KEY missing in .env")
-
-    client = OpenAI(
-        base_url=OPENROUTER_BASE_URL,
-        api_key=OPENROUTER_API_KEY
-    )
+    # Create client for answer selection and SPARQL query generation (uses chat provider from config)
+    client = get_chat_client()
 
     # Create SPARQL wrapper if needed for sparql postprocessing mode
     sparql_wrapper = None
