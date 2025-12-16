@@ -14,6 +14,15 @@ chat_temperature = 0.2
 chat_max_tokens = 15000
 embedding_temperature = 0.0
 
+[synthesis]
+# LLM configuration for final answer synthesis
+# This controls which model generates the final answer after tool gathering
+synthesis_provider = "openrouter"  # Which LLM provider to use for synthesis
+synthesis_model = "google/gemini-2.5-flash"  # Model for synthesis (can be different from chat_model)
+synthesis_model_provider = ""  # Empty = use OpenRouter's default routing (don't force minimax/fp8)
+synthesis_temperature = 0.2  # Temperature for synthesis generation
+synthesis_max_tokens = 8000  # Max tokens for final answer
+
 [lm_studio]
 # Local LM Studio server settings
 base_url = "http://localhost:1234/v1"
@@ -79,6 +88,6 @@ level = "INFO"
 # LLM Judge configuration for batch processing
 # The judge evaluates answer correctness, reasoning quality, and provides improvement suggestions
 judge_provider = "openrouter"  # Which LLM provider to use for judging
-judge_model = "deepseek/deepseek-v3.2-speciale"  # Model for judging (can be different from chat_model)
+judge_model = "google/gemini-2.5-flash"  # Model for judging (can be different from chat_model)
 chat_model_provider = ""
 judge_temperature = 0.0  # Lower temperature for more consistent judgments

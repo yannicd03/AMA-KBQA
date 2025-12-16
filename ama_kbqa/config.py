@@ -357,3 +357,117 @@ def get_top_n() -> int:
 def get_score_threshold() -> float:
     """Get score threshold for vector search from config."""
     return get_search_config().get("score_threshold", 0.7)
+
+
+# Synthesis configuration functions
+def get_synthesis_client() -> OpenAI:
+    """Get an OpenAI client configured for final answer synthesis.
+
+    Returns:
+        OpenAI: Configured OpenAI client instance
+
+    Raises:
+        ValueError: If the configured provider is not supported
+        KeyError: If required environment variables are missing
+    """
+    config = load_config()
+
+    # Check if synthesis section exists, fallback to chat provider
+    if "synthesis" in config and "synthesis_provider" in config["synthesis"]:
+        provider = config["synthesis"]["synthesis_provider"]
+    else:
+        # Fallback to chat provider if synthesis not configured
+        logger.warning(
+            "Synthesis provider not configured, falling back to chat provider"
+        )
+        provider = config["llm"]["chat_provider"]
+
+    return _create_client(provider, model_type="chat")
+
+
+def get_synthesis_model_name() -> str:
+    """Get the configured synthesis model name.
+
+    Returns:
+        str: The synthesis model name
+    """
+    config = load_config()
+
+    # Check if synthesis section exists, fallback to chat model
+    if "synthesis" in config and "synthesis_model" in config["synthesis"]:
+        return config["synthesis"]["synthesis_model"]
+    else:
+        # Fallback to chat model if synthesis not configured
+        logger.warning(
+            "Synthesis model not configured, falling back to chat model"
+        )
+        provider = config["llm"]["chat_provider"]
+        return config[provider]["chat_model"]
+
+
+def get_synthesis_temperature() -> float:
+    """Get the configured synthesis temperature.
+
+    Returns:
+        float: The synthesis temperature value
+    """
+    config = load_config()
+
+    # Check if synthesis section exists, fallback to chat temperature
+    if "synthesis" in config:
+        return config["synthesis"].get("synthesis_temperature", 0.2)
+    else:
+        # Fallback to chat temperature if synthesis not configured
+        return config["llm"].get("chat_temperature", 0.2)
+
+
+def get_synthesis_max_tokens() -> int:
+    """Get the configured max tokens for synthesis.
+
+    Returns:
+        int: The max tokens value
+    """
+    config = load_config()
+
+    # Check if synthesis section exists, fallback to default
+    if "synthesis" in config:
+        return config["synthesis"].get("synthesis_max_tokens", 2000)
+    else:
+        # Default to 2000 tokens for synthesis
+        return 2000
+
+
+def get_synthesis_provider_preferences() -> Optional[dict]:
+    """Build provider preferences object for synthesis based on configuration.
+
+    This is similar to get_provider_preferences() but for synthesis.
+
+    Returns:
+        Optional[dict]: Provider preferences dict, or None if not applicable
+    """
+    config = load_config()
+
+    # Check if synthesis section exists, fallback to chat provider
+    if "synthesis" in config and "synthesis_provider" in config["synthesis"]:
+        provider = config["synthesis"]["synthesis_provider"]
+    else:
+        provider = config["llm"]["chat_provider"]
+
+    # Only relevant for OpenRouter
+    if provider != "openrouter":
+        return None
+
+    # Check if there's a synthesis-specific provider preference
+    if "synthesis" in config and "synthesis_model_provider" in config["synthesis"]:
+        provider_pref = config["synthesis"]["synthesis_model_provider"]
+    else:
+        # Fallback to chat model provider preference
+        provider_pref = get_chat_model_provider()
+
+    if not provider_pref:
+        return None
+
+    return {
+        "order": [provider_pref],
+        "allow_fallbacks": False
+    }
