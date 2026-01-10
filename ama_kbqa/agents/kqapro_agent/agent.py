@@ -745,6 +745,12 @@ Respond ONLY with the JSON object, no additional text.
                 timeout=30.0
             )
 
+            # Track token usage from classification
+            if response.usage:
+                self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+                self.token_usage["completion_tokens"] += response.usage.completion_tokens
+                self.token_usage["total_tokens"] += response.usage.total_tokens
+
             # Parse response
             json_content = response.choices[0].message.content
             result = json.loads(json_content)
@@ -796,6 +802,12 @@ Respond ONLY with the JSON object, no additional text."""
                 response_format={"type": "json_object"},
                 timeout=30.0
             )
+
+            # Track token usage from entity extraction
+            if response.usage:
+                self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+                self.token_usage["completion_tokens"] += response.usage.completion_tokens
+                self.token_usage["total_tokens"] += response.usage.total_tokens
 
             # Parse response
             json_content = response.choices[0].message.content
