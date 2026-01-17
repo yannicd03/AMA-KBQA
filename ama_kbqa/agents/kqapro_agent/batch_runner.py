@@ -1113,6 +1113,9 @@ async def process_question(
         # Extract intermediate thinking (saved to file but not printed)
         intermediate_thinking = extract_intermediate_thinking(agent._messages)
 
+        # Get tool call duration summary
+        tool_call_summary = agent.get_tool_call_summary()
+
         # Collect metadata
         result = {
             "question": question,
@@ -1138,7 +1141,9 @@ async def process_question(
             # LLM Judge fields (only populated if postprocessing_mode == "llm_judge")
             "judgment": judgment.model_dump() if judgment else None,
             # Intermediate thinking (saved but not printed to console)
-            "intermediate_thinking": intermediate_thinking
+            "intermediate_thinking": intermediate_thinking,
+            # Tool call duration tracking
+            "tool_call_summary": tool_call_summary
         }
 
         print(f"[OK] Predicted: {predicted_answer}")
@@ -1151,6 +1156,9 @@ async def process_question(
 
         # Extract intermediate thinking even on error
         intermediate_thinking = extract_intermediate_thinking(agent._messages)
+
+        # Get tool call duration summary even on error
+        tool_call_summary = agent.get_tool_call_summary()
 
         result = {
             "question": question,
@@ -1174,13 +1182,14 @@ async def process_question(
             "success": False,
             "error": str(e),
             "judgment": None,
-            "intermediate_thinking": intermediate_thinking
+            "intermediate_thinking": intermediate_thinking,
+            "tool_call_summary": tool_call_summary
         }
 
         print(f"[ERROR] {e}")
 
-    # Reset agent for next question
-    await agent.reset()
+    # Soft reset agent for next question (keeps MCP server open)
+    await agent.soft_reset()
 
     return result
 
@@ -1246,6 +1255,18 @@ def save_batch_results(
                 f.write(f"Argumentation Quality:\n{judgment.get('argumentation_quality', 'N/A')}\n\n")
                 f.write(f"Suggested Improvement:\n{judgment.get('suggested_improvement', 'N/A')}\n\n")
 
+            # Write tool call summary
+            tool_summary = result.get('tool_call_summary', {})
+            if tool_summary.get('total_calls', 0) > 0:
+                f.write(f"--- Tool Call Summary ---\n")
+                f.write(f"Total Calls: {tool_summary.get('total_calls', 0)}\n")
+                f.write(f"Total Duration: {tool_summary.get('total_duration_seconds', 0)}s\n")
+                for tool_name, stats in tool_summary.get('tool_breakdown', {}).items():
+                    f.write(f"  {tool_name}: {stats.get('count', 0)}x, "
+                           f"total {stats.get('total_duration', 0)}s, "
+                           f"avg {stats.get('avg_duration', 0)}s\n")
+                f.write("\n")
+
             # Write metadata
             f.write(f"--- Metadata ---\n")
             f.write(f"Duration: {result.get('duration', 'N/A')}\n")
@@ -1293,6 +1314,41 @@ def save_batch_results(
     total_duration = sum(float(r["duration"].replace("s", "")) for r in results)
     avg_duration = total_duration / len(results) if results else 0
 
+    # Calculate aggregate tool call statistics
+    total_tool_calls = 0
+    total_tool_duration = 0.0
+    tool_stats_aggregate = {}
+
+    for r in results:
+        tool_summary = r.get("tool_call_summary", {})
+        total_tool_calls += tool_summary.get("total_calls", 0)
+        total_tool_duration += tool_summary.get("total_duration_seconds", 0)
+
+        # Aggregate by tool
+        for tool_name, stats in tool_summary.get("tool_breakdown", {}).items():
+            if tool_name not in tool_stats_aggregate:
+                tool_stats_aggregate[tool_name] = {
+                    "count": 0,
+                    "total_duration": 0,
+                    "success_count": 0,
+                    "failure_count": 0
+                }
+            tool_stats_aggregate[tool_name]["count"] += stats.get("count", 0)
+            tool_stats_aggregate[tool_name]["total_duration"] += stats.get("total_duration", 0)
+            tool_stats_aggregate[tool_name]["success_count"] += stats.get("success_count", 0)
+            tool_stats_aggregate[tool_name]["failure_count"] += stats.get("failure_count", 0)
+
+    # Calculate average durations for aggregate stats
+    for tool_name in tool_stats_aggregate:
+        count = tool_stats_aggregate[tool_name]["count"]
+        if count > 0:
+            tool_stats_aggregate[tool_name]["avg_duration"] = round(
+                tool_stats_aggregate[tool_name]["total_duration"] / count, 3
+            )
+        tool_stats_aggregate[tool_name]["total_duration"] = round(
+            tool_stats_aggregate[tool_name]["total_duration"], 3
+        )
+
     # Count by question type
     qtype_counts = {}
     qtype_accuracy = {}
@@ -1326,7 +1382,12 @@ def save_batch_results(
             "total_duration_seconds": round(total_duration, 2),
             "average_duration_seconds": round(avg_duration, 2),
             "question_type_distribution": qtype_counts,
-            "accuracy_by_question_type": qtype_accuracy_rates
+            "accuracy_by_question_type": qtype_accuracy_rates,
+            # Tool call statistics
+            "total_tool_calls": total_tool_calls,
+            "total_tool_duration_seconds": round(total_tool_duration, 3),
+            "avg_tool_calls_per_question": round(total_tool_calls / len(results), 2) if results else 0,
+            "tool_breakdown": tool_stats_aggregate
         },
         "failed_questions": [
             {
@@ -1415,6 +1476,14 @@ def save_batch_results(
     print(f"Total Tokens:        {total_tokens:,}")
     print(f"Total Duration:      {total_duration:.2f}s")
     print(f"Average Duration:    {avg_duration:.2f}s")
+    print(f"\nTool Call Statistics:")
+    print(f"  Total Tool Calls:       {total_tool_calls}")
+    print(f"  Total Tool Duration:    {total_tool_duration:.3f}s")
+    print(f"  Avg Calls per Question: {total_tool_calls / len(results):.1f}" if results else "  Avg Calls per Question: N/A")
+    if tool_stats_aggregate:
+        print(f"\n  Tool Breakdown:")
+        for tool_name, stats in sorted(tool_stats_aggregate.items(), key=lambda x: x[1]['count'], reverse=True):
+            print(f"    {tool_name:30s}: {stats['count']:4d}x, total {stats['total_duration']:.3f}s, avg {stats.get('avg_duration', 0):.3f}s")
     print(f"\nQuestion Type Distribution:")
     for qtype, count in qtype_counts.items():
         acc_rate = qtype_accuracy_rates.get(qtype, 0)
@@ -1502,20 +1571,26 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
 
     # Process all questions
     results = []
-    for i, item in enumerate(sampled_questions):
-        result = await process_question(
-            agent=agent,
-            item=item,
-            question_idx=i,
-            total_questions=len(sampled_questions),
-            client=client,
-            postprocessing_mode=postprocessing_mode,
-            sparql_wrapper=sparql_wrapper,
-            judge_model_name=judge_model_name,
-            judge_client=judge_client,
-            judge_chat_model_provider=judge_chat_model_provider
-        )
-        results.append(result)
+    try:
+        for i, item in enumerate(sampled_questions):
+            result = await process_question(
+                agent=agent,
+                item=item,
+                question_idx=i,
+                total_questions=len(sampled_questions),
+                client=client,
+                postprocessing_mode=postprocessing_mode,
+                sparql_wrapper=sparql_wrapper,
+                judge_model_name=judge_model_name,
+                judge_client=judge_client,
+                judge_chat_model_provider=judge_chat_model_provider
+            )
+            results.append(result)
+    finally:
+        # Always close the MCP server connection at the end of batch processing
+        print("\n[INFO] Closing MCP server connection...")
+        await agent.close()
+        print("[OK] MCP server connection closed")
 
     # Save results
     config = {
