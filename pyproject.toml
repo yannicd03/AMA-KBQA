@@ -8,11 +8,16 @@ version = "0.1.0"
 description = "AMA KBQA"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    {name = "Yannic Duan"},
+    {name = "Maximilian Klattig"},
+    {name = "Maurice Bardenhagen"},
+    {name = "Yuyang Li"}
+]
 dependencies = [
     "ipykernel>=7.1.0",
     "openai-agents>=0.5.1",
     "qdrant-client>=1.15.1",
-    "qlever>=0.5.33",
     "rdflib>=7.4.0",
     "streamlit>=1.51.0",
     "openai>=1.53.0",
@@ -20,14 +25,15 @@ dependencies = [
     "tenacity>=9.0.0",
     "fastapi>=0.115.0",
     "uvicorn==0.38.0",
-    "openai-agents>=0.5.1",
-    "streamlit>=1.51.0",
     "requests>=2.32.5",
     "loguru>=0.7.3",
     "fastmcp>=2.13.1",
     "sparqlwrapper>=2.0.0",
     "htbuilder>=0.9.0",
 ]
+
+[project.scripts]
+ama-kbqa = "ama_kbqa.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

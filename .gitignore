@@ -221,3 +221,5 @@ db/datasets/kqapro/val.json
 /batch_results
 /.claude
 claude.md
+.agent/
+/db/datasets/SciQA/**
