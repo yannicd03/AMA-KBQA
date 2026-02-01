@@ -223,3 +223,4 @@ db/datasets/kqapro/val.json
 claude.md
 .agent/
 /db/datasets/SciQA/**
+/paper
