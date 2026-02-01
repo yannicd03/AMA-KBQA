@@ -340,6 +340,35 @@ def sample_questions(
     return sampled
 
 
+def load_from_questionnaire(questionnaire_path: str) -> List[Dict[str, Any]]:
+    """
+    Load questions from a pre-generated questionnaire JSON file.
+
+    Args:
+        questionnaire_path: Path to the questionnaire JSON file
+
+    Returns:
+        List of questions in the same format as sample_questions output
+    """
+    path = Path(questionnaire_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Questionnaire file not found: {questionnaire_path}")
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    metadata = data.get("metadata", {})
+    questions = data.get("questions", [])
+
+    print(f"[OK] Loaded questionnaire from: {questionnaire_path}")
+    print(f"     Dataset: {metadata.get('dataset', 'unknown')}")
+    print(f"     Generated: {metadata.get('generated_at', 'unknown')}")
+    print(f"     Seed: {metadata.get('seed', 'unknown')}")
+    print(f"     Questions: {len(questions)}")
+
+    return questions
+
+
 def classify_question_type(question: str, program: List[Dict] = None) -> str:
     """
     Attempt to classify the question type based on the question text and program.
@@ -1500,7 +1529,12 @@ def save_batch_results(
 # MAIN BATCH PROCESSING
 # ============================================================================
 
-async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: str = "choice"):
+async def run_batch(
+    n_questions: int = 10,
+    seed: int = 42,
+    postprocessing_mode: str = "choice",
+    questionnaire_path: Optional[str] = None
+):
     """
     Run a complete batch processing job.
 
@@ -1508,6 +1542,7 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
         n_questions: Number of questions to sample and process
         seed: Random seed for reproducibility
         postprocessing_mode: Postprocessing method - "choice" (multiple choice), "sparql" (SPARQL synthesis), or "llm_judge" (LLM evaluation)
+        questionnaire_path: Optional path to a pre-generated questionnaire JSON file
     """
     # Initialize dual output logger to capture console output
     dual_logger = DualOutputLogger()
@@ -1520,16 +1555,27 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
     print(f"  Questions:            {n_questions}")
     print(f"  Seed:                 {seed}")
     print(f"  Postprocessing Mode:  {postprocessing_mode}")
-    print(f"  Dataset:              {VALIDATION_DATASET_PATH}")
+    if questionnaire_path:
+        print(f"  Questionnaire:        {questionnaire_path}")
+    else:
+        print(f"  Dataset:              {VALIDATION_DATASET_PATH}")
     print(f"{'='*80}\n")
 
     # Create batch folder
     batch_folder = get_next_batch_folder()
     print(f"[OK] Created batch folder: {batch_folder}\n")
 
-    # Load and sample questions
-    validation_data = load_validation_dataset()
-    sampled_questions = sample_questions(validation_data, n_questions, seed)
+    # Load questions - either from questionnaire or by sampling
+    if questionnaire_path:
+        sampled_questions = load_from_questionnaire(questionnaire_path)
+        # Limit to n_questions if specified
+        if n_questions and n_questions < len(sampled_questions):
+            sampled_questions = sampled_questions[:n_questions]
+            print(f"[OK] Limited to first {n_questions} questions from questionnaire")
+        validation_data = sampled_questions  # For config saving
+    else:
+        validation_data = load_validation_dataset()
+        sampled_questions = sample_questions(validation_data, n_questions, seed)
 
     # Create agent
     agent = KQAProAgent(name="batch_runner")
@@ -1597,7 +1643,8 @@ async def run_batch(n_questions: int = 10, seed: int = 42, postprocessing_mode: 
         "n_questions": n_questions,
         "seed": seed,
         "postprocessing_mode": postprocessing_mode,
-        "dataset_path": str(VALIDATION_DATASET_PATH),
+        "dataset_path": str(VALIDATION_DATASET_PATH) if not questionnaire_path else None,
+        "questionnaire_path": questionnaire_path,
         "total_available": len(validation_data)
     }
 
@@ -1644,6 +1691,12 @@ def main():
         default="choice",
         help="Postprocessing method: 'choice' for multiple choice selection, 'sparql' for SPARQL synthesis, 'llm_judge' for LLM-based evaluation (default: choice)"
     )
+    parser.add_argument(
+        "--questionnaire",
+        type=str,
+        default=None,
+        help="Path to a pre-generated questionnaire JSON file (overrides --seed sampling)"
+    )
 
     args = parser.parse_args()
 
@@ -1651,7 +1704,8 @@ def main():
     asyncio.run(run_batch(
         n_questions=args.n_questions,
         seed=args.seed,
-        postprocessing_mode=args.postprocessing_mode
+        postprocessing_mode=args.postprocessing_mode,
+        questionnaire_path=args.questionnaire
     ))
 
 
