@@ -110,6 +110,77 @@ Each batch creates a folder (e.g., `batch_results/kqapro/Batch001/` or `batch_re
 - [BATCH_RUNNER_README.md](ama_kbqa/agents/kqapro_agent/BATCH_RUNNER_README.md) - KQAPro batch processing documentation
 - [ACCURACY_METRIC_IMPLEMENTATION.md](ACCURACY_METRIC_IMPLEMENTATION.md) - Details on accuracy evaluation implementation
 
+## Multi-Model Benchmarking
+
+The project includes a comprehensive benchmarking script that tests multiple LLM models against both KQAPro and SciQA agents using pre-generated questionnaires.
+
+### Models Tested (via OpenRouter)
+
+| Name | Model ID |
+|------|----------|
+| minimax-m2.1 | minimax/minimax-m2.1 |
+| glm-4.7 | zhipu-ai/glm-4.7 |
+| kimi-k2.5 | moonshotai/kimi-k2.5 |
+| deepseek-v3.2 | deepseek/deepseek-chat-v3-0324 |
+| gpt-oss-120b | openai/gpt-4.1 |
+
+### Usage
+
+```bash
+# Preview what would run (dry-run)
+python -m ama_kbqa.benchmark_agents --dry-run
+
+# Test single model on single agent with limited questions
+python -m ama_kbqa.benchmark_agents --models minimax-m2.1 --agents kqapro --n-questions 3
+
+# Full benchmark with CSV export
+python -m ama_kbqa.benchmark_agents --export-csv
+
+# Resume interrupted benchmark (skips completed runs)
+python -m ama_kbqa.benchmark_agents --resume
+
+# Custom timeout and output directory
+python -m ama_kbqa.benchmark_agents --timeout 180 --output-dir ./my_results
+```
+
+### CLI Options
+
+| Option | Description |
+|--------|-------------|
+| `--agents` | Which agents to test: `kqapro`, `sciqa`, or both (default: both) |
+| `--models` | Filter to specific models by name (default: all) |
+| `--n-questions` | Limit questions per agent (default: all from questionnaire) |
+| `--output-dir` | Output directory (default: `benchmark_results/<timestamp>`) |
+| `--timeout` | Timeout per question in seconds (default: 120) |
+| `--resume` | Skip completed model/agent combinations |
+| `--dry-run` | Preview what would run without executing |
+| `--export-csv` | Export results to CSV |
+
+### Output Structure
+
+```
+benchmark_results/<timestamp>/
+  overview.json              # Aggregated leaderboard (by accuracy, speed, efficiency)
+  benchmark_results.csv      # CSV export (if --export-csv)
+  kqapro/
+    minimax-m2.1/
+      summary.json           # Aggregate statistics
+      results.json           # Per-question detailed results
+      console_output.txt     # Full console log
+    glm-4.7/
+      ...
+  sciqa/
+    ...
+```
+
+### Features
+
+- **Progress tracking**: tqdm progress bars with live accuracy/timing updates
+- **Resume capability**: Skip already-completed runs based on existing output
+- **Error recovery**: Continue on timeout or errors, log issues per question
+- **Cost estimation**: Calculate approximate API costs from token usage
+- **Leaderboards**: Rank models by accuracy, speed, and cost-efficiency
+
 ## Timeline
 
 ![alt text](image.png)
