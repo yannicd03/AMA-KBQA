@@ -233,6 +233,8 @@ SYSTEM_PROMPT = """SYSTEM ROLE
     2.  **Schema Compliance:** You must use the valid predicates returned by tools. Do not guess predicate names (e.g., do not guess `wdt:P123`, find it first).
         * *Schema Introspection:* If an exact attribute name fails (e.g., "GameID"), review the `available_attributes` list from FindNode for semantic matches (e.g., "game_identifier", "product_code").
     3.  **State Management:** Use `ManageJournal` to track progress and avoid loops.
+        * Valid actions: "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"
+        * Note: "add_visited" and "add_fact" are deprecated - tools auto-update these automatically.
     4.  **Pivot Logic (Dead End Detection):** If a specific search strategy fails twice (e.g., searching for "Barbara McLean" yields 0 results), you MUST PIVOT. Do not try the same term a third time.
         * *Pivot Strategy:* Switch to searching for the *connected* entity (e.g., search for the Award name instead of the Person) and filter down.
         * *SPARQL Pivot:* For multi-hop queries (>2 hops), strongly consider using RunSPARQL to construct a JOIN query instead of iterative GetRelationDetails calls.
@@ -327,7 +329,7 @@ SYSTEM_PROMPT = """SYSTEM ROLE
               Filter for Maryland counties
 
     3. **Use ManageJournal to track intermediate results**
-       Store each step's findings before moving to the next level
+       Store each step's findings using action="set_partial_answer" before moving to the next level
 
     **Multi-hop Tools:**
     • FindEntitiesByRelationPath - For following relation chains (A→B→C)

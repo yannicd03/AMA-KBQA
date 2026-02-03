@@ -162,6 +162,8 @@ CRITICAL RULES
    - orkgp:P32 - research problem
 
 3. **State Management:** Use ManageJournal to track progress and avoid loops.
+   Valid actions: "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"
+   Note: "add_visited" and "add_fact" are deprecated - tools auto-update these.
 
 4. **Pivot Logic:** If a search strategy fails twice, PIVOT to a different approach.
 
@@ -216,6 +218,7 @@ TIER 4 - RAW SPARQL:
 
 STATE MANAGEMENT:
 - ManageJournal(action, content): Manage scratchpad state
+  Actions: "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"
 - GetJournalSummary(): Get formatted summary of all findings
 
 EXECUTION STRATEGY
