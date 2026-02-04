@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 from tqdm import tqdm
 
 # Load environment variables
@@ -106,6 +107,15 @@ BENCHMARK_MODELS: List[ModelConfig] = [
         api_key_env="OPENROUTER_API_KEY"
     ),
 ]
+
+# LLM Judge configuration (DeepSeek v3.2)
+JUDGE_MODEL_CONFIG = ModelConfig(
+    name="deepseek-v3.2-judge",
+    provider="openrouter",
+    model_id="deepseek/deepseek-chat-v3-0324",
+    base_url="https://openrouter.ai/api/v1",
+    api_key_env="OPENROUTER_API_KEY"
+)
 
 # Approximate costs per 1M tokens (input/output) for cost estimation
 # These are estimates and may change - update as needed
@@ -292,9 +302,11 @@ def normalize_answer(answer: str) -> str:
     return str(answer).lower().strip()
 
 
-def evaluate_accuracy(predicted: Optional[str], gold: str, q_type: str = "") -> bool:
+def evaluate_accuracy_string(predicted: Optional[str], gold: str, q_type: str = "") -> bool:
     """
-    Evaluate if predicted answer matches gold answer.
+    Evaluate if predicted answer matches gold answer using string matching.
+
+    This is the fallback method when LLM judge is unavailable.
 
     Args:
         predicted: The predicted answer
@@ -339,6 +351,75 @@ def evaluate_accuracy(predicted: Optional[str], gold: str, q_type: str = "") -> 
             pass
 
     return False
+
+
+async def evaluate_accuracy_llm(
+    question: str,
+    predicted: Optional[str],
+    gold: str,
+    q_type: str = ""
+) -> bool:
+    """
+    Evaluate if predicted answer matches gold answer using LLM as a judge.
+
+    Uses DeepSeek v3.2 as the judge model. Token usage from the judge
+    is NOT counted towards the benchmarked model's token count.
+
+    Args:
+        question: The original question
+        predicted: The predicted answer
+        gold: The gold/correct answer
+        q_type: Question type for context
+
+    Returns:
+        True if the judge determines answers are semantically equivalent
+    """
+    if predicted is None:
+        return False
+
+    # Get API key for judge
+    api_key = os.getenv(JUDGE_MODEL_CONFIG.api_key_env)
+    if not api_key:
+        # Fall back to string matching if no API key
+        print("  [Judge] No API key, falling back to string matching")
+        return evaluate_accuracy_string(predicted, gold, q_type)
+
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=JUDGE_MODEL_CONFIG.base_url
+    )
+
+    prompt = f"""You are an expert judge evaluating answers to knowledge base questions.
+
+Question: {question}
+
+Gold Answer: {gold}
+
+Predicted Answer: {predicted}
+
+Determine if the predicted answer is correct. The predicted answer is correct if:
+1. It is semantically equivalent to the gold answer (exact wording not required)
+2. It contains the correct information even if it includes additional context
+3. For yes/no questions, "true"/"false" are equivalent to "yes"/"no"
+4. For numeric answers, the numbers must match exactly
+5. For entity names, minor spelling variations or alternate names for the same entity are acceptable
+
+Respond with ONLY "CORRECT" or "INCORRECT" (no explanation needed)."""
+
+    try:
+        response = await client.chat.completions.create(
+            model=JUDGE_MODEL_CONFIG.model_id,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0
+        )
+
+        judgment = response.choices[0].message.content.strip().upper()
+        return "CORRECT" in judgment
+
+    except Exception as e:
+        print(f"  [Judge Error: {e}] Falling back to string matching")
+        return evaluate_accuracy_string(predicted, gold, q_type)
 
 
 # ============================================================================
@@ -447,8 +528,8 @@ async def process_single_question(
     # Get tool summary
     tool_summary = agent.get_tool_call_summary()
 
-    # Evaluate accuracy
-    accuracy = evaluate_accuracy(predicted_answer, gold_answer, q_type)
+    # Evaluate accuracy using LLM judge (tokens not counted towards model)
+    accuracy = await evaluate_accuracy_llm(q_text, predicted_answer, gold_answer, q_type)
 
     # Soft reset for next question
     await agent.soft_reset()
@@ -465,6 +546,109 @@ async def process_single_question(
         error=error,
         q_type=q_type
     )
+
+
+def save_results_to_disk(
+    results: List[QuestionResult],
+    model: ModelConfig,
+    agent_name: str,
+    result_dir: Path,
+    console_log: StringIO,
+    is_complete: bool = False
+) -> Dict[str, Any]:
+    """
+    Save current results to disk (intermediate or final).
+
+    Args:
+        results: List of question results so far
+        model: Model configuration
+        agent_name: Agent name
+        result_dir: Directory to save to
+        console_log: Console log buffer
+        is_complete: Whether this is the final save
+
+    Returns:
+        Summary dictionary
+    """
+    if not results:
+        return {}
+
+    # Calculate summary statistics
+    total = len(results)
+    correct = sum(1 for r in results if r.accuracy)
+    errors = sum(1 for r in results if r.error)
+
+    total_time = sum(r.elapsed_time for r in results)
+    avg_time = total_time / total if total > 0 else 0
+
+    total_prompt_tokens = sum(r.token_usage.get("prompt_tokens", 0) for r in results)
+    total_completion_tokens = sum(r.token_usage.get("completion_tokens", 0) for r in results)
+    total_tokens = total_prompt_tokens + total_completion_tokens
+
+    estimated_cost = estimate_cost(model.name, total_prompt_tokens, total_completion_tokens)
+
+    # Accuracy by question type
+    type_stats = {}
+    for r in results:
+        if r.q_type not in type_stats:
+            type_stats[r.q_type] = {"total": 0, "correct": 0}
+        type_stats[r.q_type]["total"] += 1
+        if r.accuracy:
+            type_stats[r.q_type]["correct"] += 1
+
+    type_accuracy = {
+        k: v["correct"] / v["total"] if v["total"] > 0 else 0
+        for k, v in type_stats.items()
+    }
+
+    summary = {
+        "model": model.name,
+        "agent": agent_name,
+        "timestamp": datetime.now().isoformat(),
+        "is_complete": is_complete,
+        "statistics": {
+            "total_questions": total,
+            "correct": correct,
+            "errors": errors,
+            "accuracy": correct / total if total > 0 else 0,
+            "total_time_seconds": round(total_time, 2),
+            "avg_time_seconds": round(avg_time, 2),
+            "total_tokens": total_tokens,
+            "prompt_tokens": total_prompt_tokens,
+            "completion_tokens": total_completion_tokens,
+            "estimated_cost_usd": round(estimated_cost, 4),
+            "accuracy_by_type": type_accuracy
+        }
+    }
+
+    # Save results
+    results_data = [
+        {
+            "question_id": r.question_id,
+            "question": r.question,
+            "gold_answer": r.gold_answer,
+            "predicted_answer": r.predicted_answer,
+            "accuracy": r.accuracy,
+            "elapsed_time": round(r.elapsed_time, 2),
+            "token_usage": r.token_usage,
+            "tool_summary": r.tool_summary,
+            "error": r.error,
+            "q_type": r.q_type
+        }
+        for r in results
+    ]
+
+    with open(result_dir / "results.json", "w", encoding="utf-8") as f:
+        json.dump(results_data, f, indent=2, ensure_ascii=False)
+
+    with open(result_dir / "summary.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+
+    # Save console output
+    with open(result_dir / "console_output.txt", "w", encoding="utf-8") as f:
+        f.write(console_log.getvalue())
+
+    return summary
 
 
 async def run_benchmark_for_model_agent(
@@ -512,6 +696,7 @@ async def run_benchmark_for_model_agent(
     agent = create_agent(agent_name)
 
     results: List[QuestionResult] = []
+    summary = {}
 
     try:
         # Process questions with progress bar
@@ -539,87 +724,40 @@ async def run_benchmark_for_model_agent(
                 status = f"ERROR: {result.error[:50]}"
             log_print(f"  [{result.question_id}] {status} | {result.elapsed_time:.1f}s")
 
+            # Save intermediate results after each question
+            summary = save_results_to_disk(
+                results=results,
+                model=model,
+                agent_name=agent_name,
+                result_dir=result_dir,
+                console_log=console_log,
+                is_complete=False
+            )
+
         pbar.close()
 
     finally:
         # Always close the agent
         await agent.close()
 
-    # Calculate summary statistics
-    total = len(results)
-    correct = sum(1 for r in results if r.accuracy)
-    errors = sum(1 for r in results if r.error)
+        # Save final results (even if interrupted)
+        if results:
+            summary = save_results_to_disk(
+                results=results,
+                model=model,
+                agent_name=agent_name,
+                result_dir=result_dir,
+                console_log=console_log,
+                is_complete=True
+            )
 
-    total_time = sum(r.elapsed_time for r in results)
-    avg_time = total_time / total if total > 0 else 0
-
-    total_prompt_tokens = sum(r.token_usage.get("prompt_tokens", 0) for r in results)
-    total_completion_tokens = sum(r.token_usage.get("completion_tokens", 0) for r in results)
-    total_tokens = total_prompt_tokens + total_completion_tokens
-
-    estimated_cost = estimate_cost(model.name, total_prompt_tokens, total_completion_tokens)
-
-    # Accuracy by question type
-    type_stats = {}
-    for r in results:
-        if r.q_type not in type_stats:
-            type_stats[r.q_type] = {"total": 0, "correct": 0}
-        type_stats[r.q_type]["total"] += 1
-        if r.accuracy:
-            type_stats[r.q_type]["correct"] += 1
-
-    type_accuracy = {
-        k: v["correct"] / v["total"] if v["total"] > 0 else 0
-        for k, v in type_stats.items()
-    }
-
-    summary = {
-        "model": model.name,
-        "agent": agent_name,
-        "timestamp": datetime.now().isoformat(),
-        "statistics": {
-            "total_questions": total,
-            "correct": correct,
-            "errors": errors,
-            "accuracy": correct / total if total > 0 else 0,
-            "total_time_seconds": round(total_time, 2),
-            "avg_time_seconds": round(avg_time, 2),
-            "total_tokens": total_tokens,
-            "prompt_tokens": total_prompt_tokens,
-            "completion_tokens": total_completion_tokens,
-            "estimated_cost_usd": round(estimated_cost, 4),
-            "accuracy_by_type": type_accuracy
-        }
-    }
-
-    # Save results
-    results_data = [
-        {
-            "question_id": r.question_id,
-            "question": r.question,
-            "gold_answer": r.gold_answer,
-            "predicted_answer": r.predicted_answer,
-            "accuracy": r.accuracy,
-            "elapsed_time": round(r.elapsed_time, 2),
-            "token_usage": r.token_usage,
-            "tool_summary": r.tool_summary,
-            "error": r.error,
-            "q_type": r.q_type
-        }
-        for r in results
-    ]
-
-    with open(result_dir / "results.json", "w", encoding="utf-8") as f:
-        json.dump(results_data, f, indent=2, ensure_ascii=False)
-
-    with open(result_dir / "summary.json", "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-
-    # Save console output
-    with open(result_dir / "console_output.txt", "w", encoding="utf-8") as f:
-        f.write(console_log.getvalue())
-
-    print(f"\nCompleted {model.name}/{agent_name}: {correct}/{total} ({correct/total*100:.1f}%)")
+    # Print completion message
+    if results and summary:
+        stats = summary.get("statistics", {})
+        total = stats.get("total_questions", len(results))
+        correct = stats.get("correct", 0)
+        accuracy_pct = stats.get("accuracy", 0) * 100
+        print(f"\nCompleted {model.name}/{agent_name}: {correct}/{total} ({accuracy_pct:.1f}%)")
 
     return summary
 
@@ -950,7 +1088,7 @@ Examples:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=120,
+        default=300,
         help="Timeout per question in seconds (default: 120)"
     )
 
