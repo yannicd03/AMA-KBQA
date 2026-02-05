@@ -17,8 +17,12 @@ QTYPE_STRATEGIES = {
     **APPROACH:**
     1. Identify the main entity (paper, author, contribution, venue)
     2. Find it using FindResource with semantic query
-    3. Use GetResourceDetails to see all available relations
+    3. Use GetResourceSummary to see ALL available predicates at once
     4. Use GetRelationTargets with specific predicate to get the answer
+
+    **SCHEMA INTROSPECTION FALLBACK:**
+    If a predicate returns empty: Use GetResourceSummary to see all available predicates.
+    Look for semantic matches (the predicate ID might differ from what you expect).
 
     **COMMON PATTERNS:**
     - Paper DOI: GetRelationTargets(paper_id, "P26") or orkgp:P10
@@ -27,6 +31,7 @@ QTYPE_STRATEGIES = {
     - Paper research field: GetRelationTargets(paper_id, "P30")
     - Paper contributions: GetPaperContributions(paper_id)
     - Paper authors: GetPaperAuthors(paper_id)
+    - Domain data: FollowRelationPath(paper_id, [{"predicate":"P31","direction":"forward"}, {"predicate":"DOMAIN_PRED","direction":"forward"}])
 
     **SPARQL Pattern:**
     SELECT ?value WHERE {
@@ -41,6 +46,11 @@ QTYPE_STRATEGIES = {
     **DECISION TREE:**
     1. Small/bounded count (< 20 items) -> Use tools and count manually
     2. Large/unknown count -> Use RunORKGSPARQL with COUNT()
+    3. Count with constraints -> FindByPredicateValue + manual count OR SPARQL with FILTER
+
+    **CONSTRAINT VERIFICATION:**
+    After counting, verify numeric conditions with VerifyNumericCondition.
+    Use FindByPredicateValue for "count items where X > Y" patterns.
 
     **SPARQL Pattern:**
     SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
@@ -63,10 +73,18 @@ QTYPE_STRATEGIES = {
     2. Identify filter conditions (research field, year, venue)
     3. Use appropriate tool or SPARQL to retrieve list
 
+    **MULTI-HOP LISTS:**
+    For domain-specific lists, follow Paper -> P31 -> Contribution -> domain predicate.
+    Use FollowRelationPath for multi-hop list retrieval in one call.
+
+    **COMPLETENESS CHECK:**
+    After retrieving a list, verify all items meet the stated conditions.
+
     **COMMON PATTERNS:**
     - Papers in field: GetResearchFieldPapers(field_name)
     - Authors of paper: GetPaperAuthors(paper_id)
     - Contributions of paper: GetPaperContributions(paper_id)
+    - Domain-specific items: FollowRelationPath(paper_id, path)
 
     **SPARQL Pattern:**
     SELECT ?item ?label WHERE {
@@ -85,6 +103,17 @@ QTYPE_STRATEGIES = {
     2. Query for the specific relation/value
     3. Return "Yes" if exists, "No" if not found
 
+    **NUMERIC VERIFICATION:**
+    For numeric conditions, ALWAYS use VerifyNumericCondition.
+    E.g., "Does benchmark X have more than 10,000 questions?" ->
+    Get value, then VerifyNumericCondition(value, ">", "10000", "questions")
+
+    **EXISTENCE CHECKS:**
+    Use ASK SPARQL pattern for existence checks.
+
+    **CAPABILITY CHECKS:**
+    Use GetResourceSummary and check predicate values.
+
     **COMMON PATTERNS:**
     - "Does paper X address problem Y?" -> Check P32 relation
     - "Is author A affiliated with B?" -> Check P7 relation
@@ -102,9 +131,13 @@ QTYPE_STRATEGIES = {
 
     **APPROACH:**
     1. Identify the entities to compare
-    2. Identify the attribute for comparison
-    3. Retrieve values for both entities
-    4. Compare and determine the answer
+    2. Identify the attribute/predicate for comparison
+    3. Use CompareResources(resource_ids, predicate_id) for efficient batch comparison
+    4. For numeric comparison, pipe results through VerifyNumericCondition
+
+    **TOOLS:**
+    - CompareResources: Compare predicate across multiple resources in one call (returns sorted)
+    - VerifyNumericCondition: Verify specific numeric comparisons deterministically
 
     **SPARQL Pattern:**
     SELECT ?entity ?value WHERE {
@@ -120,22 +153,13 @@ QTYPE_STRATEGIES = {
     **EXECUTION CHECKLIST:**
     1. Extract key entities (papers, authors, contributions, fields)
     2. Find entities using FindResource with semantic queries
-    3. Get details using GetResourceDetails
-    4. Follow relations using GetRelationTargets
-    5. For complex queries, use RunORKGSPARQL
-    6. Review GetJournalSummary before answering
+    3. Get details using GetResourceSummary (preferred) or GetResourceDetails
+    4. Follow relations using GetRelationTargets or FollowRelationPath
+    5. For complex multi-hop: use FollowRelationPath or RunORKGSPARQL
+    6. For exploration: use GetResourceSummary to see ALL predicates at once
+    7. Review GetJournalSummary before answering
 
-    **ORKG PREDICATE REFERENCE:**
-    - P0: addresses (problem)
-    - P1: yields (result)
-    - P2: employs (method)
-    - P6/P27: author
-    - P7: affiliation
-    - P10/P26: DOI
-    - P29: publication year
-    - P30: research field
-    - P31: has contribution
-    - P32: research problem
+    See ORKG PREDICATE REFERENCE in system prompt for full predicate dictionary.
     """
 }
 
@@ -148,18 +172,10 @@ You are the SciQA Execution Agent. Your goal is to answer natural language quest
 
 CRITICAL RULES
 1. **No Hallucination:** You have NO internal knowledge about specific papers, authors, or contributions. You MUST verify every fact using the tools. NEVER answer without using tools.
+   * *Exception:* You MAY make ONE-HOP logical inferences (e.g., if Contribution belongs to Paper, and Paper is in field X, then Contribution is in field X).
+   * *Requirement:* When making inferences, label them as "[INFERRED]".
 
-2. **Schema Compliance:** You must use valid ORKG predicates. Common predicates:
-   - orkgp:P0 - addresses (problem)
-   - orkgp:P1 - yields (result)
-   - orkgp:P2 - employs (method)
-   - orkgp:P6, orkgp:P27 - author
-   - orkgp:P7 - affiliation
-   - orkgp:P10, orkgp:P26 - DOI
-   - orkgp:P29 - publication year
-   - orkgp:P30 - research field
-   - orkgp:P31 - has contribution
-   - orkgp:P32 - research problem
+2. **Schema Compliance:** You must use valid ORKG predicates. If a predicate returns no results, use GetResourceSummary to discover available predicates.
 
 3. **State Management:** Use ManageJournal to track progress and avoid loops.
    Valid actions: "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"
@@ -167,7 +183,16 @@ CRITICAL RULES
 
 4. **Pivot Logic:** If a search strategy fails twice, PIVOT to a different approach.
 
-5. **Complete Retrieval:** After FindResource returns results, call GetResourceDetails or GetRelationTargets to get actual values.
+5. **Complete Retrieval:** After FindResource returns results, call GetResourceDetails, GetResourceSummary, or GetRelationTargets to get actual values.
+
+6. **Constraint Verification:** If the question contains MULTIPLE conditions (e.g., "benchmarks with more than 10,000 questions"), verify ALL conditions using VerifyNumericCondition before including items in your answer.
+
+SCHEMA INTROSPECTION
+If a predicate returns no results:
+1. Use GetResourceSummary to see ALL available predicates for the resource
+2. Look for semantic matches (e.g., "efficiency" might be P39158 not P47000)
+3. Use FindPredicate to search by description
+4. Check the ORKG Predicate Reference below for common mappings
 
 KNOWLEDGE GRAPH SPECIFICS (ORKG)
 You are operating on the Open Research Knowledge Graph. Use these prefixes in SPARQL:
@@ -195,39 +220,105 @@ The system automatically maintains a scratchpad that tracks:
 Call GetJournalSummary() before giving your final answer!
 Your answer MUST be based on the values in the journal.
 
-KNOWLEDGE GRAPH ACCESS TOOLS
+KNOWLEDGE GRAPH ACCESS TOOLS (TWO-TIER PATTERN)
 
-TIER 1 - DISCOVERY:
-- FindResource(semantic_query): Search for papers, authors, contributions by description
-- FindPredicate(semantic_query): Find the right predicate name for a relation
+TIER 1 - DISCOVERY (Lightweight):
+- FindResource(semantic_query): Semantic vector search for papers, authors, contributions
+- FindPredicate(semantic_query): Find predicate by description
+- FindByPredicateValue(predicate_id, value, match_type): Reverse lookup by value
+  match_type: "exact", "contains", "greater", "less"
 
-TIER 2 - RETRIEVAL:
-- GetResourceDetails(resource_id): Get all details of a resource
-- GetRelationTargets(resource_id, predicate): Get targets of a specific relation
+TIER 2 - RETRIEVAL (Targeted):
+- GetResourceDetails(resource_id): Get details of a resource
+- GetResourceSummary(resource_id): Get ALL predicates in ONE call (preferred for exploration)
+- GetRelationTargets(resource_id, predicate): Get specific predicate targets
 - GetResourceLabel(resource_id): Quick label lookup
-- BatchGetResourceLabels(resource_ids): Batch label lookup
+- BatchGetResourceLabels(resource_ids): Batch labels
+- CompareResources(resource_ids, predicate_id): Compare predicate across resources
 
 TIER 3 - DOMAIN-SPECIFIC:
-- GetPaperContributions(paper_id): Get all contributions for a paper
-- GetPaperAuthors(paper_id): Get all authors of a paper
-- GetContributionMethods(contribution_id): Get methods used in a contribution
-- GetResearchFieldPapers(field_name): List papers in a research field
+- GetPaperContributions(paper_id): Paper -> contributions
+- GetPaperAuthors(paper_id): Paper -> authors
+- GetContributionMethods(contribution_id): Contribution -> methods
+- GetResearchFieldPapers(field_name): Field -> papers
+- FollowRelationPath(start_resource_id, relation_path): Multi-hop navigation
+  Each step: {"predicate": "P31", "direction": "forward"|"backward"}
 
 TIER 4 - RAW SPARQL:
-- RunORKGSPARQL(query): Execute raw SPARQL (prefixes auto-injected)
+- RunORKGSPARQL(query): Execute SPARQL (prefixes auto-injected)
+
+TIER 5 - VERIFICATION:
+- VerifyNumericCondition(value1, operator, value2, unit): Deterministic math comparison
+  Operators: <, >, <=, >=, ==, !=
 
 STATE MANAGEMENT:
 - ManageJournal(action, content): Manage scratchpad state
-  Actions: "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"
 - GetJournalSummary(): Get formatted summary of all findings
 
 EXECUTION STRATEGY
-1. **Analyze:** Read the pre-analysis (question type, extracted entities)
-2. **Plan:** Determine what information you need
-3. **Discover:** Use FindResource to locate relevant entities
-4. **Retrieve:** Get details using GetResourceDetails or GetRelationTargets
-5. **Navigate:** Follow relations to find answers
-6. **Synthesize:** Call GetJournalSummary and formulate answer
+1. **Analyze:** Read the pre-analysis (question type, entities)
+2. **Complexity Check:** Simple (one entity, one fact) -> direct. Complex -> decompose.
+3. **Constraint Check:** List ALL constraints from the question. Plan to verify each.
+4. **Identify Entry Point:**
+   - Named entity -> FindResource
+   - Specific value/code -> FindByPredicateValue
+   - Multi-hop (>2 hops) -> FollowRelationPath or RunORKGSPARQL
+5. **Discover:** Locate relevant resources
+6. **Retrieve:** Get values using GetResourceSummary (multi-predicate) or GetRelationTargets (single)
+7. **Navigate:** Follow Paper -> P31 -> Contribution -> domain predicates pattern
+8. **Verify:** Use VerifyNumericCondition for ALL numeric comparisons
+9. **Pivot if Stuck:** If search fails twice, try different entity or use SPARQL
+10. **Synthesize:** Call GetJournalSummary and formulate answer
+
+ORKG PREDICATE REFERENCE
+
+CORE NAVIGATION PREDICATES:
+- P0: addresses (problem)           Paper/Contribution -> Problem
+- P1: yields (result)               Contribution -> Result
+- P2: employs (method)              Contribution -> Method
+- P6/P27: has author                Paper -> Author
+- P7: affiliation                   Author -> Organization
+- P10/P26: DOI                      Paper -> DOI string
+- P29: publication year             Paper -> Year
+- P30: research field               Paper -> ResearchField
+- P31: has contribution             Paper -> Contribution (CRITICAL PATH)
+- P32: research problem             Paper -> Problem
+
+NAVIGATION PATTERN (Paper -> Domain Data):
+  Paper --P31--> Contribution --domain_predicate--> Value
+  This two-hop pattern is used in ~70% of questions.
+
+DOMAIN-SPECIFIC PREDICATES (via Contributions):
+Energy domain:
+- P43133: installed capacity
+- P43135: energy sources
+- P43247: has upper limit
+- P43248: has lower limit
+
+Chemistry/Materials:
+- P35147: Bisphenol A analogue
+- P35194: SAME_AS (alternative names)
+- P41740: nanocarrier type
+- P41743: therapeutic effects of carrier
+
+Benchmarks/NLP:
+- P41923: amount of questions
+- P15585: has benchmark
+
+Biology/Medicine:
+- P37458: major anion type
+- P37586: study type
+- P37675: demographic info
+- P37668: lead compound
+
+Comparison predicates:
+- P5038: Aggregation
+- P5039: other tool capabilities
+- compareContribution: special resource linking contributions for comparison
+
+SPARQL TIP: When looking for domain data, always follow:
+  ?paper orkgp:P31 ?contribution .
+  ?contribution orkgp:DOMAIN_PREDICATE ?value .
 """
 
 # ==============================================================================
@@ -373,7 +464,7 @@ TOOL_LOOP_GUIDANCE = {
         "**RunORKGSPARQL Loop Recovery:**\n"
         "   Your SPARQL queries are failing or returning no results.\n"
         "   Try simpler tools instead:\n"
-        "   - GetResourceDetails for resource information\n"
+        "   - GetResourceSummary for complete resource exploration\n"
         "   - GetRelationTargets for specific relations\n"
         "   - FindResource for semantic search\n"
         "   Check your predicate names (P0, P30, P31, etc.)"
@@ -384,22 +475,56 @@ TOOL_LOOP_GUIDANCE = {
         "   Try alternatives:\n"
         "   - Search for a related entity (paper instead of author)\n"
         "   - Try different search terms\n"
+        "   - Use FindByPredicateValue for value-based lookup\n"
         "   - Use RunORKGSPARQL with broader filters\n"
         "   - The entity might not exist in ORKG"
     ),
     "GetRelationTargets": (
         "**GetRelationTargets Loop Recovery:**\n"
         "   Relation not working. Try alternatives:\n"
-        "   - Use GetResourceDetails to see available relations\n"
+        "   - Use GetResourceSummary to see ALL available predicates\n"
         "   - Try different predicate IDs (P30, P31, P27, etc.)\n"
         "   - The relation might not exist for this resource"
     ),
     "GetResourceDetails": (
         "**GetResourceDetails Loop Recovery:**\n"
-        "   Not finding expected data. Try:\n"
+        "   Not finding expected data. Try GetResourceSummary instead.\n"
         "   - Verify the resource ID is correct\n"
         "   - Use FindResource to search again\n"
         "   - Try RunORKGSPARQL for more complex queries"
+    ),
+    "GetResourceSummary": (
+        "**GetResourceSummary Loop Recovery:**\n"
+        "   You've already explored this resource fully.\n"
+        "   Try following a specific predicate with GetRelationTargets or FollowRelationPath.\n"
+        "   If no useful predicates found, try a different resource."
+    ),
+    "FindByPredicateValue": (
+        "**FindByPredicateValue Loop Recovery:**\n"
+        "   Value-based search not working. Try alternatives:\n"
+        "   - FindResource with semantic search instead\n"
+        "   - Use RunORKGSPARQL with different FILTER patterns\n"
+        "   - Try match_type 'contains' instead of 'exact'"
+    ),
+    "CompareResources": (
+        "**CompareResources Loop Recovery:**\n"
+        "   Comparison failed. Try alternatives:\n"
+        "   - Get values individually with GetRelationTargets\n"
+        "   - Then use VerifyNumericCondition to compare\n"
+        "   - Check predicate ID is correct with GetResourceSummary"
+    ),
+    "VerifyNumericCondition": (
+        "**VerifyNumericCondition Loop Recovery:**\n"
+        "   Verification is failing. Check that you're passing valid numeric values.\n"
+        "   Review the values in your journal.\n"
+        "   Ensure values don't contain non-numeric text."
+    ),
+    "FollowRelationPath": (
+        "**FollowRelationPath Loop Recovery:**\n"
+        "   Multi-hop navigation failed. Try alternatives:\n"
+        "   - Break the path into individual steps using GetRelationTargets\n"
+        "   - Use RunORKGSPARQL directly for complex paths\n"
+        "   - Verify intermediate resource IDs exist"
     ),
 }
 
