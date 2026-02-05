@@ -1,15 +1,119 @@
 """
 Multi-Model Benchmarking Script for KBQA Agents
+================================================
 
 This script benchmarks multiple LLM models against KQAPro and SciQA agents
 using pre-generated questionnaires. It provides comprehensive evaluation
-with leaderboards, detailed metrics, and cost estimation.
+with leaderboards, detailed metrics, cost estimation, and LLM-as-judge
+accuracy evaluation using DeepSeek v3.2.
 
-Usage:
-    python -m ama_kbqa.benchmark_agents --help
-    python -m ama_kbqa.benchmark_agents --dry-run
-    python -m ama_kbqa.benchmark_agents --models minimax-m2.1 --agents kqapro --n-questions 3
-    python -m ama_kbqa.benchmark_agents --export-csv
+Prerequisites
+-------------
+1. Questionnaire files must exist in db/:
+   - db/kqapro_questionnaire.json (for KQAPro agent)
+   - db/sciqa_questionnaire.json (for SciQA agent)
+
+   Generate these using: python -m ama_kbqa.generate_questionnaire
+
+2. Required environment variables in .env:
+   - OPENROUTER_API_KEY (for all models via OpenRouter)
+
+3. Databases must be running:
+   - Qdrant (vector database)
+   - Virtuoso (SPARQL endpoint)
+
+Available Models
+----------------
+The following models are benchmarked by default (all via OpenRouter):
+
+  Name                  Model ID
+  ----                  --------
+  minimax-m2.1          minimax/minimax-m2.1
+  glm-4.7               zhipu-ai/glm-4.7
+  kimi-k2.5             moonshotai/kimi-k2.5
+  deepseek-v3.2         deepseek/deepseek-chat-v3-0324
+  gpt-oss-120b          openai/gpt-oss-120b:nitro
+  qwen3-32b             qwen/qwen3-32b:nitro
+  nemotron-3-nano-30b   nvidia/nemotron-3-nano-30b-a3b:nitro
+
+Available Agents
+----------------
+  kqapro    KQAPro knowledge base (Wikidata-derived)
+  sciqa     SciQA scientific knowledge base
+
+CLI Arguments
+-------------
+  --agents AGENTS       Which agents to test: kqapro, sciqa, or both (default: both)
+  --models MODELS       Filter to specific models by name (default: all)
+  --n-questions N       Limit questions per agent (default: all questions)
+  --output-dir DIR      Custom output directory (default: benchmark_results/<timestamp>)
+  --timeout SECONDS     Timeout per question in seconds (default: 300)
+  --resume              Skip model/agent combinations that already have results
+  --dry-run             Preview what would run without executing
+  --export-csv          Export results to CSV file
+
+Output Structure
+----------------
+Results are saved to benchmark_results/<timestamp>/ with the following structure:
+
+  benchmark_results/<timestamp>/
+  ├── overview.json              # Leaderboards and cross-model comparison
+  ├── benchmark_results.csv      # CSV export (if --export-csv)
+  ├── kqapro/
+  │   ├── minimax-m2.1/
+  │   │   ├── results.json       # Per-question results
+  │   │   ├── summary.json       # Aggregate statistics
+  │   │   └── console_output.txt # Full console log
+  │   ├── deepseek-v3.2/
+  │   │   └── ...
+  │   └── ...
+  └── sciqa/
+      └── ...
+
+Summary JSON Fields
+-------------------
+Each summary.json contains:
+  - total_questions: Number of questions processed
+  - correct: Number of correct answers
+  - errors: Number of errors/timeouts
+  - accuracy: Correct / Total ratio
+  - total_time_seconds: Total processing time
+  - avg_time_seconds: Average time per question
+  - total_tokens: Total tokens used
+  - avg_tokens: Average tokens per question
+  - prompt_tokens: Total input tokens
+  - completion_tokens: Total output tokens
+  - estimated_cost_usd: Estimated API cost
+  - accuracy_by_type: Breakdown by question type
+
+Usage Examples
+--------------
+# Show help and all options
+python -m ama_kbqa.benchmark_agents --help
+
+# Preview what would run (no execution)
+python -m ama_kbqa.benchmark_agents --dry-run
+
+# Quick test: single model, single agent, 3 questions
+python -m ama_kbqa.benchmark_agents --models minimax-m2.1 --agents kqapro --n-questions 3
+
+# Test multiple specific models
+python -m ama_kbqa.benchmark_agents --models deepseek-v3.2 qwen3-32b --agents kqapro
+
+# Full benchmark on KQAPro only with CSV export
+python -m ama_kbqa.benchmark_agents --agents kqapro --export-csv
+
+# Resume an interrupted benchmark (skips completed runs)
+python -m ama_kbqa.benchmark_agents --resume
+
+# Resume into a specific output directory
+python -m ama_kbqa.benchmark_agents --resume --output-dir benchmark_results/2024-01-15_10-30-00
+
+# Run with longer timeout for complex questions
+python -m ama_kbqa.benchmark_agents --timeout 600
+
+# Full benchmark: all models, all agents, with CSV
+python -m ama_kbqa.benchmark_agents --export-csv
 """
 
 from __future__ import annotations
@@ -102,7 +206,21 @@ BENCHMARK_MODELS: List[ModelConfig] = [
     ModelConfig(
         name="gpt-oss-120b",
         provider="openrouter",
-        model_id="openai/gpt-4.1",
+        model_id="openai/gpt-oss-120b:nitro",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
+        name="qwen3-32b",
+        provider="openrouter",
+        model_id="qwen/qwen3-32b:nitro",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
+        name="nemotron-3-nano-30b",
+        provider="openrouter",
+        model_id="nvidia/nemotron-3-nano-30b-a3b:nitro",
         base_url="https://openrouter.ai/api/v1",
         api_key_env="OPENROUTER_API_KEY"
     ),
@@ -125,6 +243,8 @@ MODEL_COSTS = {
     "kimi-k2.5": {"input": 0.5, "output": 1.5},
     "deepseek-v3.2": {"input": 0.27, "output": 1.10},
     "gpt-oss-120b": {"input": 2.0, "output": 8.0},
+    "qwen3-32b": {"input": 0.12, "output": 0.30},
+    "nemotron-3-nano-30b": {"input": 0.10, "output": 0.20},
 }
 
 
@@ -389,35 +509,91 @@ async def evaluate_accuracy_llm(
         base_url=JUDGE_MODEL_CONFIG.base_url
     )
 
-    prompt = f"""You are an expert judge evaluating answers to knowledge base questions.
+    prompt = f"""You are a strict judge evaluating answers to knowledge base questions.
+Your task is to determine if the predicted answer correctly answers the question.
 
+Question Type: {q_type}
 Question: {question}
-
 Gold Answer: {gold}
-
 Predicted Answer: {predicted}
 
-Determine if the predicted answer is correct. The predicted answer is correct if:
-1. It is semantically equivalent to the gold answer (exact wording not required)
-2. It contains the correct information even if it includes additional context
-3. For yes/no questions, "true"/"false" are equivalent to "yes"/"no"
-4. For numeric answers, the numbers must match exactly
-5. For entity names, minor spelling variations or alternate names for the same entity are acceptable
+EVALUATION RULES (apply strictly):
 
-Respond with ONLY "CORRECT" or "INCORRECT" (no explanation needed)."""
+1. INCORRECT if the predicted answer:
+   - Says "I don't know", "unable to find", "no results", or similar failure phrases
+   - Provides a different entity, date, number, or fact than the gold answer
+   - Is empty, None, or contains only filler text
+   - Asks a clarifying question instead of answering
+
+2. CORRECT only if the predicted answer:
+   - Provides the same factual information as the gold answer
+   - For yes/no questions: "true"="yes", "false"="no" (must match the gold)
+   - For counts: the number must match exactly
+   - For entities: must refer to the same entity (alternate names OK, e.g., "USA"="United States")
+   - For dates: must match (different formats OK, e.g., "1990-01-15"="January 15, 1990")
+
+3. BE STRICT: When in doubt, mark as INCORRECT. The predicted answer must clearly and directly answer the question with the correct information.
+
+Respond with JSON: {{"correct": true}} or {{"correct": false}}"""
+
+    async def call_judge(use_json_mode: bool) -> Optional[bool]:
+        """Call the judge API with optional JSON mode."""
+        kwargs = {
+            "model": JUDGE_MODEL_CONFIG.model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 20,
+            "temperature": 0
+        }
+        if use_json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = await client.chat.completions.create(**kwargs)
+        content = response.choices[0].message.content.strip()
+
+        # Try to parse as JSON first
+        try:
+            result = json.loads(content)
+            if isinstance(result.get("correct"), bool):
+                return result["correct"]
+        except json.JSONDecodeError:
+            pass
+
+        # Fall back to text parsing
+        content_upper = content.upper()
+        if content_upper.startswith("CORRECT") or '"correct": true' in content.lower() or '"correct":true' in content.lower():
+            return True
+        if content_upper.startswith("INCORRECT") or '"correct": false' in content.lower() or '"correct":false' in content.lower():
+            return False
+
+        return None  # Could not parse
 
     try:
-        response = await client.chat.completions.create(
-            model=JUDGE_MODEL_CONFIG.model_id,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=10,
-            temperature=0
-        )
+        # Try with JSON mode first (most reliable)
+        result = await call_judge(use_json_mode=True)
+        if result is not None:
+            return result
 
-        judgment = response.choices[0].message.content.strip().upper()
-        return "CORRECT" in judgment
+        # If JSON mode returned unparseable result, try without
+        result = await call_judge(use_json_mode=False)
+        if result is not None:
+            return result
+
+        # Could not parse response, default to string matching
+        print("  [Judge] Could not parse response, falling back to string matching")
+        return evaluate_accuracy_string(predicted, gold, q_type)
 
     except Exception as e:
+        error_msg = str(e).lower()
+        # If JSON mode not supported, retry without it
+        if "json" in error_msg or "response_format" in error_msg:
+            try:
+                result = await call_judge(use_json_mode=False)
+                if result is not None:
+                    return result
+            except Exception as e2:
+                print(f"  [Judge Error: {e2}] Falling back to string matching")
+                return evaluate_accuracy_string(predicted, gold, q_type)
+
         print(f"  [Judge Error: {e}] Falling back to string matching")
         return evaluate_accuracy_string(predicted, gold, q_type)
 
@@ -584,6 +760,7 @@ def save_results_to_disk(
     total_prompt_tokens = sum(r.token_usage.get("prompt_tokens", 0) for r in results)
     total_completion_tokens = sum(r.token_usage.get("completion_tokens", 0) for r in results)
     total_tokens = total_prompt_tokens + total_completion_tokens
+    avg_tokens = total_tokens / total if total > 0 else 0
 
     estimated_cost = estimate_cost(model.name, total_prompt_tokens, total_completion_tokens)
 
@@ -614,6 +791,7 @@ def save_results_to_disk(
             "total_time_seconds": round(total_time, 2),
             "avg_time_seconds": round(avg_time, 2),
             "total_tokens": total_tokens,
+            "avg_tokens": round(avg_tokens, 2),
             "prompt_tokens": total_prompt_tokens,
             "completion_tokens": total_completion_tokens,
             "estimated_cost_usd": round(estimated_cost, 4),
@@ -723,6 +901,8 @@ async def run_benchmark_for_model_agent(
             if result.error:
                 status = f"ERROR: {result.error[:50]}"
             log_print(f"  [{result.question_id}] {status} | {result.elapsed_time:.1f}s")
+            log_print(f"      Gold: {result.gold_answer}")
+            log_print(f"      Pred: {result.predicted_answer}")
 
             # Save intermediate results after each question
             summary = save_results_to_disk(
@@ -1041,18 +1221,40 @@ def main():
         description="Benchmark multiple LLM models against KBQA agents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Available Models:
+  minimax-m2.1, glm-4.7, kimi-k2.5, deepseek-v3.2, gpt-oss-120b,
+  qwen3-32b, nemotron-3-nano-30b
+
 Examples:
-  # Preview what would run
+  # Preview what would run (no execution)
   python -m ama_kbqa.benchmark_agents --dry-run
 
-  # Test single model on single agent with 3 questions
+  # Quick test: single model, single agent, 3 questions
   python -m ama_kbqa.benchmark_agents --models minimax-m2.1 --agents kqapro --n-questions 3
+
+  # Test multiple specific models on KQAPro
+  python -m ama_kbqa.benchmark_agents --models deepseek-v3.2 qwen3-32b --agents kqapro
 
   # Full benchmark with CSV export
   python -m ama_kbqa.benchmark_agents --export-csv
 
-  # Resume interrupted benchmark
+  # Resume an interrupted benchmark
   python -m ama_kbqa.benchmark_agents --resume
+
+  # Resume into specific output directory
+  python -m ama_kbqa.benchmark_agents --resume --output-dir benchmark_results/2024-01-15_10-30-00
+
+Output:
+  Results saved to benchmark_results/<timestamp>/ containing:
+  - overview.json: Leaderboards by accuracy, speed, efficiency
+  - <agent>/<model>/results.json: Per-question results with gold/predicted answers
+  - <agent>/<model>/summary.json: Aggregate statistics and token usage
+  - benchmark_results.csv: CSV export (with --export-csv)
+
+Notes:
+  - Requires OPENROUTER_API_KEY in .env
+  - Questionnaires must exist in db/ (generate with generate_questionnaire.py)
+  - Uses DeepSeek v3.2 as LLM judge for semantic answer evaluation
 """
     )
 
@@ -1089,7 +1291,7 @@ Examples:
         "--timeout",
         type=int,
         default=300,
-        help="Timeout per question in seconds (default: 120)"
+        help="Timeout per question in seconds (default: 300)"
     )
 
     parser.add_argument(
