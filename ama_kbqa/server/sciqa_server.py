@@ -17,6 +17,11 @@ Tools provided:
 - GetPaperAuthors: Get authors for a paper
 - GetContributionMethods: Get methods used in a contribution
 - GetResearchFieldPapers: List papers in a research field
+- VerifyNumericCondition: Deterministic numeric/date comparison
+- GetResourceSummary: All-in-one resource exploration
+- FindByPredicateValue: Reverse lookup by predicate value
+- CompareResources: Compare a predicate across multiple resources
+- FollowRelationPath: Multi-hop relation navigation
 - ManageJournal: Scratchpad for state management
 - GetJournalSummary: Format journal state for synthesis
 """
@@ -232,6 +237,31 @@ class JournalState(BaseModel):
         )
         lines.append("=" * 70)
         return "\n".join(lines)
+
+
+class NumericComparisonResponse(BaseModel):
+    """Response from numeric/date comparison verification."""
+    verdict: Literal["TRUE", "FALSE", "ERROR"]
+    explanation: str
+    value1: str
+    value2: str
+    operator: str
+
+
+class ComparisonResult(BaseModel):
+    """Single resource's predicate value in a comparison."""
+    resource_id: str
+    name: str
+    value: Any
+    normalized_value: Optional[float] = None
+
+
+class CompareResourcesResponse(BaseModel):
+    """Response from comparing a predicate across multiple resources."""
+    predicate: str
+    results: list[ComparisonResult]
+    sorted_by: str
+    status: str
 
 
 # Global state container
@@ -1099,7 +1129,7 @@ async def GetResearchFieldPapers(
         SELECT ?paper ?paperLabel ?year WHERE {{
             GRAPH <{SCIQA_GRAPH}> {{
                 ?field rdfs:label ?fieldLabel .
-                FILTER(CONTAINS(LCASE(?fieldLabel), LCASE("{field_name}")))
+                FILTER(CONTAINS(LCASE(STR(?fieldLabel)), LCASE("{field_name}")))
                 ?paper orkgp:P30 ?field .
                 OPTIONAL {{ ?paper rdfs:label ?paperLabel . }}
                 OPTIONAL {{ ?paper orkgp:P29 ?year . }}
@@ -1144,7 +1174,610 @@ async def GetResearchFieldPapers(
 
 
 # ==============================================================================
-# TOOL 12: ManageJournal
+# TOOL 12: VerifyNumericCondition
+# ==============================================================================
+
+@mcp.tool()
+async def VerifyNumericCondition(
+    app_context: Context,
+    value1: str,
+    operator: Literal["<", ">", "<=", ">=", "==", "!="],
+    value2: str,
+    unit: str = ""
+) -> str:
+    """
+    Performs deterministic mathematical comparison between two values.
+
+    Returns a definitive TRUE/FALSE verdict for numeric comparisons.
+    Use this whenever the question involves numeric conditions, thresholds,
+    or comparisons (e.g., "more than 10,000", "before 2020", "greater than X").
+
+    Supported formats:
+    - Plain numbers: "150", "1500000"
+    - Numbers with multipliers: "150 million", "1.5k"
+    - Dates (ISO format): "2019-05-15"
+    - Numbers with commas: "1,500,000"
+
+    Args:
+        value1: First value to compare
+        operator: Comparison operator: <, >, <=, >=, ==, !=
+        value2: Second value to compare
+        unit: Optional unit description for context (e.g., "questions", "papers")
+
+    Returns:
+        JSON with verdict (TRUE/FALSE/ERROR) and explanation
+    """
+    logger.info(f"VerifyNumericCondition: {value1} {operator} {value2} ({unit})")
+
+    def parse_numeric(val: str) -> float:
+        """Parse numeric value, handling common formats."""
+        val = val.strip().lower()
+
+        # Handle dates (convert to timestamp for comparison)
+        if "-" in val and len(val) >= 10:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(val.split("T")[0])
+                return dt.timestamp()
+            except Exception:
+                pass
+
+        # Handle multipliers
+        multipliers = {
+            "trillion": 1e12, "billion": 1e9, "million": 1e6,
+            "thousand": 1e3, "hundred": 1e2,
+            "k": 1e3, "m": 1e6, "b": 1e9, "t": 1e12
+        }
+
+        # Extract number and multiplier
+        import re
+        match = re.match(r"([+-]?[\d.,]+)\s*([a-z]+)?", val)
+        if match:
+            num_str = match.group(1).replace(",", "")
+            mult_str = match.group(2) or ""
+            num = float(num_str)
+            mult = multipliers.get(mult_str, 1.0)
+            return num * mult
+
+        # Fallback: try direct conversion
+        return float(val.replace(",", ""))
+
+    try:
+        num1 = parse_numeric(value1)
+        num2 = parse_numeric(value2)
+
+        comparisons = {
+            "<": num1 < num2,
+            ">": num1 > num2,
+            "<=": num1 <= num2,
+            ">=": num1 >= num2,
+            "==": abs(num1 - num2) < 1e-9,
+            "!=": abs(num1 - num2) >= 1e-9
+        }
+
+        result = comparisons[operator]
+        verdict = "TRUE" if result else "FALSE"
+
+        unit_str = f" {unit}" if unit else ""
+        explanation = f"{value1}{unit_str} {operator} {value2}{unit_str} → {num1} {operator} {num2} = {verdict}"
+
+        logger.info(f"VerifyNumericCondition result: {verdict}")
+
+        session_journal.verified_facts.append({
+            "fact": explanation,
+            "source": "VerifyNumericCondition"
+        })
+        session_journal.completed_steps.append(f"Verified: {explanation}")
+
+        response = NumericComparisonResponse(
+            verdict=verdict,
+            explanation=explanation,
+            value1=f"{num1}{unit_str}",
+            value2=f"{num2}{unit_str}",
+            operator=operator
+        )
+        return response.model_dump_json(indent=2)
+
+    except Exception as e:
+        logger.error(f"VerifyNumericCondition failed: {e}")
+        session_journal.failed_attempts.append(
+            f"VerifyNumericCondition({value1} {operator} {value2}): {str(e)[:100]}"
+        )
+        response = NumericComparisonResponse(
+            verdict="ERROR",
+            explanation=f"Could not compare values: {str(e)}",
+            value1=value1,
+            value2=value2,
+            operator=operator
+        )
+        return response.model_dump_json(indent=2)
+
+
+# ==============================================================================
+# TOOL 13: GetResourceSummary
+# ==============================================================================
+
+@mcp.tool()
+async def GetResourceSummary(
+    app_context: Context,
+    resource_id: str
+) -> str:
+    """
+    Get a comprehensive summary of an ORKG resource with ALL predicates and values in ONE call.
+
+    This is more efficient than GetResourceDetails + multiple GetRelationTargets calls.
+    Returns all predicates grouped by type (literal values vs. resource links).
+
+    Use this when:
+    - You need to explore what data a resource has
+    - You need multiple predicate values from the same resource
+    - A predicate search returned empty and you need to discover available predicates
+
+    Args:
+        resource_id: The resource ID (e.g., "R12345")
+
+    Returns:
+        JSON with resource_id, label, predicates (grouped), summary_stats, and status
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        query = f"""
+        SELECT ?pred ?predLabel ?obj ?objLabel WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                orkgr:{resource_id} ?pred ?obj .
+                OPTIONAL {{ ?pred rdfs:label ?predLabel }}
+                OPTIONAL {{ ?obj rdfs:label ?objLabel }}
+            }}
+        }}
+        """
+        full_query = SPARQL_PREFIXES + query
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        # Get resource label
+        label = ""
+        literal_values = {}
+        resource_links = {}
+
+        for binding in bindings:
+            pred_uri = binding.get("pred", {}).get("value", "")
+            pred_label = binding.get("predLabel", {}).get("value", "")
+            obj_value = binding.get("obj", {}).get("value", "")
+            obj_label = binding.get("objLabel", {}).get("value", "")
+            obj_type = binding.get("obj", {}).get("type", "")
+
+            # Extract predicate ID
+            pred_id = pred_uri.split("/")[-1]
+
+            # Skip RDF system predicates
+            if pred_uri.startswith("http://www.w3.org/1999/02/22-rdf-syntax-ns#") or \
+               pred_uri.startswith("http://www.w3.org/2000/01/rdf-schema#label"):
+                if pred_id == "label":
+                    label = obj_value
+                continue
+
+            if pred_id == "label":
+                label = obj_value
+                continue
+
+            display_name = pred_label if pred_label else pred_id
+
+            if obj_type == "literal" or not obj_value.startswith("http"):
+                # Literal value
+                if display_name not in literal_values:
+                    literal_values[display_name] = []
+                entry = {"value": obj_value, "predicate_id": pred_id}
+                if entry not in literal_values[display_name]:
+                    literal_values[display_name].append(entry)
+            else:
+                # Resource link
+                obj_id = obj_value.split("/")[-1]
+                if display_name not in resource_links:
+                    resource_links[display_name] = []
+                entry = {"id": obj_id, "predicate_id": pred_id}
+                if obj_label:
+                    entry["label"] = obj_label
+                    session_journal.visited_nodes[obj_id] = obj_label
+                if entry not in resource_links[display_name]:
+                    resource_links[display_name].append(entry)
+
+        # Update journal
+        session_journal.visited_nodes[resource_id] = label or resource_id
+        if literal_values or resource_links:
+            if resource_id not in session_journal.found_values:
+                session_journal.found_values[resource_id] = {}
+            for attr_name, attr_vals in literal_values.items():
+                session_journal.found_values[resource_id][attr_name] = attr_vals
+            for rel_name, rel_vals in resource_links.items():
+                session_journal.found_values[resource_id][rel_name] = rel_vals
+
+        session_journal.completed_steps.append(
+            f"GetResourceSummary('{resource_id}') -> {label}: "
+            f"{len(literal_values)} literal predicates, {len(resource_links)} resource links"
+        )
+
+        response = {
+            "resource_id": resource_id,
+            "label": label,
+            "literal_values": literal_values,
+            "resource_links": resource_links,
+            "summary_stats": {
+                "literal_predicate_count": len(literal_values),
+                "resource_link_count": len(resource_links),
+                "total_literal_values": sum(len(v) for v in literal_values.values()),
+                "total_resource_links": sum(len(v) for v in resource_links.values())
+            },
+            "status": f"Found {len(literal_values)} literal predicates and {len(resource_links)} resource links"
+        }
+
+        return json.dumps(response, indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in GetResourceSummary: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(f"GetResourceSummary('{resource_id}'): {str(e)}")
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 14: FindByPredicateValue
+# ==============================================================================
+
+@mcp.tool()
+async def FindByPredicateValue(
+    app_context: Context,
+    predicate_id: str,
+    value: str,
+    match_type: Literal["exact", "contains", "greater", "less"] = "exact"
+) -> str:
+    """
+    Reverse lookup: find resources by a predicate's value.
+
+    Use this to find resources that have a specific value for a given predicate.
+    E.g., "find all resources where P41923 > 10000" or "find resources with P30 = 'Computer Science'".
+
+    Args:
+        predicate_id: The predicate ID (e.g., "P30", "P41923")
+        value: The value to search for
+        match_type: How to match - "exact" (string equals), "contains" (substring),
+                    "greater" (numeric >), "less" (numeric <)
+
+    Returns:
+        JSON with matching resources
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        safe_value = value.replace('"', '\\"')
+
+        # Build FILTER clause based on match_type
+        if match_type == "exact":
+            filter_clause = f'FILTER(STR(?obj) = "{safe_value}")'
+        elif match_type == "contains":
+            filter_clause = f'FILTER(CONTAINS(LCASE(STR(?obj)), LCASE("{safe_value}")))'
+        elif match_type == "greater":
+            filter_clause = f'FILTER(xsd:decimal(?obj) > {safe_value})'
+        elif match_type == "less":
+            filter_clause = f'FILTER(xsd:decimal(?obj) < {safe_value})'
+        else:
+            filter_clause = f'FILTER(STR(?obj) = "{safe_value}")'
+
+        query = f"""
+        SELECT DISTINCT ?resource ?label WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                ?resource orkgp:{predicate_id} ?obj .
+                {filter_clause}
+                OPTIONAL {{ ?resource rdfs:label ?label }}
+            }}
+        }} LIMIT 50
+        """
+        full_query = SPARQL_PREFIXES + query
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        matches = []
+        for binding in bindings:
+            resource_uri = binding.get("resource", {}).get("value", "")
+            resource_label = binding.get("label", {}).get("value", "")
+            rid = resource_uri.split("/")[-1]
+
+            matches.append(ResourceMatch(
+                original_id=rid,
+                name=resource_label or rid,
+                node_type="resource",
+                relevance_score=1.0,
+                available_predicates=[]
+            ))
+            if resource_label:
+                session_journal.visited_nodes[rid] = resource_label
+
+        session_journal.completed_steps.append(
+            f"FindByPredicateValue('{predicate_id}', '{value}', '{match_type}') -> {len(matches)} results"
+        )
+
+        response = SearchResponse(matches=matches, result_count=len(matches))
+        return response.model_dump_json(indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in FindByPredicateValue: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(
+            f"FindByPredicateValue('{predicate_id}', '{value}'): {str(e)}"
+        )
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 15: CompareResources
+# ==============================================================================
+
+@mcp.tool()
+async def CompareResources(
+    app_context: Context,
+    resource_ids: List[str],
+    predicate_id: str
+) -> str:
+    """
+    Compare a specific predicate across multiple resources in one call.
+
+    Returns sorted results (descending by numeric value if parseable).
+    Use this for comparison questions like "which has more X" or "rank these by Y".
+
+    Args:
+        resource_ids: List of resource IDs to compare (e.g., ["R12345", "R67890"])
+        predicate_id: The predicate to compare (e.g., "P41923")
+
+    Returns:
+        JSON with comparison results sorted by value
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        resource_uris = " ".join([f"orkgr:{rid}" for rid in resource_ids])
+
+        query = f"""
+        SELECT ?resource ?resourceLabel ?value WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                VALUES ?resource {{ {resource_uris} }}
+                ?resource orkgp:{predicate_id} ?value .
+                OPTIONAL {{ ?resource rdfs:label ?resourceLabel }}
+            }}
+        }}
+        """
+        full_query = SPARQL_PREFIXES + query
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        # Process results
+        resource_values = {}
+        for binding in bindings:
+            resource_uri = binding.get("resource", {}).get("value", "")
+            resource_label = binding.get("resourceLabel", {}).get("value", "")
+            value = binding.get("value", {}).get("value", "")
+            rid = resource_uri.split("/")[-1]
+
+            if rid not in resource_values:
+                # Try to parse as float for sorting
+                try:
+                    normalized = float(value.replace(",", ""))
+                except (ValueError, AttributeError):
+                    normalized = None
+
+                resource_values[rid] = {
+                    "name": resource_label or rid,
+                    "value": value,
+                    "normalized": normalized
+                }
+
+        # Build comparison results
+        comparison_results = []
+        for rid in resource_ids:
+            if rid in resource_values:
+                data = resource_values[rid]
+                comparison_results.append(ComparisonResult(
+                    resource_id=rid,
+                    name=data["name"],
+                    value=data["value"],
+                    normalized_value=data["normalized"]
+                ))
+            else:
+                comparison_results.append(ComparisonResult(
+                    resource_id=rid,
+                    name=session_journal.visited_nodes.get(rid, rid),
+                    value="N/A",
+                    normalized_value=None
+                ))
+
+        # Sort by normalized value (descending)
+        sorted_results = sorted(
+            comparison_results,
+            key=lambda x: x.normalized_value if x.normalized_value is not None else float('-inf'),
+            reverse=True
+        )
+
+        # Update journal
+        for result in sorted_results:
+            if result.resource_id not in session_journal.found_values:
+                session_journal.found_values[result.resource_id] = {}
+            session_journal.found_values[result.resource_id][predicate_id] = result.value
+
+        sorted_by = "numeric value (descending)" if any(
+            r.normalized_value for r in sorted_results) else "order provided"
+
+        session_journal.completed_steps.append(
+            f"CompareResources({predicate_id}) for {len(resource_ids)} resources"
+        )
+
+        response = CompareResourcesResponse(
+            predicate=predicate_id,
+            results=sorted_results,
+            sorted_by=sorted_by,
+            status=f"Compared {len(sorted_results)} resources"
+        )
+        return response.model_dump_json(indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in CompareResources: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(
+            f"CompareResources({predicate_id}): {str(e)}"
+        )
+        response = CompareResourcesResponse(
+            predicate=predicate_id,
+            results=[],
+            sorted_by="error",
+            status=f"Error: {str(e)}"
+        )
+        return response.model_dump_json(indent=2)
+
+
+# ==============================================================================
+# TOOL 16: FollowRelationPath
+# ==============================================================================
+
+@mcp.tool()
+async def FollowRelationPath(
+    app_context: Context,
+    start_resource_id: str,
+    relation_path: List[Dict[str, str]]
+) -> str:
+    """
+    Navigate multi-hop relation paths to find connected resources in one SPARQL call.
+
+    Instead of chaining multiple GetRelationTargets calls, this follows a chain of
+    predicates from a starting resource in a single query.
+
+    Common pattern: Paper --P31--> Contribution --domain_predicate--> Value
+
+    Args:
+        start_resource_id: Starting resource ID (e.g., "R12345")
+        relation_path: List of steps, each with:
+          - "predicate": Predicate ID (e.g., "P31")
+          - "direction": "forward" (subject→object) or "backward" (object→subject)
+
+    Returns:
+        JSON with entities found at the end of the path and intermediate nodes
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        if not relation_path:
+            return json.dumps({"error": "relation_path cannot be empty"}, indent=2)
+
+        # Build SPARQL query dynamically
+        hop_vars = [f"?hop{i}" for i in range(len(relation_path) + 1)]
+        label_vars = [f"?hop{i}Label" for i in range(len(relation_path) + 1)]
+        select_clause = "SELECT DISTINCT " + " ".join(hop_vars + label_vars)
+
+        where_clauses = [f"BIND(orkgr:{start_resource_id} AS ?hop0)"]
+
+        for i, step in enumerate(relation_path):
+            predicate = step["predicate"]
+            direction = step.get("direction", "forward")
+
+            pred_uri = f"orkgp:{predicate}"
+            current_var = f"?hop{i}"
+            next_var = f"?hop{i+1}"
+
+            if direction == "forward":
+                where_clauses.append(f"{current_var} {pred_uri} {next_var} .")
+            else:
+                where_clauses.append(f"{next_var} {pred_uri} {current_var} .")
+
+        # Add OPTIONAL labels for all hops
+        for i in range(len(relation_path) + 1):
+            where_clauses.append(f"OPTIONAL {{ ?hop{i} rdfs:label ?hop{i}Label }}")
+
+        query = f"""
+        {select_clause} WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                {chr(10).join('    ' + c for c in where_clauses)}
+            }}
+        }} LIMIT 100
+        """
+        full_query = SPARQL_PREFIXES + query
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            session_journal.failed_attempts.append(
+                f"FollowRelationPath({start_resource_id}): No results for path"
+            )
+            return json.dumps({
+                "start_resource_id": start_resource_id,
+                "relation_path": relation_path,
+                "entities_found": [],
+                "path_length": len(relation_path),
+                "intermediate_nodes": {},
+                "status": "No entities found following this path"
+            }, indent=2)
+
+        # Extract entities at each hop
+        intermediate_nodes = {f"hop_{i}": {} for i in range(len(relation_path) + 1)}
+
+        for binding in bindings:
+            for i in range(len(relation_path) + 1):
+                hop_var = f"hop{i}"
+                label_var = f"hop{i}Label"
+                if hop_var in binding:
+                    uri = binding[hop_var]["value"]
+                    obj_type = binding[hop_var].get("type", "")
+
+                    if uri.startswith("http"):
+                        entity_id = uri.split("/")[-1]
+                    else:
+                        entity_id = uri
+
+                    hop_label = binding.get(label_var, {}).get("value", "")
+                    intermediate_nodes[f"hop_{i}"][entity_id] = hop_label or entity_id
+
+                    if hop_label:
+                        session_journal.visited_nodes[entity_id] = hop_label
+
+        # Final hop contains target entities
+        final_hop = intermediate_nodes[f"hop_{len(relation_path)}"]
+        final_entities = [{"id": eid, "label": elabel} for eid, elabel in final_hop.items()]
+
+        # Simplify intermediate_nodes for output
+        intermediate_summary = {
+            k: list(v.keys()) for k, v in intermediate_nodes.items()
+        }
+
+        session_journal.verified_facts.append({
+            "fact": f"Multi-hop path from {start_resource_id}: {len(final_entities)} entities found",
+            "path": relation_path,
+            "results": [e["id"] for e in final_entities[:10]],
+            "source": "FollowRelationPath"
+        })
+        session_journal.completed_steps.append(
+            f"FollowRelationPath({start_resource_id}, {len(relation_path)} hops) -> {len(final_entities)} entities"
+        )
+
+        return json.dumps({
+            "start_resource_id": start_resource_id,
+            "relation_path": relation_path,
+            "entities_found": final_entities,
+            "path_length": len(relation_path),
+            "intermediate_nodes": intermediate_summary,
+            "status": f"Found {len(final_entities)} entities"
+        }, indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in FollowRelationPath: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(
+            f"FollowRelationPath({start_resource_id}): {str(e)}"
+        )
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 17: ManageJournal
 # ==============================================================================
 
 @mcp.tool()
@@ -1212,7 +1845,7 @@ async def ManageJournal(
 
 
 # ==============================================================================
-# TOOL 13: GetJournalSummary
+# TOOL 18: GetJournalSummary
 # ==============================================================================
 
 @mcp.tool()
