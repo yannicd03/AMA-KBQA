@@ -24,6 +24,17 @@ QTYPE_STRATEGIES = {
     If a predicate returns empty: Use GetResourceSummary to see all available predicates.
     Look for semantic matches (the predicate ID might differ from what you expect).
 
+    **COMPARISON-BASED FACTOIDS (~55% of questions):**
+    Many factoid questions involve Comparison resources rather than simple paper lookups.
+    If the question asks about "values", "sources", "methods" across studies:
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. GetComparisonContributions(comparison_id, domain_predicate) to get values
+
+    **SPARQL TIP:** When looking for domain data, always follow:
+      ?paper orkgp:P31 ?contribution .
+      ?contribution orkgp:DOMAIN_PREDICATE ?value .
+
     **COMMON PATTERNS:**
     - Paper DOI: GetRelationTargets(paper_id, "P26") or orkgp:P10
     - Paper venue: GetRelationTargets(paper_id, "P27")
@@ -40,28 +51,61 @@ QTYPE_STRATEGIES = {
     """,
 
     "Count": """
-    STRATEGY: Count (Aggregation Query)
-    Topology: [Filter Condition] -> [Count Items]
+    STRATEGY: Count / Aggregation Query
+    Topology: [Filter Condition] -> [Aggregate Items]
 
     **DECISION TREE:**
-    1. Small/bounded count (< 20 items) -> Use tools and count manually
+    1. Simple count (< 20 items) -> Use tools and count manually
     2. Large/unknown count -> Use RunORKGSPARQL with COUNT()
-    3. Count with constraints -> FindByPredicateValue + manual count OR SPARQL with FILTER
+    3. Count with constraints -> SPARQL with FILTER
+    4. Sum/Average/Min/Max -> Use RunORKGSPARQL with aggregation functions
+    5. Frequency table -> GROUP BY + COUNT + ORDER BY
+
+    **COMPARISON-BASED COUNTING (CRITICAL - ~55% of questions):**
+    Many count questions involve Comparison resources. The pattern is:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    Use GetComparisonContributions first, then count/aggregate the results.
+
+    **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
+      Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
+      Then: ValueResource --domainPred--> actual_value
+    Use GetResourceSummary on contributions to check for HAS_VALUE.
+
+    **SPARQL PATTERNS:**
+
+    Simple COUNT:
+    SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+        ?item orkgp:PREDICATE ?value .
+    }
+
+    COUNT with GROUP BY:
+    SELECT ?category (COUNT(?item) AS ?count) WHERE {
+        ?item orkgp:PREDICATE ?category .
+    }
+    GROUP BY ?category
+    ORDER BY DESC(?count)
+
+    SUM:
+    SELECT (SUM(xsd:decimal(?value)) AS ?total) WHERE {
+        orkgr:RESOURCE orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+    }
+
+    AVG:
+    SELECT (AVG(xsd:decimal(?value)) AS ?average) WHERE {
+        orkgr:RESOURCE orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+    }
+
+    COUNT via Comparison:
+    SELECT (COUNT(DISTINCT ?contrib) AS ?count) WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+        FILTER(CONTAINS(LCASE(STR(?value)), "filter_term"))
+    }
 
     **CONSTRAINT VERIFICATION:**
     After counting, verify numeric conditions with VerifyNumericCondition.
-    Use FindByPredicateValue for "count items where X > Y" patterns.
-
-    **SPARQL Pattern:**
-    SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
-        ?item orkgp:PREDICATE ?value .
-        FILTER(CONTAINS(?value, "filter_term"))
-    }
-
-    **COMMON QUERIES:**
-    - Count papers in field: COUNT papers with P30 = field_id
-    - Count authors of paper: COUNT authors via P27/P6
-    - Count contributions: COUNT items with P31 relation
     """,
 
     "List": """
@@ -72,6 +116,13 @@ QTYPE_STRATEGIES = {
     1. Identify the type of items to list (papers, authors, contributions)
     2. Identify filter conditions (research field, year, venue)
     3. Use appropriate tool or SPARQL to retrieve list
+
+    **COMPARISON-BASED LISTS (~55% of questions):**
+    Many list questions involve Comparison resources. The pattern is:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. GetComparisonContributions(comparison_id, domain_predicate) to list all values
 
     **MULTI-HOP LISTS:**
     For domain-specific lists, follow Paper -> P31 -> Contribution -> domain predicate.
@@ -85,6 +136,7 @@ QTYPE_STRATEGIES = {
     - Authors of paper: GetPaperAuthors(paper_id)
     - Contributions of paper: GetPaperContributions(paper_id)
     - Domain-specific items: FollowRelationPath(paper_id, path)
+    - Comparison data: GetComparisonContributions(comparison_id, predicate)
 
     **SPARQL Pattern:**
     SELECT ?item ?label WHERE {
@@ -108,6 +160,16 @@ QTYPE_STRATEGIES = {
     E.g., "Does benchmark X have more than 10,000 questions?" ->
     Get value, then VerifyNumericCondition(value, ">", "10000", "questions")
 
+    **COMPARISON-BASED BOOLEAN CHECKS:**
+    For questions checking existence/properties in Comparison data:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    Use ASK SPARQL pattern against the comparison structure:
+    ASK {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+        FILTER(CONTAINS(LCASE(STR(?value)), "search_term"))
+    }
+
     **EXISTENCE CHECKS:**
     Use ASK SPARQL pattern for existence checks.
 
@@ -129,15 +191,30 @@ QTYPE_STRATEGIES = {
     STRATEGY: Comparison (Compare Multiple Entities)
     Topology: [Entity_A, Entity_B] -> [Same Attribute] -> Compare
 
+    **How to identify:** Questions about "boundaries", "efficiency", "capacity", "sources",
+    "values across studies", or any comparison across contributions.
+
     **APPROACH:**
     1. Identify the entities to compare
     2. Identify the attribute/predicate for comparison
     3. Use CompareResources(resource_ids, predicate_id) for efficient batch comparison
     4. For numeric comparison, pipe results through VerifyNumericCondition
 
+    **COMPARISON RESOURCE PATTERN (~55% of questions):**
+    Many questions involve Comparison resources in ORKG:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. GetComparisonContributions(comparison_id, domain_predicate) to get values
+
+    **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
+      Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
+      Then: ValueResource --domainPred--> actual_value
+
     **TOOLS:**
     - CompareResources: Compare predicate across multiple resources in one call (returns sorted)
     - VerifyNumericCondition: Verify specific numeric comparisons deterministically
+    - GetComparisonContributions: Navigate Comparison -> Contributions -> Values
 
     **SPARQL Pattern:**
     SELECT ?entity ?value WHERE {
@@ -145,6 +222,109 @@ QTYPE_STRATEGIES = {
         ?entity orkgp:ATTRIBUTE ?value .
     }
     ORDER BY DESC(?value)
+    """,
+
+    "Superlative": """
+    STRATEGY: Superlative / Ranking Query
+    Topology: [Set of Items] -> [Order by Attribute] -> [Top/Bottom N]
+
+    **APPROACH:**
+    1. Identify the set of items (e.g., contributions in a comparison)
+    2. Identify the ranking attribute (e.g., efficiency, capacity)
+    3. Use SPARQL with ORDER BY + LIMIT to get the top/bottom result
+
+    **CRITICAL: Comparison-based Superlatives (~55% of questions):**
+    Most superlative questions ("highest efficiency", "largest capacity") involve:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. GetComparisonContributions(comparison_id, domain_predicate) to get values
+    4. Use SPARQL ORDER BY for numeric ranking
+
+    **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
+      Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
+      Then: ValueResource --domainPred--> actual_value
+    Use GetResourceSummary on contributions to check for HAS_VALUE.
+
+    **SPARQL PATTERNS:**
+
+    Highest/Maximum:
+    SELECT ?contrib ?contribLabel ?value WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+        OPTIONAL { ?contrib rdfs:label ?contribLabel }
+    }
+    ORDER BY DESC(xsd:decimal(?value))
+    LIMIT 1
+
+    Lowest/Minimum:
+    SELECT ?contrib ?contribLabel ?value WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+        OPTIONAL { ?contrib rdfs:label ?contribLabel }
+    }
+    ORDER BY ASC(xsd:decimal(?value))
+    LIMIT 1
+
+    Top N:
+    SELECT ?contrib ?contribLabel ?value WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+        OPTIONAL { ?contrib rdfs:label ?contribLabel }
+    }
+    ORDER BY DESC(xsd:decimal(?value))
+    LIMIT N
+
+    MAX/MIN with GROUP BY:
+    SELECT ?group (MAX(xsd:decimal(?value)) AS ?maxVal) WHERE {
+        ?contrib orkgp:GROUP_PRED ?group .
+        ?contrib orkgp:VALUE_PRED ?value .
+    }
+    GROUP BY ?group
+    """,
+
+    "Aggregation": """
+    STRATEGY: Aggregation (SUM, AVG, frequency tables)
+    Topology: [Set of Items] -> [Aggregate Function] -> Result
+
+    **APPROACH:**
+    1. Identify the items and the aggregation needed
+    2. Use RunORKGSPARQL with appropriate aggregation function
+    3. For comparison-based data, navigate via compareContribution first
+
+    **COMPARISON-BASED AGGREGATION (~55% of questions):**
+    Most aggregation questions involve Comparison resources:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. Use RunORKGSPARQL with SUM/AVG/COUNT over the comparison pattern
+
+    **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
+      Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
+      Then: ValueResource --domainPred--> actual_value
+    Use GetResourceSummary on contributions to check for HAS_VALUE.
+
+    **SPARQL PATTERNS:**
+
+    SUM across contributions:
+    SELECT (SUM(xsd:decimal(?value)) AS ?total) WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+    }
+
+    AVG across contributions:
+    SELECT (AVG(xsd:decimal(?value)) AS ?average) WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+    }
+
+    Frequency table:
+    SELECT ?value (COUNT(?contrib) AS ?frequency) WHERE {
+        orkgr:COMPARISON orkgp:compareContribution ?contrib .
+        ?contrib orkgp:DOMAIN_PRED ?value .
+    }
+    GROUP BY ?value
+    ORDER BY DESC(?frequency)
     """,
 
     "General": """
@@ -158,6 +338,15 @@ QTYPE_STRATEGIES = {
     5. For complex multi-hop: use FollowRelationPath or RunORKGSPARQL
     6. For exploration: use GetResourceSummary to see ALL predicates at once
     7. Review GetJournalSummary before answering
+
+    **COMPARISON RESOURCES:** ~55% of questions involve Comparison resources.
+    If the question involves values across studies, use:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    Use GetComparisonContributions to navigate this pattern.
+
+    **SPARQL TIP:** When looking for domain data, always follow:
+      ?paper orkgp:P31 ?contribution .
+      ?contribution orkgp:DOMAIN_PREDICATE ?value .
 
     See ORKG PREDICATE REFERENCE in system prompt for full predicate dictionary.
     """
@@ -178,14 +367,17 @@ CRITICAL RULES
 2. **Schema Compliance:** You must use valid ORKG predicates. If a predicate returns no results, use GetResourceSummary to discover available predicates.
 
 3. **State Management:** Use ManageJournal to track progress and avoid loops.
-   Valid actions: "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"
-   Note: "add_visited" and "add_fact" are deprecated - tools auto-update these.
+   Valid actions: "read", "write", "clear", "add_step", "add_fact", "set_answer"
 
 4. **Pivot Logic:** If a search strategy fails twice, PIVOT to a different approach.
 
 5. **Complete Retrieval:** After FindResource returns results, call GetResourceDetails, GetResourceSummary, or GetRelationTargets to get actual values.
 
 6. **Constraint Verification:** If the question contains MULTIPLE conditions (e.g., "benchmarks with more than 10,000 questions"), verify ALL conditions using VerifyNumericCondition before including items in your answer.
+
+7. **Minimum Effort:** You MUST use at least 10 tool calls before concluding that data is unavailable.
+   If FindResource fails, try: FindByPredicateValue, RunORKGSPARQL with broad FILTER,
+   search for related entities (paper->author, author->paper). NEVER give up after fewer than 10 tool calls.
 
 SCHEMA INTROSPECTION
 If a predicate returns no results:
@@ -243,6 +435,10 @@ TIER 3 - DOMAIN-SPECIFIC:
 - GetResearchFieldPapers(field_name): Field -> papers
 - FollowRelationPath(start_resource_id, relation_path): Multi-hop navigation
   Each step: {"predicate": "P31", "direction": "forward"|"backward"}
+- GetComparisonContributions(comparison_id, domain_predicate?, filter_value?, filter_type?):
+  Navigate Comparison -> compareContribution -> Contribution -> domain predicate values.
+  Without domain_predicate: schema discovery (see available predicates).
+  With domain_predicate: get values for that predicate across all contributions.
 
 TIER 4 - RAW SPARQL:
 - RunORKGSPARQL(query): Execute SPARQL (prefixes auto-injected)
@@ -270,6 +466,48 @@ EXECUTION STRATEGY
 9. **Pivot if Stuck:** If search fails twice, try different entity or use SPARQL
 10. **Synthesize:** Call GetJournalSummary and formulate answer
 
+COMPARISON RESOURCE PATTERN (~55% of SciQA questions):
+Most questions involve data stored in Comparison resources. When you identify a Comparison resource:
+1. FIRST: Call GetComparisonContributions(comparison_id) WITHOUT domain_predicate to discover available predicates
+2. THEN: Call GetComparisonContributions(comparison_id, domain_predicate) to get values
+3. For aggregation (count, min/max, frequency): Use RunORKGSPARQL with the compareContribution pattern
+DO NOT repeatedly call FindResource if you already have a Comparison resource. Go directly to GetComparisonContributions.
+
+SPARQL AGGREGATION PATTERNS (for Count, Superlative, Ranking, Aggregation questions):
+
+**Count with GROUP BY:**
+SELECT ?category (COUNT(?contrib) AS ?count) WHERE {
+    orkgr:RXXX orkgp:compareContribution ?contrib .
+    ?contrib orkgp:PYYY ?category .
+}
+GROUP BY ?category
+ORDER BY DESC(?count)
+
+**MIN/MAX (Boundaries):**
+SELECT ?source (MIN(xsd:decimal(?val)) AS ?minVal) (MAX(xsd:decimal(?val)) AS ?maxVal) WHERE {
+    orkgr:RXXX orkgp:compareContribution ?contrib .
+    ?contrib orkgp:P43135 ?source .
+    ?contrib orkgp:P43133 ?val .
+}
+GROUP BY ?source
+
+**Frequency Table:**
+SELECT ?sector (COUNT(?contrib) AS ?freq) WHERE {
+    orkgr:RXXX orkgp:compareContribution ?contrib .
+    ?contrib orkgp:PYYY ?sector .
+}
+GROUP BY ?sector
+ORDER BY DESC(?freq)
+
+**SUM/AVG:**
+SELECT (SUM(xsd:decimal(?val)) AS ?total) (AVG(xsd:decimal(?val)) AS ?avg) WHERE {
+    orkgr:RXXX orkgp:compareContribution ?contrib .
+    ?contrib orkgp:PYYY ?val .
+}
+
+IMPORTANT: When a question asks for frequencies, counts per category, or "how many for each X",
+you MUST use COUNT + GROUP BY in a SPARQL query. Do NOT search for pre-computed frequency values.
+
 ORKG PREDICATE REFERENCE
 
 CORE NAVIGATION PREDICATES:
@@ -288,6 +526,9 @@ NAVIGATION PATTERN (Paper -> Domain Data):
   Paper --P31--> Contribution --domain_predicate--> Value
   This two-hop pattern is used in ~70% of questions.
 
+- compareContribution: Links Comparison resources to their Contributions
+- HAS_VALUE: Generic value predicate on Contributions (check via GetResourceSummary)
+
 DOMAIN-SPECIFIC PREDICATES (via Contributions):
 Energy domain:
 - P43133: installed capacity
@@ -301,6 +542,13 @@ Chemistry/Materials:
 - P41740: nanocarrier type
 - P41743: therapeutic effects of carrier
 
+Energy domain (extended):
+- P43156: efficiency
+- P43134: electricity generation
+
+Agriculture/Food:
+- P35148: vegetable source
+
 Benchmarks/NLP:
 - P41923: amount of questions
 - P15585: has benchmark
@@ -310,15 +558,13 @@ Biology/Medicine:
 - P37586: study type
 - P37675: demographic info
 - P37668: lead compound
+- P41333: integrity constraints (e.g., OWLMAP)
+- P23161: population/sample size
 
 Comparison predicates:
 - P5038: Aggregation
 - P5039: other tool capabilities
 - compareContribution: special resource linking contributions for comparison
-
-SPARQL TIP: When looking for domain data, always follow:
-  ?paper orkgp:P31 ?contribution .
-  ?contribution orkgp:DOMAIN_PREDICATE ?value .
 """
 
 # ==============================================================================
@@ -329,11 +575,22 @@ CLASSIFICATION_PROMPT_TEMPLATE = """
 ### Task
 Classify the following scientific question into one of these categories:
 
-- Factoid: Simple fact lookup (paper DOI, author name, publication year)
-- Count: Counting questions ("How many papers...", "What is the number of...")
-- List: Questions expecting multiple results ("Which papers...", "List all...")
-- Boolean: Yes/No questions ("Is...", "Does...", "Did...")
-- Comparison: Comparing entities ("Which paper has more...", "Compare...")
+- Factoid: Simple fact lookup (paper DOI, author name, publication year, specific value)
+- Count: Counting questions ("How many...", "What is the number of...", "How often...")
+- List: Questions expecting multiple results ("Which papers...", "List all...", "What are the...")
+- Boolean: Yes/No questions ("Is...", "Does...", "Did...", "Are there...")
+- Comparison: Comparing two or more entities ("Which has more...", "Compare...", "difference between...")
+- Superlative: Questions about extremes ("highest", "lowest", "most", "least", "largest", "smallest", "best", "worst", "maximum", "minimum", also "boundaries of" or "limits of")
+- Aggregation: Questions requiring SUM, AVG, total, or frequency ("total capacity", "average efficiency", "sum of", "what fraction")
+- General: Other complex or multi-step questions
+
+### Classification Guidance
+- "boundaries of" or "upper/lower limit" -> Superlative (finding extreme values)
+- "total" or "sum" -> Aggregation
+- "how many" with simple counting -> Count
+- "how many" with grouping -> Aggregation
+- "which ... has the highest/lowest" -> Superlative
+- Questions about comparing values across studies -> Comparison
 
 ### Question to Classify
 {question}
@@ -341,7 +598,7 @@ Classify the following scientific question into one of these categories:
 ### Response Format
 Respond with a valid JSON object:
 {{
-    "question_type": "one of: Factoid, Count, List, Boolean, Comparison"
+    "question_type": "one of: Factoid, Count, List, Boolean, Comparison, Superlative, Aggregation, General"
 }}
 
 Respond ONLY with the JSON object, no additional text.
@@ -391,6 +648,116 @@ FEWSHOT_EXAMPLES_TEMPLATE = """
 Relevant Examples for {qtype} Questions:
 {fewshot_examples}
 """
+
+FEWSHOT_EXAMPLES = {
+    "Factoid": """
+**Example: "What is the DOI of the paper on neural text generation?"**
+1. FindResource("neural text generation") -> R12345 (Paper)
+2. GetRelationTargets("R12345", "P26") -> "10.1234/example.doi"
+3. Answer: "10.1234/example.doi"
+
+**Example: "What energy sources are used in the comparison of renewable energy?"**
+1. FindResource("renewable energy comparison") -> R44073 (Comparison)
+2. GetComparisonContributions("R44073") -> discovers predicates including P43135 (energy sources)
+3. GetComparisonContributions("R44073", "P43135") -> ["solar", "wind", "hydro"]
+4. Answer: "Solar, wind, and hydro"
+""",
+
+    "Count": """
+**Example: "How many contributions use solar energy in the energy comparison?"**
+1. FindResource("energy comparison") -> R44073 (Comparison)
+2. GetComparisonContributions("R44073", "P43135", filter_value="solar") -> 3 contributions
+3. Answer: "3"
+
+**Example: "How many papers are in the NLP research field?"**
+1. RunORKGSPARQL:
+   SELECT (COUNT(DISTINCT ?paper) AS ?count) WHERE {
+       ?paper orkgp:P30 ?field .
+       ?field rdfs:label ?label .
+       FILTER(CONTAINS(LCASE(?label), "natural language processing"))
+   }
+2. Answer: the count value
+""",
+
+    "Superlative": """
+**Example: "What is the highest installed capacity in the energy comparison?"**
+1. FindResource("installed capacity comparison") -> R44073 (Comparison)
+2. GetComparisonContributions("R44073") -> discovers P43133 (installed capacity)
+3. RunORKGSPARQL:
+   SELECT ?contrib ?contribLabel ?value WHERE {
+       orkgr:R44073 orkgp:compareContribution ?contrib .
+       ?contrib orkgp:P43133 ?value .
+       OPTIONAL { ?contrib rdfs:label ?contribLabel }
+   }
+   ORDER BY DESC(xsd:decimal(?value))
+   LIMIT 1
+4. Answer: the highest value with its contribution label
+
+**Example: "What are the boundaries of efficiency values?"**
+1. FindResource("efficiency comparison") -> R55555 (Comparison)
+2. RunORKGSPARQL:
+   SELECT (MIN(xsd:decimal(?value)) AS ?minVal) (MAX(xsd:decimal(?value)) AS ?maxVal) WHERE {
+       orkgr:R55555 orkgp:compareContribution ?contrib .
+       ?contrib orkgp:P43156 ?value .
+   }
+3. Answer: "The efficiency ranges from [min] to [max]"
+""",
+
+    "List": """
+**Example: "What vegetable sources are studied in the comparison?"**
+1. FindResource("vegetable source comparison") -> R88888 (Comparison)
+2. GetComparisonContributions("R88888", "P35148") -> list of contributions with vegetable sources
+3. Collect unique values
+4. Answer: list of vegetable sources
+""",
+
+    "Boolean": """
+**Example: "Does the ontology mapping framework include integrity constraints?"**
+1. FindResource("ontology mapping framework") -> R66000
+2. GetResourceSummary("R66000") -> check for P41333 (integrity constraints)
+3. OR use RunORKGSPARQL:
+   ASK {
+       orkgr:R66000 orkgp:P41333 ?value .
+   }
+4. Answer: "Yes" if true, "No" if false
+
+**Example: "Is there a contribution that uses neural networks?"**
+1. RunORKGSPARQL:
+   ASK {
+       ?contrib orkgp:P2 ?method .
+       ?method rdfs:label ?label .
+       FILTER(CONTAINS(LCASE(?label), "neural network"))
+   }
+2. Answer: "Yes" if true, "No" if false
+""",
+
+    "Comparison": """
+**Example: "Which contribution has higher efficiency, Contrib A or Contrib B?"**
+1. CompareResources(["R111", "R222"], "P43156")
+2. VerifyNumericCondition(value_A, ">", value_B, "efficiency")
+3. Answer: the contribution with higher efficiency
+""",
+
+    "Aggregation": """
+**Example: "What is the total installed capacity across all contributions?"**
+1. FindResource("installed capacity") -> R44073 (Comparison)
+2. RunORKGSPARQL:
+   SELECT (SUM(xsd:decimal(?value)) AS ?total) WHERE {
+       orkgr:R44073 orkgp:compareContribution ?contrib .
+       ?contrib orkgp:P43133 ?value .
+   }
+3. Answer: the total value
+
+**Example: "What is the average efficiency?"**
+1. FindResource("efficiency comparison") -> R55555
+2. RunORKGSPARQL:
+   SELECT (AVG(xsd:decimal(?value)) AS ?avg) WHERE {
+       orkgr:R55555 orkgp:compareContribution ?contrib .
+       ?contrib orkgp:P43156 ?value .
+   }
+3. Answer: the average value
+""",
+}
 
 ANALYSIS_CONTEXT_SUFFIX = """
 
@@ -447,6 +814,15 @@ INSTRUCTIONS:
 - If information is insufficient, state exactly what is missing
 - Be concise but complete
 
+VERIFICATION CHECKLIST (check before answering):
+- Does your answer directly address what was ASKED? (e.g., "without X" vs "with X")
+- If the question asks for a percentage/count, verify the direction (complement check)
+- If numeric, verify units and scale match what was asked
+- If the question asks "how many", ensure you return a number, not a description
+- Cross-check: Does your answer align with the verified_facts in the journal?
+- If the journal contains specific resource IDs and values, prefer those over general statements
+- Format: For boolean questions answer TRUE/FALSE. For counts answer with a number. For lists enumerate items.
+
 YOUR FINAL ANSWER:"""
 
 # ==============================================================================
@@ -472,11 +848,13 @@ TOOL_LOOP_GUIDANCE = {
     "FindResource": (
         "**FindResource Loop Recovery:**\n"
         "   Can't find the entity you're searching for.\n"
+        "   NOTE: FindResource is capped at 8 calls per question. After that, you MUST use other tools.\n"
         "   Try alternatives:\n"
         "   - Search for a related entity (paper instead of author)\n"
         "   - Try different search terms\n"
         "   - Use FindByPredicateValue for value-based lookup\n"
         "   - Use RunORKGSPARQL with broader filters\n"
+        "   - Use GetComparisonContributions if you already have a Comparison resource\n"
         "   - The entity might not exist in ORKG"
     ),
     "GetRelationTargets": (
@@ -525,6 +903,14 @@ TOOL_LOOP_GUIDANCE = {
         "   - Break the path into individual steps using GetRelationTargets\n"
         "   - Use RunORKGSPARQL directly for complex paths\n"
         "   - Verify intermediate resource IDs exist"
+    ),
+    "GetComparisonContributions": (
+        "**GetComparisonContributions Loop Recovery:**\n"
+        "   Comparison navigation not working. Try alternatives:\n"
+        "   - Verify the resource is actually a Comparison (use GetResourceSummary)\n"
+        "   - Try without domain_predicate first to discover available predicates\n"
+        "   - Use RunORKGSPARQL with the compareContribution pattern directly\n"
+        "   - The resource might not be a Comparison - try FollowRelationPath instead"
     ),
 }
 
