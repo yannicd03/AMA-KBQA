@@ -91,8 +91,10 @@ PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
                 "problem": "Problem",
             },
             domain_settings={
-                "max_iterations": 50,
+                "max_iterations": 40,
                 "journal_refresh_interval": 5,
+                "find_resource_cap": 8,
+                "context_limit": 100000,
             },
         )
 
@@ -232,6 +234,13 @@ PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
             "research_field": "P30", # Research field
             "has_contribution": "P31", # Paper contributions
             "research_problem": "P32", # Research problem
+            "compareContribution": "compareContribution",  # Comparison -> Contribution
+            "has_value": "HAS_VALUE",  # Generic value predicate
+            "efficiency": "P43156",    # Energy efficiency
+            "vegetable_source": "P35148",  # Vegetable source
+            "integrity_constraints": "P41333",  # Integrity constraints
+            "population_sample_size": "P23161",  # Population/sample size
+            "electricity_generation": "P43134",  # Electricity generation
         }
 
     def get_common_classes(self) -> dict:
