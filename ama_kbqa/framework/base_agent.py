@@ -483,6 +483,16 @@ Change strategy or acknowledge the data doesn't exist."""
                 if count >= 5:
                     return True, f"Tool '{tool}' called {count} times in last 6 iterations"
 
+        # Detection 4: FindResource cap (configurable per agent)
+        find_resource_cap = getattr(self, '_find_resource_cap', 8)
+        if func_name == "FindResource":
+            fr_count = self.tool_call_counts.get("FindResource", 0) + 1
+            if fr_count > find_resource_cap:
+                return True, (
+                    f"FindResource called {fr_count} times (cap: {find_resource_cap}). "
+                    f"Switch to SPARQL or other structured queries."
+                )
+
         return False, ""
 
     def _get_tool_specific_loop_guidance(self, func_name: str) -> str:
@@ -528,6 +538,14 @@ Change strategy or acknowledge the data doesn't exist."""
             openai_tools = self.mcp.convert_tools_to_openai_format(mcp_tools)
             self._trace(f"Found {len(openai_tools)} tools.")
 
+            # Populate known tool names for validation (Fix 6)
+            self._known_tool_names = {t.name for t in mcp_tools}
+
+            # Read per-agent config for FindResource cap (Fix 5)
+            config = self.get_config()
+            self._find_resource_cap = config.domain_settings.get("find_resource_cap", 8)
+            self._context_limit = config.domain_settings.get("context_limit", 100000)
+
             # Add query to messages
             self._messages.append({"role": "user", "content": query})
 
@@ -557,8 +575,7 @@ Change strategy or acknowledge the data doesn't exist."""
 
             self._trace(f"Pre-agent hook complete - Type: {qtype}", COLOR_GREEN)
 
-            # Run tool loop
-            config = self.get_config()
+            # Run tool loop (config already loaded above)
             max_iterations = config.domain_settings.get("max_iterations", 50)
             refresh_interval = config.domain_settings.get("journal_refresh_interval", 5)
 
@@ -604,6 +621,9 @@ Change strategy or acknowledge the data doesn't exist."""
             if iteration_count > max_iterations:
                 self._trace(f"WARNING: Reached max iterations ({max_iterations})", COLOR_RED)
                 return "Error: Agent reached maximum iteration limit."
+
+            # Manage context window before LLM call
+            self._manage_context_window()
 
             # Periodic journal refresh
             if iteration_count % refresh_interval == 0 and iteration_count > 0:
@@ -684,6 +704,22 @@ Change strategy or acknowledge the data doesn't exist."""
                 continue
 
             func_name = tool_call.function.name
+
+            # Validate tool name exists
+            known_tools = getattr(self, '_known_tool_names', set())
+            if known_tools and func_name not in known_tools:
+                tool_result = (
+                    f"Error: Tool '{func_name}' does not exist. "
+                    f"Available tools: {', '.join(sorted(known_tools))}"
+                )
+                self._trace(f"Unknown tool called: {func_name}", COLOR_RED)
+                self._messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": func_name,
+                    "content": tool_result
+                })
+                continue
 
             if func_name == "GetJournalSummary":
                 called_get_journal_summary = True
@@ -835,6 +871,54 @@ Change strategy or acknowledge the data doesn't exist."""
         except Exception as e:
             self._trace(f"Failed to inject journal refresh: {e}", COLOR_YELLOW)
 
+    def _manage_context_window(self) -> None:
+        """
+        Manage context window by summarizing old tool results when approaching limits.
+
+        Uses a rough heuristic of len(text) / 3.5 to estimate token count.
+        Preserves the system message and the most recent 6 message pairs.
+        """
+        context_limit = getattr(self, '_context_limit', 100000)
+
+        # Estimate total tokens
+        total_chars = sum(
+            len(msg.get("content", "") or "") for msg in self._messages
+        )
+        estimated_tokens = total_chars / 3.5
+
+        if estimated_tokens < context_limit * 0.8:
+            return  # Under threshold, no action needed
+
+        self._trace(
+            f"Context management: ~{int(estimated_tokens)} tokens "
+            f"({int(estimated_tokens / context_limit * 100)}% of {context_limit} limit)",
+            COLOR_YELLOW
+        )
+
+        # Determine how aggressively to trim
+        truncate_len = 200 if estimated_tokens < context_limit * 0.9 else 100
+
+        # Never touch system message (index 0) or last 12 messages (~6 pairs)
+        protected_tail = 12
+        if len(self._messages) <= protected_tail + 1:
+            return  # Not enough messages to trim
+
+        trimmed_count = 0
+        for i in range(1, len(self._messages) - protected_tail):
+            msg = self._messages[i]
+            content = msg.get("content", "") or ""
+
+            # Only trim tool results (they tend to be the largest)
+            if msg.get("role") == "tool" and len(content) > truncate_len + 50:
+                self._messages[i] = {
+                    **msg,
+                    "content": content[:truncate_len] + "... [summarized]"
+                }
+                trimmed_count += 1
+
+        if trimmed_count > 0:
+            self._trace(f"Trimmed {trimmed_count} old tool results to {truncate_len} chars", COLOR_YELLOW)
+
     async def _run_synthesis(self, query: str) -> str:
         """
         Run the deterministic synthesis step.
@@ -864,6 +948,37 @@ Change strategy or acknowledge the data doesn't exist."""
         final_answer = self._llm_call_synthesis()
 
         if final_answer and final_answer.strip():
+            # Verification pass: if synthesis indicates failure but journal has data, re-prompt
+            failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
+                               "unable to determine", "could not find", "no information"]
+            answer_lower = final_answer.lower()
+            if any(phrase in answer_lower for phrase in failure_phrases):
+                # Check if journal actually has useful data
+                has_data = ("found_values" in journal_summary.lower() or
+                           "verified_facts" in journal_summary.lower() or
+                           "orkgr:" in journal_summary.lower() or
+                           "R" in journal_summary)
+                journal_seems_empty = (
+                    "none" in journal_summary.lower()
+                    and len(journal_summary) < 200
+                )
+
+                if has_data and not journal_seems_empty:
+                    self._trace("Synthesis indicated failure but journal has data - re-prompting", COLOR_YELLOW)
+                    self._messages.append({"role": "assistant", "content": final_answer})
+                    self._messages.append({
+                        "role": "user",
+                        "content": (
+                            "Your answer indicates you could not find data, but your journal "
+                            "contains discovered values and resource IDs. Please re-read the "
+                            "journal summary above carefully and provide an answer based on "
+                            "the data you DID find. Use the specific values from the journal."
+                        )
+                    })
+                    final_answer = self._llm_call_synthesis()
+                    if final_answer and final_answer.strip():
+                        self._trace(f"Re-synthesis complete ({len(final_answer)} chars)", COLOR_GREEN)
+
             self._trace(f"Synthesis complete ({len(final_answer)} chars)", COLOR_GREEN)
             self._messages.append({"role": "assistant", "content": final_answer})
             return final_answer.strip()
