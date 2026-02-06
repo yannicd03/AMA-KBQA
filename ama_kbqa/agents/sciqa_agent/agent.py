@@ -7,8 +7,11 @@ the SciQA dataset to answer scientific research questions.
 
 from __future__ import annotations
 import asyncio
+import json
 from pathlib import Path
 from typing import Dict, List
+
+from ama_kbqa.config import get_chat_temperature
 
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.framework.config import KnowledgeGraphConfig
@@ -29,6 +32,7 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
+    FEWSHOT_EXAMPLES,
 )
 
 
@@ -116,6 +120,42 @@ class SciQAAgent(BaseKBQAAgent):
     def _get_journal_summary_answer_prompt(self) -> str:
         """Get the prompt to inject after GetJournalSummary."""
         return JOURNAL_SUMMARY_ANSWER_PROMPT
+
+    def _classify_question(self, question: str) -> Dict[str, str]:
+        """
+        Classify a question and inject few-shot examples based on type.
+
+        Overrides base class to populate fewshot_examples from FEWSHOT_EXAMPLES dict.
+        """
+        prompt = self._get_classification_prompt(question)
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": prompt}],
+                temperature=get_chat_temperature(),
+                response_format={"type": "json_object"},
+                timeout=30.0
+            )
+
+            if response.usage:
+                self._track_token_usage(response.usage)
+
+            json_content = response.choices[0].message.content
+            result = json.loads(json_content)
+            qtype = result.get("question_type", "General")
+
+            # Inject few-shot examples for the detected question type
+            fewshot = FEWSHOT_EXAMPLES.get(qtype, "")
+
+            return {
+                "question_type": qtype,
+                "fewshot_examples": fewshot
+            }
+
+        except Exception as e:
+            self._trace(f"Question classification failed: {e}", "\033[93m")
+            return {"question_type": "General", "fewshot_examples": ""}
 
     # =========================================================================
     # SCIQA-SPECIFIC METHODS
