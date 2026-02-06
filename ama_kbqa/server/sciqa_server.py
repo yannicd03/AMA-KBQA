@@ -22,6 +22,7 @@ Tools provided:
 - FindByPredicateValue: Reverse lookup by predicate value
 - CompareResources: Compare a predicate across multiple resources
 - FollowRelationPath: Multi-hop relation navigation
+- GetComparisonContributions: Navigate Comparison -> Contribution -> Value pattern
 - ManageJournal: Scratchpad for state management
 - GetJournalSummary: Format journal state for synthesis
 """
@@ -736,12 +737,20 @@ async def RunORKGSPARQL(
     app = app_context.request_context.lifespan_context
 
     try:
+        # Detect if this is an ASK query
+        is_ask = query.strip().upper().startswith("ASK")
+
         # Wrap query with graph if not already wrapped
         if "GRAPH" not in query.upper():
-            # Find WHERE clause and inject GRAPH
             if "WHERE" in query.upper():
+                # SELECT/CONSTRUCT with WHERE clause
                 query = query.replace("{", f"{{ GRAPH <{SCIQA_GRAPH}> {{", 1)
-                # Find matching closing brace
+                query = query.rstrip()
+                if query.endswith("}"):
+                    query = query[:-1] + "} }"
+            elif is_ask:
+                # ASK queries have no WHERE keyword - wrap the body
+                query = query.replace("{", f"{{ GRAPH <{SCIQA_GRAPH}> {{", 1)
                 query = query.rstrip()
                 if query.endswith("}"):
                     query = query[:-1] + "} }"
@@ -749,6 +758,19 @@ async def RunORKGSPARQL(
         full_query = SPARQL_PREFIXES + query
         app.sparql.setQuery(full_query)
         results = app.sparql.query().convert()
+
+        # Handle ASK queries (return boolean result)
+        if is_ask:
+            boolean_result = results.get("boolean", False)
+            session_journal.completed_steps.append(
+                f"RunORKGSPARQL(ASK) -> {boolean_result}"
+            )
+            response = SPARQLResponse(
+                vars=["result"],
+                bindings=[{"result": str(boolean_result)}],
+                raw_json=results
+            )
+            return response.model_dump_json(indent=2)
 
         vars_list = results.get("head", {}).get("vars", [])
         bindings = results.get("results", {}).get("bindings", [])
@@ -1777,7 +1799,188 @@ async def FollowRelationPath(
 
 
 # ==============================================================================
-# TOOL 17: ManageJournal
+# TOOL 17: GetComparisonContributions
+# ==============================================================================
+
+@mcp.tool()
+async def GetComparisonContributions(
+    app_context: Context,
+    comparison_id: str,
+    domain_predicate: str = "",
+    filter_value: str = "",
+    filter_type: str = "contains"
+) -> str:
+    """
+    Navigate the Comparison -> compareContribution -> Contribution pattern.
+
+    Many SciQA questions involve Comparison resources that link to multiple
+    Contributions via the compareContribution predicate. Each Contribution
+    then has domain-specific predicates (e.g., HAS_VALUE, P43156).
+
+    **Usage modes:**
+    1. Without domain_predicate: Returns contributions with their available predicates
+       (schema discovery mode - use this first to see what predicates exist)
+    2. With domain_predicate: Returns contributions filtered by that predicate's values
+    3. With domain_predicate + filter_value: Returns only contributions matching the filter
+
+    Args:
+        comparison_id: The Comparison resource ID (e.g., "R44073")
+        domain_predicate: Optional predicate to retrieve from contributions (e.g., "HAS_VALUE", "P43156")
+        filter_value: Optional value to filter by (requires domain_predicate)
+        filter_type: Filter mode: "exact", "contains", "greater", "less" (default: "contains")
+
+    Returns:
+        JSON with contributions and their domain predicate values
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        if domain_predicate:
+            # Mode 2/3: Get contributions with specific domain predicate values
+            query = f"""
+SELECT ?contribution ?contribLabel ?value ?valueLabel WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        orkgr:{comparison_id} orkgp:compareContribution ?contribution .
+        ?contribution orkgp:{domain_predicate} ?value .
+        OPTIONAL {{ ?contribution rdfs:label ?contribLabel }}
+        OPTIONAL {{ ?value rdfs:label ?valueLabel }}
+    }}
+}}
+"""
+            full_query = SPARQL_PREFIXES + query
+            app.sparql.setQuery(full_query)
+            results = app.sparql.query().convert()
+
+            bindings = results.get("results", {}).get("bindings", [])
+            contributions = {}
+
+            for b in bindings:
+                contrib_uri = b.get("contribution", {}).get("value", "")
+                contrib_id = contrib_uri.split("/")[-1] if "/" in contrib_uri else contrib_uri
+                contrib_label = b.get("contribLabel", {}).get("value", contrib_id)
+
+                val_raw = b.get("value", {}).get("value", "")
+                val_id = val_raw.split("/")[-1] if val_raw.startswith("http://") else val_raw
+                val_label = b.get("valueLabel", {}).get("value", val_id)
+
+                if contrib_id not in contributions:
+                    contributions[contrib_id] = {
+                        "id": contrib_id,
+                        "label": contrib_label,
+                        "values": []
+                    }
+                contributions[contrib_id]["values"].append({
+                    "id": val_id,
+                    "label": val_label,
+                    "raw": val_raw
+                })
+
+            # Apply filter if specified
+            if filter_value and contributions:
+                filtered = {}
+                for cid, cdata in contributions.items():
+                    matching_values = []
+                    for v in cdata["values"]:
+                        match = False
+                        check_str = v["label"].lower()
+                        fv = filter_value.lower()
+                        if filter_type == "exact":
+                            match = check_str == fv
+                        elif filter_type == "contains":
+                            match = fv in check_str
+                        elif filter_type == "greater":
+                            try:
+                                match = float(check_str) > float(fv)
+                            except ValueError:
+                                pass
+                        elif filter_type == "less":
+                            try:
+                                match = float(check_str) < float(fv)
+                            except ValueError:
+                                pass
+                        if match:
+                            matching_values.append(v)
+                    if matching_values:
+                        filtered[cid] = {**cdata, "values": matching_values}
+                contributions = filtered
+
+            result_list = list(contributions.values())
+
+            session_journal.completed_steps.append(
+                f"GetComparisonContributions({comparison_id}, {domain_predicate}) -> {len(result_list)} contributions"
+            )
+            session_journal.visited_nodes[comparison_id] = f"Comparison (queried {domain_predicate})"
+
+            return json.dumps({
+                "comparison_id": comparison_id,
+                "domain_predicate": domain_predicate,
+                "contributions": result_list,
+                "count": len(result_list),
+                "status": f"Found {len(result_list)} contributions with {domain_predicate}"
+            }, indent=2)
+
+        else:
+            # Mode 1: Schema discovery - get contributions and their available predicates
+            query = f"""
+SELECT ?contribution ?contribLabel ?pred ?predLabel WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        orkgr:{comparison_id} orkgp:compareContribution ?contribution .
+        ?contribution ?pred ?obj .
+        OPTIONAL {{ ?contribution rdfs:label ?contribLabel }}
+        OPTIONAL {{ ?pred rdfs:label ?predLabel }}
+    }}
+}}
+"""
+            full_query = SPARQL_PREFIXES + query
+            app.sparql.setQuery(full_query)
+            results = app.sparql.query().convert()
+
+            bindings = results.get("results", {}).get("bindings", [])
+            contributions = {}
+
+            for b in bindings:
+                contrib_uri = b.get("contribution", {}).get("value", "")
+                contrib_id = contrib_uri.split("/")[-1] if "/" in contrib_uri else contrib_uri
+                contrib_label = b.get("contribLabel", {}).get("value", contrib_id)
+
+                pred_uri = b.get("pred", {}).get("value", "")
+                pred_id = pred_uri.split("/")[-1] if "/" in pred_uri else pred_uri
+                pred_label = b.get("predLabel", {}).get("value", pred_id)
+
+                if contrib_id not in contributions:
+                    contributions[contrib_id] = {
+                        "id": contrib_id,
+                        "label": contrib_label,
+                        "predicates": {}
+                    }
+                contributions[contrib_id]["predicates"][pred_id] = pred_label
+
+            result_list = list(contributions.values())
+
+            session_journal.completed_steps.append(
+                f"GetComparisonContributions({comparison_id}, discovery) -> {len(result_list)} contributions"
+            )
+            session_journal.visited_nodes[comparison_id] = "Comparison (schema discovery)"
+
+            return json.dumps({
+                "comparison_id": comparison_id,
+                "mode": "schema_discovery",
+                "contributions": result_list,
+                "count": len(result_list),
+                "status": f"Found {len(result_list)} contributions. Use domain_predicate parameter to query specific values."
+            }, indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in GetComparisonContributions: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(
+            f"GetComparisonContributions({comparison_id}): {str(e)}"
+        )
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 18: ManageJournal
 # ==============================================================================
 
 @mcp.tool()
@@ -1845,7 +2048,7 @@ async def ManageJournal(
 
 
 # ==============================================================================
-# TOOL 18: GetJournalSummary
+# TOOL 19: GetJournalSummary
 # ==============================================================================
 
 @mcp.tool()
