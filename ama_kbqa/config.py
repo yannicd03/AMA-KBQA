@@ -275,7 +275,8 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
         "kit_ollama": "KIT_OLLAMA_TOKEN",
         "deepseek": "DEEPSEEK_API_KEY",
         "zai": "ZAI_API_KEY",
-        "lm_studio": "LM_STUDIO_API_KEY"  # Optional for local
+        "lm_studio": "LM_STUDIO_API_KEY",  # Optional for local
+        "aifb": "AIFB_API_KEY",
     }
 
     env_var = env_var_map.get(provider)

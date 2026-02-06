@@ -2,7 +2,7 @@
 
 [llm]
 # Active LLM provider for chat/reasoning tasks
-# Options: "lm_studio", "openrouter", "kit_ollama", "deepseek", "zai"
+# Options: "lm_studio", "openrouter", "kit_ollama", "deepseek", "zai", "aifb"
 chat_provider = "openrouter"
 
 # Active LLM provider for embedding tasks
@@ -66,6 +66,13 @@ base_url = "https://api.z.ai/v1"
 # Model identifier
 chat_model = "glm-4.6"
 # API key will be read from ZAI_API_KEY environment variable
+
+[aifb]
+# AIFB KIT AI Toolbox API settings (https://ki-toolbox.scc.kit.edu/)
+base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
+# Model identifier
+chat_model = "azure.gpt-4.1-mini"
+# API key will be read from AIFB_API_KEY environment variable
 
 [database]
 # Qdrant vector database settings
