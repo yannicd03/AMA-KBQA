@@ -32,9 +32,12 @@ The following models are benchmarked by default (all via OpenRouter):
   glm-4.7               zhipu-ai/glm-4.7
   kimi-k2.5             moonshotai/kimi-k2.5
   deepseek-v3.2         deepseek/deepseek-chat-v3-0324
-  gpt-oss-120b          openai/gpt-oss-120b:nitro
-  qwen3-32b             qwen/qwen3-32b:nitro
-  nemotron-3-nano-30b   nvidia/nemotron-3-nano-30b-a3b:nitro
+  gpt-oss-120b          openai/gpt-oss-120b
+  qwen3-32b             qwen/qwen3-32b
+  nemotron-3-nano-30b   nvidia/nemotron-3-nano-30b-a3b
+  gpt-oss-120b-kit      gpt-oss:120b (KIT Ollama)
+  qwen3-vl-235b-kit     qwen3-vl:235b-a22b-instruct (KIT Ollama)
+  gpt-4.1-mini-kit      azure.gpt-4.1-mini (KIT AI Toolbox)
 
 Available Agents
 ----------------
@@ -206,31 +209,52 @@ BENCHMARK_MODELS: List[ModelConfig] = [
     ModelConfig(
         name="gpt-oss-120b",
         provider="openrouter",
-        model_id="openai/gpt-oss-120b:nitro",
+        model_id="openai/gpt-oss-120b",
         base_url="https://openrouter.ai/api/v1",
         api_key_env="OPENROUTER_API_KEY"
     ),
     ModelConfig(
         name="qwen3-32b",
         provider="openrouter",
-        model_id="qwen/qwen3-32b:nitro",
+        model_id="qwen/qwen3-32b",
         base_url="https://openrouter.ai/api/v1",
         api_key_env="OPENROUTER_API_KEY"
     ),
     ModelConfig(
         name="nemotron-3-nano-30b",
         provider="openrouter",
-        model_id="nvidia/nemotron-3-nano-30b-a3b:nitro",
+        model_id="nvidia/nemotron-3-nano-30b-a3b",
         base_url="https://openrouter.ai/api/v1",
         api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
+        name="gpt-oss-120b-kit",
+        provider="kit_ollama",
+        model_id="gpt-oss:120b",
+        base_url="https://ki-toolbox.scc.kit.edu/ollama/v1",
+        api_key_env="KIT_OLLAMA_TOKEN"
+    ),
+    ModelConfig(
+        name="qwen3-vl-235b-kit",
+        provider="kit_ollama",
+        model_id="qwen3-vl:235b-a22b-instruct",
+        base_url="https://ki-toolbox.scc.kit.edu/ollama/v1",
+        api_key_env="KIT_OLLAMA_TOKEN"
+    ),
+    ModelConfig(
+        name="gpt-4.1-mini-kit",
+        provider="aifb",
+        model_id="azure.gpt-4.1-mini",
+        base_url="https://ki-toolbox.scc.kit.edu/api/v1",
+        api_key_env="AIFB_API_KEY"
     ),
 ]
 
 # LLM Judge configuration (DeepSeek v3.2)
 JUDGE_MODEL_CONFIG = ModelConfig(
-    name="deepseek-v3.2-judge",
+    name="gemini-3-flash-judge",
     provider="openrouter",
-    model_id="deepseek/deepseek-chat-v3-0324",
+    model_id="google/gemini-3-flash-preview",
     base_url="https://openrouter.ai/api/v1",
     api_key_env="OPENROUTER_API_KEY"
 )
@@ -245,6 +269,9 @@ MODEL_COSTS = {
     "gpt-oss-120b": {"input": 2.0, "output": 8.0},
     "qwen3-32b": {"input": 0.12, "output": 0.30},
     "nemotron-3-nano-30b": {"input": 0.10, "output": 0.20},
+    "gpt-oss-120b-kit": {"input": 0.0, "output": 0.0},  # KIT endpoint (free/institutional)
+    "qwen3-vl-235b-kit": {"input": 0.0, "output": 0.0},  # KIT endpoint (free/institutional)
+    "gpt-4.1-mini-kit": {"input": 0.0, "output": 0.0},  # KIT endpoint (free/institutional)
 }
 
 
@@ -1223,7 +1250,8 @@ def main():
         epilog="""
 Available Models:
   minimax-m2.1, glm-4.7, kimi-k2.5, deepseek-v3.2, gpt-oss-120b,
-  qwen3-32b, nemotron-3-nano-30b
+  qwen3-32b, nemotron-3-nano-30b, gpt-oss-120b-kit, qwen3-vl-235b-kit,
+  gpt-4.1-mini-kit
 
 Examples:
   # Preview what would run (no execution)
