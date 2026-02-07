@@ -1262,12 +1262,10 @@ def GetJournalSummary(context: Context) -> str:
     return summary_text
 
 
-@mcp.tool
-@log_tool_duration
-def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
+def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse:
     """
-    Performs a HYBRID search (Qdrant Filters + Semantic Vectors).
-    Optimized for qdrant-client 1.16+.
+    Internal implementation of FindNode.
+    Can be called directly by other tools without going through MCP decorators.
     """
     app_context: AppContext = context.request_context.lifespan_context
     search_term_clean = semantic_node_name.strip()
@@ -1324,7 +1322,7 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
         # Nur Standard .search() nutzen - kein Legacy Fallback mehr!
         search_results = app_context.qdrant.search(
             collection_name=COLLECTION_ENTITIES,
-            query=vector,
+            query_vector=vector,
             limit=TOP_N,
             with_payload=True,
             score_threshold=SCORE_THRESHHOLD
@@ -1365,6 +1363,16 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
         session_journal.completed_steps.append(f"Found {len(matches)} nodes for '{semantic_node_name}'")
 
     return SearchResponse(matches=matches, result_count=len(matches))
+
+
+@mcp.tool
+@log_tool_duration
+def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
+    """
+    Performs a HYBRID search (Qdrant Filters + Semantic Vectors).
+    Optimized for qdrant-client 1.16+.
+    """
+    return _find_node_impl(semantic_node_name, context)
 
 
 @mcp.tool
@@ -1465,7 +1473,7 @@ def GetNodeSummary(node_id: str, context: Context) -> Dict[str, Any]:
 
         # If not in journal, try to find it
         if node_name == node_id:
-            search_result = FindNode(node_id, context)
+            search_result = _find_node_impl(node_id, context)
             if search_result.matches:
                 node_name = search_result.matches[0].name
                 node_type = search_result.matches[0].node_type
@@ -2319,9 +2327,9 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
     # 2. Find candidates in Qdrant
     # HINWEIS: Wenn dies fehlschlägt, ist app_context.qdrant falsch initialisiert (siehe unten).
     try:
-        candidates = app_context.qdrant.search(  # ✅ CORRECT!
+        candidates = app_context.qdrant.search(
             collection_name=COLLECTION_RELATIONS,
-            query=vector,
+            query_vector=vector,
             limit=TOP_N,
             with_payload=True
         )

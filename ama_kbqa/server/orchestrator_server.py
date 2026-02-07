@@ -45,7 +45,8 @@ from ama_kbqa.config import (
 # Qdrant Config (from centralized config)
 QDRANT_HOST = get_qdrant_host()
 QDRANT_PORT = get_qdrant_port()
-COLLECTION_NAME = "wikidata_entities"  # Ensure this exists in your Qdrant
+COLLECTION_KQAPRO = "kqapro-entities"
+COLLECTION_SCIQA = "sciqa-entities"
 TOP_N = get_top_n()
 SCORE_THRESHOLD = get_score_threshold()
 
@@ -147,18 +148,27 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
             logger.debug(f"Using provider preferences: {provider_prefs}")
 
         completion = client.chat.completions.create(**call_params)
+        content = completion.choices[0].message.content
+        if content:
+            return json.loads(content)
 
-        # result_content = completion.choices[0].message.content
-        return json.loads(completion.choices[0].message.content)
-        # Validate JSON before returning
-       # json_check = json.loads(result_content)
+        # If json_object mode returned empty, retry without it
+        logger.warning("JSON mode returned empty, retrying without response_format")
+        call_params.pop("response_format", None)
+        completion = client.chat.completions.create(**call_params)
+        content = completion.choices[0].message.content or ""
 
-        # return json.dumps(json_check, ensure_ascii=False)
+        # Try to extract JSON from text response
+        import re
+        json_match = re.search(r'\{[^{}]*\}', content)
+        if json_match:
+            return json.loads(json_match.group())
+
+        return {"error": f"Could not parse JSON from LLM response: {content[:200]}"}
 
     except Exception as e:
         error_msg = str(e)
         logger.error(f"[_extract_semantics] Error: {error_msg}")
-        # Return error details instead of empty dict so caller can handle it
         return {"error": error_msg}
 
 
@@ -226,40 +236,43 @@ def generate_embeddings(client: OpenAI, terms: list[str]) -> dict:
 
 def _search_qdrant(qdrant: QdrantClient, vectors_map: dict) -> dict:
     """
-    INTERNAL: Searches Qdrant.
+    INTERNAL: Searches both KQAPro and SciQA Qdrant collections.
 
     Args:
         qdrant: The Qdrant client instance.
         vectors_map: Dictionary mapping terms to their vector embeddings.
 
-    Returns a Dictionary: {"term": [{"id": "...", "score": 0.9}, ...]}
+    Returns a Dictionary:
+        {"kqapro": {"term": [{"id": ..., "score": ...}]},
+         "sciqa":  {"term": [{"id": ..., "score": ...}]}}
     """
-    search_results = {}
+    results = {"kqapro": {}, "sciqa": {}}
 
-    for word, vector in vectors_map.items():
-        if not vector:
-            continue
-        try:
-            hits = qdrant.search(
-                collection_name=COLLECTION_NAME,
-                query_vector=vector,
-                limit=TOP_N,
-                with_payload=True,
-                score_threshold=SCORE_THRESHOLD
-            )
-            candidates = []
-            for hit in hits:
-                candidates.append({
-                    "id": hit.payload.get("id", "unknown"),
-                    "label": hit.payload.get("label", "unknown"),
-                    "score": round(hit.score, 4)
-                })
-            search_results[word] = candidates
-        except Exception as e:
-            logger.error(f"[_search_qdrant] Error for '{word}': {e}")
-            search_results[word] = []
+    for collection_key, collection_name in [("kqapro", COLLECTION_KQAPRO), ("sciqa", COLLECTION_SCIQA)]:
+        for word, vector in vectors_map.items():
+            if not vector:
+                continue
+            try:
+                hits = qdrant.search(
+                    collection_name=collection_name,
+                    query_vector=vector,
+                    limit=TOP_N,
+                    with_payload=True,
+                    score_threshold=SCORE_THRESHOLD
+                )
+                candidates = []
+                for hit in hits:
+                    candidates.append({
+                        "id": hit.payload.get("original_id", hit.payload.get("id", "unknown")),
+                        "label": hit.payload.get("name", hit.payload.get("label", "unknown")),
+                        "score": round(hit.score, 4)
+                    })
+                results[collection_key][word] = candidates
+            except Exception as e:
+                logger.error(f"[_search_qdrant] Error for '{word}' in {collection_name}: {e}")
+                results[collection_key][word] = []
 
-    return search_results
+    return results
 
 
 @mcp.tool()
@@ -305,69 +318,76 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
             "suggestion": "Check your LLM configuration and API key in config.toml"
         })
 
-    # Prepare list for embedding
-    terms_to_embed = []
-    if semantics.get("subject"):
-        terms_to_embed.append(semantics["subject"])
-    if semantics.get("predicate"):
-        terms_to_embed.append(semantics["predicate"])
-    for obj in semantics.get("objects", []):
-        terms_to_embed.append(obj)
+    # Only embed the object terms (nouns/entities) for routing decisions.
+    # Subject (Who/What) and predicate (verbs) match broadly in any collection.
+    object_terms = semantics.get("objects", [])
+    if not object_terms:
+        # Fallback: use all terms if no objects extracted
+        if semantics.get("subject"):
+            object_terms.append(semantics["subject"])
+        if semantics.get("predicate"):
+            object_terms.append(semantics["predicate"])
 
     # 3. Embed
     embed_start = time.time()
-    vectors_map = generate_embeddings(app_context.openai, terms_to_embed)
+    vectors_map = generate_embeddings(app_context.openai, object_terms)
     logger.debug(f"[TIMING] Embedding generation took {time.time() - embed_start:.2f}s")
 
-    # 4. Search / Validate
+    # 4. Search both KQAPro and SciQA collections
     search_start = time.time()
     search_results = _search_qdrant(app_context.qdrant, vectors_map)
     logger.debug(f"[TIMING] Qdrant search took {time.time() - search_start:.2f}s")
 
-    # 5. LOGIC: Decide Recommendation
-    # Calculate metrics to decide if we have enough "good" hits
-    total_matches = 0
-    sum_scores = 0
-    found_entities = {}  # To store only the best match per term
+    # 5. Score each knowledge graph by its best matches
+    kg_scores = {}
+    kg_entities = {}
 
-    for term, candidates in search_results.items():
-        if candidates:
-            best_match = candidates[0]  # Take the top 1
-            total_matches += 1
-            sum_scores += best_match['score']
+    for kg_name, kg_results in search_results.items():
+        total_matches = 0
+        sum_scores = 0
+        found_entities = {}
 
-            # Structure specifically for the orchestrator
-            found_entities[term] = {
-                "db_id": best_match['id'],
-                "db_label": best_match['label'],
-                "confidence": best_match['score']
-            }
+        for term, candidates in kg_results.items():
+            if candidates:
+                best_match = candidates[0]
+                total_matches += 1
+                sum_scores += best_match['score']
+                found_entities[term] = {
+                    "db_id": best_match['id'],
+                    "db_label": best_match['label'],
+                    "confidence": best_match['score']
+                }
 
-    # Calculate average confidence of found items
-    avg_confidence = (sum_scores / total_matches) if total_matches > 0 else 0.0
+        avg_confidence = (sum_scores / total_matches) if total_matches > 0 else 0.0
+        kg_scores[kg_name] = {
+            "avg_confidence": avg_confidence,
+            "entities_found_count": total_matches
+        }
+        kg_entities[kg_name] = found_entities
 
-    # --- DECISION RULE ---
-    # If we found at least one solid entity (e.g., Subject or Object) with high confidence,
-    # we recommend the structured Vector/Graph DB.
-    # Otherwise, we recommend a fallback (like text search or 'unknown').
+    # 6. Pick the best knowledge graph (highest avg confidence on object terms).
+    # On ties, prefer KQAPro (general domain) over SciQA (scientific niche).
+    kg_priority = {"kqapro": 1, "sciqa": 0}
+    best_kg = max(kg_scores, key=lambda k: (kg_scores[k]["avg_confidence"], kg_priority.get(k, 0)))
+    best_metrics = kg_scores[best_kg]
 
-    if total_matches >= 1 and avg_confidence > 0.7:
-        recommendation = "take KQAPro for it "
-        reasoning = f"Found {total_matches} entities with high confidence ({avg_confidence:.2f})."
+    if best_kg == "sciqa" and best_metrics["entities_found_count"] >= 1 and best_metrics["avg_confidence"] > 0.7:
+        recommendation = "take SciQA for it"
+        reasoning = f"Found {best_metrics['entities_found_count']} entities in SciQA with high confidence ({best_metrics['avg_confidence']:.2f})."
+    elif best_metrics["entities_found_count"] >= 1 and best_metrics["avg_confidence"] > 0.7:
+        recommendation = "take KQAPro for it"
+        reasoning = f"Found {best_metrics['entities_found_count']} entities in KQAPro with high confidence ({best_metrics['avg_confidence']:.2f})."
     else:
-        recommendation = "take KQAPro for it "  # Fallback
-        reasoning = "No known entities found in the knowledge base."
+        recommendation = "take KQAPro for it"
+        reasoning = "No strong entity matches found; defaulting to KQAPro."
 
-    # 6. Construct Final Output
+    # 7. Construct Final Output
     final_output = {
         "recommendation": recommendation,
         "reasoning": reasoning,
-        "metrics": {
-            "avg_confidence": avg_confidence,
-            "entities_found_count": total_matches
-        },
-        "linked_entities": found_entities,  # The IDs the orchestrator needs for the next step
-        "semantics": semantics    # Keep the extracted structure
+        "metrics": kg_scores,
+        "linked_entities": kg_entities.get(best_kg, {}),
+        "semantics": semantics
     }
 
     logger.info(f"[TIMING] Total processing took {time.time() - start_time:.2f}s")

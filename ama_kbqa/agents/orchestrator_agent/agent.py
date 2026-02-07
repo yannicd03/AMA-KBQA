@@ -17,6 +17,8 @@ from mcp.client.stdio import stdio_client
 from mcp.types import Tool as McpTool
 from asyncio.exceptions import CancelledError
 
+from ama_kbqa.config import get_chat_client, get_chat_model_name
+
 load_dotenv(find_dotenv())
 
 # --- CONFIGURATION & PATH LOGIC ---
@@ -24,8 +26,6 @@ current_file = Path(__file__).resolve()
 ama_kbqa_root = current_file.parents[2]
 default_server_path = ama_kbqa_root / "server" / "orchestrator_server.py"
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "minimax/minimax-m2")
 MCP_SERVER_PATH = os.getenv("ORCHESTRATOR_SERVER_PATH", str(default_server_path))
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are an intelligent orchestrator.")
 
@@ -110,8 +110,8 @@ class Orchestrator:
     def __init__(self, session_id: str = "default"):
         self.name = "ORCHESTRATOR"
         self.session_id = session_id
-        self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
-        self.model = MODEL_NAME
+        self.client = get_chat_client()
+        self.model = get_chat_model_name()
         self.mcp: Optional[MCPClient] = None
         self._agents = {}
 
@@ -121,18 +121,11 @@ class Orchestrator:
                 "class": "KQAProAgent",
                 "description": "Factual knowledge, Knowledge Graph, Relationships"
             },
-            "code_agent": {
-                "module": "ama_kbqa.placeholder_agent.agent",
-                "class": "PlaceholderAgent",
-                "init_kwargs": {"domain": "Coding", "capabilities": "Python, Algorithms"},
-                "description": "Programming, Python"
+            "sciqa_agent": {
+                "module": "ama_kbqa.agents.sciqa_agent.agent",
+                "class": "SciQAAgent",
+                "description": "Scientific papers, research contributions, ORKG"
             },
-            "math_agent": {
-                "module": "ama_kbqa.placeholder_agent.agent",
-                "class": "PlaceholderAgent",
-                "init_kwargs": {"domain": "Math", "capabilities": "Equations, Algebra"},
-                "description": "Computation, Mathematics"
-            }
         }
 
     def _trace(self, msg: str, color: str = COLOR_BLUE):
@@ -233,17 +226,20 @@ class Orchestrator:
                 # 3. Logging: Result
                 self._log_pretty("Result", tool_result, COLOR_MAGENTA)
 
-                # Mapping
-                res_lower = tool_result.lower()
-                if "kqapro" in res_lower:
-                    return "kqapro_agent"
-                if "code" in res_lower:
-                    return "code_agent"
-                if "math" in res_lower:
-                    return "math_agent"
+                # Parse the recommendation from the JSON result
+                try:
+                    result_data = json.loads(tool_result)
+                    recommendation = result_data.get("recommendation", "").lower()
+                except (json.JSONDecodeError, AttributeError):
+                    recommendation = tool_result.lower()
 
-                self._trace(f"{COLOR_YELLOW}Tool result unclear: {tool_result}{COLOR_END}", COLOR_YELLOW)
-                return None
+                if "sciqa" in recommendation:
+                    return "sciqa_agent"
+                if "kqapro" in recommendation:
+                    return "kqapro_agent"
+
+                self._trace(f"{COLOR_YELLOW}Tool result unclear, defaulting to kqapro_agent{COLOR_END}", COLOR_YELLOW)
+                return "kqapro_agent"
             else:
                 self._trace(f"{COLOR_YELLOW}LLM did not call any tool.{COLOR_END}", COLOR_YELLOW)
                 return None
