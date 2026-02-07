@@ -224,3 +224,4 @@ claude.md
 .agent/
 /db/datasets/SciQA/**
 /paper
+/benchmark_results
