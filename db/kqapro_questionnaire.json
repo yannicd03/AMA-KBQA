@@ -1,0 +1,1324 @@
+{
+  "metadata": {
+    "dataset": "kqapro",
+    "source_file": "db\\datasets\\kqapro\\val.json",
+    "total_source_questions": 11797,
+    "sample_size": 20,
+    "seed": 2024,
+    "generated_at": "2026-02-02T00:41:41.291884"
+  },
+  "questions": [
+    {
+      "id": 0,
+      "question": "Was the Taliban established on 1994-01-01 ?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:name> \"Taliban\" . ?e <inception> ?pv . ?pv <pred:date> \"1994-01-01\"^^xsd:date .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Taliban"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "inception"
+          ]
+        },
+        {
+          "function": "VerifyDate",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "1994-01-01",
+            "="
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "question": "The person born as Chloe Ardelia Wofford has which KLfG Critical Dictionary of foreign contemporary literature designation?",
+      "answer": "18000000318",
+      "choices": [
+        "18000000513",
+        "18000000359",
+        "18000000052",
+        "18000000482",
+        "18000000030",
+        "18000000381",
+        "18000000638",
+        "18000000318",
+        "18000000267",
+        "18000000474"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <birth_name> ?pv_1 . ?pv_1 <pred:value> \"Chloe Ardelia Wofford\" . ?e <KLfG_Critical_Dictionary_of_foreign_contemporary_literature> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "birth name",
+            "Chloe Ardelia Wofford"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "KLfG Critical Dictionary of foreign contemporary literature"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "question": "Does the state of India, whose FIPS 10-4 (countries and regions) is IN23, have an ISO 3166-2 code equal to GB-LEC?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"state of India\" . ?e <FIPS_10-4_(countries_and_regions)> ?pv_1 . ?pv_1 <pred:value> \"IN23\" . ?e <ISO_3166-2_code> ?pv . ?pv <pred:value> \"GB-LEC\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "FIPS 10-4 (countries and regions)",
+            "IN23"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "state of India"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "ISO 3166-2 code"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "GB-LEC"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "question": "Is the cost of the animated feature film titled Madagascar 3: Europe's Most Wanted less than 150000000 United States dollars?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"animated feature film\" . ?e <title> ?pv_1 . ?pv_1 <pred:value> \"Madagascar 3: Europe's Most Wanted\" . ?e <cost> ?pv . ?pv <pred:unit> \"United States dollar\" . ?pv <pred:value> ?v . FILTER ( ?v < \"150000000\"^^xsd:double ) .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "Madagascar 3: Europe's Most Wanted"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "animated feature film"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "cost"
+          ]
+        },
+        {
+          "function": "VerifyNum",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "150000000 United States dollar",
+            "<"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "question": "Which website belongs to the association football club based in Brunswick,  twinned administrative body of Omaha?",
+      "answer": "http://www.eintracht.com/",
+      "choices": [
+        "http://www.peephouston.com",
+        "http://www.beatles.com/#/films/",
+        "http://www.rwcc.com/",
+        "http://www.mckellen.com/",
+        "http://www.worldfantasy.org/awards/",
+        "http://www.piranha-3d.com/",
+        "http://www.eintracht.com/",
+        "http://www.sho.com/dexter",
+        "http://www.intothematrix.com",
+        "https://www.weber.edu"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"association football club\" . ?e <located_in_the_administrative_territorial_entity> ?e_1 . ?e_1 <pred:name> \"Brunswick\" . ?e_2 <twinned_administrative_body> ?e_1 . ?e_2 <pred:name> \"Omaha\" .  ?e <official_website> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Omaha"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "twinned administrative body",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Brunswick"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "located in the administrative territorial entity",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "association football club"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "official website"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "question": "Who is the nominee of Academy Award for Best Director for the work in The Thin Red Line (with George Clooney in the cast) ?",
+      "answer": "Terrence Malick",
+      "choices": [
+        "Terrence Malick",
+        "Anne V. Coates",
+        "Zachary Sklar",
+        "Bryan Grill",
+        "Claudette Colbert",
+        "Robert Lorenz",
+        "Rob Coleman",
+        "John Ireland",
+        "Donna Reed",
+        "Harry Stradling"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"The Thin Red Line\" . ?e_1 <cast_member> ?e_3 . ?e_3 <pred:name> \"George Clooney\" . ?e_2 <pred:name> \"Academy Award for Best Director\" . ?e_1 <nominated_for> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <nominated_for> ; <pred:fact_t> ?e_2 ] <nominee> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "George Clooney"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "cast member",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "The Thin Red Line"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Academy Award for Best Director"
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": [
+            "nominated for",
+            "nominee"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "question": "Which movie is shorter, Bicentennial Man or Shanghai (the one whose duration is 75 minute)?",
+      "answer": "Shanghai",
+      "choices": [
+        "Training Day",
+        "Bicentennial Man",
+        "Talk to Her",
+        "The Hunchback of Notre Dame",
+        "Rebecca",
+        "The Fifth Element",
+        "Shanghai",
+        "Curse of the Golden Flower",
+        "A Prairie Home Companion",
+        "Pleasantville"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Bicentennial Man\" . } UNION { ?e <pred:name> \"Shanghai\" . ?e <duration> ?pv_1 . ?pv_1 <pred:unit> \"minute\" . ?pv_1 <pred:value> \"75\"^^xsd:double . } ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Bicentennial Man"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Shanghai"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "duration",
+            "75 minute",
+            "="
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            2
+          ],
+          "inputs": [
+            "duration",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "question": "How many masculine first names belong to a partner of Rose Byrne?",
+      "answer": "1",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"male given name\" . ?e_1 <given_name> ?e . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"human\" . ?e_2 <partner> ?e_1 . ?e_2 <pred:name> \"Rose Byrne\" .   }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Rose Byrne"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "partner",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "given name",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "male given name"
+          ]
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "question": "What college or university in the Eastern Time Zone of the United States has the most students?",
+      "answer": "Virginia Tech",
+      "choices": [
+        "Montana State University - Bozeman",
+        "North Carolina Agricultural and Technical State University",
+        "University of Idaho",
+        "North Dakota State University",
+        "Iowa State University",
+        "University of Vermont",
+        "Virginia Tech",
+        "University of Maine",
+        "University of Arkansas",
+        "South Carolina State University"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"colleges and universities in the United States\" . ?e <located_in_time_zone> ?e_1 . ?e_1 <pred:name> \"Eastern Time Zone\" .  ?e <students_count> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Eastern Time Zone"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "located in time zone",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "colleges and universities in the United States"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "students count",
+            "largest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "question": "How many countries contain a sport associated with a person that is the member of Livingston F.C. ?",
+      "answer": "1",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"country\" . ?e_1 <country_for_sport> ?e . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"human\" . ?e_1 <member_of_sports_team> ?e_3 . ?e_3 <pred:name> \"Livingston F.C.\" .   }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Livingston F.C."
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "member of sports team",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "country for sport",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "country"
+          ]
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "question": "What is the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal, the well-known house music performer?",
+      "answer": "1995",
+      "choices": [
+        "1917-12-01",
+        "2016-02-29",
+        "2015-02-12",
+        "2011-09-01",
+        "1995-02-14",
+        "2010-08-01",
+        "1918-01-01",
+        "1903-03-02",
+        "1930-12-31",
+        "1995"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"Seal\" . ?e_3 <famous_people> ?e_1 . ?e_3 <pred:name> \"house music\" . ?e_2 <pred:name> \"MTV Video Music Award for Best Video from a Film\" . ?e_1 <nominated_for> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <nominated_for> ; <pred:fact_t> ?e_2 ] <point_in_time> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "house music"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "famous people",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Seal"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "MTV Video Music Award for Best Video from a Film"
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": [
+            "nominated for",
+            "point in time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "question": "How many art movements are located in Paris (the one that is the main subject of An American in Paris) or have the Dewey Decimal Classification of 142.78?",
+      "answer": "2",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"art movement\" .  { ?e <located_in_the_administrative_territorial_entity> ?e_1 . ?e_1 <pred:name> \"Paris\" . ?e_2 <main_subject> ?e_1 . ?e_2 <pred:name> \"An American in Paris\" .  } UNION { ?e <Dewey_Decimal_Classification> ?pv . ?pv <pred:value> \"142.78\" .  } }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "An American in Paris"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "main subject",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Paris"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "located in the administrative territorial entity",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "art movement"
+          ]
+        },
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            6
+          ],
+          "inputs": [
+            "Dewey Decimal Classification",
+            "142.78"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            7
+          ],
+          "inputs": [
+            "art movement"
+          ]
+        },
+        {
+          "function": "Or",
+          "dependencies": [
+            5,
+            8
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            9
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "question": "What is the visual artwork titled 紳士協定?",
+      "answer": "Gentleman's Agreement",
+      "choices": [
+        "Mission: Impossible III",
+        "Annie Hall",
+        "Pleasantville",
+        "Talk to Her",
+        "Rebecca",
+        "Rocky IV",
+        "Singapore",
+        "Star Trek Ⅱ: The Wrath of Khan",
+        "A Prairie Home Companion",
+        "Gentleman's Agreement"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <title> ?pv . ?pv <pred:value> \"紳士協定\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "紳士協定"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "question": "How many public universities are designated by ISNI 0000 0001 2248 7639 or located at Columbia-Campus, Columbia, SC, 29208?",
+      "answer": "2",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"public university\" .  { ?e <ISNI> ?pv . ?pv <pred:value> \"0000 0001 2248 7639\" .  } UNION { ?e <located_at_street_address> ?pv . ?pv <pred:value> \"Columbia-Campus, Columbia, SC, 29208\" .  } }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0001 2248 7639"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "public university"
+          ]
+        },
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "located at street address",
+            "Columbia-Campus, Columbia, SC, 29208"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "public university"
+          ]
+        },
+        {
+          "function": "Or",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "question": "Which has a larger population, Chesterfield or Hitchin?",
+      "answer": "Hitchin",
+      "choices": [
+        "Bury St Edmunds",
+        "Hitchin",
+        "TVT Records",
+        "Socialist Federal Republic of Yugoslavia",
+        "Chesterfield",
+        "Carmarthen",
+        "American International Pictures",
+        "Burnley",
+        "Pontefract",
+        "John Wood"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Chesterfield\" .  } UNION { ?e <pred:name> \"Hitchin\" .  } ?e <population> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Chesterfield"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Hitchin"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "population",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "question": "For the award nominated to Tom Wilkinson (the one that is a cast member of Oscar and Lucinda) (the award-winning work of this statement is John Adams), is its establishment time not in 1911?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"award\" . ?e_1 <nominated_for> ?e . ?e_1 <pred:name> \"Tom Wilkinson\" . ?e_2 <cast_member> ?e_1 . ?e_2 <pred:name> \"Oscar and Lucinda\" .  [ <pred:fact_h> ?e_1 ; <pred:fact_r> <nominated_for> ; <pred:fact_t> ?e ] <for_work> ?qpv . ?qpv <pred:value> \"John Adams\" . ?e <inception> ?pv . ?pv <pred:year> ?v . FILTER ( ?v != 1911 ) .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Oscar and Lucinda"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "cast member",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Tom Wilkinson"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "nominated for",
+            "forward"
+          ]
+        },
+        {
+          "function": "QFilterStr",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "for work",
+            "John Adams"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "award"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            6
+          ],
+          "inputs": [
+            "inception"
+          ]
+        },
+        {
+          "function": "VerifyYear",
+          "dependencies": [
+            7
+          ],
+          "inputs": [
+            "1911",
+            "!="
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "question": "Among the animated feature film whose director is Pete Docter, which one has the smallest duration ?",
+      "answer": "Monsters, Inc.",
+      "choices": [
+        "Lilo & Stitch",
+        "Winnie the Pooh",
+        "Monsters, Inc.",
+        "Beauty and the Beast",
+        "Renaissance",
+        "Peter Pan",
+        "The Rescuers",
+        "Up",
+        "WALL·E",
+        "Aladdin"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"animated feature film\" . ?e <director> ?e_1 . ?e_1 <pred:name> \"Pete Docter\" .  ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Pete Docter"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "director",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "animated feature film"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "duration",
+            "smallest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "question": "What is the Golden Globe Award ceremony  received by the visual artwork with exploitation visa number 116230?",
+      "answer": "64th Golden Globe Awards",
+      "choices": [
+        "65th Golden Globe Awards",
+        "60th Golden Globe Awards",
+        "69th Golden Globe Awards",
+        "37th Golden Globe Awards",
+        "64th Golden Globe Awards",
+        "66th Golden Globe Awards",
+        "55th Golden Globe Awards",
+        "57th Golden Globe Awards",
+        "59th Golden Globe Awards",
+        "Satellite Awards 2007"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"Golden Globe Award ceremony\" . ?e_1 <award_received> ?e . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"visual artwork\" . ?e_1 <exploitation_visa_number> ?pv . ?pv <pred:value> \"116230\" .   }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "exploitation visa number",
+            "116230"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "award received",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "Golden Globe Award ceremony"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "question": "What is the singles record for the person who is Mike Bryan's sibling?",
+      "answer": "21–40",
+      "choices": [
+        "924–190",
+        "343–244",
+        "796–235",
+        "5–11",
+        "1183–261",
+        "101–99",
+        "85–118",
+        "846–176",
+        "805–137",
+        "21–40"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e_1 <sibling> ?e . ?e_1 <pred:name> \"Mike Bryan\" .  ?e <singles_record> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Mike Bryan"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "sibling",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "singles record"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "question": "Rajesh Khanna has what connection to Mumbai?",
+      "answer": "place of death",
+      "choices": [
+        "composer",
+        "natural product of taxon",
+        "location of final assembly",
+        "territory overlaps",
+        "feast day",
+        "sex or gender",
+        "place of death",
+        "next lower rank",
+        "conferred by",
+        "present in work"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Rajesh Khanna\" . ?e_2 <pred:name> \"Mumbai\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Rajesh Khanna"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Mumbai"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    }
+  ]
+}
