@@ -41,16 +41,17 @@ class KQAProAgent(BaseKBQAAgent):
     answer natural language questions.
     """
 
-    def __init__(self, name: str = "kqapro_agent", session_id: str = "default"):
+    def __init__(self, name: str = "kqapro_agent", session_id: str = "default", use_fewshot: bool = True):
         """
         Initialize the KQAPro agent.
 
         Args:
             name: Agent name for tracing
             session_id: Session identifier
+            use_fewshot: Whether to inject few-shot examples during classification
         """
         self._adapter = KQAProAdapter()
-        super().__init__(name=name, session_id=session_id)
+        super().__init__(name=name, session_id=session_id, use_fewshot=use_fewshot)
 
     # =========================================================================
     # ABSTRACT METHOD IMPLEMENTATIONS
@@ -124,18 +125,18 @@ class KQAProAgent(BaseKBQAAgent):
 
     def _load_fewshot_examples(
         self,
-        max_per_type: int = 10,
+        max_per_type: int = 3,
         specific_qtype: Optional[str] = None
     ) -> str:
         """
-        Load few-shot examples from the fewshot-examples directory.
+        Load tool-trace few-shot examples from the fewshot-examples directory.
 
         Args:
             max_per_type: Maximum examples per question type
             specific_qtype: Load only this question type if specified
 
         Returns:
-            Formatted few-shot examples string
+            Formatted tool-trace examples string
         """
         repo_root = Path(__file__).resolve().parents[3]
         fewshot_dir = repo_root / "db" / "datasets" / "kqapro" / "fewshot-examples"
@@ -173,8 +174,9 @@ class KQAProAgent(BaseKBQAAgent):
                     all_examples.append({
                         "qtype": qtype,
                         "question": example.get("question", ""),
-                        "reasoning": example.get("reasoning", ""),
-                        "lesson_learned": example.get("lesson_learned", "")
+                        "answer": example.get("answer", ""),
+                        "trace": example.get("trace", []),
+                        "lesson": example.get("lesson", "")
                     })
 
             except (json.JSONDecodeError, Exception):
@@ -183,15 +185,24 @@ class KQAProAgent(BaseKBQAAgent):
         if not all_examples:
             return ""
 
-        formatted = "\n\n### Few-Shot Examples\n\n"
+        formatted = ""
         for i, example in enumerate(all_examples, 1):
-            formatted += f"**Example {i}:**\n"
-            formatted += f"Question: {example['question']}\n"
-            formatted += f"Type: {example['qtype']}\n"
-            if example['reasoning']:
-                formatted += f"Reasoning: {example['reasoning']}\n"
-            if example['lesson_learned']:
-                formatted += f"Lesson: {example['lesson_learned']}\n"
+            answer = example["answer"]
+            formatted += f'--- Example {i}: "{example["question"]}" -> {answer}\n'
+
+            trace = example.get("trace", [])
+            if trace:
+                formatted += "Trace: "
+                for j, step in enumerate(trace):
+                    prefix = "       " if j > 0 else ""
+                    tool = step.get("tool", "?")
+                    args = step.get("args", "")
+                    result = step.get("result", "")
+                    formatted += f'{prefix}{tool}("{args}") -> {result}\n'
+
+            if example["lesson"]:
+                formatted += f'Lesson: {example["lesson"]}\n'
+
             formatted += "\n"
 
         return formatted
@@ -211,13 +222,16 @@ class KQAProAgent(BaseKBQAAgent):
         # Call parent classification
         result = super()._classify_question(question)
 
-        # Load few-shot examples for this question type
-        qtype = result.get("question_type", "Query")
-        fewshot_examples = self._load_fewshot_examples(
-            max_per_type=10,
-            specific_qtype=qtype
-        )
-        result["fewshot_examples"] = fewshot_examples
+        # Load few-shot examples for this question type (unless disabled)
+        if self.use_fewshot:
+            qtype = result.get("question_type", "Query")
+            fewshot_examples = self._load_fewshot_examples(
+                max_per_type=3,
+                specific_qtype=qtype
+            )
+            result["fewshot_examples"] = fewshot_examples
+        else:
+            result["fewshot_examples"] = ""
 
         return result
 

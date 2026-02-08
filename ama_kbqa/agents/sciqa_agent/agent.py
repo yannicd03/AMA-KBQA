@@ -44,16 +44,17 @@ class SciQAAgent(BaseKBQAAgent):
     and answer scientific research questions.
     """
 
-    def __init__(self, name: str = "sciqa_agent", session_id: str = "default"):
+    def __init__(self, name: str = "sciqa_agent", session_id: str = "default", use_fewshot: bool = True):
         """
         Initialize the SciQA agent.
 
         Args:
             name: Agent name for tracing
             session_id: Session identifier
+            use_fewshot: Whether to inject few-shot examples during classification
         """
         self._adapter = SciQAAdapter()
-        super().__init__(name=name, session_id=session_id)
+        super().__init__(name=name, session_id=session_id, use_fewshot=use_fewshot)
 
     # =========================================================================
     # ABSTRACT METHOD IMPLEMENTATIONS
@@ -145,8 +146,8 @@ class SciQAAgent(BaseKBQAAgent):
             result = json.loads(json_content)
             qtype = result.get("question_type", "General")
 
-            # Inject few-shot examples for the detected question type
-            fewshot = FEWSHOT_EXAMPLES.get(qtype, "")
+            # Inject few-shot examples for the detected question type (unless disabled)
+            fewshot = FEWSHOT_EXAMPLES.get(qtype, "") if self.use_fewshot else ""
 
             return {
                 "question_type": qtype,

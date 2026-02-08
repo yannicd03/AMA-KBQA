@@ -494,7 +494,7 @@ Extracted Relations:
 
 # Fewshot examples suffix template
 FEWSHOT_EXAMPLES_TEMPLATE = """
-Relevant Few-Shot Examples for {qtype} Questions:
+Tool-Usage Examples for {qtype} Questions:
 {fewshot_examples}
 """
 

@@ -1,10 +1,15 @@
 [
   {
-    "question": "Example question here",
-    "reasoning": "Explanation of why this question was classified as this type",
-    "correct_qtype": "Count",
-    "lesson_learned": "Key insight or pattern to remember for future classifications",
-    "argumentation_score": 5,
-    "exported_at": "2025-01-15T10:30:00.000000"
+    "question": "How many businesses managed by George Clooney have Dimension Films?",
+    "answer": "0",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "FindNode", "args": "George Clooney", "result": "found Q7948 (George Clooney)"},
+      {"tool": "GetRelationDetails", "args": "Q7948, manager_of", "result": "4 targets, first: Smokehouse Pictures"},
+      {"tool": "RunSPARQL", "args": "COUNT with child_org=Dimension Films", "result": "0 results"}
+    ],
+    "lesson": "Used SPARQL for Count question after entity discovery.",
+    "tool_count": 6,
+    "collected_at": "2026-02-08T12:00:00"
   }
 ]
