@@ -45,6 +45,7 @@ from ama_kbqa.config import (
     get_sciqa_relation_threshold,
 )
 import os
+import re
 import sys
 import time
 import json
@@ -754,6 +755,11 @@ async def RunORKGSPARQL(
     DO NOT include PREFIX declarations - they are auto-injected.
     The query will be executed against the SciQA graph.
 
+    Auto-wrapping behavior: If the query does not already contain a GRAPH clause,
+    the server automatically wraps it with GRAPH <http://sciqa.org/kg> { ... }.
+    Solution modifiers (LIMIT, ORDER BY, OFFSET, GROUP BY, HAVING) are extracted
+    before wrapping and re-appended outside the GRAPH block (per SPARQL spec).
+
     Available prefixes:
     - orkgr: <http://orkg.org/orkg/resource/>
     - orkgp: <http://orkg.org/orkg/predicate/>
@@ -761,7 +767,8 @@ async def RunORKGSPARQL(
     - rdfs:, rdf:, xsd:, owl:
 
     Args:
-        query: SPARQL query WITHOUT PREFIX declarations
+        query: SPARQL query WITHOUT PREFIX declarations. Can include trailing
+               solution modifiers (LIMIT, ORDER BY, OFFSET, GROUP BY).
 
     Returns:
         JSON with query results
@@ -774,18 +781,27 @@ async def RunORKGSPARQL(
 
         # Wrap query with graph if not already wrapped
         if "GRAPH" not in query.upper():
-            if "WHERE" in query.upper():
-                # SELECT/CONSTRUCT with WHERE clause
-                query = query.replace("{", f"{{ GRAPH <{SCIQA_GRAPH}> {{", 1)
-                query = query.rstrip()
-                if query.endswith("}"):
-                    query = query[:-1] + "} }"
-            elif is_ask:
-                # ASK queries have no WHERE keyword - wrap the body
-                query = query.replace("{", f"{{ GRAPH <{SCIQA_GRAPH}> {{", 1)
-                query = query.rstrip()
-                if query.endswith("}"):
-                    query = query[:-1] + "} }"
+            if "WHERE" in query.upper() or is_ask:
+                # Extract trailing solution modifiers (LIMIT, ORDER BY, OFFSET, GROUP BY)
+                # that must stay outside the WHERE/GRAPH blocks
+                modifier_pattern = r'(\})\s*((?:ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|OFFSET)\b.*)$'
+                modifier_match = re.search(modifier_pattern, query, re.IGNORECASE | re.DOTALL)
+
+                if modifier_match:
+                    # Split query body from trailing modifiers
+                    modifier_start = modifier_match.start(2)
+                    trailing_modifiers = query[modifier_start:].strip()
+                    query_body = query[:modifier_start].strip()
+                else:
+                    trailing_modifiers = ""
+                    query_body = query.rstrip()
+
+                # Wrap with GRAPH clause
+                query_body = query_body.replace("{", f"{{ GRAPH <{SCIQA_GRAPH}> {{", 1)
+                if query_body.endswith("}"):
+                    query_body = query_body[:-1] + "} }"
+
+                query = query_body + ("\n" + trailing_modifiers if trailing_modifiers else "")
 
         full_query = SPARQL_PREFIXES + query
         app.sparql.setQuery(full_query)

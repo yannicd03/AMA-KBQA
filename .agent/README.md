@@ -295,6 +295,13 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-09**: ✅ **SciQA Server SPARQL Wrapping Fix**
+  - Fixed `RunORKGSPARQL` auto-wrapping behavior to correctly handle solution modifiers
+  - Problem: LIMIT, ORDER BY, OFFSET, GROUP BY clauses were trapped inside GRAPH block (invalid SPARQL)
+  - Solution: Extract trailing modifiers before wrapping with GRAPH, re-append outside the block (per SPARQL spec)
+  - Merged duplicate if/elif branches for WHERE and ASK queries into single condition
+  - Updated RunORKGSPARQL docstring with auto-wrapping behavior and modifier extraction details
+  - No behavior change for queries that already contain explicit GRAPH clauses
 - **2026-02-09**: ✅ **Few-Shot Redesign: Tool-Trace Format**
   - Replaced judge-evaluation few-shot examples with abbreviated tool-usage traces (question → tool sequence → answer)
   - Old format stored LLM judge reasoning ("The predicted answer matches...") which diluted attention from QTYPE_STRATEGIES and hurt performance
