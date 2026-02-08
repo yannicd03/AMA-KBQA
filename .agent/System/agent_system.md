@@ -1,0 +1,761 @@
+# Agent System Documentation
+
+## Overview
+
+The AMA KBQA system uses a multi-agent architecture with:
+
+1. **Orchestrator Agent** - Routes queries to appropriate sub-agents
+2. **KQAPro Agent** - KBQA agent for general knowledge (Wikidata-derived) ✅ Active
+3. **SciQA Agent** - KBQA agent for scientific research (ORKG) ✅ Active
+4. **Placeholder Agents** - Domain-specific fallback agents (code, math)
+
+All agents communicate with their MCP servers via **stdio protocol**.
+
+---
+
+## Agent Hierarchy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Orchestrator Agent                        │
+│   ama_kbqa/agents/orchestrator_agent/agent.py               │
+│                                                              │
+│   - Routes queries based on LLM classification              │
+│   - Falls back to KQAProAgent for knowledge queries         │
+│   - Uses orchestrator_server.py for routing tools           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+    ┌─────────────────────────┼─────────────────────────┐
+    ▼                         ▼                         ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│  KQAPro Agent   │  │   SciQA Agent   │  │   Code Agent    │
+│  (General KB)   │  │  (Scientific)   │  │  (Placeholder)  │
+│                 │  │                 │  │                 │
+│  Wikidata-like  │  │  ORKG Papers,   │  │  Python, Algo   │
+│  Factoid Q&A    │  │  Authors, etc.  │  │                 │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+        │                     │
+        ▼                     ▼
+┌─────────────────┐  ┌─────────────────┐
+│ kqapro_server   │  │ sciqa_server    │
+│ (21 tools)      │  │ (18 tools)      │
+└─────────────────┘  └─────────────────┘
+```
+
+---
+
+## Generic KBQA Framework
+
+Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework package. This provides:
+
+**Framework Files (`ama_kbqa/framework/`):**
+
+| File | Contents | Line Count |
+|------|----------|------------|
+| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap) | ~600 |
+| `mcp_client.py` | Shared MCPClient class | ~120 |
+| `types.py` | Response types (EntityMatch, NodeDetails, etc.) | ~280 |
+| `config.py` | Configuration dataclasses | ~220 |
+| `state.py` | JournalState and JournalManager | ~180 |
+| `adapters/base_adapter.py` | BaseKGAdapter ABC | ~200 |
+| `adapters/kqapro_adapter.py` | KQAPro-specific config | ~150 |
+| `adapters/sciqa_adapter.py` | SciQA-specific config (includes sparql_cap: 10) | ~180 |
+
+**BaseKBQAAgent provides:**
+- Abstract methods: `get_config()`, `get_mcp_server_path()`
+- Template methods: `_get_system_prompt()`, `_classify_question()`, `_extract_entities()`
+- Concrete methods: `ask()`, `_run_tool_loop()`, `_detect_loops()`, `reset()`, `soft_reset()`, `close()`
+
+---
+
+## KQAProAgent Deep Dive
+
+**Files:**
+- `ama_kbqa/agents/kqapro_agent/agent.py` - Inherits BaseKBQAAgent (~290 lines)
+- `ama_kbqa/agents/kqapro_agent/prompts.py` - All prompts (~665 lines)
+
+### File Organization
+
+The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific methods:
+
+| File | Contents | Line Count |
+|------|----------|------------|
+| `agent.py` | KQAProAgent class, overrides for classification/extraction | ~290 |
+| `prompts.py` | All prompt strings and templates | ~665 |
+
+**Prompts Module (`prompts.py`) exports:**
+- `QTYPE_STRATEGIES` - Dict of 10 question-type-specific strategies (includes completion gates for Count and SelectBetween)
+- `SYSTEM_PROMPT` - Main agent system prompt (includes 7 critical rules, including anti-premature-termination rule)
+- `CLASSIFICATION_PROMPT_TEMPLATE` - Question classification (uses `{question}`)
+- `ENTITY_EXTRACTION_PROMPT` - Entity/relation extraction
+- `ANALYSIS_CONTEXT_TEMPLATE` - Pre-analysis context (uses `{qtype}`, `{formatted_entities}`, etc.)
+- `FEWSHOT_EXAMPLES_TEMPLATE` - Few-shot examples section (loads all 10 qtypes: Count, Verify, Select, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName, Query)
+- `ANALYSIS_CONTEXT_SUFFIX` - Closing text for analysis
+- `JOURNAL_REFRESH_TEMPLATE` - Periodic memory refresh (uses `{iteration_count}`, `{journal_refresh}`)
+- `NO_PROGRESS_TEMPLATE` - No progress intervention
+- `SYNTHESIS_PROMPT_TEMPLATE` - Final synthesis (uses `{journal_summary}`, `{query}`)
+- `JOURNAL_SUMMARY_ANSWER_PROMPT` - Force answer after GetJournalSummary
+- `TOOL_LOOP_GUIDANCE` - Dict of tool-specific recovery guidance
+- `GENERIC_LOOP_GUIDANCE` - Fallback recovery guidance
+- `LOOP_INTERVENTION_TEMPLATE` - Loop detection message
+
+### Agent Lifecycle
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 1. INITIALIZATION                                               │
+│    - Load chat LLM client from config.toml                     │
+│    - Load synthesis LLM client from config.toml                │
+│    - Initialize MCP server connection                          │
+│    - Load system prompt with KBQA guidelines                   │
+└────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ 2. PRE-AGENT HOOK (Deterministic Classification)              │
+│    - Classify question type (9 types)                          │
+│    - Extract entities and relations                            │
+│    - Load question-type-specific strategy                      │
+│    - Load tool-trace few-shot examples (if enabled)             │
+│    - Inject pre-analysis context into message history          │
+└────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ 3. MAIN AGENT LOOP (Scratchpad-Enforced)                      │
+│    REPEAT until answer found OR max iterations (50):           │
+│     - Call LLM with tools                                      │
+│     - Track token usage                                        │
+│     - Execute tool calls via MCP                               │
+│     - TRUNCATE tool responses (keep last 2 full, rest 2000ch)  │
+│     - FORCED REFLECTION after each non-journal tool:           │
+│       • Inject REFLECTION_PROMPT (text-only LLM call)          │
+│       • Extract LEARNED/PLAN/NEXT from response                │
+│       • Store reflection in journal via ManageJournal          │
+│     - LOOP DETECTION: Check for infinite patterns              │
+│     - If loop detected: Inject intervention message            │
+│     - Every 5 iterations: Inject journal refresh at index 1    │
+│       (REPLACE mode after first refresh for primacy bias)      │
+│     - PROGRESS CHECK: Compare journal state                    │
+│     - If GetJournalSummary called: Force answer next turn      │
+└────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌────────────────────────────────────────────────────────────────┐
+│ 4. POST-AGENT HOOK (Deterministic Synthesis)                  │
+│    - Fetch complete GetJournalSummary                          │
+│    - Inject synthesis prompt with all discovered data          │
+│    - Make final LLM call using SYNTHESIS client/model          │
+│    - Track synthesis token usage                               │
+│    - Validate and return final answer                          │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Question Type Classification
+
+The agent classifies questions into 10 types, each with a specific strategy:
+
+| Type | Description | Strategy | Completion Gate |
+|------|-------------|----------|-----------------|
+| **Count** | "How many..." | Use RunSPARQL with COUNT() for large sets | ✅ Property discovery + COUNT query execution + numeric result |
+| **Verify** | "Is...", "Does..." | Use VerifyNumericCondition for TRUE/FALSE | - |
+| **Select** | General selection | Entity identification and attribute lookup | - |
+| **SelectBetween** | Compare 2 entities | Use CompareEntities, verify constraints | ✅ Both entity values retrieved + comparison made + answer identified |
+| **SelectAmong** | Superlative (most, least) | Use RunSPARQL with ORDER BY LIMIT 1 | - |
+| **QueryAttr** | Direct attribute lookup | Use GetAttributeDetails | - |
+| **QueryAttrQualifier** | Attribute with context | Use GetEdgeQualifiers | - |
+| **QueryRelation** | Relationship identification | Use GetRelationDetails | - |
+| **QueryRelationQualifier** | Relation with context | Use GetQualifiersByPredicate | - |
+| **QueryName** | Reverse lookup | Use FindByAttribute or RunSPARQL | - |
+| **Query** | General query | Multi-step reasoning | - |
+
+**Completion Gates:** Some question types have explicit completion gates to prevent premature termination. The agent must complete all checkpoints in the gate before stopping. This prevents the agent from concluding "I cannot answer" before attempting all necessary steps.
+
+### Loop Detection Mechanisms
+
+**5 Detection Layers:**
+
+1. **Identical Repeated Calls** (3x same tool+params)
+   ```
+   FindNode("Boston") → FindNode("Boston") → FindNode("Boston")
+   → LOOP DETECTED
+   ```
+
+2. **Oscillating Pattern** (A-B-A-B or A-B-C-A-B-C)
+   ```
+   GetAttr → FindNode → GetAttr → FindNode → GetAttr → FindNode
+   → LOOP DETECTED (A-B-A-B-A-B pattern)
+   ```
+
+3. **Tool Spam** (5/6 calls same tool, different params)
+   ```
+   RunSPARQL(q1) → RunSPARQL(q2) → X → RunSPARQL(q3) → RunSPARQL(q4) → RunSPARQL(q5)
+   → LOOP DETECTED (RunSPARQL 5/6 times)
+   ```
+
+4. **FindResource Cap** (8 calls for KQAPro, 8 for SciQA)
+   - Configured via `find_resource_cap` in domain_settings
+   - Prevents semantic search exhaustion
+   - Message: "FindResource called N times (cap: 8). Switch to SPARQL or other structured queries."
+
+5. **RunORKGSPARQL Cap** (10 calls for SciQA, configurable per agent)
+   - Configured via `sparql_cap` in domain_settings (default: 10)
+   - Prevents runaway SPARQL query spirals
+   - Message: "RunORKGSPARQL called N times (cap: 10). Use GetComparisonContributions or GetResourceSummary instead."
+   - Only applies to agents with RunORKGSPARQL tool (e.g., SciQA)
+
+6. **No Progress** (Journal unchanged for 5 iterations)
+   - Checked during periodic journal refresh
+   - Triggers strong intervention if journal state identical
+
+### Journal (Scratchpad) System
+
+**File:** `ama_kbqa/server/kqapro_server.py` (JournalState class)
+
+The journal tracks agent progress:
+
+```python
+class JournalState:
+    # Question context
+    question_text: str
+    question_type: str
+    target_entities: list[str]
+
+    # Exploration tracking
+    visited_nodes: dict[str, str]      # {node_id: node_name}
+    verified_facts: list[dict]
+    failed_attempts: list[str]
+
+    # CRITICAL - Discovered values
+    found_values: dict[str, dict]      # {entity_id: {attr: value}}
+
+    # Progress
+    current_plan: list[str]
+    completed_steps: list[str]
+    partial_answer: str
+```
+
+**Auto-Updates:**
+- `visited_nodes` - Updated by FindNode, GetNodeLabel
+- `found_values` - Updated by GetAttributeDetails, GetNodeSummary
+- `verified_facts` - Updated by various tools
+- `failed_attempts` - Logged when tools fail
+
+**Scratchpad-Enforced Reflection:**
+
+After each non-journal tool call, the agent is forced to reflect by:
+1. Injecting REFLECTION_PROMPT (text-only LLM call, no tools)
+2. Extracting structured reflection: LEARNED, PLAN, NEXT
+3. Storing reflection in journal via ManageJournal(action="update", content="reflection")
+
+This ensures the agent maintains a running mental model and doesn't lose context as tool responses are truncated.
+
+**Tool Response Truncation:**
+- Tool responses over 2000 characters are truncated (except journal tools)
+- Last 2 tool responses preserved in full (for immediate context)
+- All earlier responses compacted after each tool batch
+- Reduces context window bloat while preserving critical recent context
+- Increased from 1000 to 2000 chars to preserve complete property lists from GetNodeSummary
+
+**Journal Refresh Placement:**
+- Journal refresh injected at index 1 (after system prompt, before user question)
+- First refresh uses INSERT mode, subsequent refreshes use REPLACE mode
+- This exploits primacy bias: LLM sees journal state first
+- Only 1 journal refresh exists in message history at any time
+
+### Message History Format
+
+OpenAI-compatible conversation format with scratchpad-enforced loop:
+
+```python
+[
+    {"role": "system", "content": "[System prompt with KBQA rules]"},
+    {"role": "user", "content": "[JOURNAL REFRESH - replaces on subsequent refreshes]"},
+    {"role": "user", "content": "What is the population of Boston?"},
+    {"role": "user", "content": "[PRE-ANALYSIS: Question Type, Strategy, etc.]"},
+    {"role": "assistant", "content": "...", "tool_calls": [...]},
+    {"role": "tool", "tool_call_id": "...", "name": "FindNode", "content": "[TRUNCATED if >2000 chars]"},
+    {"role": "assistant", "content": "[REFLECTION: LEARNED/PLAN/NEXT]"},  # Forced reflection
+    {"role": "tool", "tool_call_id": "...", "name": "ManageJournal", "content": "Journal updated"},
+    # ... more iterations ...
+    {"role": "user", "content": "[SYNTHESIS PROMPT with journal data]"},
+    {"role": "assistant", "content": "The population of Boston is..."}
+]
+```
+
+**Key features:**
+- Journal refresh at index 1 (primacy bias)
+- Tool responses truncated (except last 2 and journal tools)
+- Forced reflection after each non-journal tool
+- Journal state replaces on subsequent refreshes (not appended)
+
+---
+
+## SciQAAgent Deep Dive
+
+**Files:**
+- `ama_kbqa/agents/sciqa_agent/agent.py` - Inherits BaseKBQAAgent (~190 lines)
+- `ama_kbqa/agents/sciqa_agent/prompts.py` - ORKG-specific prompts (~890 lines)
+- `ama_kbqa/agents/sciqa_agent/batch_runner.py` - Benchmark runner (~500 lines)
+
+### File Organization
+
+| File | Contents | Line Count |
+|------|----------|------------|
+| `agent.py` | SciQAAgent class, overrides for ORKG-specific behavior | ~190 |
+| `prompts.py` | ORKG-specific prompt strings, strategies, predicate dictionary | ~890 |
+| `batch_runner.py` | CSV dataset loading, benchmark execution | ~500 |
+
+### Agent Lifecycle
+
+Follows the same 4-phase pattern as KQAProAgent:
+
+1. **Initialization** - Load LLM clients, connect to sciqa_server.py
+2. **Pre-Agent Hook** - Classify question (8 types), extract entities, load type-specific strategy
+3. **Main Agent Loop** - Call ORKG tools (18 tools), track progress
+4. **Post-Agent Hook** - Synthesize answer from journal
+
+### Prompt Architecture (Type-Specific Strategy Loading)
+
+The SciQA prompts follow the same pattern as KQAPro: a lean SYSTEM_PROMPT with type-specific strategies loaded after classification.
+
+```
+Message History:
+[0] SYSTEM: SYSTEM_PROMPT (lean - rules, schema, tools, predicates)
+[1] USER: Original question
+[2] USER: Analysis Context (injected after classification)
+    ├── Question Type
+    ├── Extracted Entities/Relations
+    ├── QTYPE_STRATEGIES[detected_type]  <-- only the relevant strategy
+    └── FEWSHOT_EXAMPLES[detected_type]  <-- only the relevant examples
+```
+
+**SYSTEM_PROMPT** (~165 lines) contains only general-purpose content: critical rules, ORKG schema/prefixes, 5-tier tool catalog, execution strategy, and predicate reference dictionary.
+
+**QTYPE_STRATEGIES** (8 entries) contain type-specific guidance including comparison patterns, SPARQL templates, HAS_VALUE nested patterns, and decision trees. Only the relevant strategy is loaded per question.
+
+### Question Type Classification
+
+SciQA classifies questions into 8 types:
+
+| Type | Description | Strategy |
+|------|-------------|----------|
+| **Factoid** | Direct fact lookup | GetResourceSummary for exploration, comparison-based factoid guidance, SPARQL domain data tip |
+| **Count** | "How many..." | RunORKGSPARQL with COUNT(), comparison-based counting with HAS_VALUE nested pattern |
+| **List** | "Which papers..." | Comparison-based list pattern, GetComparisonContributions, multi-hop lists |
+| **Boolean** | "Is...", "Does..." | ASK SPARQL for comparison data, VerifyNumericCondition for numeric conditions |
+| **Comparison** | Compare entities | CompareResources for batch comparison, full comparison navigation with nested value pattern |
+| **Superlative** | "highest", "lowest", "boundaries" | SPARQL ORDER BY + LIMIT, comparison-based superlatives with HAS_VALUE nested pattern |
+| **Aggregation** | SUM, AVG, total | RunORKGSPARQL with aggregation functions, comparison-based aggregation with HAS_VALUE |
+| **General** | Complex/other | GetResourceSummary for exploration, comparison mention as fallback, SPARQL domain data tip |
+
+### SciQA MCP Tools
+
+The sciqa_server.py provides 18 tools organized by tier:
+
+**Tier 1 - Discovery (4 tools):**
+- `FindResource(semantic_query)` - Vector search for ORKG resources
+- `FindPredicate(semantic_query)` - Find ORKG predicate names
+- `FindByPredicateValue(predicate_id, value, match_type)` - Reverse lookup by predicate value (exact/contains/greater/less)
+- `FindAuthorPapers(author_name)` - SPARQL-based author name search (case-insensitive partial match, better than vector search for proper nouns) ✨ NEW
+
+**Tier 2 - Retrieval (6 tools):**
+- `GetResourceDetails(resource_id)` - Full resource info
+- `GetResourceSummary(resource_id)` - ALL predicates in one call (preferred for exploration)
+- `GetRelationTargets(resource_id, predicate)` - Follow specific relations with **reverse lookup fallback** (if direct query returns 0 results, tries finding resources that reference the target) ✨ UPDATED
+- `GetResourceLabel(resource_id)` - Quick label lookup
+- `BatchGetResourceLabels(resource_ids)` - Batch resolution
+- `CompareResources(resource_ids, predicate_id)` - Compare predicate across resources (sorted)
+
+**Tier 3 - Domain-Specific (6 tools):**
+- `GetPaperContributions(paper_id)` - Paper contributions via P31
+- `GetPaperAuthors(paper_id)` - Authors via P6/P27
+- `GetContributionMethods(contribution_id)` - Methods via P2
+- `GetResearchFieldPapers(field_name)` - Papers in field via P30
+- `GetComparisonContributions(comparison_id, domain_predicate, filter_value, filter_type)` - Navigate Comparison -> Contribution pattern with predicate discovery mode, now **stores values in journal's found_values** ✨ UPDATED
+- `FollowRelationPath(start_resource_id, relation_path)` - Multi-hop navigation in one SPARQL call
+
+**Tier 4 - Raw SPARQL (1 tool):**
+- `RunORKGSPARQL(query)` - Raw SPARQL (prefixes auto-injected, **capped at 10 calls per question** to prevent runaway SPARQL spirals) ✨ UPDATED
+
+**Tier 5 - Verification (1 tool):**
+- `VerifyNumericCondition(value1, operator, value2, unit)` - Deterministic math/date comparison (TRUE/FALSE/ERROR)
+
+**State Management (2 tools):**
+- `ManageJournal(action, content)` - Scratchpad management
+- `GetJournalSummary()` - Summary of discoveries
+
+### ORKG Predicate Reference
+
+**Core Navigation Predicates:**
+
+| Predicate | URI | Description | Pattern |
+|-----------|-----|-------------|---------|
+| P0 | `orkgp:P0` | addresses (problem) | Paper/Contribution -> Problem |
+| P1 | `orkgp:P1` | yields (result) | Contribution -> Result |
+| P2 | `orkgp:P2` | employs (method) | Contribution -> Method |
+| P6 | `orkgp:P6` | author | Paper -> Author |
+| P27 | `orkgp:P27` | author (alternative) | Paper -> Author |
+| P7 | `orkgp:P7` | affiliation | Author -> Organization |
+| P10 | `orkgp:P10` | DOI | Paper -> DOI string |
+| P26 | `orkgp:P26` | has DOI | Paper -> DOI string |
+| P29 | `orkgp:P29` | publication year | Paper -> Year |
+| P30 | `orkgp:P30` | research field | Paper -> ResearchField |
+| P31 | `orkgp:P31` | has contribution | Paper -> Contribution (**CRITICAL PATH**) |
+| P32 | `orkgp:P32` | research problem | Paper -> Problem |
+
+**Key Navigation Pattern (~70% of questions):**
+```
+Paper --P31--> Contribution --domain_predicate--> Value
+```
+
+**Domain-Specific Predicates (via Contributions):**
+
+| Domain | Predicate | Description |
+|--------|-----------|-------------|
+| Energy | P43133 | installed capacity |
+| Energy | P43135 | energy sources |
+| Energy | P43247/P43248 | upper/lower limit |
+| Chemistry | P35147 | Bisphenol A analogue |
+| Chemistry | P35194 | SAME_AS (alt names) |
+| Benchmarks/NLP | P41923 | amount of questions |
+| Benchmarks/NLP | P15585 | has benchmark |
+| Biology | P37458 | major anion type |
+| Biology | P37586 | study type |
+| Comparison | P5038 | Aggregation |
+| Comparison | P5039 | tool capabilities |
+
+### SciQA Batch Processing
+
+**File:** `ama_kbqa/agents/sciqa_agent/batch_runner.py`
+
+```bash
+# Run on handcrafted dataset (100 Q&A)
+python ama_kbqa/agents/sciqa_agent/batch_runner.py --n_questions 10 --seed 42 --dataset handcrafted
+
+# Run on autogenerated dataset (368 Q&A)
+python ama_kbqa/agents/sciqa_agent/batch_runner.py --n_questions 50 --dataset auto --postprocessing llm_judge
+```
+
+**Dataset Format (CSV):**
+
+| Column | Description |
+|--------|-------------|
+| `Paraphrase` | Question text |
+| `Result` | Ground truth answer |
+| `Machine-readable query` | SPARQL query |
+| `Q Content` | Question type |
+| `Research field` | Domain |
+
+**Output Structure:**
+```
+batch_results/sciqa/
+├── Batch001/
+│   ├── results.json       # Per-question results
+│   └── summary.json       # Accuracy statistics
+```
+
+---
+
+## MCP Client Pattern
+
+**File:** `ama_kbqa/framework/mcp_client.py` (shared MCPClient class)
+
+```python
+class MCPClient:
+    def __init__(self, server_path: str, agent_name: str):
+        self.server_path = Path(server_path)
+        self.exit_stack = AsyncExitStack()
+        self.session: Optional[ClientSession] = None
+
+    async def start(self):
+        # Connect via stdio
+        client_gen = stdio_client(StdioServerParameters(
+            command=sys.executable,
+            args=[str(self.server_path)]
+        ))
+        read, write = await self.exit_stack.enter_async_context(client_gen)
+        self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+        await self.session.initialize()
+
+    async def list_tools(self) -> List[McpTool]:
+        return (await self.session.list_tools()).tools
+
+    async def call_tool(self, name: str, args: Dict) -> str:
+        result = await self.session.call_tool(name, arguments=args)
+        return result.content[0].text
+
+    async def close(self):
+        await self.exit_stack.aclose()
+```
+
+---
+
+## Token Tracking
+
+Tokens are tracked across all LLM calls in the KQAProAgent:
+
+```python
+self.token_usage = {
+    "prompt_tokens": 0,       # Input to LLM
+    "completion_tokens": 0,   # Output from LLM
+    "total_tokens": 0         # Sum
+}
+```
+
+**Tracked LLM Calls (5 total):**
+
+| Method | Location (line) | Purpose |
+|--------|-----------------|---------|
+| `_classify_question()` | ~305 | Question type classification |
+| `_extract_entities()` | ~350 | Entity/relation extraction |
+| `_llm_call()` | ~876 | Main agent loop (tool calls) |
+| `_llm_call_text_only()` | ~903 | Fallback when no tools |
+| `_llm_call_synthesis()` | ~923 | Final answer synthesis |
+
+Each location uses the same pattern:
+```python
+if response.usage:
+    self.token_usage["prompt_tokens"] += response.usage.prompt_tokens
+    self.token_usage["completion_tokens"] += response.usage.completion_tokens
+    self.token_usage["total_tokens"] += response.usage.total_tokens
+```
+
+**Note:** Token tracking in `batch_runner.py` functions (LLM judge, answer selection, SPARQL synthesis) is not currently aggregated into the agent's token counts.
+
+Reported in batch results JSON:
+```json
+{
+    "prompt_tokens": 15234,
+    "completion_tokens": 856,
+    "total_tokens": 16090,
+    "duration_seconds": 12.45,
+    "agent_turns": 8
+}
+```
+
+---
+
+## Tool Call Duration Tracking
+
+Each tool call is timed and tracked for performance analysis:
+
+```python
+self.tool_call_durations: List[Dict[str, Any]] = []
+```
+
+**Tracked Data Per Tool Call:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tool_name` | str | Name of the tool called |
+| `duration_seconds` | float | How long the call took (rounded to 3 decimals) |
+| `success` | bool | Whether the call succeeded |
+| `timestamp` | str | ISO format timestamp |
+| `error` | str | Error message (only if failed) |
+
+**Console Output:**
+Tool calls now show duration in logs:
+```
+🔙 Result (SearchEntities) [0.234s]: {"matches": [...]}
+```
+
+**Summary at Question End:**
+```
+⏱️  TOOL CALL SUMMARY: 15 calls, total 4.567s
+   📊 SearchEntities: 5x, total 1.234s, avg 0.247s
+   📊 ExecuteSPARQL: 3x, total 0.891s, avg 0.297s
+```
+
+**Accessing Summary Programmatically:**
+```python
+summary = agent.get_tool_call_summary()
+# Returns:
+{
+    "total_calls": 15,
+    "total_duration_seconds": 4.567,
+    "tool_breakdown": {
+        "SearchEntities": {
+            "count": 5,
+            "total_duration": 1.234,
+            "avg_duration": 0.247,
+            "success_count": 5,
+            "failure_count": 0
+        },
+        # ...
+    },
+    "calls": [...]  # Individual call records
+}
+```
+
+**Batch Processing Aggregation:**
+In batch results, tool statistics are aggregated across all questions:
+```json
+{
+    "statistics": {
+        "total_tool_calls": 150,
+        "total_tool_duration_seconds": 45.234,
+        "avg_tool_calls_per_question": 15.0,
+        "tool_breakdown": {
+            "SearchEntities": {"count": 50, "total_duration": 12.345, "avg_duration": 0.247}
+        }
+    }
+}
+```
+
+---
+
+## Synthesis Configuration
+
+The agent uses **separate LLM configuration** for final answer synthesis:
+
+```toml
+# config.toml
+[synthesis]
+synthesis_provider = "openrouter"
+synthesis_model = "google/gemini-2.5-flash"
+synthesis_temperature = 0.2
+synthesis_max_tokens = 8000
+```
+
+**Benefits:**
+- Use faster/cheaper model for synthesis
+- Different temperature for consistency
+- Separate token limits
+- Model specialization (summarization vs reasoning)
+
+---
+
+## Batch Processing
+
+**File:** `ama_kbqa/agents/kqapro_agent/batch_runner.py`
+
+```bash
+# Run 10 questions with default seed
+python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42
+
+# Run with LLM judge evaluation
+python batch_runner.py --n_questions 10 --postprocessing_mode llm_judge
+```
+
+**Output Structure:**
+```
+batch_results/
+├── Batch001/
+│   ├── sampled_questions.json  # Questions selected
+│   ├── results.json            # Per-question results
+│   └── summary.json            # Accuracy statistics
+```
+
+### LLM Judge
+
+Evaluates answer quality with structured output:
+
+```python
+class AnswerJudgment:
+    is_correct: bool                # Semantic equivalence
+    correctness_reasoning: str      # Detailed comparison
+    argumentation_quality: str      # Reasoning assessment
+    argumentation_score: int        # 1-5 score
+    suggested_improvement: str      # Actionable feedback
+```
+
+---
+
+## Agent Reset Pattern
+
+**Three reset methods available:**
+
+### 1. `reset(keep_mcp_open=False)` - Full Reset (Default)
+
+```python
+await agent.reset()
+
+# What gets reset:
+# - Message history (except system prompt)
+# - Token usage counters
+# - Tool call duration tracking
+# - Loop detection tracking
+# - MCP server connection (closed and reopened)
+
+# What persists:
+# - LLM client configuration
+# - System prompt
+```
+
+### 2. `soft_reset()` - Batch Processing (MCP Preserved)
+
+**Recommended for batch processing** - Keeps MCP server running for efficiency:
+
+```python
+await agent.soft_reset()
+
+# What gets reset:
+# - Message history (except system prompt)
+# - Token usage counters
+# - Tool call duration tracking
+# - Loop detection tracking
+# - Journal/scratchpad state (cleared via ManageJournal tool)
+
+# What persists:
+# - MCP server connection (stays open!)
+# - LLM client configuration
+# - System prompt
+```
+
+### 3. `close()` - Explicit MCP Shutdown
+
+**Call at the end of batch processing** to properly close MCP:
+
+```python
+await agent.close()  # Closes MCP server connection
+```
+
+### Batch Processing Pattern
+
+```python
+agent = KQAProAgent()
+
+try:
+    for question in questions:
+        answer = await agent.ask(question)
+        results.append(answer)
+        await agent.soft_reset()  # Keep MCP open between questions
+finally:
+    await agent.close()  # Clean shutdown at the end
+```
+
+**Benefits of MCP Persistence:**
+- Avoids subprocess startup overhead per question
+- Maintains warm connections to Qdrant/Virtuoso
+- Significantly faster batch processing
+- Proper cleanup with `finally` block
+
+---
+
+## Tracing System
+
+Color-coded console output for debugging:
+
+| Color | Meaning |
+|-------|---------|
+| BLUE | General agent messages |
+| GREEN | Tool calls/results, success |
+| RED | Errors |
+| YELLOW | Warnings, tool calls |
+| CYAN | Important state changes, reasoning |
+
+```python
+def trace(agent_name: str, msg: str, color: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"[{timestamp}] [{agent_name}] -> {msg}")
+```
+
+---
+
+## Related Documentation
+
+- [Project Architecture](project_architecture.md) - System overview
+- [Database Schema](database_schema.md) - Qdrant/Virtuoso schemas
+- [../SOP/adding_new_tools.md](../SOP/adding_new_tools.md) - How to add tools
+- [../../TOOLS_REFERENCE.md](../../TOOLS_REFERENCE.md) - Complete tool reference

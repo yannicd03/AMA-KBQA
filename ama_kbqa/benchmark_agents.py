@@ -216,7 +216,7 @@ BENCHMARK_MODELS: List[ModelConfig] = [
     ModelConfig(
         name="qwen3-32b",
         provider="openrouter",
-        model_id="qwen/qwen3-32b",
+        model_id="qwen/qwen3-32b:nitro",
         base_url="https://openrouter.ai/api/v1",
         api_key_env="OPENROUTER_API_KEY"
     ),
@@ -657,22 +657,23 @@ def estimate_cost(
 # AGENT CREATION
 # ============================================================================
 
-def create_agent(agent_name: str):
+def create_agent(agent_name: str, use_fewshot: bool = True):
     """
     Create a fresh agent instance.
 
     Args:
         agent_name: "kqapro" or "sciqa"
+        use_fewshot: Whether to inject few-shot examples during classification
 
     Returns:
         Agent instance
     """
     if agent_name == "kqapro":
         from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
-        return KQAProAgent(name="benchmark_kqapro")
+        return KQAProAgent(name="benchmark_kqapro", use_fewshot=use_fewshot)
     elif agent_name == "sciqa":
         from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
-        return SciQAAgent(name="benchmark_sciqa")
+        return SciQAAgent(name="benchmark_sciqa", use_fewshot=use_fewshot)
     else:
         raise ValueError(f"Unknown agent: {agent_name}")
 
@@ -861,7 +862,8 @@ async def run_benchmark_for_model_agent(
     agent_name: str,
     questions: List[Dict[str, Any]],
     timeout: int,
-    output_dir: Path
+    output_dir: Path,
+    use_fewshot: bool = True
 ) -> Dict[str, Any]:
     """
     Run benchmark for a specific model/agent combination.
@@ -872,6 +874,7 @@ async def run_benchmark_for_model_agent(
         questions: List of questions to process
         timeout: Timeout per question
         output_dir: Directory to save results
+        use_fewshot: Whether to inject few-shot examples
 
     Returns:
         Summary dictionary with results
@@ -892,13 +895,15 @@ async def run_benchmark_for_model_agent(
     log_print(f"Benchmarking: {model.name} on {agent_name}")
     log_print(f"Questions: {len(questions)}")
     log_print(f"Timeout: {timeout}s per question")
+    if not use_fewshot:
+        log_print(f"[ABLATION] Few-shot examples DISABLED")
     log_print(f"{'='*80}\n")
 
     # Override config for this model
     override_model_config(model)
 
     # Create fresh agent
-    agent = create_agent(agent_name)
+    agent = create_agent(agent_name, use_fewshot=use_fewshot)
 
     results: List[QuestionResult] = []
     summary = {}
@@ -984,7 +989,8 @@ async def run_full_benchmark(
     timeout: int,
     resume: bool,
     dry_run: bool,
-    export_csv: bool
+    export_csv: bool,
+    use_fewshot: bool = True
 ):
     """
     Run the full benchmark across all models and agents.
@@ -998,6 +1004,7 @@ async def run_full_benchmark(
         resume: Skip completed runs
         dry_run: Preview without executing
         export_csv: Export results to CSV
+        use_fewshot: Whether to inject few-shot examples
     """
     # Load questionnaires
     questionnaires = {}
@@ -1073,7 +1080,8 @@ async def run_full_benchmark(
                 agent_name=agent_name,
                 questions=questions,
                 timeout=timeout,
-                output_dir=output_dir
+                output_dir=output_dir,
+                use_fewshot=use_fewshot
             )
             all_summaries.append(summary)
         except Exception as e:
@@ -1340,6 +1348,13 @@ Notes:
         help="Export results to CSV"
     )
 
+    parser.add_argument(
+        "--no-fewshot",
+        action="store_true",
+        default=False,
+        help="Disable few-shot example injection (for ablation study)"
+    )
+
     args = parser.parse_args()
 
     # Filter models if specified
@@ -1369,7 +1384,8 @@ Notes:
         timeout=args.timeout,
         resume=args.resume,
         dry_run=args.dry_run,
-        export_csv=args.export_csv
+        export_csv=args.export_csv,
+        use_fewshot=not args.no_fewshot
     ))
 
 

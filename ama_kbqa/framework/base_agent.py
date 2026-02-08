@@ -68,14 +68,16 @@ class BaseKBQAAgent(ABC):
     - Token and tool tracking
     """
 
-    def __init__(self, name: str = "kbqa_agent", session_id: str = "default"):
+    def __init__(self, name: str = "kbqa_agent", session_id: str = "default", use_fewshot: bool = True):
         """
         Initialize the base KBQA agent.
 
         Args:
             name: Agent name for tracing
             session_id: Session identifier
+            use_fewshot: Whether to inject few-shot examples during classification
         """
+        self.use_fewshot = use_fewshot
         self.name = name
         self.session_id = session_id
         self.mcp: Optional[MCPClient] = None

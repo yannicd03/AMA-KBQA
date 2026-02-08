@@ -1130,7 +1130,7 @@ async def GetQualifiersByPredicate(
 @mcp.tool
 @log_tool_duration
 def ManageJournal(
-    action: Literal["add_visited", "add_fact", "update_plan", "set_qtype", "set_target", "set_partial_answer", "read"],
+    action: Literal["add_visited", "add_fact", "update_plan", "set_qtype", "set_target", "set_partial_answer", "read", "clear"],
     content: str,
     context: Context
 ) -> str:
@@ -1148,11 +1148,13 @@ def ManageJournal(
             - "set_target": Add a target entity or attribute you're looking for
             - "set_partial_answer": Store your intermediate answer reasoning
             - "read": Read the current journal state
+            - "clear": Reset the journal to empty state
         content: The text content to add. Can be empty string for "read".
 
     Returns:
         The FULL current content of the journal to refresh your memory.
     """
+    global session_journal
 
     if action == "add_visited":
         # Backward compatibility - but tools now auto-update this
@@ -1178,6 +1180,9 @@ def ManageJournal(
 
     elif action == "set_partial_answer":
         session_journal.partial_answer = content
+
+    elif action == "clear":
+        session_journal = JournalState()
 
     # 'read' action just falls through to return the state
 
@@ -2892,9 +2897,9 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
 @mcp.tool
 @log_tool_duration
 def VerifyNumericCondition(
-    value1: str,
+    value1: str | int | float,
     operator: Literal["<", ">", "<=", ">=", "==", "!="],
-    value2: str,
+    value2: str | int | float,
     unit: str = "",
     context: Context = None
 ) -> NumericComparisonResponse:
@@ -2929,6 +2934,10 @@ def VerifyNumericCondition(
     Returns:
         NumericComparisonResponse: Verdict (TRUE/FALSE/ERROR) with explanation.
     """
+    # Coerce numeric inputs to str (LLMs often send int/float instead of str)
+    value1 = str(value1)
+    value2 = str(value2)
+
     logger.info(f"VerifyNumericCondition: {value1} {operator} {value2} ({unit})")
 
     def parse_numeric(val: str) -> float:
