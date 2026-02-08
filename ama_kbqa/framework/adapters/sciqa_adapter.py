@@ -94,6 +94,7 @@ PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
                 "max_iterations": 40,
                 "journal_refresh_interval": 5,
                 "find_resource_cap": 8,
+                "sparql_cap": 10,
                 "context_limit": 100000,
             },
         )

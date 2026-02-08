@@ -493,6 +493,16 @@ Change strategy or acknowledge the data doesn't exist."""
                     f"Switch to SPARQL or other structured queries."
                 )
 
+        # Detection 5: RunORKGSPARQL cap (configurable per agent)
+        sparql_cap = getattr(self, '_sparql_cap', 10)
+        if func_name == "RunORKGSPARQL":
+            sq_count = self.tool_call_counts.get("RunORKGSPARQL", 0) + 1
+            if sq_count > sparql_cap:
+                return True, (
+                    f"RunORKGSPARQL called {sq_count} times (cap: {sparql_cap}). "
+                    f"Use GetComparisonContributions or GetResourceSummary instead."
+                )
+
         return False, ""
 
     def _get_tool_specific_loop_guidance(self, func_name: str) -> str:
@@ -541,9 +551,10 @@ Change strategy or acknowledge the data doesn't exist."""
             # Populate known tool names for validation (Fix 6)
             self._known_tool_names = {t.name for t in mcp_tools}
 
-            # Read per-agent config for FindResource cap (Fix 5)
+            # Read per-agent config for tool caps
             config = self.get_config()
             self._find_resource_cap = config.domain_settings.get("find_resource_cap", 8)
+            self._sparql_cap = config.domain_settings.get("sparql_cap", 10)
             self._context_limit = config.domain_settings.get("context_limit", 100000)
 
             # Add query to messages
