@@ -431,6 +431,8 @@ TIER 2 - RETRIEVAL (Targeted):
 TIER 3 - DOMAIN-SPECIFIC:
 - GetPaperContributions(paper_id): Paper -> contributions
 - GetPaperAuthors(paper_id): Paper -> authors
+- FindAuthorPapers(author_name): Find papers by author name (case-insensitive partial match)
+  Use this instead of FindResource for author name searches - vector similarity is poor for proper nouns.
 - GetContributionMethods(contribution_id): Contribution -> methods
 - GetResearchFieldPapers(field_name): Field -> papers
 - FollowRelationPath(start_resource_id, relation_path): Multi-hop navigation
@@ -508,6 +510,9 @@ SELECT (SUM(xsd:decimal(?val)) AS ?total) (AVG(xsd:decimal(?val)) AS ?avg) WHERE
 IMPORTANT: When a question asks for frequencies, counts per category, or "how many for each X",
 you MUST use COUNT + GROUP BY in a SPARQL query. Do NOT search for pre-computed frequency values.
 
+CRITICAL: Always scope aggregation queries to ONE Comparison resource. Never aggregate across the entire graph.
+For negation queries ("without", "not"), use FILTER NOT EXISTS in SPARQL.
+
 ORKG PREDICATE REFERENCE
 
 CORE NAVIGATION PREDICATES:
@@ -521,6 +526,8 @@ CORE NAVIGATION PREDICATES:
 - P30: research field               Paper -> ResearchField
 - P31: has contribution             Paper -> Contribution (CRITICAL PATH)
 - P32: research problem             Paper -> Problem
+
+For author searches, use FindAuthorPapers(name) instead of FindResource (vector search is poor for proper nouns).
 
 NAVIGATION PATTERN (Paper -> Domain Data):
   Paper --P31--> Contribution --domain_predicate--> Value
@@ -541,6 +548,8 @@ Chemistry/Materials:
 - P35194: SAME_AS (alternative names)
 - P41740: nanocarrier type
 - P41743: therapeutic effects of carrier
+
+Note: Energy SOURCES (P43135) and Energy SECTORS are different predicates. Use GetResourceSummary to distinguish.
 
 Energy domain (extended):
 - P43156: efficiency
@@ -661,6 +670,12 @@ FEWSHOT_EXAMPLES = {
 2. GetComparisonContributions("R44073") -> discovers predicates including P43135 (energy sources)
 3. GetComparisonContributions("R44073", "P43135") -> ["solar", "wind", "hydro"]
 4. Answer: "Solar, wind, and hydro"
+
+**Example: "Which paper was written by Kurt Thomas?"**
+1. FindAuthorPapers("Kurt Thomas") -> papers with matching authors
+   NOTE: Do NOT use FindResource for author names - vector similarity is poor for proper nouns.
+   FindAuthorPapers uses SPARQL FILTER(CONTAINS(LCASE(...))) which is much more reliable for names.
+2. Answer: paper title(s)
 """,
 
     "Count": """
@@ -729,6 +744,12 @@ FEWSHOT_EXAMPLES = {
        FILTER(CONTAINS(LCASE(?label), "neural network"))
    }
 2. Answer: "Yes" if true, "No" if false
+
+**Example: "Are integrity constraints involved in OWLMAP?"**
+If GetRelationTargets returns 0 targets, the resource might be a *value* inside a Comparison contribution.
+The tool automatically tries a reverse lookup fallback. If that also fails:
+1. RunORKGSPARQL: ASK { ?contrib ?pred orkgr:RXXXX . ?contrib orkgp:P41333 ?val . }
+2. Answer: TRUE if results exist, FALSE otherwise
 """,
 
     "Comparison": """
@@ -736,6 +757,9 @@ FEWSHOT_EXAMPLES = {
 1. CompareResources(["R111", "R222"], "P43156")
 2. VerifyNumericCondition(value_A, ">", value_B, "efficiency")
 3. Answer: the contribution with higher efficiency
+
+**Tip: Energy SOURCES (P43135) and Energy SECTORS are different predicates.**
+If the question asks about sectors (Heat, Electricity, Gas, Liquid fuels), use GetResourceSummary first to find the correct predicate - it is NOT P43135.
 """,
 
     "Aggregation": """
@@ -747,6 +771,7 @@ FEWSHOT_EXAMPLES = {
        ?contrib orkgp:P43133 ?value .
    }
 3. Answer: the total value
+IMPORTANT: Always scope to ONE Comparison (orkgr:RXXX orkgp:compareContribution). Never aggregate across the entire graph.
 
 **Example: "What is the average efficiency?"**
 1. FindResource("efficiency comparison") -> R55555
@@ -756,6 +781,16 @@ FEWSHOT_EXAMPLES = {
        ?contrib orkgp:P43156 ?value .
    }
 3. Answer: the average value
+
+**Example: "Which studies do NOT have a certain property?"**
+1. FindResource("relevant comparison") -> RXXXX
+2. RunORKGSPARQL with FILTER NOT EXISTS:
+   SELECT ?item ?itemLabel WHERE {
+       orkgr:RXXXX orkgp:compareContribution ?item .
+       OPTIONAL { ?item rdfs:label ?itemLabel }
+       FILTER NOT EXISTS { ?item orkgp:PYYY ?val }
+   }
+3. Answer: list of contributions without that property
 """,
 }
 
@@ -839,11 +874,15 @@ TOOL_LOOP_GUIDANCE = {
     "RunORKGSPARQL": (
         "**RunORKGSPARQL Loop Recovery:**\n"
         "   Your SPARQL queries are failing or returning no results.\n"
+        "   NOTE: RunORKGSPARQL is capped at 10 calls per question.\n"
         "   Try simpler tools instead:\n"
         "   - GetResourceSummary for complete resource exploration\n"
         "   - GetRelationTargets for specific relations\n"
         "   - FindResource for semantic search\n"
-        "   Check your predicate names (P0, P30, P31, etc.)"
+        "   Check your predicate names (P0, P30, P31, etc.)\n"
+        "   If queries keep returning 0 results, verify the predicate ID with GetResourceSummary first.\n"
+        "   If you get syntax errors, simplify: remove aggregation, test basic SELECT first.\n"
+        "   For complex aggregation, build incrementally: first verify data exists, then add GROUP BY, then ORDER BY."
     ),
     "FindResource": (
         "**FindResource Loop Recovery:**\n"

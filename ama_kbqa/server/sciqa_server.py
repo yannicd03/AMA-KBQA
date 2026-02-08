@@ -23,6 +23,7 @@ Tools provided:
 - CompareResources: Compare a predicate across multiple resources
 - FollowRelationPath: Multi-hop relation navigation
 - GetComparisonContributions: Navigate Comparison -> Contribution -> Value pattern
+- FindAuthorPapers: Find papers by author name (SPARQL-based, better than vector for names)
 - ManageJournal: Scratchpad for state management
 - GetJournalSummary: Format journal state for synthesis
 """
@@ -679,6 +680,37 @@ async def GetRelationTargets(
                 target = {"value": obj}
 
             targets.append(target)
+
+        # Fallback: if no direct targets found, try reverse lookup
+        # (resource might be a value within a comparison contribution)
+        if not targets:
+            fallback_query = f"""
+            SELECT ?o ?oLabel WHERE {{
+                GRAPH <{SCIQA_GRAPH}> {{
+                    ?contrib ?somePred orkgr:{resource_id} .
+                    ?contrib {pred_uri} ?o .
+                    OPTIONAL {{ ?o rdfs:label ?oLabel . }}
+                }}
+            }}
+            """
+            full_fallback = SPARQL_PREFIXES + fallback_query
+            app.sparql.setQuery(full_fallback)
+            fb_results = app.sparql.query().convert()
+            fb_bindings = fb_results.get("results", {}).get("bindings", [])
+
+            for binding in fb_bindings:
+                obj = binding.get("o", {}).get("value", "")
+                obj_label = binding.get("oLabel", {}).get("value", "")
+
+                if obj.startswith("http"):
+                    target = {"id": obj.split("/")[-1]}
+                    if obj_label:
+                        target["label"] = obj_label
+                        session_journal.visited_nodes[target["id"]] = obj_label
+                else:
+                    target = {"value": obj}
+
+                targets.append(target)
 
         # Update journal
         if resource_id not in session_journal.found_values:
@@ -1906,6 +1938,15 @@ SELECT ?contribution ?contribLabel ?value ?valueLabel WHERE {{
 
             result_list = list(contributions.values())
 
+            # Store values in journal so they persist across context trimming
+            for contrib in result_list:
+                cid = contrib["id"]
+                if cid not in session_journal.found_values:
+                    session_journal.found_values[cid] = {}
+                session_journal.found_values[cid][domain_predicate] = [
+                    v["label"] for v in contrib.get("values", [])
+                ]
+
             session_journal.completed_steps.append(
                 f"GetComparisonContributions({comparison_id}, {domain_predicate}) -> {len(result_list)} contributions"
             )
@@ -1980,7 +2021,97 @@ SELECT ?contribution ?contribLabel ?pred ?predLabel WHERE {{
 
 
 # ==============================================================================
-# TOOL 18: ManageJournal
+# TOOL 18: FindAuthorPapers
+# ==============================================================================
+
+@mcp.tool()
+async def FindAuthorPapers(
+    app_context: Context,
+    author_name: str
+) -> str:
+    """
+    Find all papers by an author name (case-insensitive partial match).
+
+    Use this instead of FindResource when searching for papers by a specific
+    author name, since vector similarity is poor for proper nouns/person names.
+
+    Args:
+        author_name: The author's name or partial name (e.g., "Kurt Thomas")
+
+    Returns:
+        JSON with matching papers and their authors
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        query = f"""
+SELECT DISTINCT ?paper ?paperLabel ?author ?authorLabel WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {{
+            ?paper orkgp:P27 ?author .
+        }}
+        UNION
+        {{
+            ?paper orkgp:P6 ?author .
+        }}
+        ?author rdfs:label ?authorLabel .
+        FILTER(CONTAINS(LCASE(?authorLabel), LCASE("{author_name}")))
+        OPTIONAL {{ ?paper rdfs:label ?paperLabel . }}
+    }}
+}}
+"""
+        full_query = SPARQL_PREFIXES + query
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        papers = {}
+        for b in bindings:
+            paper_uri = b.get("paper", {}).get("value", "")
+            paper_id = paper_uri.split("/")[-1] if "/" in paper_uri else paper_uri
+            paper_label = b.get("paperLabel", {}).get("value", paper_id)
+            author_uri = b.get("author", {}).get("value", "")
+            author_id = author_uri.split("/")[-1] if "/" in author_uri else author_uri
+            author_label = b.get("authorLabel", {}).get("value", author_id)
+
+            if paper_id not in papers:
+                papers[paper_id] = {
+                    "id": paper_id,
+                    "label": paper_label,
+                    "authors": []
+                }
+            papers[paper_id]["authors"].append({
+                "id": author_id,
+                "label": author_label
+            })
+
+        result_list = list(papers.values())
+
+        # Update journal
+        for p in result_list:
+            session_journal.visited_nodes[p["id"]] = p["label"]
+        session_journal.completed_steps.append(
+            f"FindAuthorPapers('{author_name}') -> {len(result_list)} papers"
+        )
+
+        return json.dumps({
+            "author_query": author_name,
+            "papers": result_list,
+            "count": len(result_list),
+            "status": f"Found {len(result_list)} papers by authors matching '{author_name}'"
+        }, indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in FindAuthorPapers: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(
+            f"FindAuthorPapers('{author_name}'): {str(e)}"
+        )
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 19: ManageJournal
 # ==============================================================================
 
 @mcp.tool()
