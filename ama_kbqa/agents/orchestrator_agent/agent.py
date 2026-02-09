@@ -68,12 +68,22 @@ class MCPClient:
             trace(self.agent_name, f"{COLOR_RED}MCP server not found: {self.server_path}{COLOR_END}", COLOR_RED)
             raise FileNotFoundError(f"MCP server not found: {self.server_path}")
 
-        client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
-        read, write = await self.exit_stack.enter_async_context(client_gen)
+        try:
+            client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
+            read, write = await self.exit_stack.enter_async_context(client_gen)
 
-        self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
-        await self.session.initialize()
-        self._connected = True
+            self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
+            await self.session.initialize()
+            self._connected = True
+        except Exception:
+            # Clean up partially entered async contexts to avoid orphaned anyio tasks
+            try:
+                await self.exit_stack.aclose()
+            except Exception:
+                pass
+            self.exit_stack = AsyncExitStack()
+            self.session = None
+            raise
 
     async def list_tools(self) -> List[McpTool]:
         if not self.session:
@@ -90,17 +100,20 @@ class MCPClient:
         return str(result)
 
     async def close(self):
-        if self._connected:
-            try:
-                await self.exit_stack.aclose()
-                await asyncio.sleep(0.05)
-            except (CancelledError, RuntimeError) as e:
-                trace(self.agent_name,
-                      f"{COLOR_YELLOW}WARNING: MCP-Close error ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
-            except Exception as e:
-                trace(self.agent_name, f"{COLOR_RED}Error closing MCP client: {e}{COLOR_END}", COLOR_RED)
-            finally:
-                self._connected = False
+        if not self._connected:
+            return
+        try:
+            await self.exit_stack.aclose()
+            await asyncio.sleep(0.05)
+        except (CancelledError, RuntimeError) as e:
+            trace(self.agent_name,
+                  f"{COLOR_YELLOW}WARNING: MCP-Close error ({type(e).__name__}).{COLOR_END}", COLOR_YELLOW)
+        except Exception as e:
+            trace(self.agent_name, f"{COLOR_RED}Error closing MCP client: {e}{COLOR_END}", COLOR_RED)
+        finally:
+            self._connected = False
+            self.session = None
+            self.exit_stack = AsyncExitStack()
 
 # --- Orchestrator ---
 
@@ -163,13 +176,20 @@ class Orchestrator:
     async def _init_mcp(self):
         if self.mcp:
             return
+        mcp = None
         try:
             self._trace(f"Starting MCP server: {MCP_SERVER_PATH}")
-            self.mcp = MCPClient(MCP_SERVER_PATH, self.name)
-            await self.mcp.start()
+            mcp = MCPClient(MCP_SERVER_PATH, self.name)
+            await mcp.start()
+            self.mcp = mcp
             self._trace("MCP connected")
         except Exception as e:
             self._trace(f"{COLOR_RED}MCP error: {e}{COLOR_END}", COLOR_RED)
+            if mcp:
+                try:
+                    await mcp.close()
+                except Exception:
+                    pass
             self.mcp = None
 
     async def _route_autonomously(self, query: str) -> Optional[str]:

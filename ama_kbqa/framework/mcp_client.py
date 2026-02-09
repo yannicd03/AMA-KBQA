@@ -101,6 +101,13 @@ class MCPClient:
             self._connected = True
 
         except Exception as e:
+            # Clean up partially entered async contexts to avoid orphaned anyio tasks
+            try:
+                await self.exit_stack.aclose()
+            except Exception:
+                pass
+            self.exit_stack = AsyncExitStack()
+            self.session = None
             trace(
                 self.agent_name,
                 f"{COLOR_RED}Failed to start MCP server: {e}{COLOR_END}",
@@ -179,6 +186,8 @@ class MCPClient:
 
         finally:
             self._connected = False
+            self.session = None
+            self.exit_stack = AsyncExitStack()
             # Additional cleanup delay to ensure resources are fully released
             await asyncio.sleep(0.2)
 

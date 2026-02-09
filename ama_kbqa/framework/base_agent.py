@@ -38,7 +38,7 @@ if sys.platform == 'win32':
     import codecs
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    else:
+    elif hasattr(sys.stdout, 'buffer'):
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, errors='replace')
 
 load_dotenv(override=True)
@@ -375,6 +375,9 @@ Change strategy or acknowledge the data doesn't exist."""
                 self._track_token_usage(response.usage)
 
             json_content = response.choices[0].message.content
+            if not json_content:
+                self._trace("LLM returned empty content for entity extraction", COLOR_YELLOW)
+                return {"entities": [], "relations": []}
             result = json.loads(json_content)
             return {
                 "entities": result.get("entities", []),

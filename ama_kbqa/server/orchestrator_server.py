@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from dotenv import load_dotenv, find_dotenv
 from pydantic import BaseModel, ConfigDict
-from fastmcp import Context
+from fastmcp import FastMCP, Context
 from loguru import logger
 from ama_kbqa.config import (
     get_chat_client,
