@@ -6,12 +6,12 @@ import asyncio
 def run_async(coro):
     """Run an async coroutine from synchronous Streamlit code.
 
-    Handles the common pattern of getting or creating an event loop.
+    Creates a fresh event loop each time to avoid stale anyio state
+    (cancel scopes, task groups) leaking between invocations, which
+    causes 'cancel scope in a different task' errors with MCP clients.
     """
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    return loop.run_until_complete(coro)
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
