@@ -1,4 +1,3 @@
-from mcp.server.fastmcp import FastMCP
 from pathlib import Path
 from openai import OpenAI
 from qdrant_client import QdrantClient
@@ -14,7 +13,12 @@ from loguru import logger
 from ama_kbqa.config import (
     get_chat_client,
     get_chat_model_name,
-    get_provider_preferences
+    get_embedding_model_name,
+    get_provider_preferences,
+    get_qdrant_host,
+    get_qdrant_port,
+    get_top_n,
+    get_score_threshold,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -34,13 +38,6 @@ logger.add(
 load_dotenv(find_dotenv())
 
 # Get all configuration from centralized config
-from ama_kbqa.config import (
-    get_qdrant_host,
-    get_qdrant_port,
-    get_top_n,
-    get_score_threshold,
-    get_embedding_model_name,
-)
 
 # Qdrant Config (from centralized config)
 QDRANT_HOST = get_qdrant_host()
@@ -372,14 +369,14 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
     best_metrics = kg_scores[best_kg]
 
     if best_kg == "sciqa" and best_metrics["entities_found_count"] >= 1 and best_metrics["avg_confidence"] > 0.7:
-        recommendation = "take SciQA for it"
+        recommendation = "Use SciQA"
         reasoning = f"Found {best_metrics['entities_found_count']} entities in SciQA with high confidence ({best_metrics['avg_confidence']:.2f})."
     elif best_metrics["entities_found_count"] >= 1 and best_metrics["avg_confidence"] > 0.7:
-        recommendation = "take KQAPro for it"
+        recommendation = "Use KQAPro"
         reasoning = f"Found {best_metrics['entities_found_count']} entities in KQAPro with high confidence ({best_metrics['avg_confidence']:.2f})."
     else:
-        recommendation = "take KQAPro for it"
-        reasoning = "No strong entity matches found; defaulting to KQAPro."
+        recommendation = "Use KQAPro"
+        reasoning = "No strong entity matches found; defaulting to KQAPro for a diverse Knowledge Basis."
 
     # 7. Construct Final Output
     final_output = {
