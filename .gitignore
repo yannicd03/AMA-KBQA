@@ -225,3 +225,7 @@ claude.md
 /db/datasets/SciQA/**
 /paper
 /benchmark_results
+**.tex
+**.pdf
+**.log
+/used_results
