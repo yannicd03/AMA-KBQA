@@ -332,7 +332,30 @@ Message History:
 
 **SYSTEM_PROMPT** (~165 lines) contains only general-purpose content: critical rules, ORKG schema/prefixes, 5-tier tool catalog, execution strategy, and predicate reference dictionary.
 
+**Key Prompt Rules (CRITICAL RULES section):**
+1. No hallucination - all facts must be verified via tools (with one-hop logical inference exception)
+2. Schema compliance - use GetResourceSummary if predicates return no results
+3. State management - use ManageJournal to track progress
+4. Pivot logic - if search fails twice, switch strategies
+5. Complete retrieval - always follow up FindResource with GetResourceDetails/GetResourceSummary/GetRelationTargets
+6. Constraint verification - verify ALL conditions with VerifyNumericCondition before including items
+7. Minimum effort - must use at least 10 tool calls before concluding data unavailable
+8. **Boolean values in ORKG** - Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent. When filtering for presence of a property (e.g., therapeutic effect), filter for "T" not "F".
+
+**WARNING Block (Minimum Effort Enforcement):**
+- If fewer than 5 tool calls made, MUST NOT give final answer
+- Recovery strategies when stuck:
+  - If FindAuthorPapers returns 0 results, try RunORKGSPARQL with REGEX on author labels
+  - If FindResource returns irrelevant results, try different search terms or FindByPredicateValue
+  - If GetComparisonContributions returns 0 contributions, try other FindResource results
+  - If a predicate returns empty, use GetResourceSummary to discover available predicates
+
 **QTYPE_STRATEGIES** (8 entries) contain type-specific guidance including comparison patterns, SPARQL templates, HAS_VALUE nested patterns, and decision trees. Only the relevant strategy is loaded per question.
+
+**Enhanced Comparison/Superlative Strategies:**
+- **Comparison verification guidance**: After finding a Comparison resource with FindResource, ALWAYS call GetComparisonContributions(comparison_id) in schema discovery mode first. If it returns 0 contributions, the resource may not be a real Comparison - try other results from FindResource or search with a different query.
+- **Multi-hop SPARQL patterns for nested HAS_VALUE**: Some contributions use intermediate resources with HAS_VALUE for their values (Comparison → Contribution → domain_pred → IntermediateResource → HAS_VALUE → actual_value). GetComparisonContributions now includes `OPTIONAL { ?value orkgp:HAS_VALUE ?nestedValue }` and returns `nested_value` field when present.
+- **Reverse-link boolean few-shot example**: Added example showing ASK pattern when entity is referenced BY a contribution (reverse direction), with "t"/"T" for True and "f"/"F" for False in boolean predicates.
 
 ### Question Type Classification
 
@@ -357,7 +380,7 @@ The sciqa_server.py provides 18 tools organized by tier:
 - `FindResource(semantic_query)` - Vector search for ORKG resources
 - `FindPredicate(semantic_query)` - Find ORKG predicate names
 - `FindByPredicateValue(predicate_id, value, match_type)` - Reverse lookup by predicate value (exact/contains/greater/less)
-- `FindAuthorPapers(author_name)` - SPARQL-based author name search (case-insensitive partial match, better than vector search for proper nouns) ✨ NEW
+- `FindAuthorPapers(author_name)` - SPARQL-based author name search with **UNION clause for both resource-URI authors and string literal authors** (handles `orkgp:P27 ?author` with `?author rdfs:label` OR `orkgp:P27 ?authorLabel` with `isLiteral()` filter). Case-insensitive partial match, better than vector search for proper nouns.
 
 **Tier 2 - Retrieval (6 tools):**
 - `GetResourceDetails(resource_id)` - Full resource info
@@ -372,7 +395,7 @@ The sciqa_server.py provides 18 tools organized by tier:
 - `GetPaperAuthors(paper_id)` - Authors via P6/P27
 - `GetContributionMethods(contribution_id)` - Methods via P2
 - `GetResearchFieldPapers(field_name)` - Papers in field via P30
-- `GetComparisonContributions(comparison_id, domain_predicate, filter_value, filter_type)` - Navigate Comparison -> Contribution pattern with predicate discovery mode, now **stores values in journal's found_values** ✨ UPDATED
+- `GetComparisonContributions(comparison_id, domain_predicate, filter_value, filter_type)` - Navigate Comparison -> Contribution pattern with predicate discovery mode. Now includes **automatic 4-hop value resolution**: query includes `OPTIONAL { ?value orkgp:HAS_VALUE ?nestedValue }` and response includes `nested_value` field when present (Comparison → Contribution → intermediate_resource → HAS_VALUE → actual_value). Stores values in journal's found_values.
 - `FollowRelationPath(start_resource_id, relation_path)` - Multi-hop navigation in one SPARQL call
 
 **Tier 4 - Raw SPARQL (1 tool):**

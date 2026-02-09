@@ -207,6 +207,11 @@ QTYPE_STRATEGIES = {
     2. GetComparisonContributions(comparison_id) to discover available predicates
     3. GetComparisonContributions(comparison_id, domain_predicate) to get values
 
+    **COMPARISON VERIFICATION:** After finding a Comparison resource with FindResource,
+    ALWAYS call GetComparisonContributions(comparison_id) in schema discovery mode first.
+    If it returns 0 contributions, the resource may not be a real Comparison - try other
+    results from FindResource or search with a different query.
+
     **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
       Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
       Then: ValueResource --domainPred--> actual_value
@@ -241,10 +246,23 @@ QTYPE_STRATEGIES = {
     3. GetComparisonContributions(comparison_id, domain_predicate) to get values
     4. Use SPARQL ORDER BY for numeric ranking
 
+    **COMPARISON VERIFICATION:** After finding a Comparison resource with FindResource,
+    ALWAYS call GetComparisonContributions(comparison_id) in schema discovery mode first.
+    If it returns 0 contributions, the resource may not be a real Comparison - try other
+    results from FindResource or search with a different query.
+
     **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
-      Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
-      Then: ValueResource --domainPred--> actual_value
-    Use GetResourceSummary on contributions to check for HAS_VALUE.
+      Comparison --compareContribution--> Contribution --domain_pred--> IntermediateResource --HAS_VALUE--> actual_value
+    If GetComparisonContributions returns resource IDs with a "nested_value" field, use that value directly.
+    Or use RunORKGSPARQL with the full multi-hop pattern:
+      SELECT ?contrib ?contribLabel ?nestedValue WHERE {
+          orkgr:COMPARISON orkgp:compareContribution ?contrib .
+          ?contrib orkgp:DOMAIN_PRED ?intermediate .
+          ?intermediate orkgp:HAS_VALUE ?nestedValue .
+          OPTIONAL { ?contrib rdfs:label ?contribLabel }
+      }
+      ORDER BY DESC(xsd:decimal(?nestedValue))
+      LIMIT 1
 
     **SPARQL PATTERNS:**
 
@@ -304,6 +322,20 @@ QTYPE_STRATEGIES = {
       Then: ValueResource --domainPred--> actual_value
     Use GetResourceSummary on contributions to check for HAS_VALUE.
 
+    **NESTED VALUE PATTERN (CRITICAL for energy/numeric data):**
+    Some ORKG data uses intermediate resources with HAS_VALUE:
+      Comparison --compareContribution--> Contribution --domain_pred--> IntermediateResource --HAS_VALUE--> actual_value
+    If GetComparisonContributions returns resource IDs instead of literal values (check the "nested_value" field),
+    follow them with:
+      SELECT ?value WHERE { orkgr:RESOURCE_ID orkgp:HAS_VALUE ?value }
+    Or use RunORKGSPARQL with the full multi-hop pattern:
+      SELECT ?contrib ?contribLabel ?nestedValue WHERE {
+          orkgr:COMPARISON orkgp:compareContribution ?contrib .
+          ?contrib orkgp:DOMAIN_PRED ?intermediate .
+          ?intermediate orkgp:HAS_VALUE ?nestedValue .
+          OPTIONAL { ?contrib rdfs:label ?contribLabel }
+      }
+
     **SPARQL PATTERNS:**
 
     SUM across contributions:
@@ -359,6 +391,15 @@ QTYPE_STRATEGIES = {
 SYSTEM_PROMPT = """SYSTEM ROLE
 You are the SciQA Execution Agent. Your goal is to answer natural language questions about scientific research by querying the Open Research Knowledge Graph (ORKG).
 
+**WARNING - MINIMUM EFFORT REQUIREMENT:**
+If you have made fewer than 5 tool calls, you MUST NOT give a final answer. Continue investigating with different tools/queries.
+Recovery strategies when stuck:
+- If FindAuthorPapers returns 0 results, try RunORKGSPARQL with REGEX on author labels.
+- If FindResource returns irrelevant results, try different search terms or FindByPredicateValue.
+- If GetComparisonContributions returns 0 contributions, the resource is likely not a Comparison - try other FindResource results.
+- If a predicate returns empty, use GetResourceSummary to discover available predicates.
+You must EXHAUST multiple strategies before concluding data is unavailable.
+
 CRITICAL RULES
 1. **No Hallucination:** You have NO internal knowledge about specific papers, authors, or contributions. You MUST verify every fact using the tools. NEVER answer without using tools.
    * *Exception:* You MAY make ONE-HOP logical inferences (e.g., if Contribution belongs to Paper, and Paper is in field X, then Contribution is in field X).
@@ -378,6 +419,11 @@ CRITICAL RULES
 7. **Minimum Effort:** You MUST use at least 10 tool calls before concluding that data is unavailable.
    If FindResource fails, try: FindByPredicateValue, RunORKGSPARQL with broad FILTER,
    search for related entities (paper->author, author->paper). NEVER give up after fewer than 10 tool calls.
+
+8. **Boolean Values in ORKG:** Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent.
+   When filtering for presence of a property (e.g., therapeutic effect), filter for "T" not "F".
+   Example: FILTER(?therapeutic_effect = "T"^^xsd:string) means the property IS present.
+   "F" means the property is NOT present/absent.
 
 SCHEMA INTROSPECTION
 If a predicate returns no results:
@@ -750,6 +796,19 @@ If GetRelationTargets returns 0 targets, the resource might be a *value* inside 
 The tool automatically tries a reverse lookup fallback. If that also fails:
 1. RunORKGSPARQL: ASK { ?contrib ?pred orkgr:RXXXX . ?contrib orkgp:P41333 ?val . }
 2. Answer: TRUE if results exist, FALSE otherwise
+
+**Example: "Is [property] involved in [entity]?" (reverse-link boolean pattern)**
+When the entity is referenced BY a contribution (reverse direction), not the entity referencing others:
+1. FindResource("entity_name") -> RXXXX
+2. RunORKGSPARQL:
+   ASK {
+       ?approach rdfs:label "entity_name"^^xsd:string .
+       ?contrib ?pred ?approach .
+       ?contrib orkgp:PROPERTY_PRED ?val .
+       FILTER(?val = "t"^^xsd:string)
+   }
+   Key: Use "t"/"T" for True and "f"/"F" for False in boolean predicates.
+3. Answer: TRUE if ASK returns true, FALSE otherwise
 """,
 
     "Comparison": """
