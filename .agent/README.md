@@ -109,6 +109,20 @@ Additional documentation in the project root:
 | `ama_kbqa/server/sciqa_server.py` | SciQA MCP server (18 tools) |
 | `ama_kbqa/config.py` | Configuration loader module |
 
+### Frontend
+
+| File | Purpose |
+|------|---------|
+| `ama_kbqa/frontend/app.py` | Main Streamlit entry point |
+| `ama_kbqa/frontend/pages/1_Chat.py` | Interactive Q&A page with agent selector |
+| `ama_kbqa/frontend/pages/2_Batch_Processing.py` | Batch runner with live progress |
+| `ama_kbqa/frontend/pages/3_Evaluation.py` | Results dashboard (charts, metrics) |
+| `ama_kbqa/frontend/pages/4_Settings.py` | config.toml editor |
+| `ama_kbqa/frontend/utils/styling.py` | CSS, ANSI-to-HTML, avatars |
+| `ama_kbqa/frontend/utils/agent_factory.py` | Agent creation + metadata |
+| `ama_kbqa/frontend/utils/batch_results_loader.py` | Load batch result files |
+| `ama_kbqa/frontend/utils/config_editor.py` | config.toml loading/saving |
+
 ### Database
 
 | File | Purpose |
@@ -212,6 +226,29 @@ ama-kbqa benchmark --help
 - `-p, --postprocessing`: Evaluation method: `choice`, `sparql`, `llm_judge`, or `simple` (default: `llm_judge`)
 - `-d, --dataset`: SciQA only - `handcrafted` or `auto` (default: handcrafted)
 
+### Using the Frontend (Streamlit Web UI)
+
+The frontend provides a visual interface for all major features:
+
+```bash
+streamlit run ama_kbqa/frontend/app.py
+```
+
+The app opens in your browser with four pages:
+
+1. **Chat** - Ask questions to Orchestrator, KQAPro, or SciQA agents
+2. **Batch Processing** - Configure and run batch benchmarks with live progress
+3. **Evaluation** - View results dashboards with charts and per-question details
+4. **Settings** - Edit config.toml (LLM provider, models, search parameters)
+
+**Features:**
+- Agent selector with metadata cards
+- Example question suggestions per agent
+- Token usage and reasoning trace display
+- Live batch processing output with ANSI colors
+- Results dashboard with accuracy charts
+- Config editor with session-only or file save modes (auto .bak backup)
+
 ### Run Single Question (Programmatic)
 
 ```python
@@ -295,6 +332,21 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-09**: ✅ **Multi-Page Frontend Refactor**
+  - Upgraded single-page German Streamlit chat UI to multi-page English app with 4 pages:
+    - **Chat** (pages/1_Chat.py) - Agent selector (Orchestrator/KQAPro/SciQA), English labels, token display
+    - **Batch Processing** (pages/2_Batch_Processing.py) - Config form + subprocess runner with live progress
+    - **Evaluation** (pages/3_Evaluation.py) - Results dashboard with charts (accuracy, duration, tool calls)
+    - **Settings** (pages/4_Settings.py) - config.toml editor (session-only or file save with .bak backup)
+  - Created shared utilities layer (frontend/utils/):
+    - `styling.py` - Shared CSS, ansi_to_html(), avatars, HTML capture
+    - `async_helpers.py` - run_async() wrapper
+    - `agent_factory.py` - AGENT_INFO dict, create_agent() factory, suggestion prompts
+    - `batch_results_loader.py` - list_batches(), load_summary(), load_results(), load_judgments()
+    - `config_editor.py` - load_config_raw(), save_config() with .bak backup, apply_to_session()
+  - app.py reduced to minimal entry point (page config + sidebar branding + CSS injection)
+  - Frontend now exposes batch processing, evaluation dashboards, multi-agent selection, and settings editing that were previously CLI-only
+  - Updated [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-09**: ✅ **SciQA Server SPARQL Wrapping Fix**
   - Fixed `RunORKGSPARQL` auto-wrapping behavior to correctly handle solution modifiers
   - Problem: LIMIT, ORDER BY, OFFSET, GROUP BY clauses were trapped inside GRAPH block (invalid SPARQL)
