@@ -332,6 +332,11 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-09**: ✅ **SciQA Agent Accuracy Improvements**
+  - **FindAuthorPapers**: Added UNION clause for string literal authors (papers storing authors as plain strings `orkgp:P27 "Kurt Thomas"` are now matched via `isLiteral()` filter, in addition to resource-URI author matching)
+  - **GetComparisonContributions**: Added automatic 4-hop value resolution via `OPTIONAL { ?value orkgp:HAS_VALUE ?nestedValue }` - response now includes `nested_value` field when present (Comparison → Contribution → intermediate_resource → HAS_VALUE → actual_value)
+  - **Prompt enhancements**: Added boolean encoding guidance (ORKG "T"/"F" convention), comparison verification guidance, strengthened minimum-effort enforcement with WARNING block, multi-hop SPARQL patterns for nested HAS_VALUE queries, reverse-link boolean few-shot example
+  - Updated [System/agent_system.md](System/agent_system.md) and [System/database_schema.md](System/database_schema.md)
 - **2026-02-09**: ✅ **Multi-Page Frontend Refactor**
   - Upgraded single-page German Streamlit chat UI to multi-page English app with 4 pages:
     - **Chat** (pages/1_Chat.py) - Agent selector (Orchestrator/KQAPro/SciQA), English labels, token display

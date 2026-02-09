@@ -1884,14 +1884,30 @@ async def GetComparisonContributions(
 
     try:
         if domain_predicate:
+            # Sanitize: LLM may pass comma/space-separated predicates like "P43156, P43133"
+            raw_preds = [p.strip() for p in re.split(r'[,\s]+', domain_predicate) if p.strip()]
+            # Filter to valid predicate-like tokens (alphanumeric + underscore)
+            preds = [p for p in raw_preds if re.match(r'^[A-Za-z_]\w*$', p)]
+            if not preds:
+                return json.dumps({"error": f"Invalid domain_predicate: {domain_predicate!r}. Provide a single predicate ID like 'P43156'."}, indent=2)
+
+            if len(preds) == 1:
+                pred_filter = f"?contribution orkgp:{preds[0]} ?value ."
+            else:
+                # Multiple predicates: use VALUES to match any of them
+                values_list = " ".join(f"orkgp:{p}" for p in preds)
+                pred_filter = f"VALUES ?pred {{ {values_list} }}\n        ?contribution ?pred ?value ."
+
             # Mode 2/3: Get contributions with specific domain predicate values
+            # Also follow HAS_VALUE indirection for nested values
             query = f"""
-SELECT ?contribution ?contribLabel ?value ?valueLabel WHERE {{
+SELECT ?contribution ?contribLabel ?value ?valueLabel ?nestedValue WHERE {{
     GRAPH <{SCIQA_GRAPH}> {{
         orkgr:{comparison_id} orkgp:compareContribution ?contribution .
-        ?contribution orkgp:{domain_predicate} ?value .
+        {pred_filter}
         OPTIONAL {{ ?contribution rdfs:label ?contribLabel }}
         OPTIONAL {{ ?value rdfs:label ?valueLabel }}
+        OPTIONAL {{ ?value orkgp:HAS_VALUE ?nestedValue }}
     }}
 }}
 """
@@ -1917,11 +1933,16 @@ SELECT ?contribution ?contribLabel ?value ?valueLabel WHERE {{
                         "label": contrib_label,
                         "values": []
                     }
-                contributions[contrib_id]["values"].append({
+                value_entry = {
                     "id": val_id,
                     "label": val_label,
                     "raw": val_raw
-                })
+                }
+                # Include nested value from HAS_VALUE indirection if present
+                nested = b.get("nestedValue", {}).get("value")
+                if nested:
+                    value_entry["nested_value"] = nested
+                contributions[contrib_id]["values"].append(value_entry)
 
             # Apply filter if specified
             if filter_value and contributions:
@@ -2064,14 +2085,17 @@ async def FindAuthorPapers(
 SELECT DISTINCT ?paper ?paperLabel ?author ?authorLabel WHERE {{
     GRAPH <{SCIQA_GRAPH}> {{
         {{
-            ?paper orkgp:P27 ?author .
+            {{ ?paper orkgp:P27 ?author }} UNION {{ ?paper orkgp:P6 ?author }}
+            ?author rdfs:label ?authorLabel .
+            FILTER(CONTAINS(LCASE(?authorLabel), LCASE("{author_name}")))
         }}
         UNION
         {{
-            ?paper orkgp:P6 ?author .
+            {{ ?paper orkgp:P27 ?authorLabel }} UNION {{ ?paper orkgp:P6 ?authorLabel }}
+            FILTER(isLiteral(?authorLabel))
+            FILTER(CONTAINS(LCASE(?authorLabel), LCASE("{author_name}")))
+            BIND(?authorLabel AS ?author)
         }}
-        ?author rdfs:label ?authorLabel .
-        FILTER(CONTAINS(LCASE(?authorLabel), LCASE("{author_name}")))
         OPTIONAL {{ ?paper rdfs:label ?paperLabel . }}
     }}
 }}
