@@ -1,0 +1,249 @@
+
+================================================================================
+Benchmarking: minimax-m2.1 on sciqa
+Questions: 20
+Timeout: 300s per question
+[ABLATION] Few-shot examples DISABLED
+================================================================================
+
+  [0] CORRECT | 167.5s
+      Gold: "http://orkg.org/orkg/resource/R75043", "Beetroot"
+      Pred: Based on the verified information in the Open Research Knowledge Graph:
+
+**Beetroot** is the vegetable used in the process of betanin extraction.
+
+**Evidence**: The research contribution R75023 explicitly links "Compound of interest: Betanin" with "Vegetable source: Beetroot" in a study on pulsed electric field extraction methods.
+  [1] CORRECT | 169.4s
+      Gold: NO ANSWER
+      Pred: **Answer:** The paper "paper title" does not exist in the ORKG. The phrase "paper title" appears to be a placeholder rather than an actual paper title.
+
+**What I found instead:**
+- Searching for "paper title" returned only generic "Title" resources, not specific research papers
+- I found a real paper example that demonstrates the correct pattern: "The Influence of Message Framing on Intentions to Perform Health Behaviors" addresses "Health Persuasion" (P0 predicate)
+
+**To get the correct answer:** Please provide the actual title of the paper you're interested in.
+  [2] INCORRECT | 94.4s
+      Gold: Chris Grier
+Dawn Song
+Vern Paxson
+Chris Grier
+Michael Zhang
+Vern Paxson
+Chris Grier
+Frank Li
+Vern Paxson
+Alek Kolcz
+Chris Grier
+Damon McCoy
+Vern Paxson
+      Pred: Based on my investigation of the Open Research Knowledge Graph (ORKG), **no research papers by an author named "Kurt Thomas" exist in the database**. Therefore, there are no co-authors to list for this individual.
+  [3] INCORRECT | 105.6s
+      Gold: 93.3125
+      Pred: The mean efficiency obtained for the studies is 0.988 (98.8%).
+  [4] INCORRECT | 133.0s
+      Gold: 1 %
+      Pred: 97.26% of comparisons are without class link.
+  [5] CORRECT | 221.0s
+      Gold: "http://orkg.org/orkg/resource/R154290", "LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia"
+"http://orkg.org/orkg/resource/R156119", "Question Answering Benchmarks for Wikidata"
+"http://orkg.org/orkg/resource/R156121", "The Web as a Knowledge-Base for Answering Complex Questions"
+      Pred: Based on the ORKG data, here is the list of question answering benchmarks with more than 10,000 questions:
+
+1. **Large-scale benchmark** - 1,010,916 questions
+   - Domain: Open
+   - Question Types: Factoid and Non-factoid
+   - Knowledge source: Documents
+
+2. **Large-scale benchmark** - 100,000+ questions
+   - Domain: Open
+   - Question Types: Factoid
+   - Knowledge source: Documents
+
+3. **Large-scale benchmark** - 50,000+ questions
+   - Domain: Open
+   - Question Types: Factoid
+   - Knowledge source: Documents
+
+4. **SMART 2021 DBpedia training dataset** - 67,714 questions
+   - From paper: "CitySAT: a System for the Semantic Answer Type Prediction Task" (2022)
+   - Domain: Open domain
+   - Question Types: Factoid
+   - Data source: DBpedia
+
+5. **Complex QA benchmark** - 34,689 questions
+   - From paper: "The Web as a Knowledge-Base for Answering Complex Questions" (2018)
+   - Domain: Open
+   - Question Types: Complex
+   - Knowledge source: Freebase
+   - Requires SPARQL queries
+
+6. **Question Answering Benchmark (simple question)** - 12,661 questions
+   - From paper: "FoodKG: A Semantics-Driven Knowledge Graph for Food Recommendation" (2019)
+   - Domain: Nutritional
+   - Question Types: Factoid
+   - Knowledge source: Knowledge graph
+   - Requires one-hop reasoning
+
+**Note:** The specific names of the first three benchmarks (with 1,010,916, 100,000+, and 50,000+ questions) are not explicitly labeled in the ORKG data, but they are documented as large-scale question answering benchmarks in the "Question Answering benchmarks" comparison resource (R154289).
+  [6] CORRECT | 112.0s
+      Gold: “http://orkg.org/orkg/resource/R139751”, "How to present contested heritage in a digital archive?" 
+“http://orkg.org/orkg/resource/R139787”, "How to integrate participatory approaches in hertage diplomacy?"
+“http://orkg.org/orkg/resource/R139799”, "How walking methods can better illuminate post‐conflict space?"
+“http://orkg.org/orkg/resource/R139808”, "What characterises contested heritage?"
+“http://orkg.org/orkg/resource/R139809”, "What factors lead to heritage contestation?"
+“http://orkg.org/orkg/resource/R139830”, "How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?"
+“http://orkg.org/orkg/resource/R139833”, "How to define digital heritage interpretation?"
+“http://orkg.org/orkg/resource/R139867”, "What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?"
+“http://orkg.org/orkg/resource/R139935”, "developing an energy efficiency solution for a historicaal building"
+“http://orkg.org/orkg/resource/R139990”, "What are the reasons for the weak substantiation of cultural heritage in smart city strategies?"
+      Pred: Based on my investigation of the Open Research Knowledge Graph, here are the research challenges identified in the domain of Cultural History:
+
+1. **How to present contested heritage in a digital archive?** (R139751)
+2. **How to integrate participatory approaches in heritage diplomacy?** (R139787)
+3. **How walking methods can better illuminate post-conflict space?** (R139799)
+4. **What characterises contested heritage?** (R139808)
+5. **What factors lead to heritage contestation?** (R139809)
+6. **How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?** (R139830)
+7. **How to define digital heritage interpretation?** (R139833)
+8. **What is the role of conservation of cultural heritage in the progress towards UN Development Goals?** (R139867)
+9. **Developing an energy efficiency solution for a historical building** (R139935)
+10. **What are the reasons for the weak substantiation of cultural heritage in smart city strategies?** (R139990)
+
+These challenges were identified from research papers in the Cultural History field (R417) through their contributions addressing specific research problems (P32).
+  [7] INCORRECT | 180.5s
+      Gold: hydropower	0.0	79.5
+offshore wind power	0.0	367.0
+onshore wind power	56.6	543.0
+bioenergy	0.0	60.0
+photovoltaics	14.9	425.0
+geothermics	0.0	50.0
+net import	-9.0	176.5
+import	0.0	176.5
+all sources	405.0	1438.0
+others	0.0	311.4
+      Pred: Based on the data retrieved from the ORKG, here are the boundaries of energy production capacities for each energy source from the "Comparison of Studies on Germany's Energy Supply in 2050":
+
+**Energy Source Capacity Intervals (in gigawatts, GW):**
+
+1. **Photovoltaics**: 15.7 - 415 GW
+2. **Onshore Wind Power**: 28.3 - 231 GW  
+3. **Offshore Wind Power**: 0 - 76 GW
+4. **Bioenergy**: 0 - 50 GW
+5. **Hydropower**: 3 - 20.4 GW
+6. **Geothermics**: 0 - 6.4 GW
+7. **Others**: 0 - 238 GW
+
+**Note**: The data represents multiple scenario projections from different studies of Germany's future energy system. The values show the minimum and maximum installed capacity projections for each energy source type across all compared studies.
+  [8] CORRECT | 142.4s
+      Gold: "http://orkg.org/orkg/resource/R144264", "Liposomes"
+"http://orkg.org/orkg/resource/R144267", "Lipid nanocapsules"
+"http://orkg.org/orkg/resource/R144361", "Nano-lipid carrier"
+"http://orkg.org/orkg/resource/R144362", "Extracellular vesicles"
+      Pred: Based on my investigation of the Open Research Knowledge Graph, the following nanocarrier types have documented therapeutic effects:
+
+1. **Liposomes** (R136210)
+2. **Solid lipid nanoparticles (SLN)** (R135741)  
+3. **Nanostructured lipid carriers (NLC)** (R135888)
+4. **Nanoemulsion (NE)** (R135742)
+5. **Poly lactic-co-glycolic acid (PLGA) nanoparticles** (R144155)
+6. **Nanoemulsions** (R144259)
+7. **Lipid micelles** (R144263)
+8. **Lipid nanocapsules** (R144267)
+9. **Nano-lipid carrier** (R144361)
+10. **Extracellular vesicles** (R144362)
+
+These nanocarrier types are specifically associated with therapeutic effects through predicate P41743 (therapeutic effects of carrier) in the ORKG knowledge graph.
+  [9] CORRECT | 75.2s
+      Gold: no
+      Pred: **No**, ViCoMap cannot aggregate.
+
+The ORKG data shows that ViCoMap (resource R6541) has an "Aggregation" capability with value "F", indicating this feature is not supported.
+  [10] INCORRECT | 130.5s
+      Gold: TRUE
+      Pred: **Answer: No**
+
+Based on the ORKG data, integrity constraints are not involved in OWLMAP. The investigation found:
+
+1. OWLMAP exists as resource R139909 but has no properties or relationships in the knowledge graph.
+2. No connections were found between OWLMAP and integrity constraints through multiple search methods.
+3. While a paper on "Integrity constraints in OWL" (R109146) exists, it discusses integrity constraints in relation to the Pellet reasoner, not OWLMAP.
+
+The ORKG contains no evidence that OWLMAP involves or implements integrity constraints.
+  [11] CORRECT | 98.8s
+      Gold: 2
+      Pred: Based on the information discovered in the ORKG, **2 studies** make use of Chloride as a major anion.
+
+These studies are documented in a comparison resource focused on groundwater chemistry, where both contributions (R110517 and R110541) specifically list Chloride as their major anion value.
+  [12] ERROR: Timeout after 300s | 450.1s
+      Gold: Heat sector	8
+      Pred: None
+  [13] ERROR: Error code: 400 - {'error': {'message': 'This endp | 77.0s
+      Gold: "Aurein 1.2"
+      Pred: None
+  [14] CORRECT | 96.3s
+      Gold: "2,2-Bis(4-hydroxyphenyl)propane"
+      Pred: Based on the information discovered in the ORKG, Bisphenol-A is alternatively called **2,2-Bis(4-hydroxyphenyl)propane**.
+
+This alternative name is stored in the knowledge graph through a "SAME_AS" relationship from the Bisphenol-A resource (R154539) to resource R154540, which has this label.
+  [15] CORRECT | 15.8s
+      Gold: "2004"
+      Pred: The MedPost paper was published in **2004**.
+  [16] INCORRECT | 133.3s
+      Gold: 6452
+      Pred: Based on the information discovered in the ORKG, I can provide the following answer:
+
+**Total number of participants across studies: 5,945**
+
+This total was calculated by summing all numeric participant counts from 55 papers that have participant information recorded using the "Number of participants" predicate (P27024). The data includes studies ranging from small-scale experiments (1-2 participants) to larger studies (up to 1,154 participants), with examples including psychology studies, cybersecurity behavior research, and various experimental studies.
+  [17] INCORRECT | 149.4s
+      Gold: TRUE
+      Pred: Based on the specific data I found in the ORKG:
+
+**No, children are not in the demographic of the studies I examined.**
+
+Here's the evidence from my journal:
+
+1. **Studies with Age Data**: I found 3 studies with participant age information:
+   - R202096: No age specified for the single subject
+   - R202099: No age specified for the 3 subjects
+   - Other studies found via SPARQL query: All showed adult participants (ages 21-35)
+
+2. **Children Resources**: While I found resources labeled "children" (R189190, R109604, R30668), these were standalone resources not linked to any actual studies with demographic data.
+
+3. **No Child Participants Found**: In all studies where age was documented, participants were adults aged 21-35 years. No studies in my investigation included children in their demographics.
+
+The data I discovered shows that the studies documented in the ORKG with demographic information have adult participants only.
+  [18] ERROR: Error code: 400 - {'error': {'message': 'This endp | 93.2s
+      Gold: hydropower	0.0	20.4
+offshore wind power	0.0	76.0
+onshore wind power	28.3	231.0
+bioenergy	0.0	50.0
+photovoltaics	15.7	415.0
+geothermics	0.0	6.4
+all sources	137.4	839.0
+others	0.0	238.0
+      Pred: None
+  [19] INCORRECT | 163.2s
+      Gold: Heat sector	10
+Liquid fuels sector	5
+Electricity sector	5
+Gas sector	5
+      Pred: Based on my investigation of the Open Research Knowledge Graph, I cannot provide a list of energy sectors with corresponding frequencies. Here's what I found:
+
+**Energy Sector Classes Identified:**
+1. Energy Demand Sector (C20083)
+2. Energy Transformation Sector (C20090)
+3. Electricity Sector (C20091)
+4. Power Sector (R111928)
+
+**Missing Information:**
+- No frequency data (counts or frequencies) for how often these sectors appear in research papers
+- No aggregated statistics showing the distribution or frequency of energy sectors in the ORKG
+- SPARQL queries to compute frequencies encountered syntax errors with GROUP BY operations
+
+**Available Data:**
+- Several papers discuss energy sectors (e.g., "Sectoral energy consumption by source and economic growth in Turkey")
+- Template components for energy generation proportions exist (coal, nuclear, thermal power)
+- Structural definitions of energy sectors are present, but not frequency statistics
+
+**Conclusion:** The ORKG contains definitions of energy sectors but does not have pre-computed frequency statistics for how often each sector appears in the research literature.

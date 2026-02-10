@@ -1,0 +1,125 @@
+
+================================================================================
+Benchmarking: qwen3-32b on kqapro
+Questions: 20
+Timeout: 300s per question
+================================================================================
+
+  [0] CORRECT | 80.3s
+      Gold: yes
+      Pred: Yes, the Taliban was established on 1994-01-01. The knowledge graph confirms that the inception date for the Taliban is exactly 1994-01-01.
+  [1] CORRECT | 100.0s
+      Gold: 18000000318
+      Pred: The person born as Chloe Ardelia Wofford (Toni Morrison) has the KLfG Critical Dictionary of foreign contemporary literature designation **18000000318**.
+  [2] CORRECT | 57.6s
+      Gold: no
+      Pred: No. The state of India with FIPS 10-4 code IN23 is Punjab, and its ISO 3166-2 code is IN-PB, not GB-LEC.
+  [3] CORRECT | 78.2s
+      Gold: yes
+      Pred: Yes, the cost of the animated feature film *Madagascar 3: Europe's Most Wanted* is less than 150,000,000 United States dollars. The film's cost is 145,000,000 United States dollars, which is indeed less than the specified amount.
+  [4] CORRECT | 223.7s
+      Gold: http://www.eintracht.com/
+      Pred: Based on my investigation, the website belonging to the association football club based in Brunswick (which is twinned with Omaha) is:
+
+**http://www.eintracht.com/**
+
+This was determined by querying for football clubs located in Brunswick (Q2773) and retrieving their official website attribute.
+  [5] CORRECT | 179.7s
+      Gold: Terrence Malick
+      Pred: Based on the investigation, the nominee of the Academy Award for Best Director for the work in *The Thin Red Line* (which features George Clooney in the cast) is **Terrence Malick**.
+
+**Reasoning:**
+1. *The Thin Red Line* (Q221491) has director Terrence Malick (Q215478).
+2. Terrence Malick is linked via "nominated for" to the entity Q103360, which is labeled "Academy Award for Best Director."
+3. All constraints (film title, cast member George Clooney, award category) are satisfied by the verified data.
+  [6] CORRECT | 116.2s
+      Gold: Shanghai
+      Pred: Based on the data retrieved from the Knowledge Graph:
+
+- **Bicentennial Man** has a duration of **126 minutes**.
+- **Shanghai** (the specific film with ID Q3481388) has a duration of **75 minutes**.
+
+Therefore, **Shanghai (75 minutes) is shorter than Bicentennial Man (126 minutes)**.
+  [7] INCORRECT | 190.7s
+      Gold: 1
+      Pred: Based on my investigation, I found that Rose Byrne has a partner entity (Q428819) in the knowledge graph, but this entity has no recorded name or attributes. The SPARQL query for partner names returned no results, and the verification confirmed that the count is zero.
+
+**Answer:** 0 masculine first names belong to a partner of Rose Byrne.
+  [8] INCORRECT | 260.6s
+      Gold: Virginia Tech
+      Pred: Looking at the journal summary, I can see that I discovered specific data about various entities, but none of this data relates to the question about universities in the Eastern Time Zone.
+
+The journal shows I found:
+- Taliban's inception date (1994-01-01)
+- Toni Morrison's birth name and literary reference number
+- Punjab's ISO code (IN-PB)
+- Movie production costs and durations
+
+However, I found **no data** about:
+1. Any universities or colleges
+2. Their locations in the Eastern Time Zone
+3. Student enrollment numbers
+4. Any educational institutions with student counts
+
+The entities I explored (Taliban, Toni Morrison, Punjab, movies) are completely unrelated to the question about universities with the most students in the Eastern Time Zone.
+
+Therefore, based on the actual data in my journal summary, I must conclude that the knowledge graph contains **no relevant information** to answer this specific question. The discovered values are about unrelated topics and provide no insight into university student populations or Eastern Time Zone educational institutions.
+  [9] ERROR: Timeout after 300s | 319.8s
+      Gold: 1
+      Pred: None
+  [10] CORRECT | 196.4s
+      Gold: 1995
+      Pred: Based on my investigation, the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal is **1995**.
+
+I found that Seal (Q218091) was nominated for the MTV Video Music Award for Best Video from a Film (Q1161109), and this nomination has a qualifier "point_in_time" with the value "1995".
+  [11] INCORRECT | 205.2s
+      Gold: 2
+      Pred: Based on the investigation, the number of art movements located in Paris (the main subject of *An American in Paris*) or with the Dewey Decimal Classification of 142.78 is **3**.
+
+**Reasoning:**
+- The movie *An American in Paris* (Q747570) has Paris (Q90) as its main subject.
+- A SPARQL query counting art movements that either have Paris as their main subject or have the Dewey Decimal Classification "142.78" returned a count of 3.
+
+**Answer:** 3.
+  [12] CORRECT | 115.8s
+      Gold: Gentleman's Agreement
+      Pred: Based on my investigation, the visual artwork titled "紳士協定" is the film **"Gentleman's Agreement"** (entity Q898840). This was identified through a reverse lookup using the title attribute.
+  [13] INCORRECT | 241.4s
+      Gold: 2
+      Pred: Based on my investigation, I found **0 public universities** that meet either condition:
+
+1. **ISNI 0000 0001 2248 7639**: No entities were found with this ISNI identifier.
+2. **Columbia-Campus, Columbia, SC, 29208**: No entities were found matching "Columbia-Campus" in the knowledge graph.
+
+Since neither condition returned any matching public universities, the count is zero.
+
+**Final Answer:** $\boxed{0}$
+  [14] CORRECT | 60.8s
+      Gold: Hitchin
+      Pred: Based on the population data retrieved from the knowledge graph, **Hitchin has a larger population than Chesterfield**.
+
+*   Hitchin's population: 34,266
+*   Chesterfield's population: 10,688
+  [15] CORRECT | 193.5s
+      Gold: yes
+      Pred: Based on the investigation, the award nominated to Tom Wilkinson that meets the specified conditions is the **Academy Award for Best Actor**. Its establishment time (inception) is **1927**. 
+
+Verification confirms that 1927 is not equal to 1911.
+
+**Answer:** Yes, its establishment time is not in 1911.
+  [16] INCORRECT | 154.4s
+      Gold: Monsters, Inc.
+      Pred: Based on the discovered information, the animated feature film directed by Pete Docter with the smallest duration is **Shanghai**, which has a duration of **75 minutes**.
+  [17] CORRECT | 88.1s
+      Gold: 64th Golden Globe Awards
+      Pred: The Golden Globe Award ceremony received by the visual artwork with exploitation visa number 116230 is the **64th Golden Globe Awards**.
+  [18] CORRECT | 62.2s
+      Gold: 21–40
+      Pred: Based on the discovered values in the journal summary, the singles record for Mike Bryan's sibling is **21–40**.
+
+<final_answer>
+21–40
+</final_answer>
+  [19] INCORRECT | 87.0s
+      Gold: place of death
+      Pred: Based on the information discovered, **Rajesh Khanna has no direct connection to Mumbai recorded in the knowledge graph**. The only residence found for him is Amritsar (Q48403). No other relationships (such as birthplace, workplace, or other associations) linking him to Mumbai were identified in the available data.

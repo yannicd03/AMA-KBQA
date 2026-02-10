@@ -1,0 +1,203 @@
+
+================================================================================
+Benchmarking: gpt-oss-120b on sciqa
+Questions: 20
+Timeout: 300s per question
+================================================================================
+
+  [0] INCORRECT | 74.5s
+      Gold: "http://orkg.org/orkg/resource/R75043", "Beetroot"
+      Pred: Based on the available information in the Open Research Knowledge Graph, no vegetables are recorded as being used in the process of betanin extraction. The graph contains resources related to betanin and beetroot, but no contributions, papers, or comparisons link any vegetable to betanin extraction via the relevant predicates. Therefore, the ORKG does not contain data answering this question.
+  [1] CORRECT | 28.6s
+      Gold: NO ANSWER
+      Pred: Based on my investigation of the Open Research Knowledge Graph, **no paper with the exact title "paper title" was found**, and therefore I cannot determine which research problem it addresses. The search returned several resources with "Title" as their label, but none matched a specific research paper with that title.
+  [2] INCORRECT | 38.6s
+      Gold: Chris Grier
+Dawn Song
+Vern Paxson
+Chris Grier
+Michael Zhang
+Vern Paxson
+Chris Grier
+Frank Li
+Vern Paxson
+Alek Kolcz
+Chris Grier
+Damon McCoy
+Vern Paxson
+      Pred: Based on my investigation of the ORKG, I cannot answer the question "Who are the authors that Kurt Thomas has written research papers with?" because:
+
+**Missing Information:**
+1. I could not locate a specific author resource for "Kurt Thomas" in the ORKG database.
+2. The search results returned various authors but none labeled as "Kurt Thomas".
+3. Without finding Kurt Thomas as an author in the system, I cannot retrieve his co-authors or the papers he has authored.
+
+**What I found:**
+- Multiple author resources with similar names or partial matches, but none confirmed as Kurt Thomas.
+- General author resources labeled simply as "Author" without specific identification.
+
+To answer this question, I would need to first locate Kurt Thomas as a specific author resource in the ORKG, then find the papers he has authored, and finally identify his co-authors from those papers.
+  [3] INCORRECT | 24.8s
+      Gold: 93.3125
+      Pred: Based on the data in the Open Research Knowledge Graph, the mean efficiency obtained across the studies is approximately **0.988**.
+  [4] INCORRECT | 39.3s
+      Gold: 1 %
+      Pred: Approximately 99.2 % of comparisons are without a class link.
+  [5] INCORRECT | 104.4s
+      Gold: "http://orkg.org/orkg/resource/R154290", "LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia"
+"http://orkg.org/orkg/resource/R156119", "Question Answering Benchmarks for Wikidata"
+"http://orkg.org/orkg/resource/R156121", "The Web as a Knowledge-Base for Answering Complex Questions"
+      Pred: Based on the ORKG data, here are the question answering benchmarks with more than 10,000 questions:
+
+1. **Question Answering Benchmark** (R220788) - 24,585 questions  
+   *Description:* Dataset of questions about food in natural language, classified as simple, composite, or constraint.
+
+2. **Contribution 1** (R156123) - 34,689 questions  
+   *Details:* Open domain, complex questions, uses Freebase knowledge source, supports SPARQL queries.
+
+3. **Merge of SMART 2020 and SMART 2021 training dataset for AT task** (R217649) - 67,714 questions  
+   *Details:* Uses DBpedia, includes 54,241 training questions and 13,473 test questions.
+
+4. **SMART 2021 DBpedia training dataset for RL task** (R217833) - 42,756 questions  
+   *Details:* Uses DBpedia, includes 34,204 training questions and 8,552 test questions.
+
+5. **SMART 2021 Wikidata training dataset for RL task** (R217847) - 30,141 questions  
+   *Details:* Uses Wikidata, includes 24,112 training questions and 6,029 test questions.
+
+6. **Question Answering Benchmark (simple question)** (R220786) - 12,661 questions  
+   *Description:* Requires only one-hop reasoning (e.g., "How much sugar is in cheese?").
+
+All six benchmarks have been verified to contain more than 10,000 questions.
+  [6] CORRECT | 65.7s
+      Gold: “http://orkg.org/orkg/resource/R139751”, "How to present contested heritage in a digital archive?" 
+“http://orkg.org/orkg/resource/R139787”, "How to integrate participatory approaches in hertage diplomacy?"
+“http://orkg.org/orkg/resource/R139799”, "How walking methods can better illuminate post‐conflict space?"
+“http://orkg.org/orkg/resource/R139808”, "What characterises contested heritage?"
+“http://orkg.org/orkg/resource/R139809”, "What factors lead to heritage contestation?"
+“http://orkg.org/orkg/resource/R139830”, "How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?"
+“http://orkg.org/orkg/resource/R139833”, "How to define digital heritage interpretation?"
+“http://orkg.org/orkg/resource/R139867”, "What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?"
+“http://orkg.org/orkg/resource/R139935”, "developing an energy efficiency solution for a historicaal building"
+“http://orkg.org/orkg/resource/R139990”, "What are the reasons for the weak substantiation of cultural heritage in smart city strategies?"
+      Pred: Based on the ORKG data, the research challenges in the domain of Cultural History are the following distinct research problems identified in papers classified under this field:
+
+1. How to present contested heritage in a digital archive?
+2. How to integrate participatory approaches in heritage diplomacy?
+3. How walking methods can better illuminate post‑conflict space?
+4. What characterises contested heritage?
+5. What factors lead to heritage contestation?
+6. How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?
+7. How to define digital heritage interpretation?
+8. What is the role of conservation of cultural heritage in the progress towards UN Development Goals?
+9. Developing an energy efficiency solution for a historical building.
+10. What are the reasons for the weak substantiation of cultural heritage in smart city strategies?
+
+These challenges were retrieved from contributions linked to papers in the Cultural History research field.
+  [7] INCORRECT | 104.7s
+      Gold: hydropower	0.0	79.5
+offshore wind power	0.0	367.0
+onshore wind power	56.6	543.0
+bioenergy	0.0	60.0
+photovoltaics	14.9	425.0
+geothermics	0.0	50.0
+net import	-9.0	176.5
+import	0.0	176.5
+all sources	405.0	1438.0
+others	0.0	311.4
+      Pred: Error: Agent reached maximum iteration limit.
+  [8] CORRECT | 23.5s
+      Gold: "http://orkg.org/orkg/resource/R144264", "Liposomes"
+"http://orkg.org/orkg/resource/R144267", "Lipid nanocapsules"
+"http://orkg.org/orkg/resource/R144361", "Nano-lipid carrier"
+"http://orkg.org/orkg/resource/R144362", "Extracellular vesicles"
+      Pred: Based on the ORKG data, the nanocarrier types for which a therapeutic effect of the carrier occurs are:
+
+1. Poly lactic‑co‑glycolic acid (PLGA) nanoparticles
+2. Nanoemulsions
+3. Lipid micelles
+4. Liposomes
+5. Solid lipid nanoparticles
+6. Lipid nanocapsules
+7. Nano‑lipid carrier
+8. Extracellular vesicles
+
+These eight carrier types are linked to the predicate "Therapeutic effects of the carrier" (P41743) in the knowledge graph.
+  [9] CORRECT | 13.9s
+      Gold: no
+      Pred: No, ViCoMap cannot aggregate. According to the ORKG data, ViCoMap (R6541) has an "Aggregation" capability value of "F" (False).
+  [10] INCORRECT | 33.3s
+      Gold: TRUE
+      Pred: No. Based on the ORKG data, integrity constraints are not involved in OWLMAP. The resource OWLMAP (R139909) has no contributions linked to it (P31 returns empty), and a direct SPARQL ASK query for the predicate "integrity constraints" (P41333) on OWLMAP returns false.
+  [11] CORRECT | 18.4s
+      Gold: 2
+      Pred: Based on my investigation of the ORKG, the number of studies that make use of chloride as a major anion is **2**.
+  [12] INCORRECT | 42.1s
+      Gold: Heat sector	8
+      Pred: Based on the information in the journal summary, the most frequently studied energy sector is **electricity generation**. The comparison description explicitly states: "The focus of this study comparison is electricity generation." This indicates that all 25 contributions in the comparison (R153801) are focused on the electricity generation sector.
+  [13] INCORRECT | 49.3s
+      Gold: "Aurein 1.2"
+      Pred: Based on my investigation of the ORKG, I found two comparison resources (R75638 and R109494) that contain lead compound information. However, I was unable to retrieve specific data about which lead compound is "mostly used" because:
+
+1. I found the predicate P35194 ("Lead compound") that stores lead compound information
+2. I identified two comparison resources containing lead compound data
+3. But I couldn't retrieve the actual usage statistics or frequency data for lead compounds
+
+The question asks for "mostly used" which implies a ranking or frequency count, but I need to query the specific values from these comparisons to determine which lead compound appears most frequently or has the highest usage metrics. Without accessing the actual lead compound values and their usage data from these comparisons, I cannot determine which one is the most used.
+
+**Answer:** I need to examine the lead compound values in comparisons R75638 and R109494 to determine which specific lead compound is most frequently used. The data exists in the ORKG but requires further querying to extract the usage statistics.
+  [14] CORRECT | 17.2s
+      Gold: "2,2-Bis(4-hydroxyphenyl)propane"
+      Pred: Bisphenol‑A is alternatively called **2,2‑Bis(4‑hydroxyphenyl)propane**.
+  [15] CORRECT | 12.6s
+      Gold: "2004"
+      Pred: The MedPost paper was published in **2004**.
+  [16] ERROR: Error code: 400 - {'error': {'message': 'This endp | 49.5s
+      Gold: 6452
+      Pred: None
+  [17] CORRECT | 40.6s
+      Gold: TRUE
+      Pred: Yes. The ORKG data contains at least one literal value that includes the word “children,” confirming that children are mentioned as part of the demographic in the studies.
+  [18] INCORRECT | 139.4s
+      Gold: hydropower	0.0	20.4
+offshore wind power	0.0	76.0
+onshore wind power	28.3	231.0
+bioenergy	0.0	50.0
+photovoltaics	15.7	415.0
+geothermics	0.0	6.4
+all sources	137.4	839.0
+others	0.0	238.0
+      Pred: Based on my investigation of the ORKG, I cannot answer the question "What are extreme values of installed capacity grouped by energy source?" with the information I found.
+
+**What I discovered:**
+1. I found a visualization resource titled "Reported Installed Capacity [GW] of Compared Studies for All Sources" (R153924), which suggests there is data about installed capacity comparisons.
+2. I found multiple "Installed capacity" resources with numeric values (e.g., R152284 has value 23.3 with unit gigawatt).
+3. I identified the relevant predicates: P43133 ("Has installed capacity") and P43135 ("Has energy sources").
+
+**What's missing:**
+- I could not find any contributions or comparisons that link installed capacity values (P43133) with energy sources (P43135).
+- The SPARQL queries to find contributions with both predicates returned no results.
+- I found no instances where energy sources are explicitly linked to installed capacity values in a way that would allow grouping.
+
+**Conclusion:** The ORKG contains data about installed capacity values and has predicates for energy sources, but I could not find any resources that connect these two attributes together to enable grouping by energy source and calculation of extreme values (min/max).
+  [19] INCORRECT | 65.7s
+      Gold: Heat sector	10
+Liquid fuels sector	5
+Electricity sector	5
+Gas sector	5
+      Pred: Based on the information discovered in the ORKG, I can provide a list of sectors that are considered energy sectors, but **no corresponding frequencies are available**.
+
+**Energy Sectors Found in ORKG:**
+
+1. **energy transformation sector** (Class: C20090)
+2. **energy demand sector** (Class: C20083)
+3. **electricity sector** (Class: C20091)
+4. **Power sector** (Resource: R111928)
+5. **Heat sector** (Resources: R111926, R113127)
+6. **Gas sector** (Resource: R146350)
+7. **industry sector** (Class: C20088) - sometimes grouped with energy-related analyses
+
+**Missing Information:**
+- No frequency values (counts, percentages, or occurrence metrics) are associated with these sectors in the ORKG.
+- Searches for frequency predicates (P37522 "Has frequency", P2144 "frequency") returned no results for these sector entities.
+
+**Conclusion:** The ORKG contains several energy sector classifications, but it does not store frequency data for these sectors.

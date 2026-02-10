@@ -1,0 +1,29 @@
+{
+  "model": "minimax-m2.1",
+  "agent": "sciqa",
+  "timestamp": "2026-02-09T00:18:41.840603",
+  "is_complete": true,
+  "statistics": {
+    "total_questions": 20,
+    "correct": 9,
+    "errors": 3,
+    "accuracy": 0.45,
+    "total_time_seconds": 2808.64,
+    "avg_time_seconds": 140.43,
+    "total_tokens": 9084780,
+    "avg_tokens": 454239.0,
+    "prompt_tokens": 8968410,
+    "completion_tokens": 116370,
+    "estimated_cost_usd": 4.6588,
+    "accuracy_by_type": {
+      "Non-factoid": 0.75,
+      "Factoid": 0.5714285714285714,
+      "Factoid\nCount": 0.5,
+      "Non-factoid\nCount\nNegation": 0.0,
+      "Non-factoid\nRanking": 0.0,
+      "Factoid\nSuperlative": 0.0,
+      "Factoid\nTemporal": 1.0,
+      "Non-factoid\nCount": 0.0
+    }
+  }
+}

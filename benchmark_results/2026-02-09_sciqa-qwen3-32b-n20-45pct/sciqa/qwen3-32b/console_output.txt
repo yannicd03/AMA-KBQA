@@ -1,0 +1,170 @@
+
+================================================================================
+Benchmarking: qwen3-32b on sciqa
+Questions: 20
+Timeout: 300s per question
+[ABLATION] Few-shot examples DISABLED
+================================================================================
+
+  [0] CORRECT | 179.5s
+      Gold: "http://orkg.org/orkg/resource/R75043", "Beetroot"
+      Pred: Based on the information discovered in the ORKG, **beetroot** is the vegetable used in the process of betanin extraction. This is directly supported by the pre-analysis and the presence of the "Beetroot" resource (R75043) found during the investigation.
+  [1] CORRECT | 79.4s
+      Gold: NO ANSWER
+      Pred: The paper "paper title" could not be matched to a specific research paper resource in the ORKG. Therefore, the research problem it addresses cannot be determined from the available data.
+  [2] INCORRECT | 47.5s
+      Gold: Chris Grier
+Dawn Song
+Vern Paxson
+Chris Grier
+Michael Zhang
+Vern Paxson
+Chris Grier
+Frank Li
+Vern Paxson
+Alek Kolcz
+Chris Grier
+Damon McCoy
+Vern Paxson
+      Pred: Based on the investigation, no authors co-writing research papers with Kurt Thomas were found in the Open Research Knowledge Graph.
+  [3] INCORRECT | 87.8s
+      Gold: 93.3125
+      Pred: Based on the SPARQL query result in the journal summary, the mean efficiency obtained across the studies is **0.9883** (approximately 98.83%).
+
+$$
+\boxed{0.9883}
+$$
+  [4] INCORRECT | 178.6s
+      Gold: 1 %
+      Pred: Based on the information discovered: **100% of comparisons are without a class link** (1132 out of 1132 comparisons).
+  [5] INCORRECT | 125.2s
+      Gold: "http://orkg.org/orkg/resource/R154290", "LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia"
+"http://orkg.org/orkg/resource/R156119", "Question Answering Benchmarks for Wikidata"
+"http://orkg.org/orkg/resource/R156121", "The Web as a Knowledge-Base for Answering Complex Questions"
+      Pred: Based on the information discovered in the ORKG, the question-answering benchmarks with more than 10,000 questions are:
+
+1. **R220786** (Question Answering Benchmark - simple question) - 12,661 questions
+2. **R220788** (Question Answering Benchmark) - 24,585 questions  
+3. **R156123** - 34,689 questions
+
+These three benchmarks all have an "Amount of Questions" (P41923) value greater than 10,000.
+  [6] CORRECT | 85.0s
+      Gold: “http://orkg.org/orkg/resource/R139751”, "How to present contested heritage in a digital archive?" 
+“http://orkg.org/orkg/resource/R139787”, "How to integrate participatory approaches in hertage diplomacy?"
+“http://orkg.org/orkg/resource/R139799”, "How walking methods can better illuminate post‐conflict space?"
+“http://orkg.org/orkg/resource/R139808”, "What characterises contested heritage?"
+“http://orkg.org/orkg/resource/R139809”, "What factors lead to heritage contestation?"
+“http://orkg.org/orkg/resource/R139830”, "How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?"
+“http://orkg.org/orkg/resource/R139833”, "How to define digital heritage interpretation?"
+“http://orkg.org/orkg/resource/R139867”, "What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?"
+“http://orkg.org/orkg/resource/R139935”, "developing an energy efficiency solution for a historicaal building"
+“http://orkg.org/orkg/resource/R139990”, "What are the reasons for the weak substantiation of cultural heritage in smart city strategies?"
+      Pred: Based on the information discovered in the ORKG, one specific research challenge in the domain of Cultural History is:
+
+**How to present contested heritage in a digital archive?**
+
+This challenge was identified from a paper titled "Public History and Contested Heritage: Archival Memories of the Bombing of Italy" (R139736), where it is listed as the research problem (P0) addressed by the contribution.
+
+The investigation did not retrieve a comprehensive list of all research challenges in Cultural History. Further exploration of problems linked to other papers in this field would be required to identify additional challenges.
+  [7] INCORRECT | 113.5s
+      Gold: hydropower	0.0	79.5
+offshore wind power	0.0	367.0
+onshore wind power	56.6	543.0
+bioenergy	0.0	60.0
+photovoltaics	14.9	425.0
+geothermics	0.0	50.0
+net import	-9.0	176.5
+import	0.0	176.5
+all sources	405.0	1438.0
+others	0.0	311.4
+      Pred: Based on the investigation of the ORKG, **no specific capacity boundaries or power output intervals were found** for energy sources or installation types.
+
+**What was discovered:**
+1. **Comparison resources** were identified (R153923, R153800, R153803, R153818, R153804) with labels like "Reported Energy Generation [TWh] of Compared Studies" and "Reported Installed Capacity [GW] of Compared Studies"
+2. **Installed capacity resources** were found (R153779, R153794, R153788, R153785, R153791) with the label "Installed capacity"
+3. **Predicates** were identified: P43135 ("Has energy sources") and P43133 ("installed capacity")
+
+**What is missing:**
+- No actual capacity values or numeric boundaries were retrieved
+- No energy source classifications were found
+- No installation type classifications were discovered
+- All comparison resources returned 0 contributions when queried
+- No power output capability intervals were located
+
+The ORKG contains metadata about capacity comparisons but lacks the specific numeric boundaries and intervals requested in the question.
+  [8] INCORRECT | 148.2s
+      Gold: "http://orkg.org/orkg/resource/R144264", "Liposomes"
+"http://orkg.org/orkg/resource/R144267", "Lipid nanocapsules"
+"http://orkg.org/orkg/resource/R144361", "Nano-lipid carrier"
+"http://orkg.org/orkg/resource/R144362", "Extracellular vesicles"
+      Pred: Based on the journal summary, the nanocarrier types for which therapeutic effect occurs are:
+
+1. **Solid lipid nanoparticles** (from Contribution R144338, P41740: "Solid lipid nanoparticles", P41743: "F")
+2. **Lipid micelles** (from Contribution R144270, P41740: "Lipid micelles", P41743: "F")
+
+Both contributions explicitly list the predicate P41743 ("Therapeutic effects of the carrier") with value "F", indicating therapeutic effect is present for these nanocarrier types.
+  [9] CORRECT | 44.1s
+      Gold: no
+      Pred: No.
+  [10] INCORRECT | 181.8s
+      Gold: TRUE
+      Pred: Based on the information discovered in the ORKG, the answer is **No**.
+
+The investigation found the OWLMAP resource (R139909) but found no evidence linking it to integrity constraints. Specifically, a search for the predicate P41333 (which represents integrity constraints) with the value "OWLMAP" returned zero results.
+  [11] CORRECT | 221.3s
+      Gold: 2
+      Pred: Based on the information discovered in the ORKG, the number of studies that make use of Chloride as a major anion is **2**.
+  [12] CORRECT | 134.4s
+      Gold: Heat sector	8
+      Pred: Based on the information in the journal summary, the most frequent energy sector for the studies is **Heat sector**.
+  [13] INCORRECT | 65.4s
+      Gold: "Aurein 1.2"
+      Pred: Based on the information in my journal summary, the most used lead compound is **"Heat sector"** (Resource ID: R113127), with 10 associated contributions.
+  [14] CORRECT | 57.1s
+      Gold: "2,2-Bis(4-hydroxyphenyl)propane"
+      Pred: Bisphenol-A is alternatively called **2,2-Bis(4-hydroxyphenyl)propane**.
+  [15] CORRECT | 48.2s
+      Gold: "2004"
+      Pred: The MedPost paper was published in **2004**.
+
+$$
+\boxed{2004}
+$$
+  [16] INCORRECT | 273.2s
+      Gold: 6452
+      Pred: Looking at the journal summary, I have two resources with discovered values:
+
+1. **R223643**: Has a "same as" link to a semantic network URI, but no patient count data.
+2. **R46892**: Has two "value" entries, but both values are listed as "?" (unknown/unretrieved).
+
+The journal shows no numeric values for patient counts, participant numbers, or any related predicates (like P63080 or P15585) across any of the 12 explored resources.
+
+**Answer:** Based on the specific values discovered (R223643's semantic link and R46892's unknown values), there is no patient count data available in the journal. The question cannot be answered with the information found.
+  [17] INCORRECT | 122.1s
+      Gold: TRUE
+      Pred: Based on the investigation of the ORKG, no studies were found that include children in their demographic.
+
+**Answer:** No.
+  [18] INCORRECT | 202.2s
+      Gold: hydropower	0.0	20.4
+offshore wind power	0.0	76.0
+onshore wind power	28.3	231.0
+bioenergy	0.0	50.0
+photovoltaics	15.7	415.0
+geothermics	0.0	6.4
+all sources	137.4	839.0
+others	0.0	238.0
+      Pred: Based on the information retrieved from the ORKG, I cannot provide the extreme values of installed capacity grouped by energy source. The available comparison resources contain only metadata (descriptions and author information) but no actual numeric values for installed capacity or energy source classifications. The data needed to calculate maximum and minimum installed capacity values per energy source is not present in the accessible resources.
+  [19] CORRECT | 121.2s
+      Gold: Heat sector	10
+Liquid fuels sector	5
+Electricity sector	5
+Gas sector	5
+      Pred: Based on the ORKG data, here are the energy sectors with their corresponding frequencies:
+
+1. **Heat sector**: 10 contributions
+2. **Liquid fuels sector**: 5 contributions  
+3. **Gas sector**: 5 contributions
+4. **Electricity sector**: 5 contributions
+
+These frequencies represent the number of contributions in the knowledge graph that model each energy sector.

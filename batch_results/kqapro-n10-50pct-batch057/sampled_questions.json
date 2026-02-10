@@ -1,0 +1,647 @@
+[
+  {
+    "question": "Is the duration less than 238.9 seconds for the visual artwork whose official website is http://www.theflowersofwarmovie.com/?",
+    "choices": [
+      "yes",
+      "no",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "official website",
+          "http://www.theflowersofwarmovie.com/"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "visual artwork"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "duration"
+        ]
+      },
+      {
+        "function": "VerifyNum",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "238.9 second",
+          "<"
+        ]
+      }
+    ],
+    "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <official_website> ?pv_1 . ?pv_1 <pred:value> \"http://www.theflowersofwarmovie.com/\" . ?e <duration> ?pv . ?pv <pred:unit> \"second\" . ?pv <pred:value> ?v . FILTER ( ?v < \"238.9\"^^xsd:double ) .  }",
+    "answer": "no"
+  },
+  {
+    "question": "What is the language associated with the official website (http://www.bladetrinity.com/) for Blade: Trinity?",
+    "choices": [
+      "ǀXam language",
+      "Latin",
+      "Hindi",
+      "Bulgarian",
+      "Polish",
+      "Tahitian",
+      "Georgian",
+      "Korean",
+      "Xhosa",
+      "English"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Blade: Trinity"
+        ]
+      },
+      {
+        "function": "QueryAttrQualifier",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "official website",
+          "http://www.bladetrinity.com/",
+          "language of work or name"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"Blade: Trinity\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.bladetrinity.com/\" . [ <pred:fact_h> ?e ; <pred:fact_r> <official_website> ; <pred:fact_t> ?pv ] <language_of_work_or_name> ?qpv .  }",
+    "answer": "English"
+  },
+  {
+    "question": "Which has less cost, Wonder Woman that is 141 minutes long or Sucker Punch?",
+    "choices": [
+      "Sucker Punch",
+      "Training Day",
+      "Wonder Woman",
+      "Pleasantville",
+      "Curse of the Golden Flower",
+      "The Towering Inferno",
+      "Rebecca",
+      "A Prairie Home Companion",
+      "Talk to Her",
+      "The Fifth Element"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Wonder Woman"
+        ]
+      },
+      {
+        "function": "FilterNum",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "duration",
+          "141 minute",
+          "="
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Sucker Punch"
+        ]
+      },
+      {
+        "function": "SelectBetween",
+        "dependencies": [
+          1,
+          2
+        ],
+        "inputs": [
+          "cost",
+          "less"
+        ]
+      }
+    ],
+    "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Wonder Woman\" . ?e <duration> ?pv_1 . ?pv_1 <pred:unit> \"minute\" . ?pv_1 <pred:value> \"141\"^^xsd:double . } UNION { ?e <pred:name> \"Sucker Punch\" . } ?e <cost> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+    "answer": "Sucker Punch"
+  },
+  {
+    "question": "What is the ISO 3166-2 code of the city with NUTS code UKE11 (the start time of this statement is 1999-01-01)?",
+    "choices": [
+      "FR-33",
+      "CS-VO",
+      "US-KS",
+      "GB-GLG",
+      "GB-FIF",
+      "IN-PB",
+      "ES-CT",
+      "GB-KHL",
+      "IT-75",
+      "US-MD"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "NUTS code",
+          "UKE11"
+        ]
+      },
+      {
+        "function": "QFilterDate",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "start time",
+          "1999-01-01",
+          "="
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "city"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "ISO 3166-2 code"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"city\" . ?e <NUTS_code> ?pv_1 . ?pv_1 <pred:value> \"UKE11\" . [ <pred:fact_h> ?e ; <pred:fact_r> <NUTS_code> ; <pred:fact_t> ?pv_1 ] <start_time> ?qpv . ?qpv <pred:date> \"1999-01-01\"^^xsd:date . ?e <ISO_3166-2_code> ?pv .  }",
+    "answer": "GB-KHL"
+  },
+  {
+    "question": "Which fictional profession was born in Montreal and the native language name Aurora?",
+    "choices": [
+      "Rogue",
+      "Wonder Woman",
+      "Frankenstein",
+      "Havok",
+      "Michelangelo",
+      "Daredevil",
+      "Aurora",
+      "Darwin",
+      "Hercules",
+      "Batman"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Montreal"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "place of birth",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "fictional profession"
+        ]
+      },
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "name in native language",
+          "Aurora"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          4
+        ],
+        "inputs": [
+          "fictional profession"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          2,
+          5
+        ],
+        "inputs": []
+      },
+      {
+        "function": "What",
+        "dependencies": [
+          6
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"fictional profession\" . ?e <place_of_birth> ?e_1 . ?e_1 <pred:name> \"Montreal\" .  ?e <name_in_native_language> ?pv . ?pv <pred:value> \"Aurora\" .  }",
+    "answer": "Aurora"
+  },
+  {
+    "question": "What visual artwork is titled Milan and is distributed by Star Cinema?",
+    "choices": [
+      "Rebecca",
+      "Dubai",
+      "The Towering Inferno",
+      "Milan",
+      "The Hunchback of Notre Dame",
+      "Pleasantville",
+      "A Prairie Home Companion",
+      "Training Day",
+      "The Fifth Element",
+      "Curse of the Golden Flower"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "title",
+          "Milan"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "visual artwork"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Star Cinema"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "distributor",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          4
+        ],
+        "inputs": [
+          "visual artwork"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          2,
+          5
+        ],
+        "inputs": []
+      },
+      {
+        "function": "What",
+        "dependencies": [
+          6
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <title> ?pv . ?pv <pred:value> \"Milan\" . ?e <distributor> ?e_1 . ?e_1 <pred:name> \"Star Cinema\" .  }",
+    "answer": "Milan"
+  },
+  {
+    "question": "What is the release date of the visual artwork that received an Academy Award for Best Film Editing involving the winner Barbara McLean?",
+    "choices": [
+      "1980-08-15",
+      "2005-11-23",
+      "1932-11-28",
+      "2001-11-16",
+      "2007-07-04",
+      "1944-01-01",
+      "1988-09-15",
+      "1966",
+      "2007-06-24",
+      "1978-11-15"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Academy Award for Best Film Editing"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "award received",
+          "backward"
+        ]
+      },
+      {
+        "function": "QFilterStr",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "winner",
+          "Barbara McLean"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "visual artwork"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "publication date"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <award_received> ?e_1 . ?e_1 <pred:name> \"Academy Award for Best Film Editing\" .  [ <pred:fact_h> ?e ; <pred:fact_r> <award_received> ; <pred:fact_t> ?e_1 ] <winner> ?qpv . ?qpv <pred:value> \"Barbara McLean\" . ?e <publication_date> ?pv .  }",
+    "answer": "1944-01-01"
+  },
+  {
+    "question": "Was the the Nintendo activity with the GameID of GGZX52 published before 2002?",
+    "choices": [
+      "yes",
+      "no",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "Nintendo GameID",
+          "GGZX52"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "activity"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "publication date"
+        ]
+      },
+      {
+        "function": "VerifyYear",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "2002",
+          "<"
+        ]
+      }
+    ],
+    "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"activity\" . ?e <Nintendo_GameID> ?pv_1 . ?pv_1 <pred:value> \"GGZX52\" . ?e <publication_date> ?pv . ?pv <pred:year> ?v . FILTER ( ?v < 2002 ) .  }",
+    "answer": "no"
+  },
+  {
+    "question": "Where was the visual artwork which gained the exploitation visa number of 94332 in 1998 published on 1998-04-09?",
+    "choices": [
+      "Slovakia",
+      "Austin",
+      "Northern America",
+      "Tribeca Film Festival",
+      "2008 Toronto International Film Festival",
+      "Taiwan",
+      "worldwide",
+      "Toronto",
+      "Moscow",
+      "Germany"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "exploitation visa number",
+          "94332"
+        ]
+      },
+      {
+        "function": "QFilterYear",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "start time",
+          "1998",
+          "="
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "visual artwork"
+        ]
+      },
+      {
+        "function": "QueryAttrQualifier",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "publication date",
+          "1998-04-09",
+          "place of publication"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <exploitation_visa_number> ?pv_1 . ?pv_1 <pred:value> \"94332\" . [ <pred:fact_h> ?e ; <pred:fact_r> <exploitation_visa_number> ; <pred:fact_t> ?pv_1 ] <start_time> ?qpv_1 . ?qpv_1 <pred:year> 1998 . ?e <publication_date> ?pv . ?pv <pred:date> \"1998-04-09\"^^xsd:date . [ <pred:fact_h> ?e ; <pred:fact_r> <publication_date> ; <pred:fact_t> ?pv ] <place_of_publication> ?qpv .  }",
+    "answer": "Germany"
+  },
+  {
+    "question": "Which movie is longer, Transamerica or Mr. Smith Goes to Washington (the one whose color is black-and-white)?",
+    "choices": [
+      "Rebecca",
+      "The Towering Inferno",
+      "The Hunchback of Notre Dame",
+      "Curse of the Golden Flower",
+      "Transamerica",
+      "Training Day",
+      "A Prairie Home Companion",
+      "Mr. Smith Goes to Washington",
+      "Talk to Her",
+      "Pleasantville"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Transamerica"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "black-and-white"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "color",
+          "backward"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Mr. Smith Goes to Washington"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          2,
+          3
+        ],
+        "inputs": []
+      },
+      {
+        "function": "SelectBetween",
+        "dependencies": [
+          0,
+          4
+        ],
+        "inputs": [
+          "duration",
+          "greater"
+        ]
+      }
+    ],
+    "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Transamerica\" .  } UNION { ?e <pred:name> \"Mr. Smith Goes to Washington\" . ?e <color> ?e_1 . ?e_1 <pred:name> \"black-and-white\" .   } ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+    "answer": "Mr. Smith Goes to Washington"
+  }
+]

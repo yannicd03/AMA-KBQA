@@ -1,0 +1,29 @@
+{
+  "model": "gpt-oss-120b",
+  "agent": "sciqa",
+  "timestamp": "2026-02-05T20:45:00.061709",
+  "is_complete": true,
+  "statistics": {
+    "total_questions": 20,
+    "correct": 8,
+    "errors": 1,
+    "accuracy": 0.4,
+    "total_time_seconds": 985.96,
+    "avg_time_seconds": 49.3,
+    "total_tokens": 4357119,
+    "avg_tokens": 217855.95,
+    "prompt_tokens": 4279615,
+    "completion_tokens": 77504,
+    "estimated_cost_usd": 9.1793,
+    "accuracy_by_type": {
+      "Non-factoid": 0.5,
+      "Factoid": 0.5714285714285714,
+      "Factoid\nCount": 0.5,
+      "Non-factoid\nCount\nNegation": 0.0,
+      "Non-factoid\nRanking": 0.0,
+      "Factoid\nSuperlative": 0.0,
+      "Factoid\nTemporal": 1.0,
+      "Non-factoid\nCount": 0.0
+    }
+  }
+}

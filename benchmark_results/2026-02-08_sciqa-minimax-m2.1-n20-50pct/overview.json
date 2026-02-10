@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-08T16:39:55.476942",
+    "models_tested": 1,
+    "agents_tested": 1,
+    "total_runs": 1
+  },
+  "leaderboard": {
+    "by_accuracy": [
+      {
+        "rank": 1,
+        "model": "minimax-m2.1",
+        "agent": "sciqa",
+        "accuracy": 0.5
+      }
+    ],
+    "by_speed": [
+      {
+        "rank": 1,
+        "model": "minimax-m2.1",
+        "agent": "sciqa",
+        "avg_time_seconds": 122.56
+      }
+    ],
+    "by_efficiency": [
+      {
+        "rank": 1,
+        "model": "minimax-m2.1",
+        "agent": "sciqa",
+        "accuracy_per_dollar": 0.1181
+      }
+    ]
+  },
+  "results_matrix": {
+    "sciqa": {
+      "minimax-m2.1": {
+        "accuracy": 0.5,
+        "avg_time": 122.56,
+        "total_tokens": 8290353,
+        "estimated_cost_usd": 4.2332
+      }
+    }
+  }
+}

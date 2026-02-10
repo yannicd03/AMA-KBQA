@@ -1,0 +1,27 @@
+{
+  "model": "gpt-oss-120b",
+  "agent": "kqapro",
+  "timestamp": "2026-02-05T02:26:52.784322",
+  "is_complete": true,
+  "statistics": {
+    "total_questions": 20,
+    "correct": 16,
+    "errors": 0,
+    "accuracy": 0.8,
+    "total_time_seconds": 674.58,
+    "avg_time_seconds": 33.73,
+    "total_tokens": 4485074,
+    "avg_tokens": 224253.7,
+    "prompt_tokens": 4410595,
+    "completion_tokens": 74479,
+    "estimated_cost_usd": 9.417,
+    "accuracy_by_type": {
+      "Verify": 0.75,
+      "Query": 1.0,
+      "QueryRelationQualifier": 1.0,
+      "Select": 1.0,
+      "Count": 0.25,
+      "QueryRelation": 1.0
+    }
+  }
+}

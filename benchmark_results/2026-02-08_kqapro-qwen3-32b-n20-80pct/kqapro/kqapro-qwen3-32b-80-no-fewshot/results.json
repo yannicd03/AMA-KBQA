@@ -1,0 +1,1528 @@
+[
+  {
+    "question_id": 0,
+    "question": "Was the Taliban established on 1994-01-01 ?",
+    "gold_answer": "yes",
+    "predicted_answer": "Yes, the Taliban was established on 1994-01-01. The knowledge graph confirms that the Taliban entity (Q42418) has an inception date of exactly 1994-01-01.",
+    "accuracy": true,
+    "elapsed_time": 71.74,
+    "token_usage": {
+      "prompt_tokens": 47165,
+      "completion_tokens": 2163,
+      "total_tokens": 49328
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 2.06,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 2.024,
+          "avg_duration": 2.024,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.03,
+          "avg_duration": 0.03,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetAttributeDetails": 1,
+        "VerifyNumericCondition": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.024,
+          "success": true,
+          "timestamp": "2026-02-08T20:35:38.195390"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.03,
+          "success": true,
+          "timestamp": "2026-02-08T20:35:47.609203"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-08T20:36:04.551601"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 1,
+    "question": "The person born as Chloe Ardelia Wofford has which KLfG Critical Dictionary of foreign contemporary literature designation?",
+    "gold_answer": "18000000318",
+    "predicted_answer": "The person born as Chloe Ardelia Wofford is Toni Morrison. Her designation in the KLfG Critical Dictionary of Foreign Contemporary Literature is **18000000318**.",
+    "accuracy": true,
+    "elapsed_time": 63.43,
+    "token_usage": {
+      "prompt_tokens": 37179,
+      "completion_tokens": 1374,
+      "total_tokens": 38553
+    },
+    "tool_summary": {
+      "total_calls": 2,
+      "total_duration_seconds": 1.046,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.031,
+          "avg_duration": 1.031,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.015,
+          "avg_duration": 0.015,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetAttributeDetails": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.031,
+          "success": true,
+          "timestamp": "2026-02-08T20:36:44.001032"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.015,
+          "success": true,
+          "timestamp": "2026-02-08T20:36:58.087340"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 2,
+    "question": "Does the state of India, whose FIPS 10-4 (countries and regions) is IN23, have an ISO 3166-2 code equal to GB-LEC?",
+    "gold_answer": "no",
+    "predicted_answer": "No. The Indian state with FIPS 10-4 code **IN23** is Punjab, which has ISO 3166-2 code **IN-PB**, not GB-LEC.",
+    "accuracy": true,
+    "elapsed_time": 83.18,
+    "token_usage": {
+      "prompt_tokens": 46107,
+      "completion_tokens": 1776,
+      "total_tokens": 47883
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.032,
+      "tool_breakdown": {
+        "FindByAttribute": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.013,
+          "avg_duration": 0.013,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 1,
+          "total_duration": 0.005,
+          "avg_duration": 0.005,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByAttribute": 1,
+        "GetAttributeDetails": 1,
+        "VerifyNumericCondition": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-08T20:37:59.400558"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-08T20:38:16.546898"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-08T20:38:29.465204"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 3,
+    "question": "Is the cost of the animated feature film titled Madagascar 3: Europe's Most Wanted less than 150000000 United States dollars?",
+    "gold_answer": "yes",
+    "predicted_answer": "Yes, the cost of the animated feature film *Madagascar 3: Europe's Most Wanted* is less than 150,000,000 United States dollars. The film's cost is 145,000,000 United States dollars, which is less than 150,000,000 United States dollars.",
+    "accuracy": true,
+    "elapsed_time": 90.21,
+    "token_usage": {
+      "prompt_tokens": 47758,
+      "completion_tokens": 1533,
+      "total_tokens": 49291
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.288,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.275,
+          "avg_duration": 1.275,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 1,
+          "total_duration": 0.004,
+          "avg_duration": 0.004,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetAttributeDetails": 1,
+        "VerifyNumericCondition": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.275,
+          "success": true,
+          "timestamp": "2026-02-08T20:39:12.275676"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:39:36.978154"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.004,
+          "success": true,
+          "timestamp": "2026-02-08T20:39:50.346757"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 4,
+    "question": "Which website belongs to the association football club based in Brunswick,  twinned administrative body of Omaha?",
+    "gold_answer": "http://www.eintracht.com/",
+    "predicted_answer": "Based on the discovered information, the association football club based in Brunswick (Braunschweig) is **Eintracht Braunschweig**, and its official website is **http://www.eintracht.com/**.\n\n**Note:** While the question mentions \"twinned administrative body of Omaha,\" this specific twinning relationship was not verified in the retrieved data. The answer is based solely on identifying the football club based in Brunswick and its official website.",
+    "accuracy": true,
+    "elapsed_time": 216.35,
+    "token_usage": {
+      "prompt_tokens": 120263,
+      "completion_tokens": 4813,
+      "total_tokens": 125076
+    },
+    "tool_summary": {
+      "total_calls": 9,
+      "total_duration_seconds": 2.366,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 2.301,
+          "avg_duration": 1.151,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 2,
+          "total_duration": 0.022,
+          "avg_duration": 0.011,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 4,
+          "total_duration": 0.034,
+          "avg_duration": 0.009,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetRelationDetails": 2,
+        "GetNodeLabel": 4,
+        "GetAttributeDetails": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.915,
+          "success": true,
+          "timestamp": "2026-02-08T20:40:54.486421"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-08T20:41:09.399186"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:41:25.988486"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:41:39.450562"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T20:41:52.777102"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T20:42:19.806849"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T20:42:40.079417"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.386,
+          "success": true,
+          "timestamp": "2026-02-08T20:43:16.686408"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:43:28.759357"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 5,
+    "question": "Who is the nominee of Academy Award for Best Director for the work in The Thin Red Line (with George Clooney in the cast) ?",
+    "gold_answer": "Terrence Malick",
+    "predicted_answer": "Based on my investigation, the nominee of the Academy Award for Best Director for the work in *The Thin Red Line* (which features George Clooney in the cast) is **Terrence Malick**.\n\n**Reasoning:**\n1. *The Thin Red Line* (Q221491) has Terrence Malick (Q215478) as its director.\n2. The film is nominated for the Academy Award for Best Director (Q103360).\n3. As the director of the nominated film, Terrence Malick is the nominee for this award.\n\nTherefore, the answer is **Terrence Malick**.",
+    "accuracy": true,
+    "elapsed_time": 225.59,
+    "token_usage": {
+      "prompt_tokens": 109001,
+      "completion_tokens": 5600,
+      "total_tokens": 114601
+    },
+    "tool_summary": {
+      "total_calls": 8,
+      "total_duration_seconds": 1.008,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 0.941,
+          "avg_duration": 0.941,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 3,
+          "total_duration": 0.028,
+          "avg_duration": 0.009,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 4,
+          "total_duration": 0.039,
+          "avg_duration": 0.01,
+          "success_count": 4,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 3,
+        "GetNodeLabel": 4
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.941,
+          "success": true,
+          "timestamp": "2026-02-08T20:44:45.811812"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-08T20:45:23.102194"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T20:45:43.063620"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T20:46:00.128101"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-08T20:46:31.390044"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T20:46:42.668121"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-08T20:47:03.450170"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T20:47:19.524931"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "QueryRelationQualifier"
+  },
+  {
+    "question_id": 6,
+    "question": "Which movie is shorter, Bicentennial Man or Shanghai (the one whose duration is 75 minute)?",
+    "gold_answer": "Shanghai",
+    "predicted_answer": "Based on the data retrieved from the knowledge graph:\n\n- **Bicentennial Man** has a duration of **126 minutes**.\n- **Shanghai** (the one with duration 75 minutes) has a duration of **75 minutes**.\n\n**Answer:** *Shanghai* is the shorter movie.",
+    "accuracy": true,
+    "elapsed_time": 124.1,
+    "token_usage": {
+      "prompt_tokens": 72418,
+      "completion_tokens": 3026,
+      "total_tokens": 75444
+    },
+    "tool_summary": {
+      "total_calls": 5,
+      "total_duration_seconds": 5.66,
+      "tool_breakdown": {
+        "GetSchemaForAttribute": {
+          "count": 1,
+          "total_duration": 2.946,
+          "avg_duration": 2.946,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindNode": {
+          "count": 2,
+          "total_duration": 2.692,
+          "avg_duration": 1.346,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 2,
+          "total_duration": 0.022,
+          "avg_duration": 0.011,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "GetSchemaForAttribute": 1,
+        "FindNode": 2,
+        "GetAttributeDetails": 2
+      },
+      "calls": [
+        {
+          "tool_name": "GetSchemaForAttribute",
+          "duration_seconds": 2.946,
+          "success": true,
+          "timestamp": "2026-02-08T20:48:21.674721"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.591,
+          "success": true,
+          "timestamp": "2026-02-08T20:48:53.205707"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:49:11.218039"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.101,
+          "success": true,
+          "timestamp": "2026-02-08T20:49:25.190398"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-08T20:49:38.644471"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 7,
+    "question": "How many masculine first names belong to a partner of Rose Byrne?",
+    "gold_answer": "1",
+    "predicted_answer": "Based on the investigation, Rose Byrne has one partner: Bobby Cannavale. He has one given name, \"Bobby,\" which is a masculine first name. Therefore, there is **1 masculine first name** belonging to a partner of Rose Byrne.\n\n**Answer:** 1",
+    "accuracy": true,
+    "elapsed_time": 134.78,
+    "token_usage": {
+      "prompt_tokens": 59787,
+      "completion_tokens": 2548,
+      "total_tokens": 62335
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 2.057,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.172,
+          "avg_duration": 1.172,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.867,
+          "avg_duration": 0.867,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 2,
+        "GetNodeSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.172,
+          "success": true,
+          "timestamp": "2026-02-08T20:50:20.243225"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:50:38.523398"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.867,
+          "success": true,
+          "timestamp": "2026-02-08T20:51:28.559151"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:51:51.568504"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 8,
+    "question": "What college or university in the Eastern Time Zone of the United States has the most students?",
+    "gold_answer": "Virginia Tech",
+    "predicted_answer": null,
+    "accuracy": false,
+    "elapsed_time": 334.72,
+    "token_usage": {
+      "prompt_tokens": 115442,
+      "completion_tokens": 6122,
+      "total_tokens": 121564
+    },
+    "tool_summary": {
+      "total_calls": 9,
+      "total_duration_seconds": 2.95,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 3,
+          "total_duration": 2.882,
+          "avg_duration": 0.961,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 5,
+          "total_duration": 0.054,
+          "avg_duration": 0.011,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 3,
+        "RunSPARQL": 5,
+        "GetNodeSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.915,
+          "success": true,
+          "timestamp": "2026-02-08T20:52:38.512920"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.016,
+          "success": true,
+          "timestamp": "2026-02-08T20:53:10.042680"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:54:43.329157"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T20:55:07.312638"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.932,
+          "success": true,
+          "timestamp": "2026-02-08T20:55:11.783942"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-08T20:55:29.083251"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T20:55:47.853086"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.035,
+          "success": true,
+          "timestamp": "2026-02-08T20:56:04.562717"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T20:56:51.997977"
+        }
+      ]
+    },
+    "error": "Timeout after 300s",
+    "q_type": "Select"
+  },
+  {
+    "question_id": 9,
+    "question": "How many countries contain a sport associated with a person that is the member of Livingston F.C. ?",
+    "gold_answer": "1",
+    "predicted_answer": "Based on the investigation, **0 countries** contain a sport associated with a person that is a member of Livingston F.C.\n\nThe SPARQL query designed to count distinct countries through the chain (Livingston F.C. → members → sports → countries) returned a count of 0, indicating that no such connections exist in the current knowledge graph data.",
+    "accuracy": false,
+    "elapsed_time": 111.5,
+    "token_usage": {
+      "prompt_tokens": 47783,
+      "completion_tokens": 2916,
+      "total_tokens": 50699
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.981,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 0.968,
+          "avg_duration": 0.968,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "RunSPARQL": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.968,
+          "success": true,
+          "timestamp": "2026-02-08T20:58:08.345128"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T20:58:37.266635"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-08T20:59:06.361834"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 10,
+    "question": "What is the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal, the well-known house music performer?",
+    "gold_answer": "1995",
+    "predicted_answer": "Based on my investigation, the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal is **1995**.\n\nThis was determined by examining the qualifiers for Seal's nomination relationship to the \"MTV Video Music Award for Best Video from a Film,\" which showed a \"point_in_time\" qualifier value of 1995.\n\nFinal Answer: $\\boxed{1995}$",
+    "accuracy": true,
+    "elapsed_time": 79.22,
+    "token_usage": {
+      "prompt_tokens": 62330,
+      "completion_tokens": 1946,
+      "total_tokens": 64276
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 2.327,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 2.299,
+          "avg_duration": 2.299,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "BatchGetNodeLabels": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetQualifiersByPredicate": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "BatchGetNodeLabels": 1,
+        "GetQualifiersByPredicate": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.299,
+          "success": true,
+          "timestamp": "2026-02-08T21:00:02.232092"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T21:00:15.970717"
+        },
+        {
+          "tool_name": "BatchGetNodeLabels",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T21:00:32.398001"
+        },
+        {
+          "tool_name": "GetQualifiersByPredicate",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T21:00:40.796721"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "QueryRelationQualifier"
+  },
+  {
+    "question_id": 11,
+    "question": "How many art movements are located in Paris (the one that is the main subject of An American in Paris) or have the Dewey Decimal Classification of 142.78?",
+    "gold_answer": "2",
+    "predicted_answer": null,
+    "accuracy": false,
+    "elapsed_time": 302.66,
+    "token_usage": {
+      "prompt_tokens": 78424,
+      "completion_tokens": 4718,
+      "total_tokens": 83142
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 4.65,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.482,
+          "avg_duration": 1.482,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.017,
+          "avg_duration": 0.017,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetSchemaForAttribute": {
+          "count": 1,
+          "total_duration": 3.116,
+          "avg_duration": 3.116,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByAttribute": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "GetNodeLabel": 1,
+        "RunSPARQL": 1,
+        "GetSchemaForAttribute": 1,
+        "FindByAttribute": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.482,
+          "success": true,
+          "timestamp": "2026-02-08T21:01:23.078508"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.017,
+          "success": true,
+          "timestamp": "2026-02-08T21:01:54.968365"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T21:02:05.995087"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-08T21:02:34.639017"
+        },
+        {
+          "tool_name": "GetSchemaForAttribute",
+          "duration_seconds": 3.116,
+          "success": true,
+          "timestamp": "2026-02-08T21:05:16.309178"
+        },
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-08T21:05:43.145325"
+        }
+      ]
+    },
+    "error": "Timeout after 300s",
+    "q_type": "Count"
+  },
+  {
+    "question_id": 12,
+    "question": "What is the visual artwork titled 紳士協定?",
+    "gold_answer": "Gentleman's Agreement",
+    "predicted_answer": "The visual artwork titled **紳士協定** is the 1947 film **\"Gentleman's Agreement\"**. It is a drama film directed by Elia Kazan with a duration of 118 minutes, originally published on January 1, 1947.",
+    "accuracy": true,
+    "elapsed_time": 87.07,
+    "token_usage": {
+      "prompt_tokens": 46974,
+      "completion_tokens": 1719,
+      "total_tokens": 48693
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.048,
+      "tool_breakdown": {
+        "FindByAttribute": {
+          "count": 1,
+          "total_duration": 0.027,
+          "avg_duration": 0.027,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByAttribute": 1,
+        "GetNodeSummary": 1,
+        "GetNodeLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.027,
+          "success": true,
+          "timestamp": "2026-02-08T21:06:31.270018"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-08T21:06:43.781788"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-08T21:07:03.754943"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 13,
+    "question": "How many public universities are designated by ISNI 0000 0001 2248 7639 or located at Columbia-Campus, Columbia, SC, 29208?",
+    "gold_answer": "2",
+    "predicted_answer": "Based on my investigation, there are **0 public universities** designated by ISNI 0000 0001 2248 7639 or located at Columbia-Campus, Columbia, SC, 29208 in the knowledge graph.\n\n**Answer:** $\\boxed{0}$",
+    "accuracy": false,
+    "elapsed_time": 155.33,
+    "token_usage": {
+      "prompt_tokens": 35903,
+      "completion_tokens": 3428,
+      "total_tokens": 39331
+    },
+    "tool_summary": {
+      "total_calls": 2,
+      "total_duration_seconds": 3.084,
+      "tool_breakdown": {
+        "GetSchemaForAttribute": {
+          "count": 1,
+          "total_duration": 3.072,
+          "avg_duration": 3.072,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "GetSchemaForAttribute": 1,
+        "RunSPARQL": 1
+      },
+      "calls": [
+        {
+          "tool_name": "GetSchemaForAttribute",
+          "duration_seconds": 3.072,
+          "success": true,
+          "timestamp": "2026-02-08T21:08:44.607949"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-08T21:09:43.946651"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 14,
+    "question": "Which has a larger population, Chesterfield or Hitchin?",
+    "gold_answer": "Hitchin",
+    "predicted_answer": "Hitchin has a larger population than Chesterfield. Hitchin's population is 34,266, while Chesterfield's population is 10,688.",
+    "accuracy": true,
+    "elapsed_time": 65.19,
+    "token_usage": {
+      "prompt_tokens": 48925,
+      "completion_tokens": 1461,
+      "total_tokens": 50386
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 2.096,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 2.081,
+          "avg_duration": 1.04,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "CompareEntities": {
+          "count": 1,
+          "total_duration": 0.015,
+          "avg_duration": 0.015,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "CompareEntities": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.161,
+          "success": true,
+          "timestamp": "2026-02-08T21:10:23.876280"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.92,
+          "success": true,
+          "timestamp": "2026-02-08T21:10:33.932571"
+        },
+        {
+          "tool_name": "CompareEntities",
+          "duration_seconds": 0.015,
+          "success": true,
+          "timestamp": "2026-02-08T21:11:00.705458"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 15,
+    "question": "For the award nominated to Tom Wilkinson (the one that is a cast member of Oscar and Lucinda) (the award-winning work of this statement is John Adams), is its establishment time not in 1911?",
+    "gold_answer": "yes",
+    "predicted_answer": "Based on the investigation, the award nominated to Tom Wilkinson that I identified is the **Academy Award for Best Actor (Q103916)**. Its establishment time (inception) is **1927**. \n\nThe verification confirms that **1927 ≠ 1911**, so the answer to the question is:\n\n**Yes, the award's establishment time is not in 1911; it was established in 1927.**",
+    "accuracy": true,
+    "elapsed_time": 243.31,
+    "token_usage": {
+      "prompt_tokens": 61325,
+      "completion_tokens": 3297,
+      "total_tokens": 64622
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 3.378,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 2.129,
+          "avg_duration": 2.129,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 1.229,
+          "avg_duration": 1.229,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "GetNodeSummary": 1,
+        "VerifyNumericCondition": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.129,
+          "success": true,
+          "timestamp": "2026-02-08T21:11:46.718086"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-08T21:13:09.862420"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 1.229,
+          "success": true,
+          "timestamp": "2026-02-08T21:13:25.628176"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-08T21:14:58.341959"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 16,
+    "question": "Among the animated feature film whose director is Pete Docter, which one has the smallest duration ?",
+    "gold_answer": "Monsters, Inc.",
+    "predicted_answer": "Based on the discovered values, the animated feature films directed by Pete Docter are **Monsters, Inc.** (duration: 92 minutes) and **Up** (duration: 96 minutes).  \nComparing their durations, **Monsters, Inc.** has the smallest duration.\n\n**Answer:** Monsters, Inc.",
+    "accuracy": true,
+    "elapsed_time": 96.61,
+    "token_usage": {
+      "prompt_tokens": 62426,
+      "completion_tokens": 2385,
+      "total_tokens": 64811
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 3.462,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 0.908,
+          "avg_duration": 0.908,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 2,
+          "total_duration": 2.544,
+          "avg_duration": 1.272,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "GetNodeSummary": 2
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.908,
+          "success": true,
+          "timestamp": "2026-02-08T21:16:01.335739"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T21:16:11.992124"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 1.661,
+          "success": true,
+          "timestamp": "2026-02-08T21:16:35.522303"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.883,
+          "success": true,
+          "timestamp": "2026-02-08T21:16:43.383110"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 17,
+    "question": "What is the Golden Globe Award ceremony  received by the visual artwork with exploitation visa number 116230?",
+    "gold_answer": "64th Golden Globe Awards",
+    "predicted_answer": "The Golden Globe Award ceremony received by the visual artwork with exploitation visa number 116230 is the **64th Golden Globe Awards**.",
+    "accuracy": true,
+    "elapsed_time": 60.02,
+    "token_usage": {
+      "prompt_tokens": 47878,
+      "completion_tokens": 2035,
+      "total_tokens": 49913
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.032,
+      "tool_breakdown": {
+        "FindByAttribute": {
+          "count": 1,
+          "total_duration": 0.015,
+          "avg_duration": 0.015,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.011,
+          "avg_duration": 0.011,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "BatchGetNodeLabels": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByAttribute": 1,
+        "GetNodeSummary": 1,
+        "BatchGetNodeLabels": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.015,
+          "success": true,
+          "timestamp": "2026-02-08T21:17:17.958580"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-08T21:17:34.053580"
+        },
+        {
+          "tool_name": "BatchGetNodeLabels",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-08T21:17:45.058574"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 18,
+    "question": "What is the singles record for the person who is Mike Bryan's sibling?",
+    "gold_answer": "21–40",
+    "predicted_answer": "The singles record for Mike Bryan's sibling (Bob Bryan) is **21–40**.",
+    "accuracy": true,
+    "elapsed_time": 66.66,
+    "token_usage": {
+      "prompt_tokens": 47817,
+      "completion_tokens": 2663,
+      "total_tokens": 50480
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 24.704,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 24.685,
+          "avg_duration": 24.685,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.011,
+          "avg_duration": 0.011,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "GetAttributeDetails": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 24.685,
+          "success": true,
+          "timestamp": "2026-02-08T21:18:39.735289"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-08T21:18:48.348853"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T21:18:56.678724"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 19,
+    "question": "Rajesh Khanna has what connection to Mumbai?",
+    "gold_answer": "place of death",
+    "predicted_answer": "Based on the information discovered during the investigation, Rajesh Khanna's connection to Mumbai is that it was his **place of death**. The knowledge graph shows a direct \"place of death\" relation from Rajesh Khanna (Q107130) to Mumbai (Q1156).",
+    "accuracy": true,
+    "elapsed_time": 104.05,
+    "token_usage": {
+      "prompt_tokens": 83981,
+      "completion_tokens": 2483,
+      "total_tokens": 86464
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 2.286,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 2.252,
+          "avg_duration": 1.126,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 3,
+          "total_duration": 0.026,
+          "avg_duration": 0.009,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetRelationDetails": 3,
+        "GetNodeLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.032,
+          "success": true,
+          "timestamp": "2026-02-08T21:19:24.674480"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-08T21:19:34.317014"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T21:19:43.177676"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.22,
+          "success": true,
+          "timestamp": "2026-02-08T21:19:55.980556"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T21:20:09.339109"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-08T21:20:39.850300"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "QueryRelation"
+  }
+]

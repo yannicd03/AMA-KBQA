@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-09T01:40:05.267387",
+    "models_tested": 1,
+    "agents_tested": 1,
+    "total_runs": 1
+  },
+  "leaderboard": {
+    "by_accuracy": [
+      {
+        "rank": 1,
+        "model": "qwen3-32b",
+        "agent": "sciqa",
+        "accuracy": 0.35
+      }
+    ],
+    "by_speed": [
+      {
+        "rank": 1,
+        "model": "qwen3-32b",
+        "agent": "sciqa",
+        "avg_time_seconds": 112.89
+      }
+    ],
+    "by_efficiency": [
+      {
+        "rank": 1,
+        "model": "qwen3-32b",
+        "agent": "sciqa",
+        "accuracy_per_dollar": 2.4188
+      }
+    ]
+  },
+  "results_matrix": {
+    "sciqa": {
+      "qwen3-32b": {
+        "accuracy": 0.35,
+        "avg_time": 112.89,
+        "total_tokens": 1096124,
+        "estimated_cost_usd": 0.1447
+      }
+    }
+  }
+}

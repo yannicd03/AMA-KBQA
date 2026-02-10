@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-05T20:45:00.065804",
+    "models_tested": 1,
+    "agents_tested": 1,
+    "total_runs": 1
+  },
+  "leaderboard": {
+    "by_accuracy": [
+      {
+        "rank": 1,
+        "model": "gpt-oss-120b",
+        "agent": "sciqa",
+        "accuracy": 0.4
+      }
+    ],
+    "by_speed": [
+      {
+        "rank": 1,
+        "model": "gpt-oss-120b",
+        "agent": "sciqa",
+        "avg_time_seconds": 49.3
+      }
+    ],
+    "by_efficiency": [
+      {
+        "rank": 1,
+        "model": "gpt-oss-120b",
+        "agent": "sciqa",
+        "accuracy_per_dollar": 0.0436
+      }
+    ]
+  },
+  "results_matrix": {
+    "sciqa": {
+      "gpt-oss-120b": {
+        "accuracy": 0.4,
+        "avg_time": 49.3,
+        "total_tokens": 4357119,
+        "estimated_cost_usd": 9.1793
+      }
+    }
+  }
+}

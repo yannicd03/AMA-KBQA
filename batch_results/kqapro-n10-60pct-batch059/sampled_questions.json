@@ -1,0 +1,611 @@
+[
+  {
+    "question": "When was the member of Cardiff City F.C. (the start time of this statement is 1991) born?",
+    "choices": [
+      "1961-06-25",
+      "1939-09-01",
+      "1960-10-03",
+      "1446",
+      "1964-11-06",
+      "1960-09-10",
+      "1970-12-18",
+      "1961-12-01",
+      "1957-11-03",
+      "1925-10-13"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Cardiff City F.C."
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "member of sports team",
+          "backward"
+        ]
+      },
+      {
+        "function": "QFilterYear",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "start time",
+          "1991",
+          "="
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "human"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "date of birth"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <member_of_sports_team> ?e_1 . ?e_1 <pred:name> \"Cardiff City F.C.\" .  [ <pred:fact_h> ?e ; <pred:fact_r> <member_of_sports_team> ; <pred:fact_t> ?e_1 ] <start_time> ?qpv . ?qpv <pred:year> 1991 . ?e <date_of_birth> ?pv .  }",
+    "answer": "1960-10-03"
+  },
+  {
+    "question": "How many subscriber has a person, born in Santa Cruz, on his or her Twitter username minnesotaBASS ?",
+    "choices": [
+      "25160",
+      "1017662",
+      "1186744",
+      "8047",
+      "106351",
+      "2760897",
+      "79487",
+      "234560",
+      "114344",
+      "5236938"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Santa Cruz"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "place of birth",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "human"
+        ]
+      },
+      {
+        "function": "QueryAttrQualifier",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "Twitter username",
+          "minnesotaBASS",
+          "number of subscribers"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <place_of_birth> ?e_1 . ?e_1 <pred:name> \"Santa Cruz\" .  ?e <Twitter_username> ?pv . ?pv <pred:value> \"minnesotaBASS\" . [ <pred:fact_h> ?e ; <pred:fact_r> <Twitter_username> ; <pred:fact_t> ?pv ] <number_of_subscribers> ?qpv .  }",
+    "answer": "25160"
+  },
+  {
+    "question": "How many businesses managed by George Clooney have the child organization Dimension Films?",
+    "choices": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "George Clooney"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "director/manager",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "business"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Dimension Films"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "parent organization",
+          "forward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          4
+        ],
+        "inputs": [
+          "business"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          2,
+          5
+        ],
+        "inputs": []
+      },
+      {
+        "function": "Count",
+        "dependencies": [
+          6
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"business\" . ?e <director/manager> ?e_1 . ?e_1 <pred:name> \"George Clooney\" .  ?e_2 <parent_organization> ?e . ?e_2 <pred:name> \"Dimension Films\" .  }",
+    "answer": "0"
+  },
+  {
+    "question": "What is the local dialing code of the ocunty town that is the formation location of Marillion?",
+    "choices": [
+      "715",
+      "0532",
+      "03726",
+      "920",
+      "325",
+      "01296",
+      "952",
+      "0274",
+      "0345",
+      "2234"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Marillion"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "location of formation",
+          "forward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "county town"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "local dialing code"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county town\" . ?e_1 <location_of_formation> ?e . ?e_1 <pred:name> \"Marillion\" .  ?e <local_dialing_code> ?pv .  }",
+    "answer": "01296"
+  },
+  {
+    "question": "Which Maryland county that borders the Kent County bordering Cecil County occupies the biggest area?",
+    "choices": [
+      "Baltimore County",
+      "Cecil County",
+      "Prince George's County",
+      "Kent County",
+      "Charles County",
+      "Harford County",
+      "Carroll County",
+      "Frederick County",
+      "Allegany County",
+      "Anne Arundel County"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Cecil County"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "shares border with",
+          "forward"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Kent County"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          1,
+          2
+        ],
+        "inputs": []
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "shares border with",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          4
+        ],
+        "inputs": [
+          "county of Maryland"
+        ]
+      },
+      {
+        "function": "SelectAmong",
+        "dependencies": [
+          5
+        ],
+        "inputs": [
+          "area",
+          "largest"
+        ]
+      }
+    ],
+    "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county of Maryland\" . ?e <shares_border_with> ?e_1 . ?e_1 <pred:name> \"Kent County\" . ?e_2 <shares_border_with> ?e_1 . ?e_2 <pred:name> \"Cecil County\" .  ?e <area> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+    "answer": "Baltimore County"
+  },
+  {
+    "question": "On 2015-01-01 was the population of Barnstable County greater than 56000?",
+    "choices": [
+      "yes",
+      "no",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Barnstable County"
+        ]
+      },
+      {
+        "function": "QueryAttrUnderCondition",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "population",
+          "point in time",
+          "2015-01-01"
+        ]
+      },
+      {
+        "function": "VerifyNum",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "56000",
+          ">"
+        ]
+      }
+    ],
+    "sparql": "ASK { ?e <pred:name> \"Barnstable County\" . ?e <population> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> ?v . FILTER ( ?v > \"56000\"^^xsd:double ) . [ <pred:fact_h> ?e ; <pred:fact_r> <population> ; <pred:fact_t> ?pv ] <point_in_time> ?qpv . ?qpv <pred:date> \"2015-01-01\"^^xsd:date .  }",
+    "answer": "yes"
+  },
+  {
+    "question": "How many symptoms have the MeSH Code C10.597.617.192.500?",
+    "choices": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "MeSH Code",
+          "C10.597.617.192.500"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "symptom"
+        ]
+      },
+      {
+        "function": "Count",
+        "dependencies": [
+          2
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"symptom\" . ?e <MeSH_Code> ?pv . ?pv <pred:value> \"C10.597.617.192.500\" .  }",
+    "answer": "1"
+  },
+  {
+    "question": "What Summer Olympic Games were followed by the 1980 Summer Olympics?",
+    "choices": [
+      "1908 Summer Olympics",
+      "1904 Summer Olympics",
+      "1936 Summer Olympics",
+      "1968 Summer Olympics",
+      "1948 Summer Olympics",
+      "2008 Summer Olympics",
+      "1932 Summer Olympics",
+      "1896 Summer Olympics",
+      "1976 Summer Olympics",
+      "1952 Summer Olympics"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "1980 Summer Olympics"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "followed by",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "Summer Olympic Games"
+        ]
+      },
+      {
+        "function": "What",
+        "dependencies": [
+          2
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"Summer Olympic Games\" . ?e <followed_by> ?e_1 . ?e_1 <pred:name> \"1980 Summer Olympics\" .   }",
+    "answer": "1976 Summer Olympics"
+  },
+  {
+    "question": "Which island has the largest area in Europe?",
+    "choices": [
+      "Great Britain",
+      "Long Island",
+      "Tasmania",
+      "Trinidad",
+      "Hawaii",
+      "Iceland",
+      "Puerto Rico",
+      "Ireland",
+      "Cyprus",
+      "Newfoundland"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Europe"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "continent",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "island"
+        ]
+      },
+      {
+        "function": "SelectAmong",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "area",
+          "largest"
+        ]
+      }
+    ],
+    "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"island\" . ?e <continent> ?e_1 . ?e_1 <pred:name> \"Europe\" .  ?e <area> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+    "answer": "Great Britain"
+  },
+  {
+    "question": "Was the person, who narrated Oscar and Lucinda, born before 1981 ?",
+    "choices": [
+      "yes",
+      "no",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Oscar and Lucinda"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "narrator",
+          "forward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "human"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "date of birth"
+        ]
+      },
+      {
+        "function": "VerifyYear",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "1981",
+          "<"
+        ]
+      }
+    ],
+    "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e_1 <narrator> ?e . ?e_1 <pred:name> \"Oscar and Lucinda\" .  ?e <date_of_birth> ?pv . ?pv <pred:year> ?v . FILTER ( ?v < 1981 ) .  }",
+    "answer": "yes"
+  }
+]

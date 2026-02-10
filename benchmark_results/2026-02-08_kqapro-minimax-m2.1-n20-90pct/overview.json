@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-08T20:22:32.051412",
+    "models_tested": 1,
+    "agents_tested": 1,
+    "total_runs": 1
+  },
+  "leaderboard": {
+    "by_accuracy": [
+      {
+        "rank": 1,
+        "model": "minimax-m2.1",
+        "agent": "kqapro",
+        "accuracy": 0.9
+      }
+    ],
+    "by_speed": [
+      {
+        "rank": 1,
+        "model": "minimax-m2.1",
+        "agent": "kqapro",
+        "avg_time_seconds": 71.95
+      }
+    ],
+    "by_efficiency": [
+      {
+        "rank": 1,
+        "model": "minimax-m2.1",
+        "agent": "kqapro",
+        "accuracy_per_dollar": 0.6458
+      }
+    ]
+  },
+  "results_matrix": {
+    "kqapro": {
+      "minimax-m2.1": {
+        "accuracy": 0.9,
+        "avg_time": 71.95,
+        "total_tokens": 2668318,
+        "estimated_cost_usd": 1.3936
+      }
+    }
+  }
+}

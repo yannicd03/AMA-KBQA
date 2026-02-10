@@ -1,0 +1,166 @@
+
+================================================================================
+Benchmarking: qwen3-32b on sciqa
+Questions: 20
+Timeout: 300s per question
+[ABLATION] Few-shot examples DISABLED
+================================================================================
+
+  [0] ERROR: Timeout after 300s | 301.4s
+      Gold: "http://orkg.org/orkg/resource/R75043", "Beetroot"
+      Pred: None
+  [1] ERROR: Expecting value: line 185 column 1 (char 1012) | 123.4s
+      Gold: NO ANSWER
+      Pred: None
+  [2] INCORRECT | 92.6s
+      Gold: Chris Grier
+Dawn Song
+Vern Paxson
+Chris Grier
+Michael Zhang
+Vern Paxson
+Chris Grier
+Frank Li
+Vern Paxson
+Alek Kolcz
+Chris Grier
+Damon McCoy
+Vern Paxson
+      Pred: No research papers authored by Kurt Thomas were found in the knowledge graph. Therefore, there are no co-authors to list.
+  [3] INCORRECT | 121.4s
+      Gold: 93.3125
+      Pred: Based on the information discovered in the ORKG, the mean efficiency obtained for the studies is **0.9883** (or **98.83%**). This value was calculated by averaging all instances of the efficiency predicate (P43156) across the knowledge graph.
+  [4] INCORRECT | 92.9s
+      Gold: 1 %
+      Pred: Based on the journal summary: **100% of comparisons are without a class link.**
+
+The SPARQL query found 1132 comparisons total, and a separate query confirmed that 0 of those comparisons have a class link (predicate P30). Therefore, all comparisons (1132 out of 1132) lack this link.
+  [5] INCORRECT | 127.2s
+      Gold: "http://orkg.org/orkg/resource/R154290", "LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia"
+"http://orkg.org/orkg/resource/R156119", "Question Answering Benchmarks for Wikidata"
+"http://orkg.org/orkg/resource/R156121", "The Web as a Knowledge-Base for Answering Complex Questions"
+      Pred: Based on my investigation of the Open Research Knowledge Graph, here is the list of question answering benchmarks with more than 10,000 questions:
+
+1. **R220786** - A question answering benchmark with 12,661 questions (simple questions requiring one-hop reasoning)
+2. **R220788** - A dataset of questions about food in natural language with 24,585 questions
+3. **R156123** - An open-domain QA benchmark with 34,689 questions using Freebase as knowledge source
+4. **R217649** - Merge of SMART 2020 and SMART 2021 training dataset for AT task with 67,714 questions (54,241 training + 13,473 test)
+
+All four of these benchmarks have been verified to have more than 10,000 questions each.
+  [6] INCORRECT | 167.5s
+      Gold: “http://orkg.org/orkg/resource/R139751”, "How to present contested heritage in a digital archive?" 
+“http://orkg.org/orkg/resource/R139787”, "How to integrate participatory approaches in hertage diplomacy?"
+“http://orkg.org/orkg/resource/R139799”, "How walking methods can better illuminate post‐conflict space?"
+“http://orkg.org/orkg/resource/R139808”, "What characterises contested heritage?"
+“http://orkg.org/orkg/resource/R139809”, "What factors lead to heritage contestation?"
+“http://orkg.org/orkg/resource/R139830”, "How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?"
+“http://orkg.org/orkg/resource/R139833”, "How to define digital heritage interpretation?"
+“http://orkg.org/orkg/resource/R139867”, "What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?"
+“http://orkg.org/orkg/resource/R139935”, "developing an energy efficiency solution for a historicaal building"
+“http://orkg.org/orkg/resource/R139990”, "What are the reasons for the weak substantiation of cultural heritage in smart city strategies?"
+      Pred: Based on the specific data discovered in the ORKG journal:
+
+**The research challenges in the domain of Cultural History are not explicitly recorded.**
+
+The only concrete finding from the investigation is:
+- One contribution (from paper R139800) was examined for research challenges using predicate `P0` (addresses problem). The result was an empty list `[]`, indicating no challenges are linked to that contribution.
+
+No other papers or contributions in the Cultural History field contained data about research challenges (`P0`). Therefore, while the domain exists in the graph, its specific research challenges are not represented as structured data.
+  [7] INCORRECT | 172.9s
+      Gold: hydropower	0.0	79.5
+offshore wind power	0.0	367.0
+onshore wind power	56.6	543.0
+bioenergy	0.0	60.0
+photovoltaics	14.9	425.0
+geothermics	0.0	50.0
+net import	-9.0	176.5
+import	0.0	176.5
+all sources	405.0	1438.0
+others	0.0	311.4
+      Pred: Based on the information retrieved from the ORKG, the boundaries of energy production capacities for each energy source could not be determined. The investigation found a resource (R153924) described as showing "reported installed capacity in gigawatt of the compared studies for all sources," but no actual capacity values, energy source types, or specific boundaries were available in the accessible data.
+
+**Answer:** The requested energy production capacity boundaries and power output intervals for different energy source types are not available in the retrieved data.
+  [8] CORRECT | 59.7s
+      Gold: "http://orkg.org/orkg/resource/R144264", "Liposomes"
+"http://orkg.org/orkg/resource/R144267", "Lipid nanocapsules"
+"http://orkg.org/orkg/resource/R144361", "Nano-lipid carrier"
+"http://orkg.org/orkg/resource/R144362", "Extracellular vesicles"
+      Pred: Based on the information discovered in the ORKG, therapeutic effects occur for the following nanocarrier types:
+
+1. Poly lactic-co-glycolic acid (PLGA) nanoparticles
+2. Nanoemulsions
+3. Lipid micelles
+4. Liposomes
+5. Solid lipid nanoparticles
+6. Lipid nanocapsules
+7. Nano-lipid carrier
+8. Extracellular vesicles
+  [9] CORRECT | 42.4s
+      Gold: no
+      Pred: No, ViCoMap cannot aggregate.
+  [10] INCORRECT | 117.7s
+      Gold: TRUE
+      Pred: No, integrity constraints are not involved in OWLMAP.
+  [11] CORRECT | 138.7s
+      Gold: 2
+      Pred: Based on my investigation of the ORKG, the number of studies that make use of Chloride as a major anion is **2**.
+  [12] CORRECT | 74.4s
+      Gold: Heat sector	8
+      Pred: Based on the information in my journal summary, the most frequent energy sector for the studies is the **Heat sector**.
+
+<final_answer>
+The Heat sector is the most frequent energy sector for the studies.
+</final_answer>
+  [13] INCORRECT | 43.7s
+      Gold: "Aurein 1.2"
+      Pred: Based on the information discovered in the ORKG, the most frequently used lead compound is **"Heat sector"**, which appears in **10 contributions**.
+
+<final_answer>
+The most used lead compound is "Heat sector" with 10 occurrences.
+</final_answer>
+  [14] CORRECT | 48.6s
+      Gold: "2,2-Bis(4-hydroxyphenyl)propane"
+      Pred: Based on the information discovered in the ORKG, Bisphenol-A is alternatively called **2,2-Bis(4-hydroxyphenyl)propane**.
+  [15] CORRECT | 34.1s
+      Gold: "2004"
+      Pred: The MedPost paper was published in **2004**.
+  [16] INCORRECT | 72.8s
+      Gold: 6452
+      Pred: Based on the information discovered in the ORKG, the total number of patients participating in the studies is **10,378**.
+
+$$
+\boxed{10378}
+$$
+  [17] INCORRECT | 153.1s
+      Gold: TRUE
+      Pred: Based on the comprehensive investigation of the ORKG, no evidence was found to support that children are included in the demographic of the studies. All targeted searches for resources, predicates, and papers containing demographic information about children returned no results. A final SPARQL query explicitly checking for such data confirmed no matches.
+
+**Answer: No.**
+  [18] INCORRECT | 208.9s
+      Gold: hydropower	0.0	20.4
+offshore wind power	0.0	76.0
+onshore wind power	28.3	231.0
+bioenergy	0.0	50.0
+photovoltaics	15.7	415.0
+geothermics	0.0	6.4
+all sources	137.4	839.0
+others	0.0	238.0
+      Pred: Based on the available data in the Open Research Knowledge Graph, **the extreme values (minimum and maximum) of installed capacity grouped by energy source cannot be determined**.
+
+**Key Findings:**
+- Only one installed capacity value was found (206.5 GW in resource R153791), but it lacks any associated energy source information.
+- All attempts to query contributions containing both energy source (P43135) and installed capacity (P43133) predicates returned empty results.
+- Comparison resources that might organize such data (e.g., R153924) contain no contributions with the required attributes.
+
+**Missing Information:** No resources exist in the graph that link installed capacity values to specific energy sources, preventing any grouping or extreme value analysis.
+  [19] CORRECT | 64.4s
+      Gold: Heat sector	10
+Liquid fuels sector	5
+Electricity sector	5
+Gas sector	5
+      Pred: Based on the ORKG data, the energy sectors and their corresponding frequencies are:
+
+1. **Heat sector** - 10 contributions
+2. **Electricity sector** - 5 contributions  
+3. **Gas sector** - 5 contributions
+4. **Liquid fuels sector** - 5 contributions

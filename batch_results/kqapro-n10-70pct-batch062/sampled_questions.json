@@ -1,0 +1,587 @@
+[
+  {
+    "question": "Where is the feature film published which has a publication date of 2007-12-21 and an official website of http://movies.disney.com/national-treasure-book-of-secrets?",
+    "choices": [
+      "Uruguay",
+      "Grauman's Chinese Theatre",
+      "Austin",
+      "Venezuela",
+      "South Africa",
+      "Japan",
+      "United States of America",
+      "European Union",
+      "Davao City",
+      "Sydney"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "official website",
+          "http://movies.disney.com/national-treasure-book-of-secrets"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "feature film"
+        ]
+      },
+      {
+        "function": "QueryAttrQualifier",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "publication date",
+          "2007-12-21",
+          "place of publication"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"feature film\" . ?e <official_website> ?pv_1 . ?pv_1 <pred:value> \"http://movies.disney.com/national-treasure-book-of-secrets\" . ?e <publication_date> ?pv . ?pv <pred:date> \"2007-12-21\"^^xsd:date . [ <pred:fact_h> ?e ; <pred:fact_r> <publication_date> ; <pred:fact_t> ?pv ] <place_of_publication> ?qpv .  }",
+    "answer": "United States of America"
+  },
+  {
+    "question": "Is the duration greater for Airplane! or Ben-Hur (the one whose producer is Mark Burnett)?",
+    "choices": [
+      "Pleasantville",
+      "Curse of the Golden Flower",
+      "Rebecca",
+      "The Towering Inferno",
+      "A Prairie Home Companion",
+      "The Fifth Element",
+      "The Hunchback of Notre Dame",
+      "Talk to Her",
+      "Airplane!",
+      "Ben-Hur"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Airplane!"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Mark Burnett"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "producer",
+          "backward"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Ben-Hur"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          2,
+          3
+        ],
+        "inputs": []
+      },
+      {
+        "function": "SelectBetween",
+        "dependencies": [
+          0,
+          4
+        ],
+        "inputs": [
+          "duration",
+          "greater"
+        ]
+      }
+    ],
+    "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Airplane!\" .  } UNION { ?e <pred:name> \"Ben-Hur\" . ?e <producer> ?e_1 . ?e_1 <pred:name> \"Mark Burnett\" .   } ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+    "answer": "Ben-Hur"
+  },
+  {
+    "question": "What is the edition number for the 47th Academy Awards?",
+    "choices": [
+      "47",
+      "41",
+      "48",
+      "57",
+      "60",
+      "15",
+      "9",
+      "28",
+      "81",
+      "17"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "47th Academy Awards"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "edition number"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:name> \"47th Academy Awards\" . ?e <edition_number> ?pv .  }",
+    "answer": "47"
+  },
+  {
+    "question": "Which soccer club with the Twitter username Atalanta_BC is headquartered in Bergamo?",
+    "choices": [
+      "Preston North End F.C.",
+      "C.F. Os Belenenses",
+      "Hibernian F.C.",
+      "Atalanta B.C.",
+      "Stade Brestois 29",
+      "Rochester Rhinos",
+      "Middlesbrough F.C.",
+      "Brisbane Roar FC",
+      "Roda JC Kerkrade",
+      "Zamalek SC"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterStr",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "Twitter username",
+          "Atalanta_BC"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "association football club"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Bergamo"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "headquarters location",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          4
+        ],
+        "inputs": [
+          "association football club"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          2,
+          5
+        ],
+        "inputs": []
+      },
+      {
+        "function": "What",
+        "dependencies": [
+          6
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"association football club\" . ?e <Twitter_username> ?pv . ?pv <pred:value> \"Atalanta_BC\" . ?e <headquarters_location> ?e_1 . ?e_1 <pred:name> \"Bergamo\" .  }",
+    "answer": "Atalanta B.C."
+  },
+  {
+    "question": "How many occupations use the language that is the official language of Serbia?",
+    "choices": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Serbia"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "official language",
+          "forward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "language"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "languages spoken, written or signed",
+          "backward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "occupation"
+        ]
+      },
+      {
+        "function": "Count",
+        "dependencies": [
+          4
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"occupation\" . ?e <languages_spoken,_written_or_signed> ?e_1 . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"language\" . ?e_2 <official_language> ?e_1 . ?e_2 <pred:name> \"Serbia\" .   }",
+    "answer": "0"
+  },
+  {
+    "question": "Orion Pictures production of The Prodigy was released in what location on 2019-03-15?",
+    "choices": [
+      "British Hong Kong",
+      "Berlin International Film Festival",
+      "New Zealand",
+      "Switzerland",
+      "Chicago",
+      "Malaysia",
+      "Rättvik",
+      "Sweden",
+      "United Kingdom",
+      "Jordan"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Orion Pictures"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "production company",
+          "backward"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "The Prodigy"
+        ]
+      },
+      {
+        "function": "And",
+        "dependencies": [
+          1,
+          2
+        ],
+        "inputs": []
+      },
+      {
+        "function": "QueryAttrQualifier",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "publication date",
+          "2019-03-15",
+          "place of publication"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"The Prodigy\" . ?e <production_company> ?e_1 . ?e_1 <pred:name> \"Orion Pictures\" .  ?e <publication_date> ?pv . ?pv <pred:date> \"2019-03-15\"^^xsd:date . [ <pred:fact_h> ?e ; <pred:fact_r> <publication_date> ; <pred:fact_t> ?pv ] <place_of_publication> ?qpv .  }",
+    "answer": "United Kingdom"
+  },
+  {
+    "question": "What is George W. Bush's child's birth name?",
+    "choices": [
+      "Arthur Charles Clarke",
+      "Roberto Remigio Benigni",
+      "John James Osborne",
+      "Franklin Delano Roosevelt",
+      "Jason Kent Bateman",
+      "Anne Inez McCaffrey",
+      "Jenna Welch Bush",
+      "Jennifer Shrader Lawrence",
+      "Eliza Patricia Dushku",
+      "David Henry Thoreau"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "George W. Bush"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "child",
+          "forward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "human"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "birth name"
+        ]
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e_1 <child> ?e . ?e_1 <pred:name> \"George W. Bush\" .  ?e <birth_name> ?pv .  }",
+    "answer": "Jenna Welch Bush"
+  },
+  {
+    "question": "How is Tom Hanks related to the profession of actor?",
+    "choices": [
+      "inspired by",
+      "office held by head of state",
+      "home world",
+      "board member",
+      "discoverer or inventor",
+      "killed by",
+      "eye color",
+      "season starts",
+      "occupation",
+      "film editor"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Tom Hanks"
+        ]
+      },
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "actor"
+        ]
+      },
+      {
+        "function": "QueryRelation",
+        "dependencies": [
+          0,
+          1
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Tom Hanks\" . ?e_2 <pred:name> \"actor\" . ?e_1 ?p ?e_2 .  }",
+    "answer": "occupation"
+  },
+  {
+    "question": "How many forms of government have a Human Development Index less than 0.7?",
+    "choices": [
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35"
+    ],
+    "program": [
+      {
+        "function": "FindAll",
+        "dependencies": [],
+        "inputs": []
+      },
+      {
+        "function": "FilterNum",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "Human Development Index",
+          "0.7",
+          "<"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "form of government"
+        ]
+      },
+      {
+        "function": "Count",
+        "dependencies": [
+          2
+        ],
+        "inputs": []
+      }
+    ],
+    "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"form of government\" . ?e <Human_Development_Index> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> ?v . FILTER ( ?v < \"0.7\"^^xsd:double ) .  }",
+    "answer": "30"
+  },
+  {
+    "question": "Does the US birth city of Iggy Pop cover under 780000 square meters?",
+    "choices": [
+      "yes",
+      "no",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown"
+    ],
+    "program": [
+      {
+        "function": "Find",
+        "dependencies": [],
+        "inputs": [
+          "Iggy Pop"
+        ]
+      },
+      {
+        "function": "Relate",
+        "dependencies": [
+          0
+        ],
+        "inputs": [
+          "place of birth",
+          "forward"
+        ]
+      },
+      {
+        "function": "FilterConcept",
+        "dependencies": [
+          1
+        ],
+        "inputs": [
+          "city of the United States"
+        ]
+      },
+      {
+        "function": "QueryAttr",
+        "dependencies": [
+          2
+        ],
+        "inputs": [
+          "area"
+        ]
+      },
+      {
+        "function": "VerifyNum",
+        "dependencies": [
+          3
+        ],
+        "inputs": [
+          "780000 square metre",
+          "<"
+        ]
+      }
+    ],
+    "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"city of the United States\" . ?e_1 <place_of_birth> ?e . ?e_1 <pred:name> \"Iggy Pop\" .  ?e <area> ?pv . ?pv <pred:unit> \"square metre\" . ?pv <pred:value> ?v . FILTER ( ?v < \"780000\"^^xsd:double ) .  }",
+    "answer": "no"
+  }
+]

@@ -1,0 +1,27 @@
+{
+  "model": "minimax-m2.1",
+  "agent": "kqapro",
+  "timestamp": "2026-02-09T00:48:19.438269",
+  "is_complete": true,
+  "statistics": {
+    "total_questions": 20,
+    "correct": 16,
+    "errors": 0,
+    "accuracy": 0.8,
+    "total_time_seconds": 1234.11,
+    "avg_time_seconds": 61.71,
+    "total_tokens": 2614949,
+    "avg_tokens": 130747.45,
+    "prompt_tokens": 2559969,
+    "completion_tokens": 54980,
+    "estimated_cost_usd": 1.3625,
+    "accuracy_by_type": {
+      "Verify": 1.0,
+      "Query": 1.0,
+      "QueryRelationQualifier": 0.5,
+      "Select": 0.75,
+      "Count": 0.75,
+      "QueryRelation": 0.0
+    }
+  }
+}

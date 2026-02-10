@@ -1,0 +1,99 @@
+
+================================================================================
+Benchmarking: qwen3-32b on kqapro
+Questions: 20
+Timeout: 300s per question
+[ABLATION] Few-shot examples DISABLED
+================================================================================
+
+  [0] CORRECT | 71.7s
+      Gold: yes
+      Pred: Yes, the Taliban was established on 1994-01-01. The knowledge graph confirms that the Taliban entity (Q42418) has an inception date of exactly 1994-01-01.
+  [1] CORRECT | 63.4s
+      Gold: 18000000318
+      Pred: The person born as Chloe Ardelia Wofford is Toni Morrison. Her designation in the KLfG Critical Dictionary of Foreign Contemporary Literature is **18000000318**.
+  [2] CORRECT | 83.2s
+      Gold: no
+      Pred: No. The Indian state with FIPS 10-4 code **IN23** is Punjab, which has ISO 3166-2 code **IN-PB**, not GB-LEC.
+  [3] CORRECT | 90.2s
+      Gold: yes
+      Pred: Yes, the cost of the animated feature film *Madagascar 3: Europe's Most Wanted* is less than 150,000,000 United States dollars. The film's cost is 145,000,000 United States dollars, which is less than 150,000,000 United States dollars.
+  [4] CORRECT | 216.3s
+      Gold: http://www.eintracht.com/
+      Pred: Based on the discovered information, the association football club based in Brunswick (Braunschweig) is **Eintracht Braunschweig**, and its official website is **http://www.eintracht.com/**.
+
+**Note:** While the question mentions "twinned administrative body of Omaha," this specific twinning relationship was not verified in the retrieved data. The answer is based solely on identifying the football club based in Brunswick and its official website.
+  [5] CORRECT | 225.6s
+      Gold: Terrence Malick
+      Pred: Based on my investigation, the nominee of the Academy Award for Best Director for the work in *The Thin Red Line* (which features George Clooney in the cast) is **Terrence Malick**.
+
+**Reasoning:**
+1. *The Thin Red Line* (Q221491) has Terrence Malick (Q215478) as its director.
+2. The film is nominated for the Academy Award for Best Director (Q103360).
+3. As the director of the nominated film, Terrence Malick is the nominee for this award.
+
+Therefore, the answer is **Terrence Malick**.
+  [6] CORRECT | 124.1s
+      Gold: Shanghai
+      Pred: Based on the data retrieved from the knowledge graph:
+
+- **Bicentennial Man** has a duration of **126 minutes**.
+- **Shanghai** (the one with duration 75 minutes) has a duration of **75 minutes**.
+
+**Answer:** *Shanghai* is the shorter movie.
+  [7] CORRECT | 134.8s
+      Gold: 1
+      Pred: Based on the investigation, Rose Byrne has one partner: Bobby Cannavale. He has one given name, "Bobby," which is a masculine first name. Therefore, there is **1 masculine first name** belonging to a partner of Rose Byrne.
+
+**Answer:** 1
+  [8] ERROR: Timeout after 300s | 334.7s
+      Gold: Virginia Tech
+      Pred: None
+  [9] INCORRECT | 111.5s
+      Gold: 1
+      Pred: Based on the investigation, **0 countries** contain a sport associated with a person that is a member of Livingston F.C.
+
+The SPARQL query designed to count distinct countries through the chain (Livingston F.C. → members → sports → countries) returned a count of 0, indicating that no such connections exist in the current knowledge graph data.
+  [10] CORRECT | 79.2s
+      Gold: 1995
+      Pred: Based on my investigation, the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal is **1995**.
+
+This was determined by examining the qualifiers for Seal's nomination relationship to the "MTV Video Music Award for Best Video from a Film," which showed a "point_in_time" qualifier value of 1995.
+
+Final Answer: $\boxed{1995}$
+  [11] ERROR: Timeout after 300s | 302.7s
+      Gold: 2
+      Pred: None
+  [12] CORRECT | 87.1s
+      Gold: Gentleman's Agreement
+      Pred: The visual artwork titled **紳士協定** is the 1947 film **"Gentleman's Agreement"**. It is a drama film directed by Elia Kazan with a duration of 118 minutes, originally published on January 1, 1947.
+  [13] INCORRECT | 155.3s
+      Gold: 2
+      Pred: Based on my investigation, there are **0 public universities** designated by ISNI 0000 0001 2248 7639 or located at Columbia-Campus, Columbia, SC, 29208 in the knowledge graph.
+
+**Answer:** $\boxed{0}$
+  [14] CORRECT | 65.2s
+      Gold: Hitchin
+      Pred: Hitchin has a larger population than Chesterfield. Hitchin's population is 34,266, while Chesterfield's population is 10,688.
+  [15] CORRECT | 243.3s
+      Gold: yes
+      Pred: Based on the investigation, the award nominated to Tom Wilkinson that I identified is the **Academy Award for Best Actor (Q103916)**. Its establishment time (inception) is **1927**. 
+
+The verification confirms that **1927 ≠ 1911**, so the answer to the question is:
+
+**Yes, the award's establishment time is not in 1911; it was established in 1927.**
+  [16] CORRECT | 96.6s
+      Gold: Monsters, Inc.
+      Pred: Based on the discovered values, the animated feature films directed by Pete Docter are **Monsters, Inc.** (duration: 92 minutes) and **Up** (duration: 96 minutes).  
+Comparing their durations, **Monsters, Inc.** has the smallest duration.
+
+**Answer:** Monsters, Inc.
+  [17] CORRECT | 60.0s
+      Gold: 64th Golden Globe Awards
+      Pred: The Golden Globe Award ceremony received by the visual artwork with exploitation visa number 116230 is the **64th Golden Globe Awards**.
+  [18] CORRECT | 66.7s
+      Gold: 21–40
+      Pred: The singles record for Mike Bryan's sibling (Bob Bryan) is **21–40**.
+  [19] CORRECT | 104.1s
+      Gold: place of death
+      Pred: Based on the information discovered during the investigation, Rajesh Khanna's connection to Mumbai is that it was his **place of death**. The knowledge graph shows a direct "place of death" relation from Rajesh Khanna (Q107130) to Mumbai (Q1156).

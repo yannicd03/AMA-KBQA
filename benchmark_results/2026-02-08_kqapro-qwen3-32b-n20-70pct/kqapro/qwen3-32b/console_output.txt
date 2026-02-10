@@ -1,0 +1,97 @@
+
+================================================================================
+Benchmarking: qwen3-32b on kqapro
+Questions: 20
+Timeout: 300s per question
+================================================================================
+
+  [0] CORRECT | 73.1s
+      Gold: yes
+      Pred: Yes, the Taliban was established on 1994-01-01.
+  [1] CORRECT | 69.0s
+      Gold: 18000000318
+      Pred: The person born as Chloe Ardelia Wofford (Toni Morrison) has the KLfG Critical Dictionary of Foreign Contemporary Literature designation **18000000318**.
+  [2] CORRECT | 70.0s
+      Gold: no
+      Pred: No. The Indian state with FIPS 10-4 code IN23 is Punjab, and its ISO 3166-2 code is IN-PB, which is not equal to GB-LEC.
+  [3] CORRECT | 79.9s
+      Gold: yes
+      Pred: Yes, the cost of the animated feature film *Madagascar 3: Europe's Most Wanted* is less than 150,000,000 United States dollars. The film's cost is 145,000,000 United States dollars, which is indeed less than 150,000,000 United States dollars.
+  [4] CORRECT | 132.1s
+      Gold: http://www.eintracht.com/
+      Pred: The website that belongs to the association football club based in Brunswick (which is twinned with Omaha) is **http://www.eintracht.com/**. This is the official website of Eintracht Braunschweig, the football club located in Brunswick.
+  [5] ERROR: Timeout after 300s | 310.5s
+      Gold: Terrence Malick
+      Pred: None
+  [6] CORRECT | 93.9s
+      Gold: Shanghai
+      Pred: Based on the data retrieved from the Knowledge Graph:
+
+- **Bicentennial Man** has a duration of **126 minutes**.
+- **Shanghai** (the one with a 75-minute duration) has a duration of **75 minutes**.
+
+Therefore, **Shanghai (75 minutes)** is shorter than **Bicentennial Man (126 minutes)**.
+  [7] CORRECT | 173.0s
+      Gold: 1
+      Pred: Based on my investigation:
+
+Rose Byrne has one partner: Bobby Cannavale (Q428819). His given name is "Bobby," which is a masculine first name.
+
+Therefore, there is **1** masculine first name that belongs to a partner of Rose Byrne.
+  [8] ERROR: Timeout after 300s | 322.3s
+      Gold: Virginia Tech
+      Pred: None
+  [9] INCORRECT | 120.6s
+      Gold: 1
+      Pred: Based on the investigation, the answer is **0**.
+
+The SPARQL query designed to count countries containing a sport associated with a member of Livingston F.C. returned a count of 0. This indicates that no such countries are recorded in the knowledge graph for the given relationship chain.
+  [10] ERROR: Timeout after 300s | 349.6s
+      Gold: 1995
+      Pred: None
+  [11] INCORRECT | 120.1s
+      Gold: 2
+      Pred: Based on the investigation, the answer is **0**.
+
+The SPARQL query counted art movements that are either located in Paris (identified as Q90, the main subject of "An American in Paris") or have the Dewey Decimal Classification of 142.78. The query returned a count of 0, indicating no art movements in the knowledge graph satisfy either condition.
+
+**Final Answer:** $\boxed{0}$
+  [12] CORRECT | 77.5s
+      Gold: Gentleman's Agreement
+      Pred: The visual artwork titled **紳士協定** is the 1947 film **"Gentleman's Agreement"**. It was published on January 1, 1947, and has a duration of 118 minutes.
+  [13] INCORRECT | 193.0s
+      Gold: 2
+      Pred: Based on my investigation, **0 public universities** are designated by ISNI 0000 0001 2248 7639 or located at Columbia-Campus, Columbia, SC, 29208.
+
+**Key findings:**
+1. No university in the knowledge graph has ISNI `0000 0001 2248 7639`.
+2. While the University of South Carolina is located at "Columbia-Campus, Columbia, SC, 29208", it does not satisfy the combined condition of being both a `public_university` AND meeting one of the criteria in the SPARQL query.
+3. The SPARQL count query returned a result of `0`, confirming that no entities satisfy the complete logical condition.
+
+**Answer:** $\boxed{0}$
+  [14] CORRECT | 56.4s
+      Gold: Hitchin
+      Pred: Hitchin has a larger population than Chesterfield. Hitchin's population is 34,266, while Chesterfield's population is 10,688.
+  [15] CORRECT | 146.9s
+      Gold: yes
+      Pred: Based on the discovered information, the Academy Award for Best Actor (one of the awards Tom Wilkinson was nominated for) has an inception year of 1927. Since 1927 is not 1911, the answer to the question "is its establishment time not in 1911?" is **Yes**.
+  [16] CORRECT | 83.1s
+      Gold: Monsters, Inc.
+      Pred: Based on the discovered values, among the animated feature films directed by Pete Docter, **Monsters, Inc.** has the smallest duration at **92 minutes**.
+
+*Monsters, Inc.* (92 minutes) is shorter than *Up* (96 minutes).
+  [17] CORRECT | 83.1s
+      Gold: 64th Golden Globe Awards
+      Pred: Based on the investigation, the Golden Globe Award ceremony received by the visual artwork with exploitation visa number 116230 is the **64th Golden Globe Awards**.
+
+The exploitation visa number 116230 corresponds to the film *Borat*, and the award it received is listed as "64th Golden Globe Awards" (Q761309).
+  [18] CORRECT | 38.5s
+      Gold: 21–40
+      Pred: Based on my investigation, I found that Bob Bryan is Mike Bryan's sibling. The singles record for Bob Bryan is **21–40**.
+
+<final_answer>
+The singles record for Mike Bryan's sibling (Bob Bryan) is 21–40.
+</final_answer>
+  [19] CORRECT | 107.2s
+      Gold: place of death
+      Pred: Based on the information discovered, Rajesh Khanna's connection to Mumbai is that **Mumbai is his place of death**.
