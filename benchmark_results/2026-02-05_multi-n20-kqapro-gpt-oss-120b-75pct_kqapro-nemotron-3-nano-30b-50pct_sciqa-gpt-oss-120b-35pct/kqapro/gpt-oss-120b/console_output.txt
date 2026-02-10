@@ -1,0 +1,165 @@
+
+================================================================================
+Benchmarking: gpt-oss-120b on kqapro
+Questions: 20
+Timeout: 300s per question
+================================================================================
+
+  [0] CORRECT | 13.1s
+      Gold: yes
+      Pred: Yes, the Taliban was established on 1994‑01‑01.
+  [1] CORRECT | 40.5s
+      Gold: 18000000318
+      Pred: Based on my investigation, I found that the person born as Chloe Ardelia Wofford is Toni Morrison (entity Q72334). From the SPARQL query results, I discovered that Toni Morrison has the attribute "KLfG_Critical_Dictionary_of_foreign_contemporary_literature" with the value **18000000318**.
+
+**Answer:** The KLfG Critical Dictionary of foreign contemporary literature designation for Chloe Ardelia Wofford (Toni Morrison) is **18000000318**.
+  [2] CORRECT | 25.6s
+      Gold: no
+      Pred: No. The Indian state with FIPS 10‑4 code IN23 is Punjab. Its ISO 3166‑2 code is IN‑PB, which is not equal to GB‑LEC.
+  [3] CORRECT | 13.9s
+      Gold: yes
+      Pred: Yes, the cost of the animated feature film *Madagascar 3: Europe’s Most Wanted* is less than 150 000 000 United States dollars. The recorded cost is 145 000 000 USD, which is less than 150 000 000 USD.
+  [4] CORRECT | 16.7s
+      Gold: http://www.eintracht.com/
+      Pred: Based on the discovered information:
+
+The association football club based in Brunswick (which is twinned with Omaha) is **Eintracht Braunschweig**. Its official website is **http://www.eintracht.com/**.
+
+**Verification:**
+1. Eintracht Braunschweig (Q154053) is headquartered in Brunswick (Q2773) - confirmed via relation check.
+2. Brunswick (Q2773) is twinned with Omaha (Q43199) - confirmed via relation check.
+3. The website belonging to Eintracht Braunschweig is http://www.eintracht.com/ - confirmed via attribute retrieval.
+
+**Answer:** The website is **http://www.eintracht.com/**.
+  [5] CORRECT | 148.0s
+      Gold: Terrence Malick
+      Pred: Based on my investigation, the nominee for the Academy Award for Best Director for the film **"The Thin Red Line"** (which has George Clooney in its cast) is **Terrence Malick**.
+
+**Reasoning:**
+1. I identified the film "The Thin Red Line" (Q221491) and confirmed it has a "cast member" relation.
+2. The film has a "director" relation pointing to Terrence Malick (Q215478).
+3. Terrence Malick has a "nominated for" relation to the Academy Award for Best Director (Q103360).
+4. Therefore, Terrence Malick is the director of the film who was nominated for the Academy Award for Best Director for his work on "The Thin Red Line."
+  [6] CORRECT | 12.0s
+      Gold: Shanghai
+      Pred: Based on the data retrieved from the Knowledge Graph:
+
+- **Bicentennial Man** has a duration of **126 minutes**.
+- **Shanghai** (the film with a duration of 75 minutes) has a duration of **75 minutes**.
+
+Therefore, **Shanghai** is the shorter movie.
+  [7] CORRECT | 23.7s
+      Gold: 1
+      Pred: Based on my investigation, I found that Rose Byrne’s partner is Bobby Cannavale. The only masculine first name associated with her partner is “Bobby.” Therefore, the number of masculine first names belonging to a partner of Rose Byrne is **1**.
+  [8] CORRECT | 139.0s
+      Gold: Virginia Tech
+      Pred: Based on the data discovered in the Knowledge Graph, the college or university in the Eastern Time Zone of the United States with the largest student enrollment is **Virginia Tech (Virginia Polytechnic Institute and State University)**, with **28,470 students**.
+
+**Supporting evidence from the investigation:**
+1. A SPARQL query found universities in the United States (country Q30) located in the Eastern Time Zone (time zone Q941023) that have a "students count" attribute.
+2. The query returned four universities, ordered by student count:
+   - Virginia Tech (Q65379): 28,470 students
+   - Carnegie Mellon University (Q190080): 12,500 students  
+   - Georgetown University (Q333886): 17,500 students
+   - University of Vermont (Q1048898): 13,097 students
+3. Among these, Virginia Tech has the highest student count.
+
+**Note:** While the University of Florida has 49,500 students (more than Virginia Tech), it does not have a "located in time zone" relation recorded in the Knowledge Graph, so it could not be confirmed as being in the Eastern Time Zone through the available data. Therefore, based on the verified data, Virginia Tech is the largest Eastern Time Zone university with confirmed enrollment figures.
+  [9] INCORRECT | 20.8s
+      Gold: 1
+      Pred: Based on the information discovered in my investigation, I cannot answer the question "How many countries contain a sport associated with a person that is the member of Livingston F.C.?"
+
+The journal summary shows that I explored nodes related to Taliban, Punjab, movies, universities, and other entities, but I found **no data** about Livingston F.C., its members, associated sports, or countries containing those sports. None of the discovered values are relevant to the question's entities or relationships.
+
+Therefore, the necessary information to answer this question is missing from the knowledge graph search results.
+  [10] INCORRECT | 20.1s
+      Gold: 1995
+      Pred: Based on my investigation, I cannot answer the question with the information discovered. My journal summary contains no data about Seal, MTV Video Music Awards, Best Video from a Film nominations, or any time points related to these entities. The values I found pertain to unrelated topics like universities, movies, and geographical regions.
+
+To answer this question, I would need to:
+1. Find the entity for Seal (the house music performer)
+2. Find the entity for the MTV Video Music Award for Best Video from a Film
+3. Discover the nomination relationship between them
+4. Retrieve the temporal qualifier (time point) associated with that nomination
+
+Since none of this information appears in my journal summary, I lack the necessary facts to provide an answer.
+  [11] INCORRECT | 33.6s
+      Gold: 2
+      Pred: Based on the information discovered during my investigation, I cannot provide a complete answer to the question.
+
+**Missing Information:**
+The journal summary contains no data about art movements, their locations, or their Dewey Decimal Classification values. Specifically:
+1. I found no art movement entities in the journal.
+2. I found no "located in" relationships connecting any entities to Paris (Q90).
+3. I found no Dewey Decimal Classification values of 142.78 for any entities.
+4. The journal shows Dewey Decimal Classification values for Paris (2--44361) and Punjab (2--54552), but not 142.78.
+
+**What I can confirm from the journal:**
+- Paris (Q90) has been identified as the city entity.
+- Paris has Dewey Decimal Classification 2--44361 (not 142.78).
+
+**Conclusion:**
+The knowledge graph contains **0** art movements that are located in Paris or have Dewey Decimal Classification 142.78, based on the complete absence of relevant art movement data in the discovered information.
+  [12] CORRECT | 12.2s
+      Gold: Gentleman's Agreement
+      Pred: Based on the information discovered in the Knowledge Graph, the visual artwork titled **「紳士協定」** is the 1947 film **"Gentleman's Agreement"**.
+
+The journal confirms that the entity "Gentleman's Agreement (Q898840)" has the exact title "紳士協定" and its publication date is 1947-01-01.
+  [13] CORRECT | 96.4s
+      Gold: 2
+      Pred: Based on the information discovered during my investigation:
+
+**Answer: 2 public universities**
+
+**Breakdown:**
+1. **Humboldt University of Berlin (Q152087)** - Has ISNI "0000 0001 2248 7639" and is classified as a public university.
+2. **University of South Carolina (Q1024426)** - Located at "Columbia-Campus, Columbia, SC, 29208" and is classified as a public university.
+
+Both universities satisfy the "or" condition in the question (one meets the ISNI criterion, the other meets the location criterion), and both are confirmed to be public universities. Therefore, the total count is 2.
+  [14] CORRECT | 13.1s
+      Gold: Hitchin
+      Pred: Based on the population data retrieved from the knowledge graph:
+
+**Hitchin** has a population of 34,266, while **Chesterfield** has a population of 10,688.
+
+Therefore, **Hitchin has a larger population than Chesterfield**.
+  [15] CORRECT | 80.1s
+      Gold: yes
+      Pred: Based on the information discovered during my investigation:
+
+The award in question is the Academy Award for Best Actor (Q103916). According to the journal summary, its inception (establishment time) is 1927.
+
+Since 1927 is **not** in 1911, the answer to the question "is its establishment time not in 1911?" is **Yes**.
+
+**Final Answer:** Yes, the award's establishment time (1927) is not in 1911.
+  [16] CORRECT | 21.2s
+      Gold: Monsters, Inc.
+      Pred: Based on the information discovered in my investigation, among the animated feature films directed by Pete Docter, the one with the smallest duration is **"Monsters, Inc."**, which has a duration of **92 minutes**.
+
+This conclusion is drawn from comparing the duration values found:
+- "Monsters, Inc." (Q187726): 92 minutes
+- "Up" (Q174811): 96 minutes
+
+Since 92 minutes is less than 96 minutes, "Monsters, Inc." has the smallest duration among the Pete Docter-directed animated films identified.
+  [17] INCORRECT | 15.7s
+      Gold: 64th Golden Globe Awards
+      Pred: Based on the information discovered during my investigation, I cannot provide a complete answer to the question.
+
+**What I found:**
+- The visual artwork with exploitation visa number **116230** is the film **"Borat"** (entity Q186323).
+- I confirmed this fact through the journal summary, which lists `exploitation_visa_number: 116230` for Borat.
+
+**What is missing:**
+- The journal summary does not contain any information about which Golden Globe Award ceremony Borat received.
+- I did not discover any relation or attribute connecting Borat to a specific Golden Globe Award ceremony.
+
+**Conclusion:**
+While I successfully identified the visual artwork in question (Borat), the specific Golden Globe Award ceremony it received is not present in the discovered data. To answer this question fully, I would need to query the relation between Borat and Golden Globe Awards, which was not completed during this investigation.
+  [18] CORRECT | 12.2s
+      Gold: 21–40
+      Pred: The singles record for Mike Bryan’s sibling (Bob Bryan) is **21 wins – 40 losses**.
+  [19] INCORRECT | 21.3s
+      Gold: place of death
+      Pred: Based on the information discovered during my investigation, I cannot determine Rajesh Khanna's specific connection to Mumbai. My journal summary contains data about Rajesh Khanna (Q107130), including his date of birth and death, but does not list any attributes or relations that connect him to Mumbai.
+
+The journal shows I explored many entities, but I did not find any relationship between "Rajesh Khanna" and "Mumbai" in the discovered values. To answer this question, I would need to find a specific property linking these two entities (such as "place of death," "place of birth," "residence," etc.), but that information is not present in my current findings.

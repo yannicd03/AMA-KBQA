@@ -1,0 +1,3834 @@
+[
+  {
+    "question_id": 0,
+    "question": "What vegetables are used in the process of betanin extraction?",
+    "gold_answer": "\"http://orkg.org/orkg/resource/R75043\", \"Beetroot\"",
+    "predicted_answer": "Error: Agent reached maximum iteration limit.",
+    "accuracy": false,
+    "elapsed_time": 89.26,
+    "token_usage": {
+      "prompt_tokens": 834701,
+      "completion_tokens": 9012,
+      "total_tokens": 843713
+    },
+    "tool_summary": {
+      "total_calls": 48,
+      "total_duration_seconds": 22.151,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 24,
+          "total_duration": 19.68,
+          "avg_duration": 0.82,
+          "success_count": 24,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.029,
+          "avg_duration": 0.01,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 4,
+          "total_duration": 2.242,
+          "avg_duration": 0.56,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 2,
+          "total_duration": 0.04,
+          "avg_duration": 0.02,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 1,
+          "total_duration": 0.031,
+          "avg_duration": 0.031,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 8,
+          "total_duration": 0.087,
+          "avg_duration": 0.011,
+          "success_count": 8,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 5,
+          "total_duration": 0.034,
+          "avg_duration": 0.007,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 24,
+        "GetResourceSummary": 3,
+        "FindPredicate": 4,
+        "GetRelationTargets": 2,
+        "GetPaperContributions": 1,
+        "FindByPredicateValue": 8,
+        "RunORKGSPARQL": 5,
+        "GetResourceDetails": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.32,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:10.880955"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.502,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:11.899895"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:12.523078"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.517,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:13.575244"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.563,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:14.788534"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.618,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:17.177191"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.517,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:19.666561"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.024,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:20.272242"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:20.778013"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.658,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:22.034884"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.959,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:23.577723"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.016,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:24.128609"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.031,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:24.654336"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.579,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:25.974178"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.595,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:27.578453"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.485,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:29.020091"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.035,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:29.833115"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.53,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:31.021970"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:32.248502"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.577,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:33.497352"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:34.092377"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:34.793130"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.461,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:35.896716"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.515,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:37.261624"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:38.058247"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:38.918510"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:40.021848"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:40.767211"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.48,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:41.935468"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:43.540880"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.505,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:45.130854"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:45.978694"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:47.892361"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.611,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:51.366343"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.53,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:54.614187"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:45:55.405897"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 4.805,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:01.855660"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:03.173648"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.642,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:04.764579"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.557,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:06.109103"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.51,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:07.686488"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:14.456501"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.605,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:16.713906"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.482,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:21.277182"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.53,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:24.550267"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:25.538486"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.818,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:31.884772"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.451,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:33.415761"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 1,
+    "question": "Which research problem does the paper \"paper title\" address?",
+    "gold_answer": "NO ANSWER",
+    "predicted_answer": "Based on my investigation of the Open Research Knowledge Graph, I could not find a paper with the title \"paper title.\" Therefore, I cannot determine which research problem this paper addresses.",
+    "accuracy": true,
+    "elapsed_time": 24.06,
+    "token_usage": {
+      "prompt_tokens": 61113,
+      "completion_tokens": 1851,
+      "total_tokens": 62964
+    },
+    "tool_summary": {
+      "total_calls": 7,
+      "total_duration_seconds": 2.717,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 4,
+          "total_duration": 2.706,
+          "avg_duration": 0.676,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 1,
+          "total_duration": 0.002,
+          "avg_duration": 0.002,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 4,
+        "ManageJournal": 1,
+        "RunORKGSPARQL": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.431,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:36.793516"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.483,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:37.816502"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:38.400953"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.165,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:40.026583"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.627,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:41.236518"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:43.761225"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:46:44.519936"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 2,
+    "question": "Who are the authors that Kurt Thomas has written research papers with?",
+    "gold_answer": "Chris Grier\nDawn Song\nVern Paxson\nChris Grier\nMichael Zhang\nVern Paxson\nChris Grier\nFrank Li\nVern Paxson\nAlek Kolcz\nChris Grier\nDamon McCoy\nVern Paxson",
+    "predicted_answer": "Based on the information discovered in the ORKG, Kurt Thomas has written research papers with the following co-authors:\n\n1. **Chris Grier** (appears in all three papers)\n2. **Vern Paxson** (appears in papers from 2011 and 2014)\n3. **Dawn Song** (appears in the 2011 paper)\n4. **Michael Zhang** (appears in the 2010 paper)\n\nThese co-authorships are documented in three papers:\n- \"Suspended accounts in retrospect: an analysis of twitter spam\" (2011)\n- \"@spam: the underground on 140 characters or less\" (2010)  \n- A 2014 paper on Twitter compromise",
+    "accuracy": true,
+    "elapsed_time": 35.34,
+    "token_usage": {
+      "prompt_tokens": 189345,
+      "completion_tokens": 3399,
+      "total_tokens": 192744
+    },
+    "tool_summary": {
+      "total_calls": 17,
+      "total_duration_seconds": 2.851,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 4,
+          "total_duration": 2.55,
+          "avg_duration": 0.638,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 4,
+          "total_duration": 0.232,
+          "avg_duration": 0.058,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 1,
+          "total_duration": 0.011,
+          "avg_duration": 0.011,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 3,
+          "total_duration": 0.018,
+          "avg_duration": 0.006,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.033,
+          "avg_duration": 0.011,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.001,
+          "avg_duration": 0.001,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 4,
+        "FindByPredicateValue": 4,
+        "GetResourceDetails": 1,
+        "RunORKGSPARQL": 1,
+        "GetRelationTargets": 3,
+        "GetResourceSummary": 3,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.862,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:02.741970"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.588,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:03.936988"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.634,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:11.421141"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.466,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:13.499871"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:14.396951"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:15.464867"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:15.892868"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:16.493291"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.123,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:18.513034"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:19.137116"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:20.304678"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.09,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:21.038441"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:21.624329"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:23.276761"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:24.218746"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:25.516984"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.001,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:26.101892"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 3,
+    "question": "What mean efficency is obtained for the studies?",
+    "gold_answer": "93.3125",
+    "predicted_answer": "Based on the ORKG data retrieved, **no mean efficiency values for studies were found**. The only \"mean\" values discovered are generic means (e.g., 0.211, 0.207, 0.34, 0.355, 0.27) associated with studies on the Dictator Game, but none of these are labeled as efficiency metrics. Therefore, the knowledge graph does not contain a mean efficiency value for any study.",
+    "accuracy": false,
+    "elapsed_time": 49.45,
+    "token_usage": {
+      "prompt_tokens": 429521,
+      "completion_tokens": 6136,
+      "total_tokens": 435657
+    },
+    "tool_summary": {
+      "total_calls": 28,
+      "total_duration_seconds": 6.357,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 8,
+          "total_duration": 5.193,
+          "avg_duration": 0.649,
+          "success_count": 8,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 1.008,
+          "avg_duration": 1.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 5,
+          "total_duration": 0.067,
+          "avg_duration": 0.013,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 2,
+          "total_duration": 0.012,
+          "avg_duration": 0.006,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 6,
+          "total_duration": 0.057,
+          "avg_duration": 0.009,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 2,
+          "total_duration": 0.01,
+          "avg_duration": 0.005,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 3,
+          "total_duration": 0.007,
+          "avg_duration": 0.002,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 8,
+        "FindPredicate": 1,
+        "FindByPredicateValue": 5,
+        "RunORKGSPARQL": 2,
+        "GetResourceSummary": 6,
+        "GetResourceLabel": 2,
+        "ManageJournal": 3,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.557,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:39.009316"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.613,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:40.098738"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:41.612378"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.556,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:42.675811"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.495,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:46.997134"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.491,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:50.157911"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.535,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:51.730771"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:52.947019"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.539,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:54.440580"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:57.407641"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.02,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:58.098947"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.019,
+          "success": true,
+          "timestamp": "2026-02-05T13:47:58.917293"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.407,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:00.929509"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:01.685001"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:02.286599"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:05.529209"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:06.210897"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:06.878039"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:08.284073"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.016,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:09.225142"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:10.072634"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:11.049743"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:13.106623"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:16.019381"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:16.962463"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:17.679862"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:19.175178"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:20.353477"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nCount"
+  },
+  {
+    "question_id": 4,
+    "question": "What percentage of comparisons is without class link?",
+    "gold_answer": "1 %",
+    "predicted_answer": "Based on my investigation of the ORKG, I cannot determine the percentage of comparisons without class link. While I found several resources related to comparisons and predicates related to class links, I did not find any resource that provides the specific percentage value requested.\n\nThe information discovered includes:\n- Multiple comparison resources (R4216, R4359, etc.)\n- A predicate \"has comparison\" (R4253)\n- Some comparison resources have \"between\" relationships\n\nHowever, I did not locate any resource that contains the statistical percentage of comparisons lacking class links. The specific numerical answer to this question is not present in the knowledge graph based on my search.",
+    "accuracy": false,
+    "elapsed_time": 20.26,
+    "token_usage": {
+      "prompt_tokens": 29704,
+      "completion_tokens": 1032,
+      "total_tokens": 30736
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 5.509,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 2,
+          "total_duration": 4.742,
+          "avg_duration": 2.371,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.757,
+          "avg_duration": 0.757,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 2,
+        "FindPredicate": 1,
+        "GetResourceSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 3.933,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:34.512779"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.757,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:37.427293"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.809,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:38.782289"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:39.948468"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nCount\nNegation"
+  },
+  {
+    "question_id": 5,
+    "question": "What is the list of question answering benchmarks with more than 10000 questions?",
+    "gold_answer": "\"http://orkg.org/orkg/resource/R154290\", \"LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia\"\n\"http://orkg.org/orkg/resource/R156119\", \"Question Answering Benchmarks for Wikidata\"\n\"http://orkg.org/orkg/resource/R156121\", \"The Web as a Knowledge-Base for Answering Complex Questions\"",
+    "predicted_answer": "Based on the ORKG data, here are the question-answering benchmarks with more than 10,000 questions:\n\n1. **Contribution 1** – 34,689 questions\n2. **Merge of SMART 2020 and SMART 2021 training dataset for AT task** – 67,714 questions\n3. **SMART 2021 DBpedia training dataset for RL task** – 42,756 questions\n4. **SMART 2021 Wikidata training dataset for RL task** – 30,141 questions\n5. **Question Answering Benchmark (simple question)** – 12,661 questions\n6. **Question Answering Benchmark** – 24,585 questions\n\nAll six benchmarks have verified \"Amount of Questions\" values exceeding 10,000.",
+    "accuracy": false,
+    "elapsed_time": 25.31,
+    "token_usage": {
+      "prompt_tokens": 136012,
+      "completion_tokens": 3571,
+      "total_tokens": 139583
+    },
+    "tool_summary": {
+      "total_calls": 14,
+      "total_duration_seconds": 0.099,
+      "tool_breakdown": {
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.024,
+          "avg_duration": 0.024,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 6,
+          "total_duration": 0.048,
+          "avg_duration": 0.008,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "BatchGetResourceLabels": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 4,
+          "total_duration": 0.01,
+          "avg_duration": 0.003,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByPredicateValue": 1,
+        "GetResourceSummary": 6,
+        "GetResourceLabel": 1,
+        "BatchGetResourceLabels": 1,
+        "VerifyNumericCondition": 4,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.024,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:51.155962"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:51.579878"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:52.050932"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:52.525111"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:53.053841"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:54.550793"
+        },
+        {
+          "tool_name": "BatchGetResourceLabels",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:56.023252"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:57.321243"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:58.441567"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:59.061285"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-05T13:48:59.856812"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:00.599377"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:01.553354"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:02.267104"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 6,
+    "question": "What are the research challenges in the domain of Cultural History?",
+    "gold_answer": "“http://orkg.org/orkg/resource/R139751”, \"How to present contested heritage in a digital archive?\" \n“http://orkg.org/orkg/resource/R139787”, \"How to integrate participatory approaches in hertage diplomacy?\"\n“http://orkg.org/orkg/resource/R139799”, \"How walking methods can better illuminate post‐conflict space?\"\n“http://orkg.org/orkg/resource/R139808”, \"What characterises contested heritage?\"\n“http://orkg.org/orkg/resource/R139809”, \"What factors lead to heritage contestation?\"\n“http://orkg.org/orkg/resource/R139830”, \"How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?\"\n“http://orkg.org/orkg/resource/R139833”, \"How to define digital heritage interpretation?\"\n“http://orkg.org/orkg/resource/R139867”, \"What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?\"\n“http://orkg.org/orkg/resource/R139935”, \"developing an energy efficiency solution for a historicaal building\"\n“http://orkg.org/orkg/resource/R139990”, \"What are the reasons for the weak substantiation of cultural heritage in smart city strategies?\"",
+    "predicted_answer": "Based on the information retrieved from the Open Research Knowledge Graph, the research challenges (research problems) in the domain of Cultural History are:\n\n1. How to present contested heritage in a digital archive?\n2. How to integrate participatory approaches in heritage diplomacy?\n3. How walking methods can better illuminate post‑conflict space?\n4. What characterises contested heritage?\n5. What factors lead to heritage contestation?\n6. How to connect scholarly modes of communication and stakeholder‑led participatory cultures in difficult heritage?\n7. How to define digital heritage interpretation?\n8. What is the role of conservation of cultural heritage in the progress towards UN Development Goals?\n9. Developing an energy‑efficiency solution for a historical building\n10. What are the reasons for the weak substantiation of cultural heritage in smart‑city strategies?\n\nThese challenges were identified by querying contributions from papers within the \"Cultural History\" research field.",
+    "accuracy": true,
+    "elapsed_time": 37.42,
+    "token_usage": {
+      "prompt_tokens": 173035,
+      "completion_tokens": 4474,
+      "total_tokens": 177509
+    },
+    "tool_summary": {
+      "total_calls": 20,
+      "total_duration_seconds": 1.825,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.521,
+          "avg_duration": 0.521,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.025,
+          "avg_duration": 0.008,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 1.139,
+          "avg_duration": 1.139,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.039,
+          "avg_duration": 0.039,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 4,
+          "total_duration": 0.026,
+          "avg_duration": 0.007,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 6,
+          "total_duration": 0.038,
+          "avg_duration": 0.006,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FollowRelationPath": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 3,
+        "FindPredicate": 1,
+        "GetResearchFieldPapers": 1,
+        "GetResourceLabel": 4,
+        "GetPaperContributions": 6,
+        "GetRelationTargets": 1,
+        "FollowRelationPath": 1,
+        "RunORKGSPARQL": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.521,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:23.292896"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:23.822394"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.139,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:26.261075"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.039,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:26.799381"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:28.008594"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:30.161021"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:32.501238"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:33.045382"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:33.970196"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:34.816448"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:35.252578"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:35.830396"
+        },
+        {
+          "tool_name": "FollowRelationPath",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:38.397168"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:39.717066"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:40.359049"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:41.050806"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:41.638944"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:43.542405"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:44.266899"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:45.159665"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 7,
+    "question": "- What are the boundaries of energy production capacities for each energy source?\n- In what interval lie the power output capabilities of every considered energy source installment type?",
+    "gold_answer": "hydropower\t0.0\t79.5\noffshore wind power\t0.0\t367.0\nonshore wind power\t56.6\t543.0\nbioenergy\t0.0\t60.0\nphotovoltaics\t14.9\t425.0\ngeothermics\t0.0\t50.0\nnet import\t-9.0\t176.5\nimport\t0.0\t176.5\nall sources\t405.0\t1438.0\nothers\t0.0\t311.4",
+    "predicted_answer": "Error: Agent reached maximum iteration limit.",
+    "accuracy": false,
+    "elapsed_time": 77.84,
+    "token_usage": {
+      "prompt_tokens": 824695,
+      "completion_tokens": 12866,
+      "total_tokens": 837561
+    },
+    "tool_summary": {
+      "total_calls": 50,
+      "total_duration_seconds": 11.431,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 5,
+          "total_duration": 3.738,
+          "avg_duration": 0.748,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 11,
+          "total_duration": 7.408,
+          "avg_duration": 0.673,
+          "success_count": 11,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 17,
+          "total_duration": 0.139,
+          "avg_duration": 0.008,
+          "success_count": 17,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 10,
+          "total_duration": 0.076,
+          "avg_duration": 0.008,
+          "success_count": 10,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 5,
+          "total_duration": 0.05,
+          "avg_duration": 0.01,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 5,
+        "FindResource": 11,
+        "RunORKGSPARQL": 17,
+        "FindByPredicateValue": 10,
+        "GetResourceSummary": 5,
+        "GetResearchFieldPapers": 1,
+        "GetResourceLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.04,
+          "success": true,
+          "timestamp": "2026-02-05T13:49:59.098752"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.583,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:01.169807"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.743,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:02.717022"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.492,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:03.826980"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.041,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:04.617358"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.018,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:05.275450"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.517,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:06.393181"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:06.971336"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:08.930526"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.968,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:11.407780"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:12.002909"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.683,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:13.489845"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:14.088475"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:14.618364"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:15.264802"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:17.799813"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:18.441449"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:19.117284"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:19.818601"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:20.539727"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:21.248875"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.727,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:22.742686"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.767,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:24.160057"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.73,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:26.220005"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:28.729227"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:30.525725"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:32.031339"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:32.764499"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:34.054860"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:34.977722"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:39.437231"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.631,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:41.149703"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:42.022737"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:43.307934"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:45.546717"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:47.558749"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:48.360186"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.588,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:49.715169"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.545,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:51.371724"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:53.352943"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:54.818660"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:56.508712"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:50:57.430214"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.608,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:01.716778"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:04.113213"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.875,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:06.147058"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:07.641332"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:09.093256"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:10.036816"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.649,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:13.720167"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nRanking"
+  },
+  {
+    "question_id": 8,
+    "question": "For what nanocarries types does therapeutic effect occur?",
+    "gold_answer": "\"http://orkg.org/orkg/resource/R144264\", \"Liposomes\"\n\"http://orkg.org/orkg/resource/R144267\", \"Lipid nanocapsules\"\n\"http://orkg.org/orkg/resource/R144361\", \"Nano-lipid carrier\"\n\"http://orkg.org/orkg/resource/R144362\", \"Extracellular vesicles\"",
+    "predicted_answer": "Based on the ORKG data, therapeutic effects of the carrier are reported for the following nanocarrier types:\n\n1. Poly lactic‑co‑glycolic acid (PLGA) nanoparticles\n2. Nanoemulsions\n3. Lipid micelles\n4. Liposomes\n5. Solid lipid nanoparticles\n6. Lipid nanocapsules\n7. Nano‑lipid carrier\n8. Extracellular vesicles",
+    "accuracy": true,
+    "elapsed_time": 15.03,
+    "token_usage": {
+      "prompt_tokens": 22660,
+      "completion_tokens": 1299,
+      "total_tokens": 23959
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.304,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 1.266,
+          "avg_duration": 1.266,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.035,
+          "avg_duration": 0.035,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 1,
+        "RunORKGSPARQL": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.266,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:19.106977"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.035,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:20.703292"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:23.866991"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 9,
+    "question": "Can ViCoMap aggregate?",
+    "gold_answer": "no",
+    "predicted_answer": "Based on the information discovered in the ORKG, the resource for ViCoMap (R6541) has an \"Aggregation\" predicate with the value **F** (false).\n\nTherefore, the answer is: **No, ViCoMap cannot aggregate.**",
+    "accuracy": true,
+    "elapsed_time": 9.86,
+    "token_usage": {
+      "prompt_tokens": 22408,
+      "completion_tokens": 760,
+      "total_tokens": 23168
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.964,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.953,
+          "avg_duration": 0.953,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.953,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:34.980055"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:35.627257"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:37.002797"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 10,
+    "question": "Are integrity constraints involved in OWLMAP?",
+    "gold_answer": "TRUE",
+    "predicted_answer": "Based on the information retrieved from the ORKG, no data was found linking integrity constraints to OWLMAP. Therefore, the answer is: **No, integrity constraints are not involved in OWLMAP.**",
+    "accuracy": false,
+    "elapsed_time": 29.07,
+    "token_usage": {
+      "prompt_tokens": 139899,
+      "completion_tokens": 3200,
+      "total_tokens": 143099
+    },
+    "tool_summary": {
+      "total_calls": 17,
+      "total_duration_seconds": 7.367,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 8,
+          "total_duration": 6.76,
+          "avg_duration": 0.845,
+          "success_count": 8,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.005,
+          "avg_duration": 0.005,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.53,
+          "avg_duration": 0.53,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 2,
+          "total_duration": 0.037,
+          "avg_duration": 0.019,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 8,
+        "GetResourceSummary": 1,
+        "GetResourceLabel": 1,
+        "FindPredicate": 1,
+        "GetResourceDetails": 1,
+        "FindByPredicateValue": 2,
+        "GetPaperContributions": 1,
+        "RunORKGSPARQL": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.584,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:45.630855"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:46.047414"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:47.052396"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.551,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:48.096088"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.53,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:49.268767"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:49.842057"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.481,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:51.045501"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.02,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:51.755841"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:53.051167"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.531,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:54.176992"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.017,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:54.905812"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:55.624580"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 2.395,
+          "success": true,
+          "timestamp": "2026-02-05T13:51:59.824986"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.539,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:01.006694"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.538,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:03.704536"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.141,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:06.278062"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:06.945323"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 11,
+    "question": "What is the number of studies that make use of Chloride as a major anion?",
+    "gold_answer": "2",
+    "predicted_answer": "Based on the information retrieved from the ORKG, the number of studies that make use of Chloride as a major anion is **0**.",
+    "accuracy": false,
+    "elapsed_time": 43.82,
+    "token_usage": {
+      "prompt_tokens": 242367,
+      "completion_tokens": 6474,
+      "total_tokens": 248841
+    },
+    "tool_summary": {
+      "total_calls": 22,
+      "total_duration_seconds": 11.074,
+      "tool_breakdown": {
+        "RunORKGSPARQL": {
+          "count": 7,
+          "total_duration": 0.057,
+          "avg_duration": 0.008,
+          "success_count": 7,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 7,
+          "total_duration": 10.3,
+          "avg_duration": 1.471,
+          "success_count": 7,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 7,
+          "total_duration": 0.043,
+          "avg_duration": 0.006,
+          "success_count": 7,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.674,
+          "avg_duration": 0.674,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "RunORKGSPARQL": 7,
+        "FindResource": 7,
+        "FindByPredicateValue": 7,
+        "FindPredicate": 1
+      },
+      "calls": [
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.023,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:14.946587"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.622,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:16.046805"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:17.585003"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:19.009655"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:20.241278"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.674,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:21.922128"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.753,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:24.211407"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:24.807463"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.004,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:25.282209"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:25.918151"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:26.501344"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:27.696232"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:28.387101"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:28.941382"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.649,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:30.153078"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:31.077444"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:35.286994"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.762,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:38.290993"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.901,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:39.830396"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 2.775,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:43.384522"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.838,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:46.944822"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:52:47.612211"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nCount"
+  },
+  {
+    "question_id": 12,
+    "question": "Which energy sector is the most frequent for the studies?",
+    "gold_answer": "Heat sector\t8",
+    "predicted_answer": "Based on the information in my journal summary, I cannot determine which energy sector is most frequent for the studies.\n\n**Missing Information:** While I examined multiple papers and contributions, none of them contain explicit \"energy sector\" data. The papers I retrieved (R4084, R137137, R137141, etc.) are in the \"Power and Energy\" research field, but this is a research domain, not a specific energy sector classification. The contributions I examined do not have energy sector predicates like \"P37668\" or similar attributes that would allow me to count and compare different sectors (e.g., power, heat, gas, renewable).\n\n**Inference Attempt:** [INFERRED] Since all examined papers are in the \"Power and Energy\" research field, the power sector might be implied, but I lack explicit sector classifications to verify frequency across studies.\n\n**Conclusion:** The ORKG data I accessed does not contain explicit energy sector classifications for the studies I examined, so I cannot determine which sector is most frequent.",
+    "accuracy": false,
+    "elapsed_time": 82.36,
+    "token_usage": {
+      "prompt_tokens": 734826,
+      "completion_tokens": 9858,
+      "total_tokens": 744684
+    },
+    "tool_summary": {
+      "total_calls": 41,
+      "total_duration_seconds": 8.389,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 5,
+          "total_duration": 4.301,
+          "avg_duration": 0.86,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 4,
+          "total_duration": 0.051,
+          "avg_duration": 0.013,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 6,
+          "total_duration": 0.039,
+          "avg_duration": 0.006,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 10,
+          "total_duration": 0.094,
+          "avg_duration": 0.009,
+          "success_count": 10,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 9,
+          "total_duration": 0.051,
+          "avg_duration": 0.006,
+          "success_count": 9,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 5,
+          "total_duration": 3.832,
+          "avg_duration": 0.766,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 5,
+        "GetResearchFieldPapers": 1,
+        "FindByPredicateValue": 4,
+        "GetPaperContributions": 6,
+        "GetResourceSummary": 10,
+        "RunORKGSPARQL": 9,
+        "FindResource": 5,
+        "GetRelationTargets": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.668,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:01.276489"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:01.740208"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 2.719,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:05.225729"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.02,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:06.261392"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:06.853902"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:07.354658"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.429,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:09.707486"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:10.240063"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:11.060571"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:12.213633"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:12.741907"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:13.942053"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.603,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:15.125145"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:16.508633"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:18.005171"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:19.202360"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:19.742984"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:20.330109"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:20.916932"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:22.259531"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:22.833738"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.071,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:25.922681"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:27.315521"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.474,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:28.621414"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:31.237017"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.636,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:33.924710"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.59,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:41.228460"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:42.646980"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:43.237631"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:44.636611"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:46.156131"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.932,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:48.554810"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.021,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:49.961241"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:50.956816"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:52.687458"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:53:53.932651"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:01.390467"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:02.939739"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:04.642721"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:06.256721"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:07.440362"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nSuperlative"
+  },
+  {
+    "question_id": 13,
+    "question": "Which is the mostly used lead compound?",
+    "gold_answer": "\"Aurein 1.2\"",
+    "predicted_answer": "Based on the information in the Open Research Knowledge Graph, no data was found that identifies a specific lead compound as the \"mostly used.\" The predicate for lead compound (P35194) returned no values, and no resources contained frequency or usage counts for lead compounds. Therefore, the question cannot be answered from the available ORKG data.",
+    "accuracy": false,
+    "elapsed_time": 26.69,
+    "token_usage": {
+      "prompt_tokens": 159326,
+      "completion_tokens": 4661,
+      "total_tokens": 163987
+    },
+    "tool_summary": {
+      "total_calls": 15,
+      "total_duration_seconds": 3.736,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.639,
+          "avg_duration": 0.639,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 4,
+          "total_duration": 0.024,
+          "avg_duration": 0.006,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 5,
+          "total_duration": 3.022,
+          "avg_duration": 0.604,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 2,
+          "total_duration": 0.029,
+          "avg_duration": 0.014,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.004,
+          "avg_duration": 0.004,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 1,
+        "RunORKGSPARQL": 4,
+        "FindResource": 5,
+        "FindByPredicateValue": 2,
+        "GetResourceSummary": 2,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.639,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:25.062090"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:26.053632"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:26.648752"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:27.097079"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:27.637733"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.598,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:29.665313"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.022,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:31.148329"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.561,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:34.832658"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.818,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:36.606871"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.49,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:37.981906"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:38.851378"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.555,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:40.065380"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:40.744688"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:41.465391"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.004,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:42.272615"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nSuperlative"
+  },
+  {
+    "question_id": 14,
+    "question": "How is Bisphenol-A called alternatively?",
+    "gold_answer": "\"2,2-Bis(4-hydroxyphenyl)propane\"",
+    "predicted_answer": "Based on the information retrieved from the ORKG, the alternative name for Bisphenol‑A is **2,2‑Bis(4‑hydroxyphenyl)propane**.",
+    "accuracy": true,
+    "elapsed_time": 13.24,
+    "token_usage": {
+      "prompt_tokens": 48254,
+      "completion_tokens": 1295,
+      "total_tokens": 49549
+    },
+    "tool_summary": {
+      "total_calls": 7,
+      "total_duration_seconds": 3.062,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 3,
+          "total_duration": 3.036,
+          "avg_duration": 1.012,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 2,
+          "total_duration": 0.016,
+          "avg_duration": 0.008,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 3,
+        "GetResourceSummary": 2,
+        "GetResourceLabel": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.619,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:53.307578"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:54.564798"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.775,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:56.913785"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.642,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:58.170689"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:58.722705"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:54:59.316146"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:00.243384"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 15,
+    "question": "What is the year of the MedPost paper publication?",
+    "gold_answer": "\"2004\"",
+    "predicted_answer": "The MedPost paper was published in **2004**.",
+    "accuracy": true,
+    "elapsed_time": 14.16,
+    "token_usage": {
+      "prompt_tokens": 29101,
+      "completion_tokens": 548,
+      "total_tokens": 29649
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 0.692,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.674,
+          "avg_duration": 0.674,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 1,
+        "ManageJournal": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.674,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:18.952404"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:22.112829"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:22.594214"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:23.140953"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nTemporal"
+  },
+  {
+    "question_id": 16,
+    "question": "How many patients participate in the studies?",
+    "gold_answer": "6452",
+    "predicted_answer": "Based on the information retrieved from the ORKG, I found data for one specific study. That study involved **106 patients**.\n\nI could not find a comprehensive, aggregated total number of patients across all studies in the knowledge graph from my investigation.",
+    "accuracy": false,
+    "elapsed_time": 10.23,
+    "token_usage": {
+      "prompt_tokens": 41182,
+      "completion_tokens": 1025,
+      "total_tokens": 42207
+    },
+    "tool_summary": {
+      "total_calls": 5,
+      "total_duration_seconds": 0.602,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.554,
+          "avg_duration": 0.554,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.032,
+          "avg_duration": 0.032,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.002,
+          "avg_duration": 0.002,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 1,
+        "FindByPredicateValue": 1,
+        "GetResourceSummary": 1,
+        "RunORKGSPARQL": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.554,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:30.929976"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.032,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:31.908026"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:32.569929"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:33.266159"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:33.968443"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 17,
+    "question": "Are children in the demographic of the studies?",
+    "gold_answer": "TRUE",
+    "predicted_answer": "Based on the information discovered in the ORKG, **the answer is \"No.\"** The knowledge graph does not contain any data linking children to the demographic of studies. Multiple targeted searches for resources, predicates, and values related to \"children\" and \"study demographics\" returned no relevant connections or facts.",
+    "accuracy": false,
+    "elapsed_time": 40.01,
+    "token_usage": {
+      "prompt_tokens": 232468,
+      "completion_tokens": 6536,
+      "total_tokens": 239004
+    },
+    "tool_summary": {
+      "total_calls": 27,
+      "total_duration_seconds": 12.267,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 6,
+          "total_duration": 8.514,
+          "avg_duration": 1.419,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 5,
+          "total_duration": 3.615,
+          "avg_duration": 0.723,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 6,
+          "total_duration": 0.062,
+          "avg_duration": 0.01,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 6,
+          "total_duration": 0.04,
+          "avg_duration": 0.007,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 2,
+          "total_duration": 0.023,
+          "avg_duration": 0.011,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 6,
+        "FindResource": 5,
+        "FindByPredicateValue": 6,
+        "RunORKGSPARQL": 6,
+        "GetResourceSummary": 2,
+        "GetResourceDetails": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.567,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:42.313933"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.526,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:43.398379"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 5.304,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:49.329909"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.615,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:50.663464"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.018,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:51.188015"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.02,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:51.877324"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.484,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:52.835872"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:53.496732"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:54.079915"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.507,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:55.569733"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.742,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:57.198351"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.714,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:58.610093"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:55:59.458528"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:00.139998"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:00.789650"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.038,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:02.584393"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:04.679779"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:06.063541"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:06.792965"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.779,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:08.325763"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:09.025063"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:09.592831"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.853,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:12.091610"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:13.928516"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:14.513744"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:15.246904"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:15.899684"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 18,
+    "question": "What are extreme values of installed capacity grouped by energy source?",
+    "gold_answer": "hydropower\t0.0\t20.4\noffshore wind power\t0.0\t76.0\nonshore wind power\t28.3\t231.0\nbioenergy\t0.0\t50.0\nphotovoltaics\t15.7\t415.0\ngeothermics\t0.0\t6.4\nall sources\t137.4\t839.0\nothers\t0.0\t238.0",
+    "predicted_answer": "Based on my investigation of the Open Research Knowledge Graph, I cannot provide the extreme values of installed capacity grouped by energy source because:\n\n1. **No installed capacity values found**: Despite searching for contributions with installed capacity (predicate P43133), I found no actual numeric capacity values linked to energy sources.\n\n2. **No energy source associations**: While I identified resources related to \"installed capacity\" and \"energy source\" concepts, I found no connections between specific installed capacity values and their corresponding energy sources (predicate P43135).\n\n3. **Insufficient data**: The journal shows I explored 100 nodes but only found 2 entities with any data, neither of which contained the necessary installed capacity values or energy source groupings.\n\n**Conclusion**: The ORKG does not contain the specific data needed to answer this question—there are no installed capacity values linked to energy sources from which to calculate minimum and maximum values per source.",
+    "accuracy": false,
+    "elapsed_time": 100.62,
+    "token_usage": {
+      "prompt_tokens": 677381,
+      "completion_tokens": 12565,
+      "total_tokens": 689946
+    },
+    "tool_summary": {
+      "total_calls": 35,
+      "total_duration_seconds": 8.839,
+      "tool_breakdown": {
+        "RunORKGSPARQL": {
+          "count": 16,
+          "total_duration": 0.1,
+          "avg_duration": 0.006,
+          "success_count": 16,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 7,
+          "total_duration": 6.822,
+          "avg_duration": 0.975,
+          "success_count": 7,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 2,
+          "total_duration": 1.84,
+          "avg_duration": 0.92,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 3,
+          "total_duration": 0.021,
+          "avg_duration": 0.007,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.027,
+          "avg_duration": 0.009,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "FollowRelationPath": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "RunORKGSPARQL": 16,
+        "FindResource": 7,
+        "FindPredicate": 2,
+        "FindByPredicateValue": 3,
+        "GetResearchFieldPapers": 1,
+        "GetPaperContributions": 1,
+        "GetResourceSummary": 3,
+        "FollowRelationPath": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:34.138781"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.649,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:35.909035"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:37.031031"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.532,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:38.451115"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:39.665941"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:40.753695"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:42.226714"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:45.531672"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.247,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:48.450373"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:50.145673"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:51.930264"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.593,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:53.876445"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:55.879633"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-05T13:56:57.765316"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.962,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:00.010334"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:01.811840"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:03.377377"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:05.292444"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.798,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:09.043540"
+        },
+        {
+          "tool_name": "FollowRelationPath",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:12.649838"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:14.982327"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:17.537382"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:21.266500"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:23.469383"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:27.577304"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:30.271058"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.788,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:36.830267"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:39.235965"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:41.936794"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.449,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:45.709951"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:48.238039"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:50.664555"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:53.041435"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.644,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:56.072952"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-05T13:57:59.784313"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nRanking"
+  },
+  {
+    "question_id": 19,
+    "question": "List of sectors which are considered as energy sectors with corresponding frequencies?",
+    "gold_answer": "Heat sector\t10\nLiquid fuels sector\t5\nElectricity sector\t5\nGas sector\t5",
+    "predicted_answer": "Based on my investigation of the ORKG, I cannot provide a list of energy sectors with their corresponding frequencies.\n\n**Reason:** While I discovered several resources with labels containing \"sector\" (such as \"energy demand sector,\" \"electricity sector,\" \"Power sector,\" and \"energy transformation sector\"), none of these resources had any associated frequency data or numeric values attached to them in the knowledge graph. My searches for predicates related to \"frequency\" or \"percentage\" did not yield any connections between these sector resources and numerical frequency values.\n\n**Missing Information:** The ORKG does not contain the specific data pairing energy sector types with frequency values as requested in your question.",
+    "accuracy": false,
+    "elapsed_time": 54.39,
+    "token_usage": {
+      "prompt_tokens": 298066,
+      "completion_tokens": 6448,
+      "total_tokens": 304514
+    },
+    "tool_summary": {
+      "total_calls": 27,
+      "total_duration_seconds": 11.537,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 3,
+          "total_duration": 3.097,
+          "avg_duration": 1.032,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 7,
+          "total_duration": 8.079,
+          "avg_duration": 1.154,
+          "success_count": 7,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 6,
+          "total_duration": 0.079,
+          "avg_duration": 0.013,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 5,
+          "total_duration": 0.039,
+          "avg_duration": 0.008,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 5,
+          "total_duration": 0.236,
+          "avg_duration": 0.047,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "BatchGetResourceLabels": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 3,
+        "FindResource": 7,
+        "FindByPredicateValue": 6,
+        "GetResourceSummary": 5,
+        "RunORKGSPARQL": 5,
+        "BatchGetResourceLabels": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.552,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:15.934685"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.71,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:18.263838"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.607,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:20.818468"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.016,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:21.374577"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:21.978255"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.026,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:22.585886"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:23.109412"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:23.836994"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.49,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:25.842406"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:27.171395"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:29.476634"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:30.966235"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:31.905657"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.682,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:35.356637"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:36.130154"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.213,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:37.275997"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.608,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:38.943417"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.959,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:41.435860"
+        },
+        {
+          "tool_name": "BatchGetResourceLabels",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:42.266952"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:43.004341"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.757,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:44.476267"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:45.643479"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:48.497910"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:51.057362"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.938,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:56.270208"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.017,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:57.462926"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.873,
+          "success": true,
+          "timestamp": "2026-02-05T13:58:59.237496"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nCount"
+  }
+]

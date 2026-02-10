@@ -1,0 +1,44 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-06T12:15:07.767859",
+    "models_tested": 1,
+    "agents_tested": 1,
+    "total_runs": 1
+  },
+  "leaderboard": {
+    "by_accuracy": [
+      {
+        "rank": 1,
+        "model": "gpt-4.1-mini-kit",
+        "agent": "kqapro",
+        "accuracy": 0.45
+      }
+    ],
+    "by_speed": [
+      {
+        "rank": 1,
+        "model": "gpt-4.1-mini-kit",
+        "agent": "kqapro",
+        "avg_time_seconds": 43.44
+      }
+    ],
+    "by_efficiency": [
+      {
+        "rank": 1,
+        "model": "gpt-4.1-mini-kit",
+        "agent": "kqapro",
+        "accuracy_per_dollar": Infinity
+      }
+    ]
+  },
+  "results_matrix": {
+    "kqapro": {
+      "gpt-4.1-mini-kit": {
+        "accuracy": 0.45,
+        "avg_time": 43.44,
+        "total_tokens": 2429588,
+        "estimated_cost_usd": 0.0
+      }
+    }
+  }
+}

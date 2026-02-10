@@ -1,0 +1,29 @@
+{
+  "model": "qwen3-32b",
+  "agent": "sciqa",
+  "timestamp": "2026-02-09T01:40:05.262773",
+  "is_complete": true,
+  "statistics": {
+    "total_questions": 20,
+    "correct": 7,
+    "errors": 2,
+    "accuracy": 0.35,
+    "total_time_seconds": 2257.89,
+    "avg_time_seconds": 112.89,
+    "total_tokens": 1096124,
+    "avg_tokens": 54806.2,
+    "prompt_tokens": 1022880,
+    "completion_tokens": 73244,
+    "estimated_cost_usd": 0.1447,
+    "accuracy_by_type": {
+      "Non-factoid": 0.25,
+      "Factoid": 0.2857142857142857,
+      "Factoid\nCount": 0.5,
+      "Non-factoid\nCount\nNegation": 0.0,
+      "Non-factoid\nRanking": 0.0,
+      "Factoid\nSuperlative": 0.5,
+      "Factoid\nTemporal": 1.0,
+      "Non-factoid\nCount": 1.0
+    }
+  }
+}

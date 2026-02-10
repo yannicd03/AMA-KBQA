@@ -218,14 +218,11 @@ __marimo__/
 db/datasets/kqapro/test.json
 db/datasets/kqapro/train.json
 db/datasets/kqapro/val.json
-/batch_results
 /.claude
 claude.md
 .agent/
 /db/datasets/SciQA/**
 /paper
-/benchmark_results
 **.tex
 **.pdf
 **.log
-/used_results

@@ -1,0 +1,27 @@
+{
+  "model": "qwen3-32b",
+  "agent": "kqapro",
+  "timestamp": "2026-02-08T21:20:54.148958",
+  "is_complete": true,
+  "statistics": {
+    "total_questions": 20,
+    "correct": 16,
+    "errors": 2,
+    "accuracy": 0.8,
+    "total_time_seconds": 2715.71,
+    "avg_time_seconds": 135.79,
+    "total_tokens": 1336892,
+    "avg_tokens": 66844.6,
+    "prompt_tokens": 1278886,
+    "completion_tokens": 58006,
+    "estimated_cost_usd": 0.1709,
+    "accuracy_by_type": {
+      "Verify": 1.0,
+      "Query": 1.0,
+      "QueryRelationQualifier": 1.0,
+      "Select": 0.75,
+      "Count": 0.25,
+      "QueryRelation": 1.0
+    }
+  }
+}

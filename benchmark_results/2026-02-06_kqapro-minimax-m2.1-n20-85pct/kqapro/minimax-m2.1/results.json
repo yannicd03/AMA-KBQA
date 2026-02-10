@@ -1,0 +1,2476 @@
+[
+  {
+    "question_id": 0,
+    "question": "Was the Taliban established on 1994-01-01 ?",
+    "gold_answer": "yes",
+    "predicted_answer": "Yes, the Taliban was established on 1994-01-01. The knowledge graph confirms that the Taliban entity (Q42418) has an inception date of January 1, 1994.",
+    "accuracy": true,
+    "elapsed_time": 41.8,
+    "token_usage": {
+      "prompt_tokens": 47482,
+      "completion_tokens": 1236,
+      "total_tokens": 48718
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.268,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.222,
+          "avg_duration": 1.222,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.041,
+          "avg_duration": 0.041,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 1,
+          "total_duration": 0.005,
+          "avg_duration": 0.005,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetAttributeDetails": 1,
+        "VerifyNumericCondition": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.222,
+          "success": true,
+          "timestamp": "2026-02-06T14:13:09.667833"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.041,
+          "success": true,
+          "timestamp": "2026-02-06T14:13:11.949382"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-06T14:13:15.118888"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 1,
+    "question": "The person born as Chloe Ardelia Wofford has which KLfG Critical Dictionary of foreign contemporary literature designation?",
+    "gold_answer": "18000000318",
+    "predicted_answer": "Based on my investigation of the Knowledge Graph, **Chloe Ardelia Wofford** (better known as Toni Morrison) has the **KLfG Critical Dictionary of foreign contemporary literature** designation: **18000000318**.\n\nThis is the entry identifier for Toni Morrison in the KLfG (Kritisches Lexikon der fremdsprachigen Gegenwartsliteratur) Critical Dictionary of foreign contemporary literature.",
+    "accuracy": true,
+    "elapsed_time": 35.98,
+    "token_usage": {
+      "prompt_tokens": 45483,
+      "completion_tokens": 1735,
+      "total_tokens": 47218
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.696,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 1.686,
+          "avg_duration": 0.843,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetAttributeDetails": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.947,
+          "success": true,
+          "timestamp": "2026-02-06T14:13:56.831292"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.739,
+          "success": true,
+          "timestamp": "2026-02-06T14:13:59.655662"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:14:02.824351"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 2,
+    "question": "Does the state of India, whose FIPS 10-4 (countries and regions) is IN23, have an ISO 3166-2 code equal to GB-LEC?",
+    "gold_answer": "no",
+    "predicted_answer": "No, the state of India with FIPS 10-4 code IN23 does not have an ISO 3166-2 code equal to GB-LEC.\n\n**Answer:** No\n\n**Explanation:** The state with FIPS 10-4 code IN23 is Punjab, and its ISO 3166-2 code is IN-PB, which is different from GB-LEC.",
+    "accuracy": true,
+    "elapsed_time": 39.58,
+    "token_usage": {
+      "prompt_tokens": 49349,
+      "completion_tokens": 1865,
+      "total_tokens": 51214
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.051,
+      "tool_breakdown": {
+        "FindByAttribute": {
+          "count": 1,
+          "total_duration": 0.032,
+          "avg_duration": 0.032,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.014,
+          "avg_duration": 0.014,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 1,
+          "total_duration": 0.005,
+          "avg_duration": 0.005,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByAttribute": 1,
+        "GetNodeSummary": 1,
+        "VerifyNumericCondition": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.032,
+          "success": true,
+          "timestamp": "2026-02-06T14:14:36.574108"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-06T14:14:39.403812"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-06T14:14:43.603938"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 3,
+    "question": "Is the cost of the animated feature film titled Madagascar 3: Europe's Most Wanted less than 150000000 United States dollars?",
+    "gold_answer": "yes",
+    "predicted_answer": "**Yes**, the cost of the animated feature film titled Madagascar 3: Europe's Most Wanted is less than 150,000,000 United States dollars.\n\n**Based on the discovered data:**\n- The film's production cost is **$145,000,000** (145 million United States dollars)\n- This amount is **$5,000,000 less** than the $150,000,000 threshold specified in the question\n- Therefore, $145,000,000 < $150,000,000 is **true**",
+    "accuracy": true,
+    "elapsed_time": 50.64,
+    "token_usage": {
+      "prompt_tokens": 60948,
+      "completion_tokens": 1712,
+      "total_tokens": 62660
+    },
+    "tool_summary": {
+      "total_calls": 4,
+      "total_duration_seconds": 1.28,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.249,
+          "avg_duration": 1.249,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 2,
+          "total_duration": 0.021,
+          "avg_duration": 0.01,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetAttributeDetails": 1,
+        "VerifyNumericCondition": 2
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.249,
+          "success": true,
+          "timestamp": "2026-02-06T14:15:17.189980"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:15:19.447330"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:15:23.795209"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:15:31.734356"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 4,
+    "question": "Which website belongs to the association football club based in Brunswick,  twinned administrative body of Omaha?",
+    "gold_answer": "http://www.eintracht.com/",
+    "predicted_answer": "Based on my investigation, the website belonging to the association football club based in Brunswick (which is twinned with Omaha) is **http://www.eintracht.com/**. This is the official website of Eintracht Braunschweig, an association football club headquartered in Brunswick.",
+    "accuracy": true,
+    "elapsed_time": 81.74,
+    "token_usage": {
+      "prompt_tokens": 167450,
+      "completion_tokens": 3032,
+      "total_tokens": 170482
+    },
+    "tool_summary": {
+      "total_calls": 12,
+      "total_duration_seconds": 4.033,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 5,
+          "total_duration": 3.938,
+          "avg_duration": 0.788,
+          "success_count": 5,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 3,
+          "total_duration": 0.052,
+          "avg_duration": 0.017,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 2,
+          "total_duration": 0.029,
+          "avg_duration": 0.015,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.011,
+          "avg_duration": 0.011,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 5,
+        "GetRelationDetails": 3,
+        "GetNodeLabel": 2,
+        "GetAttributeDetails": 1,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:11.055478"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:13.231281"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.021,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:15.332141"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.804,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:18.015838"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.718,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:22.454251"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.72,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:25.054264"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.69,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:27.974018"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:33.517484"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:37.012556"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:38.462857"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.028,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:41.242878"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-06T14:16:44.617392"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 5,
+    "question": "Who is the nominee of Academy Award for Best Director for the work in The Thin Red Line (with George Clooney in the cast) ?",
+    "gold_answer": "Terrence Malick",
+    "predicted_answer": "Based on my investigation, the nominee of Academy Award for Best Director for the work in \"The Thin Red Line\" (which features George Clooney in the cast) is **Terrence Malick**.\n\nThis nomination was for the 71st Academy Awards.",
+    "accuracy": true,
+    "elapsed_time": 49.7,
+    "token_usage": {
+      "prompt_tokens": 50235,
+      "completion_tokens": 2302,
+      "total_tokens": 52537
+    },
+    "tool_summary": {
+      "total_calls": 8,
+      "total_duration_seconds": 2.49,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 3,
+          "total_duration": 2.441,
+          "avg_duration": 0.814,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 3,
+          "total_duration": 0.029,
+          "avg_duration": 0.01,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetQualifiersByPredicate": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 3,
+        "GetRelationDetails": 3,
+        "GetNodeLabel": 1,
+        "GetQualifiersByPredicate": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.994,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:36.117346"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.713,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:36.830510"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.734,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:37.564471"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:41.428371"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:41.437631"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:41.446847"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:45.313808"
+        },
+        {
+          "tool_name": "GetQualifiersByPredicate",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:17:45.324018"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "QueryRelationQualifier"
+  },
+  {
+    "question_id": 6,
+    "question": "Which movie is shorter, Bicentennial Man or Shanghai (the one whose duration is 75 minute)?",
+    "gold_answer": "Shanghai",
+    "predicted_answer": "Based on the information discovered, **Shanghai** (the 75-minute version) is the shorter movie.\n\n**Comparison:**\n- Bicentennial Man: 126 minutes\n- Shanghai: 75 minutes\n\nShanghai is 51 minutes shorter than Bicentennial Man.",
+    "accuracy": true,
+    "elapsed_time": 45.07,
+    "token_usage": {
+      "prompt_tokens": 47902,
+      "completion_tokens": 1535,
+      "total_tokens": 49437
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 2.653,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 2.611,
+          "avg_duration": 1.305,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 3,
+          "total_duration": 0.03,
+          "avg_duration": 0.01,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "CompareEntities": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetAttributeDetails": 3,
+        "CompareEntities": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.32,
+          "success": true,
+          "timestamp": "2026-02-06T14:18:36.944345"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.291,
+          "success": true,
+          "timestamp": "2026-02-06T14:18:38.236748"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.015,
+          "success": true,
+          "timestamp": "2026-02-06T14:18:43.253695"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:18:43.261741"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:18:43.268363"
+        },
+        {
+          "tool_name": "CompareEntities",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:18:47.471454"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 7,
+    "question": "How many masculine first names belong to a partner of Rose Byrne?",
+    "gold_answer": "1",
+    "predicted_answer": "Based on my investigation of the Knowledge Graph:\n\n**Answer: 1 masculine first name belongs to a partner of Rose Byrne.**\n\n**Reasoning:**\n1. Rose Byrne's partner is Bobby Cannavale (Q428819)\n2. Bobby Cannavale has one given name: \"Bobby\" (Q4564223)\n3. \"Bobby\" is traditionally a masculine name (typically a diminutive of Robert)\n\nTherefore, there is exactly **1** masculine first name belonging to Rose Byrne's partner.",
+    "accuracy": true,
+    "elapsed_time": 67.33,
+    "token_usage": {
+      "prompt_tokens": 152473,
+      "completion_tokens": 3076,
+      "total_tokens": 155549
+    },
+    "tool_summary": {
+      "total_calls": 9,
+      "total_duration_seconds": 2.02,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.944,
+          "avg_duration": 1.944,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 2,
+          "total_duration": 0.014,
+          "avg_duration": 0.007,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 3,
+          "total_duration": 0.035,
+          "avg_duration": 0.012,
+          "success_count": 3,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 2,
+        "GetNodeLabel": 2,
+        "GetNodeSummary": 1,
+        "RunSPARQL": 3
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.944,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:16.423505"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:18.798169"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:20.544300"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:22.484022"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:27.713816"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:30.802750"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.014,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:40.378266"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:43.538576"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:19:50.811727"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 8,
+    "question": "What college or university in the Eastern Time Zone of the United States has the most students?",
+    "gold_answer": "Virginia Tech",
+    "predicted_answer": "Based on my investigation of the knowledge graph, the **University of Florida** has the most students among colleges and universities in the Eastern Time Zone of the United States, with **49,500 students**.\n\n**Key evidence:**\n1. **Student count**: University of Florida (Q501758) has a `students_count` attribute value of 49,500.\n2. **Location verification**: University of Florida is located in Florida (Q812), and Florida is in the Eastern Time Zone (Q941023).\n3. **Comparison with other Eastern Time Zone universities**: Among US universities confirmed to be in the Eastern Time Zone, Virginia Tech has 28,470 students, Georgetown University has 17,500 students, University of Vermont has 13,097 students, and Carnegie Mellon University has 12,500 students - all significantly fewer than University of Florida's 49,500 students.\n\nTherefore, the University of Florida is the college/university in the Eastern Time Zone of the United States with the most students.",
+    "accuracy": false,
+    "elapsed_time": 249.02,
+    "token_usage": {
+      "prompt_tokens": 1007643,
+      "completion_tokens": 10665,
+      "total_tokens": 1018308
+    },
+    "tool_summary": {
+      "total_calls": 49,
+      "total_duration_seconds": 49.904,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 17,
+          "total_duration": 49.613,
+          "avg_duration": 2.918,
+          "success_count": 17,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 15,
+          "total_duration": 0.12,
+          "avg_duration": 0.008,
+          "success_count": 15,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 12,
+          "total_duration": 0.132,
+          "avg_duration": 0.011,
+          "success_count": 12,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 4,
+          "total_duration": 0.036,
+          "avg_duration": 0.009,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 17,
+        "GetNodeSummary": 15,
+        "RunSPARQL": 12,
+        "GetRelationDetails": 4,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.478,
+          "success": true,
+          "timestamp": "2026-02-06T14:20:27.312738"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.298,
+          "success": true,
+          "timestamp": "2026-02-06T14:20:28.610879"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:20:31.437162"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.474,
+          "success": true,
+          "timestamp": "2026-02-06T14:20:35.791363"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.329,
+          "success": true,
+          "timestamp": "2026-02-06T14:20:37.120841"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.454,
+          "success": true,
+          "timestamp": "2026-02-06T14:20:41.819802"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 23.354,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:05.173979"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:09.168926"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:14.075460"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:16.801493"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.015,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:19.655651"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:21.972724"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.89,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:31.883618"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 3.408,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:35.291996"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.6,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:36.893664"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:39.568499"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:41.616850"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:45.014089"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:45.020687"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.128,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:52.442267"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.224,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:53.666251"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.234,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:54.900417"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:58.235353"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:21:58.242763"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.295,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:04.380947"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.81,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:06.190725"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:09.893434"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:09.900513"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:16.207056"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:20.253662"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:25.319489"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:30.253737"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:37.529167"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.245,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:45.225127"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.728,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:45.953001"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.664,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:46.617968"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:49.348838"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:49.356025"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:49.362084"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-06T14:22:53.326536"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:03.959442"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:05.718753"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:10.346888"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:23.202319"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:25.517028"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:30.554141"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:37.338175"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:39.456993"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-06T14:23:50.681967"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 9,
+    "question": "How many countries contain a sport associated with a person that is the member of Livingston F.C. ?",
+    "gold_answer": "1",
+    "predicted_answer": "Based on my investigation, I can answer the question:\n\n**Answer: 0 countries**\n\n**Reasoning:**\n1. I found Livingston F.C. (Q867921) and discovered it has one member (Q7297816).\n2. This member is associated with the sport \"association football\" (Q2736).\n3. I attempted to find countries that contain this sport using multiple approaches:\n   - Looking for countries with the \"sport\" relation to Q2736\n   - Looking for countries with \"country_for_sport\" relation to Q2736  \n   - Looking for countries with \"practiced_by\" relation to Q2736\n   - Looking for countries with \"country_of_origin\" relation to Q2736\n4. All these queries returned 0 results, indicating that in this knowledge graph, there are no countries explicitly linked to football (Q2736) through these specific relations.\n\nThe question asks for \"countries contain a sport associated with a person that is the member of Livingston F.C.\" While the person is associated with football, and football exists as a sport entity, there are no country entities in this knowledge graph that are explicitly linked to containing this sport through the available relations.",
+    "accuracy": false,
+    "elapsed_time": 296.52,
+    "token_usage": {
+      "prompt_tokens": 958485,
+      "completion_tokens": 21176,
+      "total_tokens": 979661
+    },
+    "tool_summary": {
+      "total_calls": 17,
+      "total_duration_seconds": 3.075,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 2.901,
+          "avg_duration": 1.45,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 4,
+          "total_duration": 0.026,
+          "avg_duration": 0.007,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 2,
+          "total_duration": 0.02,
+          "avg_duration": 0.01,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 9,
+          "total_duration": 0.128,
+          "avg_duration": 0.014,
+          "success_count": 9,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetNodeSummary": 4,
+        "GetRelationDetails": 2,
+        "RunSPARQL": 9
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.911,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:31.756738"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:35.313631"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:37.248842"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:39.204385"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:43.865602"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:46.342134"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.04,
+          "success": true,
+          "timestamp": "2026-02-06T14:24:48.431670"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:05.509573"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:09.994606"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:14.556901"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:17.417683"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.99,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:23.608638"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.02,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:31.639894"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:36.952458"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:40.295557"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:45.582273"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:25:53.096260"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 10,
+    "question": "What is the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal, the well-known house music performer?",
+    "gold_answer": "1995",
+    "predicted_answer": "Based on my investigation, the time point applicable to the MTV Video Music Award nomination for Best Video from a Film going to Seal is **1995**.\n\nThis information was found in the qualifiers attached to the \"nominated for\" relation between Seal (Q218091) and the MTV Video Music Award for Best Video from a Film (Q1161109), which shows a \"point_in_time\" qualifier of 1995.",
+    "accuracy": true,
+    "elapsed_time": 39.43,
+    "token_usage": {
+      "prompt_tokens": 89104,
+      "completion_tokens": 2020,
+      "total_tokens": 91124
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 3.788,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 3.757,
+          "avg_duration": 1.879,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "BatchGetNodeLabels": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetQualifiersByPredicate": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetRelationDetails": 1,
+        "BatchGetNodeLabels": 1,
+        "GetNodeSummary": 1,
+        "GetQualifiersByPredicate": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.701,
+          "success": true,
+          "timestamp": "2026-02-06T14:29:33.320823"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.056,
+          "success": true,
+          "timestamp": "2026-02-06T14:29:37.048797"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:29:38.965037"
+        },
+        {
+          "tool_name": "BatchGetNodeLabels",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:29:41.270487"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:29:43.658356"
+        },
+        {
+          "tool_name": "GetQualifiersByPredicate",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:29:46.021011"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "QueryRelationQualifier"
+  },
+  {
+    "question_id": 11,
+    "question": "How many art movements are located in Paris (the one that is the main subject of An American in Paris) or have the Dewey Decimal Classification of 142.78?",
+    "gold_answer": "2",
+    "predicted_answer": "Based on my investigation of the knowledge graph:\n\n**Answer: 0 art movements**\n\n**Reasoning:**\n1. **Paris (Q90)** is confirmed as the main subject of \"An American in Paris\" ✓\n2. **existentialism (Q38066)** has Dewey Decimal Classification 142.78 ✓\n3. **1924 Summer Olympics (Q8132)** and **1900 Summer Olympics (Q8088)** are located in Paris ✓\n\nHowever:\n- existentialism is a **philosophical movement**, not an art movement\n- The Olympics are **sporting events**, not art movements\n- Searches for actual art movements (cubism, fauvism, dadaism, etc.) returned no results in the knowledge graph\n- SPARQL queries for art movements in Paris returned no results\n\nThe knowledge graph contains no entities classified as \"art movements\" that satisfy either condition (located in Paris OR having DDC 142.78).",
+    "accuracy": false,
+    "elapsed_time": 114.0,
+    "token_usage": {
+      "prompt_tokens": 363616,
+      "completion_tokens": 6305,
+      "total_tokens": 369921
+    },
+    "tool_summary": {
+      "total_calls": 26,
+      "total_duration_seconds": 11.184,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 11,
+          "total_duration": 11.038,
+          "avg_duration": 1.003,
+          "success_count": 11,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 6,
+          "total_duration": 0.051,
+          "avg_duration": 0.008,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 8,
+          "total_duration": 0.087,
+          "avg_duration": 0.011,
+          "success_count": 8,
+          "failure_count": 0
+        },
+        "BatchGetNodeLabels": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 11,
+        "GetNodeSummary": 6,
+        "RunSPARQL": 8,
+        "BatchGetNodeLabels": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.872,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:12.698637"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.399,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:14.098521"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.268,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:15.366867"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:19.054058"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:19.064212"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:19.071485"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.926,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:24.279220"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.73,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:25.012977"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:27.293755"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:32.604176"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.019,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:32.624395"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:36.728378"
+        },
+        {
+          "tool_name": "BatchGetNodeLabels",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:36.736023"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:40.196832"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:40.203599"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.763,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:44.899541"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.673,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:45.572613"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.643,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:46.216574"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:50.599738"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:55.920782"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:30:55.930054"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.093,
+          "success": true,
+          "timestamp": "2026-02-06T14:31:03.826670"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.944,
+          "success": true,
+          "timestamp": "2026-02-06T14:31:04.770184"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.727,
+          "success": true,
+          "timestamp": "2026-02-06T14:31:05.498257"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:31:11.475156"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:31:19.918828"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 12,
+    "question": "What is the visual artwork titled 紳士協定?",
+    "gold_answer": "Gentleman's Agreement",
+    "predicted_answer": "Based on my investigation of the knowledge graph, there is **no visual artwork** (painting, drawing, sculpture, etc.) titled \"紳士協定\" in the dataset.\n\nThe only entity with this Japanese title is **Gentleman's Agreement (Q898840)**, which is a **1947 American film** directed by Elia Kazan, with the following details:\n- **Title:** 紳士協定 (Japanese), \"Gentleman's Agreement\" (English)\n- **Publication date:** 1947-01-01\n- **Duration:** 118 minutes\n- **Type:** Film, not visual artwork\n\n**Answer:** There is no visual artwork titled \"紳士協定\" in this knowledge graph. The only entity with this title is the 1947 film \"Gentleman's Agreement.\"",
+    "accuracy": true,
+    "elapsed_time": 63.57,
+    "token_usage": {
+      "prompt_tokens": 145728,
+      "completion_tokens": 3205,
+      "total_tokens": 148933
+    },
+    "tool_summary": {
+      "total_calls": 8,
+      "total_duration_seconds": 10.962,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 6,
+          "total_duration": 10.935,
+          "avg_duration": 1.822,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 1,
+          "total_duration": 0.018,
+          "avg_duration": 0.018,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 6,
+        "GetNodeSummary": 1,
+        "RunSPARQL": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.419,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:09.077512"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.251,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:12.116677"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:14.768753"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.308,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:19.560272"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.905,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:24.824776"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.993,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:29.323191"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.059,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:34.066951"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.018,
+          "success": true,
+          "timestamp": "2026-02-06T14:32:41.566022"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 13,
+    "question": "How many public universities are designated by ISNI 0000 0001 2248 7639 or located at Columbia-Campus, Columbia, SC, 29208?",
+    "gold_answer": "2",
+    "predicted_answer": "Based on my investigation, there are **2 public universities** that meet the criteria:\n\n1. **Humboldt University of Berlin** - Designated by ISNI 0000 0001 2248 7639\n2. **University of South Carolina** - Located at Columbia-Campus, Columbia, SC, 29208 (confirmed by its `located_at_street_address` attribute)\n\nBoth universities are verified as public universities (type `ex:Q875538`), and each satisfies one of the OR conditions in the question.",
+    "accuracy": true,
+    "elapsed_time": 63.96,
+    "token_usage": {
+      "prompt_tokens": 138641,
+      "completion_tokens": 2596,
+      "total_tokens": 141237
+    },
+    "tool_summary": {
+      "total_calls": 13,
+      "total_duration_seconds": 12.009,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 6,
+          "total_duration": 9.034,
+          "avg_duration": 1.506,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "FindByAttribute": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 2,
+          "total_duration": 0.015,
+          "avg_duration": 0.007,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetSchemaForAttribute": {
+          "count": 1,
+          "total_duration": 2.925,
+          "avg_duration": 2.925,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "BatchGetNodeLabels": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 6,
+        "FindByAttribute": 1,
+        "GetNodeSummary": 2,
+        "GetSchemaForAttribute": 1,
+        "RunSPARQL": 2,
+        "BatchGetNodeLabels": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.705,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:10.785107"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.301,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:12.087048"
+        },
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:12.096983"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:15.534189"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.788,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:17.322606"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.315,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:18.638207"
+        },
+        {
+          "tool_name": "GetSchemaForAttribute",
+          "duration_seconds": 2.925,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:21.563675"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.669,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:26.331083"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.256,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:27.586758"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:35.769854"
+        },
+        {
+          "tool_name": "BatchGetNodeLabels",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:38.302126"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:40.971771"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:33:44.072498"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Count"
+  },
+  {
+    "question_id": 14,
+    "question": "Which has a larger population, Chesterfield or Hitchin?",
+    "gold_answer": "Hitchin",
+    "predicted_answer": "Based on the population data discovered in my investigation:\n\n**Hitchin has a larger population than Chesterfield.**\n\n- **Hitchin**: 34,266 people\n- **Chesterfield**: 10,688 people\n\nHitchin's population is more than three times larger than Chesterfield's.",
+    "accuracy": true,
+    "elapsed_time": 20.75,
+    "token_usage": {
+      "prompt_tokens": 37840,
+      "completion_tokens": 967,
+      "total_tokens": 38807
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.816,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 1.805,
+          "avg_duration": 0.903,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "CompareEntities": {
+          "count": 1,
+          "total_duration": 0.011,
+          "avg_duration": 0.011,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "CompareEntities": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.153,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:15.087079"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.652,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:15.739676"
+        },
+        {
+          "tool_name": "CompareEntities",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:18.664648"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 15,
+    "question": "For the award nominated to Tom Wilkinson (the one that is a cast member of Oscar and Lucinda) (the award-winning work of this statement is John Adams), is its establishment time not in 1911?",
+    "gold_answer": "yes",
+    "predicted_answer": "**Answer: Yes**\n\nBased on my investigation:\n1. Tom Wilkinson (cast member of \"Oscar and Lucinda\") received award Q945887 for his work on \"John Adams\"\n2. The award Q945887 has an establishment time (inception) of **1975**\n3. Since 1975 ≠ 1911, the award's establishment time is **not in 1911**\n\nTherefore, the answer to the question \"is its establishment time not in 1911?\" is **Yes**.",
+    "accuracy": true,
+    "elapsed_time": 85.02,
+    "token_usage": {
+      "prompt_tokens": 318912,
+      "completion_tokens": 4721,
+      "total_tokens": 323633
+    },
+    "tool_summary": {
+      "total_calls": 17,
+      "total_duration_seconds": 3.09,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 3,
+          "total_duration": 2.975,
+          "avg_duration": 0.992,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 6,
+          "total_duration": 0.043,
+          "avg_duration": 0.007,
+          "success_count": 6,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 3,
+          "total_duration": 0.027,
+          "avg_duration": 0.009,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 2,
+          "total_duration": 0.019,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 3,
+        "GetNodeSummary": 6,
+        "GetRelationDetails": 3,
+        "RunSPARQL": 2,
+        "GetAttributeDetails": 1,
+        "VerifyNumericCondition": 2
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.956,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:45.875449"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.175,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:47.052300"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 0.844,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:47.896766"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:50.007081"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:52.166426"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:34:54.915087"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:00.778514"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:00.785584"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:06.374247"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:10.135324"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:10.141756"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:12.563815"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:15.989879"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:28.760087"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:31.618680"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:36.315812"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:35:38.050090"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Verify"
+  },
+  {
+    "question_id": 16,
+    "question": "Among the animated feature film whose director is Pete Docter, which one has the smallest duration ?",
+    "gold_answer": "Monsters, Inc.",
+    "predicted_answer": "Based on the information discovered in my investigation:\n\n**Answer:** Among the animated feature films directed by Pete Docter, **Monsters, Inc.** has the smallest duration.\n\n**Supporting evidence from the journal:**\n- Monsters, Inc. (Q187726): Duration = 92 minutes\n- Up (Q174811): Duration = 96 minutes\n\nSince 92 minutes is less than 96 minutes, Monsters, Inc. is the animated feature film directed by Pete Docter with the smallest duration.",
+    "accuracy": true,
+    "elapsed_time": 34.54,
+    "token_usage": {
+      "prompt_tokens": 78813,
+      "completion_tokens": 1725,
+      "total_tokens": 80538
+    },
+    "tool_summary": {
+      "total_calls": 8,
+      "total_duration_seconds": 2.229,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 2.153,
+          "avg_duration": 2.153,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 2,
+          "total_duration": 0.031,
+          "avg_duration": 0.015,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 2,
+          "total_duration": 0.019,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "GetNodeSummary": 2,
+        "GetNodeLabel": 2,
+        "GetAttributeDetails": 2
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.153,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:09.386785"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:11.244412"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:13.527513"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:13.536635"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:15.337656"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.019,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:15.357646"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:18.376513"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:18.384510"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Select"
+  },
+  {
+    "question_id": 17,
+    "question": "What is the Golden Globe Award ceremony  received by the visual artwork with exploitation visa number 116230?",
+    "gold_answer": "64th Golden Globe Awards",
+    "predicted_answer": "Based on my investigation, the Golden Globe Award ceremony received by the visual artwork with exploitation visa number 116230 is **the 64th Golden Globe Awards**.\n\nHere's the evidence from my research:\n1. The visual artwork with exploitation visa number 116230 is the film **Borat** (Q186323).\n2. Borat received two awards: Satellite Awards 2007 (Q1716894) and **64th Golden Globe Awards** (Q761309).\n3. The 64th Golden Globe Awards is specifically identified as the Golden Globe Award ceremony in question.\n\nTherefore, the answer is: **64th Golden Globe Awards**.",
+    "accuracy": true,
+    "elapsed_time": 56.21,
+    "token_usage": {
+      "prompt_tokens": 204621,
+      "completion_tokens": 2523,
+      "total_tokens": 207144
+    },
+    "tool_summary": {
+      "total_calls": 10,
+      "total_duration_seconds": 7.822,
+      "tool_breakdown": {
+        "FindByAttribute": {
+          "count": 2,
+          "total_duration": 0.018,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindNode": {
+          "count": 2,
+          "total_duration": 5.191,
+          "avg_duration": 2.595,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "RunSPARQL": {
+          "count": 1,
+          "total_duration": 2.569,
+          "avg_duration": 2.569,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 2,
+          "total_duration": 0.017,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetQualifiersByPredicate": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByAttribute": 2,
+        "FindNode": 2,
+        "RunSPARQL": 1,
+        "GetNodeSummary": 1,
+        "GetRelationDetails": 1,
+        "GetNodeLabel": 2,
+        "GetQualifiersByPredicate": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:44.568402"
+        },
+        {
+          "tool_name": "FindByAttribute",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:46.039018"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.755,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:53.698359"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.436,
+          "success": true,
+          "timestamp": "2026-02-06T14:36:58.471078"
+        },
+        {
+          "tool_name": "RunSPARQL",
+          "duration_seconds": 2.569,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:03.007715"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:05.250322"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:07.192060"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:09.057132"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:11.611794"
+        },
+        {
+          "tool_name": "GetQualifiersByPredicate",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:14.567188"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 18,
+    "question": "What is the singles record for the person who is Mike Bryan's sibling?",
+    "gold_answer": "21–40",
+    "predicted_answer": "Based on my investigation, Mike Bryan's sibling is Bob Bryan. Bob Bryan's singles record is **21–40** (21 wins and 40 losses).",
+    "accuracy": true,
+    "elapsed_time": 30.38,
+    "token_usage": {
+      "prompt_tokens": 78328,
+      "completion_tokens": 1571,
+      "total_tokens": 79899
+    },
+    "tool_summary": {
+      "total_calls": 5,
+      "total_duration_seconds": 2.002,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 1,
+          "total_duration": 1.964,
+          "avg_duration": 1.964,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetAttributeDetails": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 1,
+          "total_duration": 0.013,
+          "avg_duration": 0.013,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 1,
+        "GetRelationDetails": 1,
+        "GetNodeSummary": 1,
+        "GetAttributeDetails": 1,
+        "GetNodeLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.964,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:42.628880"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:44.983923"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:47.503986"
+        },
+        {
+          "tool_name": "GetAttributeDetails",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:49.187027"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.013,
+          "success": true,
+          "timestamp": "2026-02-06T14:37:52.897376"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Query"
+  },
+  {
+    "question_id": 19,
+    "question": "Rajesh Khanna has what connection to Mumbai?",
+    "gold_answer": "place of death",
+    "predicted_answer": "Based on the information discovered in the knowledge graph, Rajesh Khanna's connection to Mumbai is that **he died there**. \n\nThe data shows:\n- Rajesh Khanna (Q107130) has a \"place of death\" relation pointing to Q1156\n- Q1156 is labeled as \"Mumbai\"\n- His date of death is recorded as 2012-07-18\n\nTherefore, Rajesh Khanna died in Mumbai.",
+    "accuracy": true,
+    "elapsed_time": 35.05,
+    "token_usage": {
+      "prompt_tokens": 93291,
+      "completion_tokens": 1684,
+      "total_tokens": 94975
+    },
+    "tool_summary": {
+      "total_calls": 7,
+      "total_duration_seconds": 4.056,
+      "tool_breakdown": {
+        "FindNode": {
+          "count": 2,
+          "total_duration": 4.009,
+          "avg_duration": 2.005,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetRelationDetails": {
+          "count": 2,
+          "total_duration": 0.021,
+          "avg_duration": 0.01,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeLabel": {
+          "count": 2,
+          "total_duration": 0.017,
+          "avg_duration": 0.009,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetNodeSummary": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindNode": 2,
+        "GetRelationDetails": 2,
+        "GetNodeLabel": 2,
+        "GetNodeSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 2.019,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:12.330836"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.011,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:14.841391"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:16.246764"
+        },
+        {
+          "tool_name": "GetNodeSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:19.101441"
+        },
+        {
+          "tool_name": "GetNodeLabel",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:22.837497"
+        },
+        {
+          "tool_name": "FindNode",
+          "duration_seconds": 1.99,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:24.828503"
+        },
+        {
+          "tool_name": "GetRelationDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-06T14:38:27.873588"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "QueryRelation"
+  }
+]

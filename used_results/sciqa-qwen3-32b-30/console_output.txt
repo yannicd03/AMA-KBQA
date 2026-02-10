@@ -1,0 +1,170 @@
+
+================================================================================
+Benchmarking: qwen3-32b on sciqa
+Questions: 20
+Timeout: 300s per question
+================================================================================
+
+  [0] INCORRECT | 185.9s
+      Gold: "http://orkg.org/orkg/resource/R75043", "Beetroot"
+      Pred: Based on the information discovered in the ORKG, the vegetable used in the process of betanin extraction is **blackcurrant**.
+
+This was found in the contribution linked to a paper on betanin extraction, where the vegetable source (predicate P35148) is specified as "Blackcurrant."
+  [1] CORRECT | 63.9s
+      Gold: NO ANSWER
+      Pred: Based on the information discovered in the knowledge graph, no research problem information is available for the paper "paper title".
+  [2] INCORRECT | 142.9s
+      Gold: Chris Grier
+Dawn Song
+Vern Paxson
+Chris Grier
+Michael Zhang
+Vern Paxson
+Chris Grier
+Frank Li
+Vern Paxson
+Alek Kolcz
+Chris Grier
+Damon McCoy
+Vern Paxson
+      Pred: Based on the information discovered in the ORKG, no author resource matching "Kurt Thomas" was found. Therefore, it is not possible to identify any co-authors.
+
+<final_answer>
+No co-authors can be identified because Kurt Thomas does not appear as an author in the ORKG knowledge graph.
+</final_answer>
+  [3] INCORRECT | 104.7s
+      Gold: 93.3125
+      Pred: Based on the information discovered, the mean efficiency obtained for the studies is **80%**.
+
+<final_answer>
+The mean efficiency obtained for the studies is 80%.
+</final_answer>
+  [4] INCORRECT | 229.5s
+      Gold: 1 %
+      Pred: Based on the information discovered: 100% of comparisons are without a class link.
+
+**Reasoning:** All 1132 comparisons in the ORKG lack the predicate "HasLink" (which was identified as the closest match for "class link"). Therefore, the percentage without a class link is 100%.
+  [5] INCORRECT | 254.9s
+      Gold: "http://orkg.org/orkg/resource/R154290", "LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia"
+"http://orkg.org/orkg/resource/R156119", "Question Answering Benchmarks for Wikidata"
+"http://orkg.org/orkg/resource/R156121", "The Web as a Knowledge-Base for Answering Complex Questions"
+      Pred: Based on the verified data in the ORKG, the question answering benchmarks with more than 10,000 questions are:
+
+1. **Question Answering Benchmark (simple question)** – 12,661 questions  
+2. **Question Answering Benchmark** – 24,585 questions  
+3. **R156123 (Open-domain complex questions)** – 34,689 questions  
+4. **Merge of SMART 2020 and SMART 2021 training dataset for AT task** – 67,714 questions  
+5. **SMART 2021 DBpedia training dataset for RL task** – 42,756 questions  
+6. **SMART 2021 Wikidata training dataset for RL task** – 30,141 questions  
+
+All six benchmarks have been confirmed to exceed 10,000 questions via the predicate `P41923` (Amount of Questions).
+  [6] ERROR: Timeout after 300s | 300.3s
+      Gold: “http://orkg.org/orkg/resource/R139751”, "How to present contested heritage in a digital archive?" 
+“http://orkg.org/orkg/resource/R139787”, "How to integrate participatory approaches in hertage diplomacy?"
+“http://orkg.org/orkg/resource/R139799”, "How walking methods can better illuminate post‐conflict space?"
+“http://orkg.org/orkg/resource/R139808”, "What characterises contested heritage?"
+“http://orkg.org/orkg/resource/R139809”, "What factors lead to heritage contestation?"
+“http://orkg.org/orkg/resource/R139830”, "How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?"
+“http://orkg.org/orkg/resource/R139833”, "How to define digital heritage interpretation?"
+“http://orkg.org/orkg/resource/R139867”, "What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?"
+“http://orkg.org/orkg/resource/R139935”, "developing an energy efficiency solution for a historicaal building"
+“http://orkg.org/orkg/resource/R139990”, "What are the reasons for the weak substantiation of cultural heritage in smart city strategies?"
+      Pred: None
+  [7] INCORRECT | 251.7s
+      Gold: hydropower	0.0	79.5
+offshore wind power	0.0	367.0
+onshore wind power	56.6	543.0
+bioenergy	0.0	60.0
+photovoltaics	14.9	425.0
+geothermics	0.0	50.0
+net import	-9.0	176.5
+import	0.0	176.5
+all sources	405.0	1438.0
+others	0.0	311.4
+      Pred: Based on the journal summary, here is what was discovered:
+
+**Available Information:**
+1. **Comparison Resource R153923**: Described as "This image shows the reported energy generation in terawatt-hours of the compared studies for all sources."
+2. **Resource R153818**: Described as "This image shows the reported energy generation in terawatt-hours of the compared studies for others."
+3. **Energy export (R154251)**: A resource related to energy export.
+4. **Reported Energy Generation [TWh] of Compared Studies (R153800)**: A resource about energy generation in terawatt-hours.
+
+**Missing Information:**
+- No actual numerical capacity values or boundaries for specific energy sources
+- No power output intervals for energy source installment types
+- No contributions linked to the comparison resources with measurable data
+- No energy source categories with associated capacity ranges
+
+**Direct Answer:**
+The journal contains descriptions of comparison resources showing energy generation in terawatt-hours, but **no specific numerical boundaries or intervals** for energy production capacities by source type were found. The resources describe comparative studies of energy generation, but the actual capacity values for individual energy sources are not available in the discovered data.
+  [8] INCORRECT | 153.6s
+      Gold: "http://orkg.org/orkg/resource/R144264", "Liposomes"
+"http://orkg.org/orkg/resource/R144267", "Lipid nanocapsules"
+"http://orkg.org/orkg/resource/R144361", "Nano-lipid carrier"
+"http://orkg.org/orkg/resource/R144362", "Extracellular vesicles"
+      Pred: Based on the information discovered in the ORKG, therapeutic effects occur for nanocarriers categorized by their particle size. Specifically, the study identified three types:
+
+1. **200 nm nanoparticles (NPs 200)**
+2. **500 nm nanoparticles (NPs 500)**
+3. **900 nm nanoparticles (NPs 900)**
+
+Among these, **900 nm nanoparticles** showed the strongest therapeutic efficacy, particularly for anti-inflammatory activity and treatment of ulcerative colitis.
+  [9] CORRECT | 52.2s
+      Gold: no
+      Pred: No
+  [10] INCORRECT | 105.2s
+      Gold: TRUE
+      Pred: No, integrity constraints are not involved in OWLMAP.
+  [11] CORRECT | 258.3s
+      Gold: 2
+      Pred: Based on the information discovered, the number of studies that make use of Chloride as a major anion is **2**.
+
+$\boxed{2}$
+  [12] INCORRECT | 279.6s
+      Gold: Heat sector	8
+      Pred: Based on the information in my journal summary, I cannot determine which energy sector is the most frequent for the studies. The summary shows 10 papers in the Energy research field, but none of them have been analyzed for their specific energy sector classification (e.g., electricity, transportation, heating, etc.). The papers listed focus on electricity load forecasting and renewable energy, but without systematic analysis of sector frequency across all studies, I cannot identify the most frequent sector.
+
+<final_answer>
+The data needed to determine the most frequent energy sector across studies is not available in the explored information. The journal contains papers in the Energy field but no systematic classification of their energy sectors.</final_answer>
+  [13] ERROR: Timeout after 300s | 300.0s
+      Gold: "Aurein 1.2"
+      Pred: None
+  [14] CORRECT | 52.5s
+      Gold: "2,2-Bis(4-hydroxyphenyl)propane"
+      Pred: Based on the information in my journal summary, the alternative name for Bisphenol-A is **2,2-Bis(4-hydroxyphenyl)propane**.
+  [15] CORRECT | 154.8s
+      Gold: "2004"
+      Pred: Based on the verified information in my journal summary, the publication year for the MedPost paper is **2004**.
+
+<final_answer>
+2004
+</final_answer>
+  [16] INCORRECT | 276.8s
+      Gold: 6452
+      Pred: Based on the verified information in my journal, the total number of patients participating in the studies is **127,240**.
+  [17] INCORRECT | 135.5s
+      Gold: TRUE
+      Pred: FALSE
+  [18] ERROR: Timeout after 300s | 357.1s
+      Gold: hydropower	0.0	20.4
+offshore wind power	0.0	76.0
+onshore wind power	28.3	231.0
+bioenergy	0.0	50.0
+photovoltaics	15.7	415.0
+geothermics	0.0	6.4
+all sources	137.4	839.0
+others	0.0	238.0
+      Pred: None
+  [19] CORRECT | 197.8s
+      Gold: Heat sector	10
+Liquid fuels sector	5
+Electricity sector	5
+Gas sector	5
+      Pred: Based on my investigation of the ORKG, here are the energy sectors with their corresponding frequencies:
+
+1. **Heat sector** - 10 occurrences
+2. **Liquid fuels sector** - 5 occurrences  
+3. **Gas sector** - 5 occurrences
+4. **Electricity sector** - 5 occurrences
+
+These frequencies represent the count of resources associated with each energy sector via the "models energy sector" predicate (P37668) in the knowledge graph.

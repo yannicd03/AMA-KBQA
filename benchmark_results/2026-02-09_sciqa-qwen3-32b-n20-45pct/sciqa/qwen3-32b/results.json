@@ -1,0 +1,1842 @@
+[
+  {
+    "question_id": 0,
+    "question": "What vegetables are used in the process of betanin extraction?",
+    "gold_answer": "\"http://orkg.org/orkg/resource/R75043\", \"Beetroot\"",
+    "predicted_answer": "Based on the information discovered in the ORKG, **beetroot** is the vegetable used in the process of betanin extraction. This is directly supported by the pre-analysis and the presence of the \"Beetroot\" resource (R75043) found during the investigation.",
+    "accuracy": true,
+    "elapsed_time": 179.52,
+    "token_usage": {
+      "prompt_tokens": 52456,
+      "completion_tokens": 4542,
+      "total_tokens": 56998
+    },
+    "tool_summary": {
+      "total_calls": 5,
+      "total_duration_seconds": 1.677,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 2,
+          "total_duration": 1.652,
+          "avg_duration": 0.826,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 2,
+        "GetPaperContributions": 1,
+        "GetResourceSummary": 1,
+        "RunORKGSPARQL": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.991,
+          "success": true,
+          "timestamp": "2026-02-09T15:17:33.193619"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:18:06.239907"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:18:31.297138"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-09T15:18:56.403519"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.661,
+          "success": true,
+          "timestamp": "2026-02-09T15:19:44.119616"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 1,
+    "question": "Which research problem does the paper \"paper title\" address?",
+    "gold_answer": "NO ANSWER",
+    "predicted_answer": "The paper \"paper title\" could not be matched to a specific research paper resource in the ORKG. Therefore, the research problem it addresses cannot be determined from the available data.",
+    "accuracy": true,
+    "elapsed_time": 79.43,
+    "token_usage": {
+      "prompt_tokens": 57173,
+      "completion_tokens": 4145,
+      "total_tokens": 61318
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 0.719,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.696,
+          "avg_duration": 0.696,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.017,
+          "avg_duration": 0.006,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 2,
+          "total_duration": 0.006,
+          "avg_duration": 0.003,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 3,
+        "ManageJournal": 2
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.696,
+          "success": true,
+          "timestamp": "2026-02-09T15:20:22.553818"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-09T15:20:32.551995"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:20:37.850476"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-09T15:20:46.550297"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:21:07.787910"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-09T15:21:16.530512"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 2,
+    "question": "Who are the authors that Kurt Thomas has written research papers with?",
+    "gold_answer": "Chris Grier\nDawn Song\nVern Paxson\nChris Grier\nMichael Zhang\nVern Paxson\nChris Grier\nFrank Li\nVern Paxson\nAlek Kolcz\nChris Grier\nDamon McCoy\nVern Paxson",
+    "predicted_answer": "Based on the investigation, no authors co-writing research papers with Kurt Thomas were found in the Open Research Knowledge Graph.",
+    "accuracy": false,
+    "elapsed_time": 47.51,
+    "token_usage": {
+      "prompt_tokens": 24868,
+      "completion_tokens": 2116,
+      "total_tokens": 26984
+    },
+    "tool_summary": {
+      "total_calls": 2,
+      "total_duration_seconds": 0.746,
+      "tool_breakdown": {
+        "FindAuthorPapers": {
+          "count": 1,
+          "total_duration": 0.016,
+          "avg_duration": 0.016,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.73,
+          "avg_duration": 0.73,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindAuthorPapers": 1,
+        "FindResource": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindAuthorPapers",
+          "duration_seconds": 0.016,
+          "success": true,
+          "timestamp": "2026-02-09T15:21:58.317068"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.73,
+          "success": true,
+          "timestamp": "2026-02-09T15:22:07.958869"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 3,
+    "question": "What mean efficency is obtained for the studies?",
+    "gold_answer": "93.3125",
+    "predicted_answer": "Based on the SPARQL query result in the journal summary, the mean efficiency obtained across the studies is **0.9883** (approximately 98.83%).\n\n$$\n\\boxed{0.9883}\n$$",
+    "accuracy": false,
+    "elapsed_time": 87.77,
+    "token_usage": {
+      "prompt_tokens": 75305,
+      "completion_tokens": 4364,
+      "total_tokens": 79669
+    },
+    "tool_summary": {
+      "total_calls": 8,
+      "total_duration_seconds": 1.257,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.69,
+          "avg_duration": 0.69,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 2,
+          "total_duration": 0.015,
+          "avg_duration": 0.007,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.528,
+          "avg_duration": 0.528,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetComparisonContributions": {
+          "count": 2,
+          "total_duration": 0.011,
+          "avg_duration": 0.005,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 2,
+        "FindByPredicateValue": 1,
+        "FindPredicate": 1,
+        "GetComparisonContributions": 2,
+        "RunORKGSPARQL": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.69,
+          "success": true,
+          "timestamp": "2026-02-09T15:22:41.354229"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:22:57.562335"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:23:06.613156"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:23:15.564910"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.528,
+          "success": true,
+          "timestamp": "2026-02-09T15:23:22.590950"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:23:31.234413"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-09T15:23:35.368656"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:23:45.907318"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nCount"
+  },
+  {
+    "question_id": 4,
+    "question": "What percentage of comparisons is without class link?",
+    "gold_answer": "1 %",
+    "predicted_answer": "Based on the information discovered: **100% of comparisons are without a class link** (1132 out of 1132 comparisons).",
+    "accuracy": false,
+    "elapsed_time": 178.57,
+    "token_usage": {
+      "prompt_tokens": 85258,
+      "completion_tokens": 7810,
+      "total_tokens": 93068
+    },
+    "tool_summary": {
+      "total_calls": 9,
+      "total_duration_seconds": 2.388,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 2.327,
+          "avg_duration": 2.327,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 4,
+          "total_duration": 0.044,
+          "avg_duration": 0.011,
+          "success_count": 4,
+          "failure_count": 0
+        },
+        "VerifyNumericCondition": {
+          "count": 2,
+          "total_duration": 0.006,
+          "avg_duration": 0.003,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 1,
+          "total_duration": 0.003,
+          "avg_duration": 0.003,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 1,
+        "RunORKGSPARQL": 4,
+        "VerifyNumericCondition": 2,
+        "GetResourceSummary": 1,
+        "ManageJournal": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 2.327,
+          "success": true,
+          "timestamp": "2026-02-09T15:24:24.197078"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:24:38.068914"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.02,
+          "success": true,
+          "timestamp": "2026-02-09T15:24:48.511738"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-09T15:24:53.339621"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-09T15:25:13.620410"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:25:55.384883"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:26:15.597299"
+        },
+        {
+          "tool_name": "VerifyNumericCondition",
+          "duration_seconds": 0.004,
+          "success": true,
+          "timestamp": "2026-02-09T15:26:27.757724"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.003,
+          "success": true,
+          "timestamp": "2026-02-09T15:26:39.710276"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nCount\nNegation"
+  },
+  {
+    "question_id": 5,
+    "question": "What is the list of question answering benchmarks with more than 10000 questions?",
+    "gold_answer": "\"http://orkg.org/orkg/resource/R154290\", \"LC-QuAD 2.0: A Large Dataset for Complex Question Answering over Wikidata and DBpedia\"\n\"http://orkg.org/orkg/resource/R156119\", \"Question Answering Benchmarks for Wikidata\"\n\"http://orkg.org/orkg/resource/R156121\", \"The Web as a Knowledge-Base for Answering Complex Questions\"",
+    "predicted_answer": "Based on the information discovered in the ORKG, the question-answering benchmarks with more than 10,000 questions are:\n\n1. **R220786** (Question Answering Benchmark - simple question) - 12,661 questions\n2. **R220788** (Question Answering Benchmark) - 24,585 questions  \n3. **R156123** - 34,689 questions\n\nThese three benchmarks all have an \"Amount of Questions\" (P41923) value greater than 10,000.",
+    "accuracy": false,
+    "elapsed_time": 125.17,
+    "token_usage": {
+      "prompt_tokens": 55773,
+      "completion_tokens": 4461,
+      "total_tokens": 60234
+    },
+    "tool_summary": {
+      "total_calls": 5,
+      "total_duration_seconds": 0.04,
+      "tool_breakdown": {
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.012,
+          "avg_duration": 0.012,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.026,
+          "avg_duration": 0.009,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetJournalSummary": {
+          "count": 1,
+          "total_duration": 0.002,
+          "avg_duration": 0.002,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByPredicateValue": 1,
+        "GetResourceSummary": 3,
+        "GetJournalSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-09T15:27:36.947858"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:27:46.291970"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:27:57.015835"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:28:09.909256"
+        },
+        {
+          "tool_name": "GetJournalSummary",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-09T15:28:39.044295"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 6,
+    "question": "What are the research challenges in the domain of Cultural History?",
+    "gold_answer": "“http://orkg.org/orkg/resource/R139751”, \"How to present contested heritage in a digital archive?\" \n“http://orkg.org/orkg/resource/R139787”, \"How to integrate participatory approaches in hertage diplomacy?\"\n“http://orkg.org/orkg/resource/R139799”, \"How walking methods can better illuminate post‐conflict space?\"\n“http://orkg.org/orkg/resource/R139808”, \"What characterises contested heritage?\"\n“http://orkg.org/orkg/resource/R139809”, \"What factors lead to heritage contestation?\"\n“http://orkg.org/orkg/resource/R139830”, \"How to connect the scholarly modes of communication and stakeholder-led participatory cultures in difficult heritage?\"\n“http://orkg.org/orkg/resource/R139833”, \"How to define digital heritage interpretation?\"\n“http://orkg.org/orkg/resource/R139867”, \"What is the tole of conservation of cultural heritage in the progres towards UN Development Goals?\"\n“http://orkg.org/orkg/resource/R139935”, \"developing an energy efficiency solution for a historicaal building\"\n“http://orkg.org/orkg/resource/R139990”, \"What are the reasons for the weak substantiation of cultural heritage in smart city strategies?\"",
+    "predicted_answer": "Based on the information discovered in the ORKG, one specific research challenge in the domain of Cultural History is:\n\n**How to present contested heritage in a digital archive?**\n\nThis challenge was identified from a paper titled \"Public History and Contested Heritage: Archival Memories of the Bombing of Italy\" (R139736), where it is listed as the research problem (P0) addressed by the contribution.\n\nThe investigation did not retrieve a comprehensive list of all research challenges in Cultural History. Further exploration of problems linked to other papers in this field would be required to identify additional challenges.",
+    "accuracy": true,
+    "elapsed_time": 84.98,
+    "token_usage": {
+      "prompt_tokens": 67192,
+      "completion_tokens": 3911,
+      "total_tokens": 71103
+    },
+    "tool_summary": {
+      "total_calls": 7,
+      "total_duration_seconds": 0.765,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.705,
+          "avg_duration": 0.705,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.022,
+          "avg_duration": 0.022,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 1,
+          "total_duration": 0.008,
+          "avg_duration": 0.008,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetPaperContributions": {
+          "count": 2,
+          "total_duration": 0.013,
+          "avg_duration": 0.007,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 1,
+        "GetResearchFieldPapers": 1,
+        "GetRelationTargets": 1,
+        "GetPaperContributions": 2,
+        "GetResourceDetails": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.705,
+          "success": true,
+          "timestamp": "2026-02-09T15:29:28.302266"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:29:38.757055"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.022,
+          "success": true,
+          "timestamp": "2026-02-09T15:29:50.370281"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:30:04.835113"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:30:10.816253"
+        },
+        {
+          "tool_name": "GetPaperContributions",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:30:21.047024"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:30:25.551833"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 7,
+    "question": "- What are the boundaries of energy production capacities for each energy source?\n- In what interval lie the power output capabilities of every considered energy source installment type?",
+    "gold_answer": "hydropower\t0.0\t79.5\noffshore wind power\t0.0\t367.0\nonshore wind power\t56.6\t543.0\nbioenergy\t0.0\t60.0\nphotovoltaics\t14.9\t425.0\ngeothermics\t0.0\t50.0\nnet import\t-9.0\t176.5\nimport\t0.0\t176.5\nall sources\t405.0\t1438.0\nothers\t0.0\t311.4",
+    "predicted_answer": "Based on the investigation of the ORKG, **no specific capacity boundaries or power output intervals were found** for energy sources or installation types.\n\n**What was discovered:**\n1. **Comparison resources** were identified (R153923, R153800, R153803, R153818, R153804) with labels like \"Reported Energy Generation [TWh] of Compared Studies\" and \"Reported Installed Capacity [GW] of Compared Studies\"\n2. **Installed capacity resources** were found (R153779, R153794, R153788, R153785, R153791) with the label \"Installed capacity\"\n3. **Predicates** were identified: P43135 (\"Has energy sources\") and P43133 (\"installed capacity\")\n\n**What is missing:**\n- No actual capacity values or numeric boundaries were retrieved\n- No energy source classifications were found\n- No installation type classifications were discovered\n- All comparison resources returned 0 contributions when queried\n- No power output capability intervals were located\n\nThe ORKG contains metadata about capacity comparisons but lacks the specific numeric boundaries and intervals requested in the question.",
+    "accuracy": false,
+    "elapsed_time": 113.49,
+    "token_usage": {
+      "prompt_tokens": 75589,
+      "completion_tokens": 6048,
+      "total_tokens": 81637
+    },
+    "tool_summary": {
+      "total_calls": 7,
+      "total_duration_seconds": 3.112,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 2,
+          "total_duration": 1.616,
+          "avg_duration": 0.808,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 2,
+          "total_duration": 0.011,
+          "avg_duration": 0.005,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 2,
+          "total_duration": 1.479,
+          "avg_duration": 0.74,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetComparisonContributions": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 2,
+        "RunORKGSPARQL": 2,
+        "FindResource": 2,
+        "GetComparisonContributions": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.856,
+          "success": true,
+          "timestamp": "2026-02-09T15:30:55.397063"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:31:12.546363"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.606,
+          "success": true,
+          "timestamp": "2026-02-09T15:31:25.037040"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:31:31.657261"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-09T15:31:43.415170"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.76,
+          "success": true,
+          "timestamp": "2026-02-09T15:31:53.102237"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.873,
+          "success": true,
+          "timestamp": "2026-02-09T15:32:01.324545"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nRanking"
+  },
+  {
+    "question_id": 8,
+    "question": "For what nanocarries types does therapeutic effect occur?",
+    "gold_answer": "\"http://orkg.org/orkg/resource/R144264\", \"Liposomes\"\n\"http://orkg.org/orkg/resource/R144267\", \"Lipid nanocapsules\"\n\"http://orkg.org/orkg/resource/R144361\", \"Nano-lipid carrier\"\n\"http://orkg.org/orkg/resource/R144362\", \"Extracellular vesicles\"",
+    "predicted_answer": "Based on the journal summary, the nanocarrier types for which therapeutic effect occurs are:\n\n1. **Solid lipid nanoparticles** (from Contribution R144338, P41740: \"Solid lipid nanoparticles\", P41743: \"F\")\n2. **Lipid micelles** (from Contribution R144270, P41740: \"Lipid micelles\", P41743: \"F\")\n\nBoth contributions explicitly list the predicate P41743 (\"Therapeutic effects of the carrier\") with value \"F\", indicating therapeutic effect is present for these nanocarrier types.",
+    "accuracy": false,
+    "elapsed_time": 148.23,
+    "token_usage": {
+      "prompt_tokens": 92787,
+      "completion_tokens": 5343,
+      "total_tokens": 98130
+    },
+    "tool_summary": {
+      "total_calls": 9,
+      "total_duration_seconds": 1.578,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.877,
+          "avg_duration": 0.877,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetComparisonContributions": {
+          "count": 2,
+          "total_duration": 0.031,
+          "avg_duration": 0.015,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.626,
+          "avg_duration": 0.626,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.023,
+          "avg_duration": 0.008,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 2,
+          "total_duration": 0.021,
+          "avg_duration": 0.01,
+          "success_count": 2,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetComparisonContributions": 2,
+        "FindPredicate": 1,
+        "GetResourceSummary": 3,
+        "GetResourceDetails": 2
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.877,
+          "success": true,
+          "timestamp": "2026-02-09T15:33:04.757130"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:33:12.081195"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.626,
+          "success": true,
+          "timestamp": "2026-02-09T15:33:24.778932"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.023,
+          "success": true,
+          "timestamp": "2026-02-09T15:33:33.567725"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:33:45.052222"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:33:52.213018"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:34:02.527117"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.012,
+          "success": true,
+          "timestamp": "2026-02-09T15:34:15.943640"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:34:40.369376"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid"
+  },
+  {
+    "question_id": 9,
+    "question": "Can ViCoMap aggregate?",
+    "gold_answer": "no",
+    "predicted_answer": "No.",
+    "accuracy": true,
+    "elapsed_time": 44.13,
+    "token_usage": {
+      "prompt_tokens": 34064,
+      "completion_tokens": 2400,
+      "total_tokens": 36464
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 0.678,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.669,
+          "avg_duration": 0.669,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 1,
+          "total_duration": 0.002,
+          "avg_duration": 0.002,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 1,
+        "ManageJournal": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.669,
+          "success": true,
+          "timestamp": "2026-02-09T15:35:29.183615"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:35:34.869116"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.002,
+          "success": true,
+          "timestamp": "2026-02-09T15:35:38.356961"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 10,
+    "question": "Are integrity constraints involved in OWLMAP?",
+    "gold_answer": "TRUE",
+    "predicted_answer": "Based on the information discovered in the ORKG, the answer is **No**.\n\nThe investigation found the OWLMAP resource (R139909) but found no evidence linking it to integrity constraints. Specifically, a search for the predicate P41333 (which represents integrity constraints) with the value \"OWLMAP\" returned zero results.",
+    "accuracy": false,
+    "elapsed_time": 181.84,
+    "token_usage": {
+      "prompt_tokens": 48621,
+      "completion_tokens": 6115,
+      "total_tokens": 54736
+    },
+    "tool_summary": {
+      "total_calls": 5,
+      "total_duration_seconds": 1.83,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 1.264,
+          "avg_duration": 1.264,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.015,
+          "avg_duration": 0.015,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceDetails": {
+          "count": 1,
+          "total_duration": 0.01,
+          "avg_duration": 0.01,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.535,
+          "avg_duration": 0.535,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 1,
+        "FindByPredicateValue": 1,
+        "GetResourceDetails": 1,
+        "RunORKGSPARQL": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.264,
+          "success": true,
+          "timestamp": "2026-02-09T15:36:41.857435"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:36:52.017454"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.015,
+          "success": true,
+          "timestamp": "2026-02-09T15:37:22.420120"
+        },
+        {
+          "tool_name": "GetResourceDetails",
+          "duration_seconds": 0.01,
+          "success": true,
+          "timestamp": "2026-02-09T15:38:15.194832"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.535,
+          "success": true,
+          "timestamp": "2026-02-09T15:38:57.716766"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 11,
+    "question": "What is the number of studies that make use of Chloride as a major anion?",
+    "gold_answer": "2",
+    "predicted_answer": "Based on the information discovered in the ORKG, the number of studies that make use of Chloride as a major anion is **2**.",
+    "accuracy": true,
+    "elapsed_time": 221.28,
+    "token_usage": {
+      "prompt_tokens": 58738,
+      "completion_tokens": 6617,
+      "total_tokens": 65355
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 2.4,
+      "tool_breakdown": {
+        "RunORKGSPARQL": {
+          "count": 3,
+          "total_duration": 0.023,
+          "avg_duration": 0.008,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 1,
+          "total_duration": 1.643,
+          "avg_duration": 1.643,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.727,
+          "avg_duration": 0.727,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "RunORKGSPARQL": 3,
+        "FindResource": 1,
+        "FindPredicate": 1,
+        "FindByPredicateValue": 1
+      },
+      "calls": [
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:40:22.259250"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.643,
+          "success": true,
+          "timestamp": "2026-02-09T15:40:54.536090"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.727,
+          "success": true,
+          "timestamp": "2026-02-09T15:41:17.365281"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:41:42.252139"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:42:19.897959"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:42:36.974897"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nCount"
+  },
+  {
+    "question_id": 12,
+    "question": "Which energy sector is the most frequent for the studies?",
+    "gold_answer": "Heat sector\t8",
+    "predicted_answer": "Based on the information in the journal summary, the most frequent energy sector for the studies is **Heat sector**.",
+    "accuracy": true,
+    "elapsed_time": 134.35,
+    "token_usage": {
+      "prompt_tokens": 68676,
+      "completion_tokens": 4054,
+      "total_tokens": 72730
+    },
+    "tool_summary": {
+      "total_calls": 7,
+      "total_duration_seconds": 2.381,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 1.554,
+          "avg_duration": 1.554,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetComparisonContributions": {
+          "count": 2,
+          "total_duration": 0.011,
+          "avg_duration": 0.005,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 0.799,
+          "avg_duration": 0.799,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.004,
+          "avg_duration": 0.004,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetResourceSummary": 1,
+        "GetComparisonContributions": 2,
+        "FindPredicate": 1,
+        "RunORKGSPARQL": 1,
+        "GetResourceLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.554,
+          "success": true,
+          "timestamp": "2026-02-09T15:44:02.692769"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:44:23.453503"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:44:35.980638"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-09T15:44:44.614220"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.799,
+          "success": true,
+          "timestamp": "2026-02-09T15:44:55.663365"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:45:09.674241"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.004,
+          "success": true,
+          "timestamp": "2026-02-09T15:45:17.323370"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nSuperlative"
+  },
+  {
+    "question_id": 13,
+    "question": "Which is the mostly used lead compound?",
+    "gold_answer": "\"Aurein 1.2\"",
+    "predicted_answer": "Based on the information in my journal summary, the most used lead compound is **\"Heat sector\"** (Resource ID: R113127), with 10 associated contributions.",
+    "accuracy": false,
+    "elapsed_time": 65.39,
+    "token_usage": {
+      "prompt_tokens": 24932,
+      "completion_tokens": 1937,
+      "total_tokens": 26869
+    },
+    "tool_summary": {
+      "total_calls": 2,
+      "total_duration_seconds": 0.014,
+      "tool_breakdown": {
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.005,
+          "avg_duration": 0.005,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "RunORKGSPARQL": 1,
+        "GetResourceLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:46:16.954168"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.005,
+          "success": true,
+          "timestamp": "2026-02-09T15:46:26.564118"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nSuperlative"
+  },
+  {
+    "question_id": 14,
+    "question": "How is Bisphenol-A called alternatively?",
+    "gold_answer": "\"2,2-Bis(4-hydroxyphenyl)propane\"",
+    "predicted_answer": "Bisphenol-A is alternatively called **2,2-Bis(4-hydroxyphenyl)propane**.",
+    "accuracy": true,
+    "elapsed_time": 57.09,
+    "token_usage": {
+      "prompt_tokens": 32742,
+      "completion_tokens": 1627,
+      "total_tokens": 34369
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.163,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 1.14,
+          "avg_duration": 1.14,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 1,
+          "total_duration": 0.017,
+          "avg_duration": 0.017,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceLabel": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetRelationTargets": 1,
+        "GetResourceLabel": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 1.14,
+          "success": true,
+          "timestamp": "2026-02-09T15:47:08.821461"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.017,
+          "success": true,
+          "timestamp": "2026-02-09T15:47:14.756717"
+        },
+        {
+          "tool_name": "GetResourceLabel",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:47:32.399483"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 15,
+    "question": "What is the year of the MedPost paper publication?",
+    "gold_answer": "\"2004\"",
+    "predicted_answer": "The MedPost paper was published in **2004**.\n\n$$\n\\boxed{2004}\n$$",
+    "accuracy": true,
+    "elapsed_time": 48.2,
+    "token_usage": {
+      "prompt_tokens": 25756,
+      "completion_tokens": 1106,
+      "total_tokens": 26862
+    },
+    "tool_summary": {
+      "total_calls": 2,
+      "total_duration_seconds": 2.81,
+      "tool_breakdown": {
+        "FindResource": {
+          "count": 1,
+          "total_duration": 2.803,
+          "avg_duration": 2.803,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetRelationTargets": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindResource": 1,
+        "GetRelationTargets": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 2.803,
+          "success": true,
+          "timestamp": "2026-02-09T15:48:17.167916"
+        },
+        {
+          "tool_name": "GetRelationTargets",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:48:27.588894"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid\nTemporal"
+  },
+  {
+    "question_id": 16,
+    "question": "How many patients participate in the studies?",
+    "gold_answer": "6452",
+    "predicted_answer": "Looking at the journal summary, I have two resources with discovered values:\n\n1. **R223643**: Has a \"same as\" link to a semantic network URI, but no patient count data.\n2. **R46892**: Has two \"value\" entries, but both values are listed as \"?\" (unknown/unretrieved).\n\nThe journal shows no numeric values for patient counts, participant numbers, or any related predicates (like P63080 or P15585) across any of the 12 explored resources.\n\n**Answer:** Based on the specific values discovered (R223643's semantic link and R46892's unknown values), there is no patient count data available in the journal. The question cannot be answered with the information found.",
+    "accuracy": false,
+    "elapsed_time": 273.23,
+    "token_usage": {
+      "prompt_tokens": 95493,
+      "completion_tokens": 6970,
+      "total_tokens": 102463
+    },
+    "tool_summary": {
+      "total_calls": 10,
+      "total_duration_seconds": 3.639,
+      "tool_breakdown": {
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 2,
+          "total_duration": 1.616,
+          "avg_duration": 0.808,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 1.915,
+          "avg_duration": 1.915,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 3,
+          "total_duration": 0.019,
+          "avg_duration": 0.006,
+          "success_count": 3,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 2,
+          "total_duration": 0.056,
+          "avg_duration": 0.028,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.024,
+          "avg_duration": 0.024,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "RunORKGSPARQL": 1,
+        "FindResource": 2,
+        "FindPredicate": 1,
+        "GetResourceSummary": 3,
+        "FindByPredicateValue": 2,
+        "GetResearchFieldPapers": 1
+      },
+      "calls": [
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:49:07.794779"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.933,
+          "success": true,
+          "timestamp": "2026-02-09T15:49:45.552089"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.915,
+          "success": true,
+          "timestamp": "2026-02-09T15:50:01.162276"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:50:19.199148"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.023,
+          "success": true,
+          "timestamp": "2026-02-09T15:50:42.002481"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:51:08.226617"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.024,
+          "success": true,
+          "timestamp": "2026-02-09T15:51:21.646264"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.033,
+          "success": true,
+          "timestamp": "2026-02-09T15:51:40.883638"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.683,
+          "success": true,
+          "timestamp": "2026-02-09T15:52:01.279113"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:52:39.994835"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 17,
+    "question": "Are children in the demographic of the studies?",
+    "gold_answer": "TRUE",
+    "predicted_answer": "Based on the investigation of the ORKG, no studies were found that include children in their demographic.\n\n**Answer:** No.",
+    "accuracy": false,
+    "elapsed_time": 122.11,
+    "token_usage": {
+      "prompt_tokens": 52369,
+      "completion_tokens": 3430,
+      "total_tokens": 55799
+    },
+    "tool_summary": {
+      "total_calls": 6,
+      "total_duration_seconds": 1.876,
+      "tool_breakdown": {
+        "FindByPredicateValue": {
+          "count": 2,
+          "total_duration": 0.036,
+          "avg_duration": 0.018,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 2,
+          "total_duration": 1.813,
+          "avg_duration": 0.907,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResearchFieldPapers": {
+          "count": 1,
+          "total_duration": 0.023,
+          "avg_duration": 0.023,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "ManageJournal": {
+          "count": 1,
+          "total_duration": 0.004,
+          "avg_duration": 0.004,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindByPredicateValue": 2,
+        "FindPredicate": 2,
+        "GetResearchFieldPapers": 1,
+        "ManageJournal": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:53:53.067773"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.749,
+          "success": true,
+          "timestamp": "2026-02-09T15:54:20.858112"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.028,
+          "success": true,
+          "timestamp": "2026-02-09T15:54:40.340865"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.064,
+          "success": true,
+          "timestamp": "2026-02-09T15:54:49.772782"
+        },
+        {
+          "tool_name": "GetResearchFieldPapers",
+          "duration_seconds": 0.023,
+          "success": true,
+          "timestamp": "2026-02-09T15:55:01.192684"
+        },
+        {
+          "tool_name": "ManageJournal",
+          "duration_seconds": 0.004,
+          "success": true,
+          "timestamp": "2026-02-09T15:55:09.056131"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Factoid"
+  },
+  {
+    "question_id": 18,
+    "question": "What are extreme values of installed capacity grouped by energy source?",
+    "gold_answer": "hydropower\t0.0\t20.4\noffshore wind power\t0.0\t76.0\nonshore wind power\t28.3\t231.0\nbioenergy\t0.0\t50.0\nphotovoltaics\t15.7\t415.0\ngeothermics\t0.0\t6.4\nall sources\t137.4\t839.0\nothers\t0.0\t238.0",
+    "predicted_answer": "Based on the information retrieved from the ORKG, I cannot provide the extreme values of installed capacity grouped by energy source. The available comparison resources contain only metadata (descriptions and author information) but no actual numeric values for installed capacity or energy source classifications. The data needed to calculate maximum and minimum installed capacity values per energy source is not present in the accessible resources.",
+    "accuracy": false,
+    "elapsed_time": 202.21,
+    "token_usage": {
+      "prompt_tokens": 85443,
+      "completion_tokens": 5355,
+      "total_tokens": 90798
+    },
+    "tool_summary": {
+      "total_calls": 9,
+      "total_duration_seconds": 3.516,
+      "tool_breakdown": {
+        "RunORKGSPARQL": {
+          "count": 2,
+          "total_duration": 0.014,
+          "avg_duration": 0.007,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindByPredicateValue": {
+          "count": 1,
+          "total_duration": 0.007,
+          "avg_duration": 0.007,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "FindPredicate": {
+          "count": 2,
+          "total_duration": 2.853,
+          "avg_duration": 1.427,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "FindResource": {
+          "count": 1,
+          "total_duration": 0.621,
+          "avg_duration": 0.621,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "GetComparisonContributions": {
+          "count": 2,
+          "total_duration": 0.015,
+          "avg_duration": 0.007,
+          "success_count": 2,
+          "failure_count": 0
+        },
+        "GetResourceSummary": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "RunORKGSPARQL": 2,
+        "FindByPredicateValue": 1,
+        "FindPredicate": 2,
+        "FindResource": 1,
+        "GetComparisonContributions": 2,
+        "GetResourceSummary": 1
+      },
+      "calls": [
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.008,
+          "success": true,
+          "timestamp": "2026-02-09T15:56:05.440970"
+        },
+        {
+          "tool_name": "FindByPredicateValue",
+          "duration_seconds": 0.007,
+          "success": true,
+          "timestamp": "2026-02-09T15:56:17.501538"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.935,
+          "success": true,
+          "timestamp": "2026-02-09T15:56:46.301020"
+        },
+        {
+          "tool_name": "FindResource",
+          "duration_seconds": 0.621,
+          "success": true,
+          "timestamp": "2026-02-09T15:57:11.392749"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:57:26.324411"
+        },
+        {
+          "tool_name": "GetResourceSummary",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:57:40.943446"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T15:57:57.214912"
+        },
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 0.918,
+          "success": true,
+          "timestamp": "2026-02-09T15:58:13.027448"
+        },
+        {
+          "tool_name": "GetComparisonContributions",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T15:58:31.008922"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nRanking"
+  },
+  {
+    "question_id": 19,
+    "question": "List of sectors which are considered as energy sectors with corresponding frequencies?",
+    "gold_answer": "Heat sector\t10\nLiquid fuels sector\t5\nElectricity sector\t5\nGas sector\t5",
+    "predicted_answer": "Based on the ORKG data, here are the energy sectors with their corresponding frequencies:\n\n1. **Heat sector**: 10 contributions\n2. **Liquid fuels sector**: 5 contributions  \n3. **Gas sector**: 5 contributions\n4. **Electricity sector**: 5 contributions\n\nThese frequencies represent the number of contributions in the knowledge graph that model each energy sector.",
+    "accuracy": true,
+    "elapsed_time": 121.24,
+    "token_usage": {
+      "prompt_tokens": 32811,
+      "completion_tokens": 3006,
+      "total_tokens": 35817
+    },
+    "tool_summary": {
+      "total_calls": 3,
+      "total_duration_seconds": 1.363,
+      "tool_breakdown": {
+        "FindPredicate": {
+          "count": 1,
+          "total_duration": 1.348,
+          "avg_duration": 1.348,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "RunORKGSPARQL": {
+          "count": 1,
+          "total_duration": 0.006,
+          "avg_duration": 0.006,
+          "success_count": 1,
+          "failure_count": 0
+        },
+        "BatchGetResourceLabels": {
+          "count": 1,
+          "total_duration": 0.009,
+          "avg_duration": 0.009,
+          "success_count": 1,
+          "failure_count": 0
+        }
+      },
+      "tool_counts": {
+        "FindPredicate": 1,
+        "RunORKGSPARQL": 1,
+        "BatchGetResourceLabels": 1
+      },
+      "calls": [
+        {
+          "tool_name": "FindPredicate",
+          "duration_seconds": 1.348,
+          "success": true,
+          "timestamp": "2026-02-09T15:59:46.816779"
+        },
+        {
+          "tool_name": "RunORKGSPARQL",
+          "duration_seconds": 0.006,
+          "success": true,
+          "timestamp": "2026-02-09T16:00:29.895243"
+        },
+        {
+          "tool_name": "BatchGetResourceLabels",
+          "duration_seconds": 0.009,
+          "success": true,
+          "timestamp": "2026-02-09T16:00:41.549367"
+        }
+      ]
+    },
+    "error": null,
+    "q_type": "Non-factoid\nCount"
+  }
+]

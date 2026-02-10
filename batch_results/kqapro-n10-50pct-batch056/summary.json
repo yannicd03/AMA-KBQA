@@ -1,0 +1,34 @@
+{
+  "config": {
+    "n_questions": 10,
+    "seed": 42,
+    "postprocessing_mode": "llm_judge",
+    "dataset_path": "C:\\Users\\yanni\\Documents\\ama-kbqa\\db\\datasets\\kqapro\\val.json",
+    "total_available": 11797
+  },
+  "timestamp": "2025-12-14T14:03:54.356964",
+  "statistics": {
+    "total_questions": 10,
+    "successful": 10,
+    "failed": 0,
+    "success_rate": 1.0,
+    "accurate": 5,
+    "accuracy_rate": 0.5,
+    "total_tokens_used": 1611560,
+    "total_duration_seconds": 761.26,
+    "average_duration_seconds": 76.13,
+    "question_type_distribution": {
+      "Verify": 2,
+      "QueryAttrQualifier": 2,
+      "Select": 2,
+      "Query": 4
+    },
+    "accuracy_by_question_type": {
+      "Verify": 0.5,
+      "QueryAttrQualifier": 0.0,
+      "Select": 1.0,
+      "Query": 0.5
+    }
+  },
+  "failed_questions": []
+}
