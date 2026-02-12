@@ -126,6 +126,13 @@ BENCHMARK_MODELS: List[ModelConfig] = [
         api_key_env="OPENROUTER_API_KEY"
     ),
     ModelConfig(
+        name="minimax-m2.5",
+        provider="openrouter",
+        model_id="minimax/minimax-m2.5",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
         name="glm-4.7",
         provider="openrouter",
         model_id="zhipu-ai/glm-4.7",
@@ -202,6 +209,7 @@ JUDGE_MODEL_CONFIG = ModelConfig(
 # Approximate costs per 1M tokens (input/output) for cost estimation
 MODEL_COSTS = {
     "minimax-m2.1": {"input": 0.5, "output": 1.5},
+    "minimax-m2.5": {"input": 0.30, "output": 1.20},
     "glm-4.7": {"input": 0.5, "output": 1.5},
     "kimi-k2.5": {"input": 0.5, "output": 1.5},
     "deepseek-v3.2": {"input": 0.27, "output": 1.10},
@@ -1019,8 +1027,9 @@ async def run_benchmark_for_model_agent(
         log_print(f"[ABLATION] Few-shot examples DISABLED")
     log_print(f"{'='*80}\n")
 
-    # Override config for this model
-    override_model_config(model)
+    # Override config for this model (skip for "default" which uses config.toml as-is)
+    if model.name != "default":
+        override_model_config(model)
 
     # Create PostProcessor if mode specified
     postprocessor = None
@@ -1196,6 +1205,9 @@ async def run_full_benchmark(
         valid = [s for s in all_summaries if "error" not in s]
         if valid:
             export_results_to_csv(valid, output_dir)
+
+    # Return True if at least one run succeeded
+    return any("error" not in s for s in all_summaries) if all_summaries else False
 
 
 def _load_questions_for_agent(
@@ -1438,7 +1450,7 @@ Examples:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    asyncio.run(run_full_benchmark(
+    result = asyncio.run(run_full_benchmark(
         models=models,
         agents=list(args.agents),
         n_questions=args.n_questions,
@@ -1454,6 +1466,10 @@ Examples:
         dataset_type=args.dataset,
         stratified=args.stratified,
     ))
+
+    # Exit with non-zero code if all runs failed
+    if result is not None and not result:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -284,6 +284,13 @@ The Streamlit frontend (`streamlit run ama_kbqa/frontend/app.py`) provides a vis
 - **Dataset picker** - For SciQA only (handcrafted or auto)
 - **Optional questionnaire path** - Pre-generated JSON questionnaire file
 - **Few-shot toggle** - Disable for ablation studies
+- **Models multi-select** - Select multiple models for multi-model benchmarking (leave empty for single-model using config.toml)
+- **Advanced Options** (collapsible expander):
+  - **Timeout** - Maximum seconds per question (default: 300)
+  - **Output Directory** - Custom output path (default: `benchmark_results/<timestamp>`)
+  - **Resume** - Skip model/agent combinations that already have results
+  - **Export CSV** - Generate CSV summary alongside JSON results
+  - **Dry Run** - Preview what would run without executing benchmarks
 
 **Live Progress Display:**
 - **Tqdm progress bar** - Real-time question counter (e.g., "Question 5/10")

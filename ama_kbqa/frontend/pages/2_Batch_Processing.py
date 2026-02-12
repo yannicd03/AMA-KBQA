@@ -16,6 +16,21 @@ inject_css()
 
 st.title("Batch Processing")
 
+# ── Available models (mirrors BENCHMARK_MODELS in benchmark_agents.py) ──────
+AVAILABLE_MODELS = [
+    "minimax-m2.1",
+    "minimax-m2.5",
+    "glm-4.7",
+    "kimi-k2.5",
+    "deepseek-v3.2",
+    "gpt-oss-120b",
+    "qwen3-32b",
+    "nemotron-3-nano-30b",
+    "gpt-oss-120b-kit",
+    "qwen3-vl-235b-kit",
+    "gpt-4.1-mini-kit",
+]
+
 # ── Session state init ───────────────────────────────────────────────────────
 if "batch_running" not in st.session_state:
     st.session_state.batch_running = False
@@ -78,6 +93,44 @@ with st.form("batch_config"):
         questionnaire = st.text_input("Questionnaire File (optional)", value="",
                                       help="Path to a pre-generated questionnaire JSON file")
 
+    # ── Multi-Model Selection ────────────────────────────────────────────────
+    models = st.multiselect(
+        "Models (multi-model mode)",
+        options=AVAILABLE_MODELS,
+        default=[],
+        help="Select models to benchmark. Leave empty to use the model from config.toml (single-model mode).",
+    )
+
+    # ── Advanced Options ─────────────────────────────────────────────────────
+    with st.expander("Advanced Options"):
+        adv1, adv2 = st.columns(2)
+        with adv1:
+            timeout = st.number_input(
+                "Timeout per question (seconds)",
+                min_value=10,
+                max_value=3600,
+                value=300,
+                help="Maximum time allowed for each question before it's marked as timed out.",
+            )
+            output_dir = st.text_input(
+                "Output Directory (optional)",
+                value="",
+                help="Custom output path. Leave blank for benchmark_results/<timestamp>.",
+            )
+        with adv2:
+            resume = st.checkbox(
+                "Resume",
+                help="Skip model/agent combinations that already have results in the output directory.",
+            )
+            export_csv = st.checkbox(
+                "Export CSV",
+                help="Generate a CSV summary alongside the JSON results.",
+            )
+            dry_run = st.checkbox(
+                "Dry Run",
+                help="Preview what would run without actually executing any benchmarks.",
+            )
+
     submitted = st.form_submit_button(
         "Start Batch Run",
         disabled=st.session_state.batch_running,
@@ -111,6 +164,24 @@ if submitted and not st.session_state.batch_running:
 
     if questionnaire.strip():
         cmd += ["--questionnaire", questionnaire.strip()]
+
+    if models:
+        cmd += ["--models"] + models
+
+    if timeout != 300:
+        cmd += ["--timeout", str(timeout)]
+
+    if output_dir.strip():
+        cmd += ["--output-dir", output_dir.strip()]
+
+    if resume:
+        cmd.append("--resume")
+
+    if export_csv:
+        cmd.append("--export-csv")
+
+    if dry_run:
+        cmd.append("--dry-run")
 
     repo_root = Path(__file__).resolve().parents[3]
 

@@ -332,6 +332,13 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-13**: ✅ **Batch Processing Enhancements**
+  - **Bug fix**: Fixed single-model mode config corruption in `benchmark_agents.py` - `override_model_config()` was setting `chat_provider="config"` (invalid provider). Now skips override when `model.name == "default"` to preserve config.toml values.
+  - **Exit code**: Added non-zero exit code when all benchmark runs fail (helps CI/CD pipelines detect failures)
+  - **Frontend expansion**: Added all missing CLI options to Streamlit Batch Processing page:
+    - Models multi-select (for multi-model benchmarking UI workflow)
+    - Advanced Options expander with: timeout, output directory, resume, export CSV, dry run
+  - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-12**: ✅ **Frontend Batch Processing UI Fixes**
   - Fixed "missing ScriptRunContext" warning by moving background thread state to plain shared dict (synced on main thread)
   - Fixed progress bar parsing with improved regex patterns: `(\d+)%\|` for percentage and `\|\s*(\d+)/(\d+)\s*\[` for fraction
