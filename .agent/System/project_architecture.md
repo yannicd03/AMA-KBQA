@@ -380,6 +380,8 @@ Interactive question-answering interface with:
 Run batch benchmarks through the UI:
 - Configuration form (agent, sample size, seed, evaluation method, dataset)
 - Few-shot toggle
+- Models multi-select (for multi-model benchmarking)
+- Advanced options expander (timeout, output directory, resume, export CSV, dry run)
 - Live progress output with ANSI color rendering
 - Subprocess execution (non-blocking)
 - Recent batch results list
