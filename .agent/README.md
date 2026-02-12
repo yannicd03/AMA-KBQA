@@ -98,13 +98,13 @@ Additional documentation in the project root:
 | File | Purpose |
 |------|---------|
 | `ama_kbqa/cli.py` | CLI entrypoint (`ama-kbqa` command) |
-| `ama_kbqa/benchmark_agents.py` | Multi-model benchmarking script (~750 lines) |
+| `ama_kbqa/benchmark_agents.py` | Unified batch processing & multi-model benchmarking (~1400 lines) |
+| `ama_kbqa/postprocessing.py` | PostProcessor class with choice/sparql/llm_judge/simple modes (~850 lines) |
+| `ama_kbqa/utils/trace_utils.py` | Tool trace extraction & few-shot export (~330 lines) |
 | `ama_kbqa/agents/kqapro_agent/agent.py` | KQAPro agent (inherits BaseKBQAAgent, ~290 lines) |
 | `ama_kbqa/agents/kqapro_agent/prompts.py` | KQAPro prompts (~665 lines) |
-| `ama_kbqa/agents/kqapro_agent/batch_runner.py` | KQAPro batch processing (~900 lines) |
 | `ama_kbqa/agents/sciqa_agent/agent.py` | SciQA agent (inherits BaseKBQAAgent, ~190 lines) |
 | `ama_kbqa/agents/sciqa_agent/prompts.py` | SciQA/ORKG prompts (~890 lines) |
-| `ama_kbqa/agents/sciqa_agent/batch_runner.py` | SciQA batch processing (~500 lines) |
 | `ama_kbqa/server/kqapro_server.py` | KQAPro MCP server (21 tools) |
 | `ama_kbqa/server/sciqa_server.py` | SciQA MCP server (18 tools) |
 | `ama_kbqa/config.py` | Configuration loader module |
@@ -277,11 +277,11 @@ asyncio.run(main())
 python db/generate_question_datasets.py --dataset both --n 100 --seed 42
 
 # Run with pre-generated questionnaire (single model)
-python ama_kbqa/agents/kqapro_agent/batch_runner.py --questionnaire db/kqapro_questionnaire.json
-python ama_kbqa/agents/sciqa_agent/batch_runner.py --questionnaire db/sciqa_questionnaire.json
+python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_questionnaire.json
+python -m ama_kbqa.benchmark_agents --agents sciqa --questionnaire db/sciqa_questionnaire.json
 
 # Or run with on-the-fly sampling
-python ama_kbqa/agents/kqapro_agent/batch_runner.py --n_questions 10 --seed 42
+python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 10 --seed 42
 ```
 
 ### Multi-Model Benchmarking
@@ -293,8 +293,8 @@ python -m ama_kbqa.benchmark_agents --dry-run
 # Test single model on single agent
 python -m ama_kbqa.benchmark_agents --models minimax-m2.1 --agents kqapro --n-questions 3
 
-# Full benchmark with all 7 models on both agents
-python -m ama_kbqa.benchmark_agents --export-csv
+# Full benchmark with selected models on both agents
+python -m ama_kbqa.benchmark_agents --models minimax-m2.1 glm-4.7 --export-csv
 
 # Resume interrupted benchmark
 python -m ama_kbqa.benchmark_agents --resume
@@ -332,6 +332,15 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-12**: ✅ **Batch Processing Refactor**
+  - Unified batch processing: merged three scripts (kqapro_agent/batch_runner.py, sciqa_agent/batch_runner.py, benchmark_agents.py) into single `ama_kbqa/benchmark_agents.py`
+  - Created `ama_kbqa/postprocessing.py` with PostProcessor class (choice/sparql/llm_judge/simple modes)
+  - Created `ama_kbqa/utils/trace_utils.py` for tool trace extraction and few-shot export
+  - Deleted old batch_runner.py files from agent directories
+  - Frontend updated: batch_results_loader.py now scans `benchmark_results/<timestamp>/<agent>/<model>/` directories
+  - Batch Processing page now calls ama_kbqa.benchmark_agents with unified CLI args (--agents, --n-questions, --postprocessing, --seed, --stratified, --questionnaire, --dataset)
+  - Evaluation page handles superset summary.json schema with dual field names (e.g., accuracy/accuracy_rate)
+  - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-12**: ✅ **Code Cleanup**
   - Removed unused `ama_kbqa/agents/placeholder_agent/` directory (template agent)
   - Removed duplicate `ama_kbqa/agents/placeholder_agent copy/` directory
