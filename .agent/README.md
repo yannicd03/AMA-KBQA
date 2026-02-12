@@ -332,6 +332,12 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-12**: ✅ **Frontend Batch Processing UI Fixes**
+  - Fixed "missing ScriptRunContext" warning by moving background thread state to plain shared dict (synced on main thread)
+  - Fixed progress bar parsing with improved regex patterns: `(\d+)%\|` for percentage and `\|\s*(\d+)/(\d+)\s*\[` for fraction
+  - Fixed garbled tqdm output by adding `_resolve_cr()` function to collapse carriage-return overwrites to latest value
+  - Added console auto-scroll JS snippet to pin output to bottom during batch runs
+  - Updated [ama_kbqa/frontend/pages/2_Batch_Processing.py](ama_kbqa/frontend/pages/2_Batch_Processing.py)
 - **2026-02-12**: ✅ **Batch Processing Refactor**
   - Unified batch processing: merged three scripts (kqapro_agent/batch_runner.py, sciqa_agent/batch_runner.py, benchmark_agents.py) into single `ama_kbqa/benchmark_agents.py`
   - Created `ama_kbqa/postprocessing.py` with PostProcessor class (choice/sparql/llm_judge/simple modes)
