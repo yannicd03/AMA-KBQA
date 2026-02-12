@@ -269,6 +269,53 @@ python -m ama_kbqa.benchmark_agents --resume
 
 ---
 
+## Using the Streamlit Frontend
+
+The Streamlit frontend (`streamlit run ama_kbqa/frontend/app.py`) provides a visual interface for batch processing with live progress monitoring.
+
+### Batch Processing Page Features
+
+**Configuration Form:**
+- **Agent selector** - Choose between KQAPro or SciQA
+- **Sample size** - Number of questions to process (1-500)
+- **Random seed** - For reproducible sampling
+- **Stratified sampling** - Optional checkbox for balanced question type distribution
+- **Evaluation method** - Mode-specific options (KQAPro: choice/sparql/llm_judge; SciQA: llm_judge/simple)
+- **Dataset picker** - For SciQA only (handcrafted or auto)
+- **Optional questionnaire path** - Pre-generated JSON questionnaire file
+- **Few-shot toggle** - Disable for ablation studies
+
+**Live Progress Display:**
+- **Tqdm progress bar** - Real-time question counter (e.g., "Question 5/10")
+- **Console output** - Live ANSI-colored terminal with auto-scroll
+- **Carriage-return handling** - tqdm overwrites collapse to latest output (not stacked)
+- **Timestamp metadata** - Full console log and detailed thinking traces saved to output directory
+
+**Results Summary:**
+- **Accuracy metric** - Percentage of correct answers
+- **Question count** - Total processed
+- **Average duration** - Time per question in seconds
+- **Total tokens** - Cumulative LLM token usage
+
+### Starting a Batch Run
+
+1. Open the "Batch Processing" page in the Streamlit frontend
+2. Configure options (agent, sample size, seed, evaluation method)
+3. Click "Start Batch Run" to launch the subprocess
+4. Watch progress bar and live console output (auto-refreshes every 2 seconds)
+5. Results summary displays after completion
+6. Navigate to "Evaluation" page to view detailed results and charts
+
+### Frontend Technical Details
+
+- **Background thread** - Subprocess output is read into a shared dict (thread-safe, no ScriptRunContext warnings)
+- **Progress parsing** - Extracts percentage (`30%|`) or fraction (`3/10 [`) from tqdm output
+- **Console cleanup** - Carriage returns (\\r) are resolved to show only the latest update per line
+- **Auto-scroll** - JavaScript snippet pins console output to bottom during batch runs
+- **Error handling** - Captures exit codes and displays success/error status with recommendations
+
+---
+
 ## Troubleshooting
 
 ### Agent times out

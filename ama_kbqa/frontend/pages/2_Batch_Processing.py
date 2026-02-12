@@ -30,22 +30,25 @@ if "batch_finished" not in st.session_state:
 if "batch_return_code" not in st.session_state:
     st.session_state.batch_return_code = None
 
+# Thread-safe shared dict (avoids accessing st.session_state from bg thread)
+if "batch_shared" not in st.session_state:
+    st.session_state.batch_shared = {"output": "", "return_code": None, "finished": False}
 
-def _read_output(proc):
-    """Background thread: read subprocess stdout line by line."""
+
+def _read_output(proc, shared):
+    """Background thread: read subprocess stdout line by line into shared dict."""
     try:
         for line in iter(proc.stdout.readline, ""):
             if not line:
                 break
-            st.session_state.batch_output += line
+            shared["output"] += line
     except Exception:
         pass
     finally:
         proc.stdout.close()
         proc.wait()
-        st.session_state.batch_return_code = proc.returncode
-        st.session_state.batch_finished = True
-        st.session_state.batch_running = False
+        shared["return_code"] = proc.returncode
+        shared["finished"] = True
 
 
 # ── Configuration form ───────────────────────────────────────────────────────
@@ -123,8 +126,13 @@ if submitted and not st.session_state.batch_running:
 
     st.session_state.batch_proc = proc
     st.session_state.batch_running = True
+    st.session_state.batch_shared = {"output": "", "return_code": None, "finished": False}
 
-    t = threading.Thread(target=_read_output, args=(proc,), daemon=True)
+    t = threading.Thread(
+        target=_read_output,
+        args=(proc, st.session_state.batch_shared),
+        daemon=True,
+    )
     t.start()
     st.session_state.batch_thread = t
 
@@ -141,22 +149,58 @@ if st.session_state.batch_running:
             st.session_state.batch_return_code = -1
             st.warning("Batch run terminated by user.")
 
+# ── Sync shared dict → session state ────────────────────────────────────────
+shared = st.session_state.batch_shared
+if shared["output"]:
+    st.session_state.batch_output = shared["output"]
+if shared["finished"] and st.session_state.batch_running:
+    st.session_state.batch_return_code = shared["return_code"]
+    st.session_state.batch_finished = True
+    st.session_state.batch_running = False
+
+
+def _resolve_cr(text: str) -> str:
+    """Simulate carriage-return behaviour: for each line, keep only the
+    content after the last \\r so tqdm updates collapse to the latest value."""
+    out_lines = []
+    for line in text.split("\n"):
+        parts = line.split("\r")
+        # Keep the last non-empty segment (the most recent overwrite)
+        resolved = ""
+        for part in parts:
+            if part:
+                resolved = part
+        out_lines.append(resolved)
+    return "\n".join(out_lines)
+
+
 # ── Live progress display ────────────────────────────────────────────────────
 if st.session_state.batch_running or st.session_state.batch_output:
     output_text = st.session_state.batch_output
 
-    # Parse progress from [N/M] patterns
-    progress_matches = re.findall(r'\[(\d+)/(\d+)\]', output_text)
-    if progress_matches:
-        current, total = int(progress_matches[-1][0]), int(progress_matches[-1][1])
+    # Parse tqdm progress: look for percentage pattern like " 30%|" or fraction "5/10"
+    # tqdm outputs lines like: " 30%|███       | 3/10 [00:15<00:35, ...]"
+    tqdm_pct = re.findall(r'(\d+)%\|', output_text)
+    tqdm_frac = re.findall(r'\|\s*(\d+)/(\d+)\s*\[', output_text)
+    if tqdm_frac:
+        current, total = int(tqdm_frac[-1][0]), int(tqdm_frac[-1][1])
         if total > 0:
             st.progress(current / total, text=f"Question {current}/{total}")
+    elif tqdm_pct:
+        pct = int(tqdm_pct[-1])
+        st.progress(min(pct / 100.0, 1.0), text=f"{pct}%")
 
-    # Show console output (last ~5000 chars)
-    display_text = output_text[-5000:] if len(output_text) > 5000 else output_text
+    # Resolve \r (tqdm overwrites) and show console output (last ~5000 chars)
+    cleaned = _resolve_cr(output_text)
+    display_text = cleaned[-5000:] if len(cleaned) > 5000 else cleaned
     colored = ansi_to_html(display_text)
+    # Auto-scroll script keeps the console pinned to the bottom
+    scroll_js = (
+        '<script>var c=document.querySelector(".console-container");'
+        "if(c)c.scrollTop=c.scrollHeight;</script>"
+    )
     st.markdown(
-        f'<div class="console-container">{colored}</div>',
+        f'<div class="console-container">{colored}</div>{scroll_js}',
         unsafe_allow_html=True,
     )
 

@@ -57,7 +57,7 @@ ama-kbqa/
 │   │   ├── app.py              # Main entry point (page config + sidebar)
 │   │   ├── pages/              # Streamlit pages
 │   │   │   ├── 1_Chat.py       # Interactive Q&A with agent selector
-│   │   │   ├── 2_Batch_Processing.py # Batch runner with live progress
+│   │   │   ├── 2_Batch_Processing.py # Batch runner: live progress, tqdm parsing, console auto-scroll
 │   │   │   ├── 3_Evaluation.py # Results dashboard (charts, metrics, per-question details)
 │   │   │   └── 4_Settings.py   # config.toml editor
 │   │   └── utils/              # Shared utilities
