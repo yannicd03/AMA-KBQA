@@ -1,5 +1,7 @@
 """Evaluation Dashboard - view batch run results, charts, and per-question details."""
 
+import json
+
 import pandas as pd
 import streamlit as st
 
@@ -22,7 +24,11 @@ if not batches:
     st.info("No batch results found. Run a batch from the Batch Processing page first.")
     st.stop()
 
-selected_batch = st.selectbox("Select batch run", batches, index=0)
+# batches are now dicts with "label" key
+batch_labels = [b["label"] if isinstance(b, dict) else b for b in batches]
+selected_idx = st.selectbox("Select batch run", range(len(batch_labels)),
+                            format_func=lambda i: batch_labels[i], index=0)
+selected_batch = batches[selected_idx]
 
 # ── Load data ────────────────────────────────────────────────────────────────
 summary = load_summary(selected_batch)
@@ -34,17 +40,21 @@ config = summary.get("config", {})
 
 # ── Config info ──────────────────────────────────────────────────────────────
 with st.expander("Batch Configuration", expanded=False):
-    cfg_cols = st.columns(3)
+    cfg_cols = st.columns(4)
     cfg_cols[0].markdown(f"**Seed:** {config.get('seed', '?')}")
-    cfg_cols[1].markdown(f"**Postprocessing:** {config.get('postprocessing_mode', '?')}")
+    cfg_cols[1].markdown(f"**Postprocessing:** {config.get('postprocessing_mode', config.get('postprocessing', '?'))}")
     cfg_cols[2].markdown(f"**Timestamp:** {summary.get('timestamp', '?')[:19]}")
+    cfg_cols[3].markdown(f"**Agent:** {config.get('agent', '?')}")
 
 # ── Summary cards ────────────────────────────────────────────────────────────
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Accuracy", f"{stats.get('accuracy_rate', 0):.0%}")
+acc = stats.get("accuracy_rate") or stats.get("accuracy", 0)
+c1.metric("Accuracy", f"{acc:.0%}")
 c2.metric("Total Questions", stats.get("total_questions", 0))
-c3.metric("Avg Duration", f"{stats.get('average_duration_seconds', 0):.1f}s")
-c4.metric("Total Tokens", f"{stats.get('total_tokens_used', 0):,}")
+avg_dur = stats.get("average_duration_seconds") or stats.get("avg_time_seconds", 0)
+c3.metric("Avg Duration", f"{avg_dur:.1f}s")
+tok = stats.get("total_tokens_used") or stats.get("total_tokens", 0)
+c4.metric("Total Tokens", f"{tok:,}")
 
 # ── Charts ───────────────────────────────────────────────────────────────────
 st.markdown("---")
@@ -52,7 +62,7 @@ st.markdown("---")
 chart_col1, chart_col2 = st.columns(2)
 
 # Accuracy by question type
-acc_by_type = stats.get("accuracy_by_question_type", {})
+acc_by_type = stats.get("accuracy_by_question_type", stats.get("accuracy_by_type", {}))
 if acc_by_type:
     with chart_col1:
         st.markdown("##### Accuracy by Question Type")
@@ -112,7 +122,7 @@ if results:
             "Question": r.get("question", "")[:80],
             "Gold Answer": str(r.get("answer", ""))[:60],
             "Predicted": str(r.get("predicted_answer", ""))[:60],
-            "Correct": "✅" if r.get("accuracy") else "❌",
+            "Correct": "Y" if r.get("accuracy") else "N",
             "Type": r.get("qtype", ""),
             "Duration": r.get("duration", ""),
             "Tokens": r.get("tokens_used", 0),
@@ -122,6 +132,25 @@ if results:
     st.dataframe(df_table, use_container_width=True, hide_index=True)
 else:
     st.info("No per-question results available for this batch.")
+
+# ── Tool traces ──────────────────────────────────────────────────────────────
+has_traces = results and any(r.get("tool_trace") for r in results)
+if has_traces:
+    st.markdown("---")
+    st.markdown("### Tool Traces")
+
+    for r in results:
+        trace = r.get("tool_trace", [])
+        if not trace:
+            continue
+        icon = "Y" if r.get("accuracy") else "N"
+        q_short = r.get("question", "")[:70]
+        with st.expander(f"[{icon}] {q_short}", expanded=False):
+            for step in trace:
+                tool = step.get("tool", "?")
+                args = step.get("args", "")
+                result_text = step.get("result", "")
+                st.markdown(f"**{tool}**(`{args}`) -> `{result_text}`")
 
 # ── Expandable judgments ─────────────────────────────────────────────────────
 if judgments_data and "judgments" in judgments_data:
@@ -136,9 +165,9 @@ if judgments_data and "judgments" in judgments_data:
 
     for j in judgments_data["judgments"]:
         judgment = j.get("judgment", {})
-        icon = "✅" if judgment.get("is_correct") else "❌"
+        icon = "Y" if judgment.get("is_correct") else "N"
         score = judgment.get("argumentation_score", "?")
-        label = f'{icon} {j.get("question", "")[:70]}... (Score: {score}/5)'
+        label = f'[{icon}] {j.get("question", "")[:70]}... (Score: {score}/5)'
 
         with st.expander(label, expanded=False):
             st.markdown(f"**Gold:** {j.get('gold_answer', '')}")
@@ -156,5 +185,5 @@ if failed:
     st.markdown("---")
     st.markdown("### Failed Questions")
     for fq in failed:
-        with st.expander(f"❌ {fq.get('question', '')[:80]}", expanded=False):
+        with st.expander(f"FAIL: {fq.get('question', '')[:80]}", expanded=False):
             st.code(fq.get("error", "Unknown error"))

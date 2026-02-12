@@ -56,6 +56,7 @@ with st.form("batch_config"):
         agent = st.selectbox("Agent", ["kqapro", "sciqa"], index=0)
         n_questions = st.number_input("Sample Size", min_value=1, max_value=500, value=10)
         seed = st.number_input("Seed", min_value=0, value=42)
+        stratified = st.checkbox("Stratified Sampling")
 
     with col2:
         # Evaluation methods differ per agent
@@ -71,6 +72,8 @@ with st.form("batch_config"):
             dataset = None
 
         no_fewshot = st.checkbox("Disable Few-Shot Examples")
+        questionnaire = st.text_input("Questionnaire File (optional)", value="",
+                                      help="Path to a pre-generated questionnaire JSON file")
 
     submitted = st.form_submit_button(
         "Start Batch Run",
@@ -84,23 +87,27 @@ if submitted and not st.session_state.batch_running:
     st.session_state.batch_finished = False
     st.session_state.batch_return_code = None
 
-    # Build command
+    # Build command using unified benchmark_agents module
     cmd = [
         sys.executable, "-m",
-        f"ama_kbqa.agents.{agent}_agent.batch_runner",
-        "--n_questions", str(n_questions),
+        "ama_kbqa.benchmark_agents",
+        "--agents", agent,
+        "--n-questions", str(n_questions),
         "--seed", str(seed),
+        "--postprocessing", eval_method,
     ]
 
-    if agent == "kqapro":
-        cmd += ["--postprocessing_mode", eval_method]
-    else:
-        cmd += ["--postprocessing", eval_method]
-        if dataset:
-            cmd += ["--dataset", dataset]
+    if agent == "sciqa" and dataset:
+        cmd += ["--dataset", dataset]
 
     if no_fewshot:
         cmd.append("--no-fewshot")
+
+    if stratified:
+        cmd.append("--stratified")
+
+    if questionnaire.strip():
+        cmd += ["--questionnaire", questionnaire.strip()]
 
     repo_root = Path(__file__).resolve().parents[3]
 
@@ -171,11 +178,15 @@ if st.session_state.batch_finished and not st.session_state.batch_running:
                 summary = load_summary(latest)
                 stats = summary.get("statistics", {})
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Accuracy", f"{stats.get('accuracy_rate', 0):.0%}")
+                acc = stats.get("accuracy_rate") or stats.get("accuracy", 0)
+                c1.metric("Accuracy", f"{acc:.0%}")
                 c2.metric("Questions", stats.get("total_questions", "?"))
-                c3.metric("Avg Duration", f"{stats.get('average_duration_seconds', 0):.1f}s")
-                c4.metric("Total Tokens", f"{stats.get('total_tokens_used', 0):,}")
-                st.info(f"Results saved as **{latest}**. View details on the Evaluation page.")
+                avg_dur = stats.get("average_duration_seconds") or stats.get("avg_time_seconds", 0)
+                c3.metric("Avg Duration", f"{avg_dur:.1f}s")
+                tok = stats.get("total_tokens_used") or stats.get("total_tokens", 0)
+                c4.metric("Total Tokens", f"{tok:,}")
+                label = latest.get("label", latest) if isinstance(latest, dict) else latest
+                st.info(f"Results saved as **{label}**. View details on the Evaluation page.")
             except Exception as e:
                 st.warning(f"Could not load results: {e}")
     elif rc == -1:
