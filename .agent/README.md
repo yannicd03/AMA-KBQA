@@ -332,6 +332,13 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-12**: ✅ **Code Cleanup**
+  - Removed unused `ama_kbqa/agents/placeholder_agent/` directory (template agent)
+  - Removed duplicate `ama_kbqa/agents/placeholder_agent copy/` directory
+  - Removed unused `ama_kbqa/server/subagent_server.py` (prototype server)
+  - Removed superseded `ama_kbqa/agents/kqapro_agent/prompt_alternative.txt`
+  - Fixed triple-underscore typo: `ama_kbqa/___init__.py` → `ama_kbqa/__init__.py`
+  - Updated [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-09**: ✅ **SciQA Agent Accuracy Improvements**
   - **FindAuthorPapers**: Added UNION clause for string literal authors (papers storing authors as plain strings `orkgp:P27 "Kurt Thomas"` are now matched via `isLiteral()` filter, in addition to resource-URI author matching)
   - **GetComparisonContributions**: Added automatic 4-hop value resolution via `OPTIONAL { ?value orkgp:HAS_VALUE ?nestedValue }` - response now includes `nested_value` field when present (Comparison → Contribution → intermediate_resource → HAS_VALUE → actual_value)

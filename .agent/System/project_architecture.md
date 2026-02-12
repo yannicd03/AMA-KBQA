@@ -44,14 +44,12 @@ ama-kbqa/
 │   │   │   ├── agent.py        # SciQAAgent class (~190 lines, inherits BaseKBQAAgent)
 │   │   │   ├── prompts.py      # SciQA-specific prompts (~890 lines)
 │   │   │   └── batch_runner.py # SciQA benchmarking (~500 lines)
-│   │   ├── orchestrator_agent/ # Multi-agent router
-│   │   │   └── agent.py        # Orchestrator class
-│   │   └── placeholder_agent/  # Domain-specific fallback agents
+│   │   └── orchestrator_agent/ # Multi-agent router
+│   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
 │   │   ├── kqapro_server.py    # KQAPro tools (21 tools)
 │   │   ├── sciqa_server.py     # SciQA/ORKG tools (18 tools: 4 discovery, 6 retrieval, 6 domain, 1 SPARQL, 1 verification) ✅ Active
-│   │   ├── orchestrator_server.py # Routing tools
-│   │   └── subagent_server.py  # Utility server
+│   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
 │   │   ├── pages/              # Streamlit pages
