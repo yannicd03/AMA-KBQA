@@ -333,6 +333,15 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-13**: ✅ **Agent Prompt Enhancements and Qualifier Resolution Fix**
+  - **QueryRelationQualifier few-shot examples**: Populated with 3 synthetic examples teaching qualifier selection patterns (was empty `[]`). Examples demonstrate: point_in_time vs for_work disambiguation, object_has_role selection, ceremony vs for_work parsing.
+  - **Count strategy enhancement**: Added OR/UNION counting section to QTYPE_STRATEGIES with SPARQL UNION pattern and COUNT(DISTINCT ...) to avoid double-counting entities matching multiple conditions.
+  - **Count few-shot example**: Added 1 new example demonstrating UNION counting pattern for "How many X have property A OR property B?" questions.
+  - **Qualifier resolution fix**: Enhanced `_get_attribute_with_qualifiers_impl` in kqapro_server.py to retrieve qualifiers via BOTH blank-node pattern AND RDF reification pattern (matching GetEdgeQualifiers behavior). Now uses two OPTIONAL blocks in SPARQL query for comprehensive qualifier coverage.
+  - **Prepositional phrase disambiguation**: Added critical rule #7 to SYSTEM_PROMPT about "the X in Y" patterns: target entity is X (related to Y), NOT Y itself. Also added note to QueryAttr strategy. Prevents misidentifying the subject entity in prepositional constructions.
+  - **General guidance file**: Created `_general.json` with 5 cross-type insights (verify constraints, trust KB data, match correct qualifier, use FindByAttribute for IDs, use SPARQL for complex conditions). Loaded via `_load_general_guidance()` and injected in analysis context.
+  - **Tool tips file**: `_tool_tips.json` already existed with loading logic in agent.py. Now explicitly documented in architecture.
+  - Updated [System/agent_system.md](System/agent_system.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-13**: ✅ **LLM-Based Fewshot Example Generator**
   - Added `ama_kbqa/fewshot_generator.py` - LLM-powered generator that analyzes benchmark results to produce three types of fewshot learning material
   - **Per-qtype examples**: Saved to existing `db/datasets/kqapro/fewshot-examples/<QType>.json` files

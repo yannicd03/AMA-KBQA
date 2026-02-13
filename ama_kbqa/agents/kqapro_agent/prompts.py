@@ -20,6 +20,20 @@ QTYPE_STRATEGIES = {
     2. **Multi-hop count** (e.g., "How many actors in films directed by X?")
        - **Strongly recommended:** Use `RunSPARQL` with JOIN + COUNT instead of fetching intermediate lists
 
+    3. **OR/UNION conditions** (e.g., "How many X have property A OR property B?")
+       - Use `RunSPARQL` with UNION pattern
+       - Use COUNT(DISTINCT ...) to avoid double-counting entities matching both conditions
+
+       SPARQL UNION Pattern:
+       SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
+         { ?item attr:classification "421.221.12" . }
+         UNION
+         { ex:MUSICIAN prop:instrument ?item . }
+       }
+
+    **VERIFICATION RULE:** If you verified entities through KB tools, trust those results.
+    Do NOT downgrade confidence after verification.
+
     SPARQL Pattern:
     SELECT (COUNT(DISTINCT ?target) AS ?count) WHERE {
     ex:ENTITY_ID prop:PREDICATE ?target .
@@ -39,6 +53,9 @@ QTYPE_STRATEGIES = {
     - When `GetAttributeDetails("GameID")` fails, review the `available_attributes` from your previous `FindNode` call
     - Look for semantic matches: "GameID" might be "game_identifier", "product_code", "catalog_id", etc.
     - Try the closest match based on naming similarity
+
+    **Prepositional entities:** If the question says "the X in Y" or "the X of Y",
+    the target entity is X (related to Y), NOT Y itself. Find Y first, then find X via relations.
 
     SPARQL Fallback:
     SELECT ?value WHERE {
@@ -240,6 +257,10 @@ SYSTEM_PROMPT = """SYSTEM ROLE
         * *SPARQL Pivot:* For multi-hop queries (>2 hops), strongly consider using RunSPARQL to construct a JOIN query instead of iterative GetRelationDetails calls.
     5.  **Complete Retrieval:** After FindNode returns available attributes/predicates, you MUST call GetAttributeDetails or GetRelationDetails to get actual values.
     6.  **Constraint Verification:** If the question contains MULTIPLE identifying constraints (e.g., "Wonder Woman that is 141 minutes", "the one whose color is black-and-white"), you MUST verify ALL constraints before proceeding with the main query.
+    7.  **Prepositional Phrase Disambiguation:** When the question says "the X in Y", "the X of Y", or "the X near Y", do NOT assume X = Y.
+        - Find Y first (e.g., FindNode("Boston"))
+        - Then search for sub-entities matching X that are related to Y (e.g., RunSPARQL: SELECT ?x WHERE { ?x prop:located_in ex:Y_ID . ?x prop:instance_of ex:X_TYPE . })
+        - Return the attribute of X, not Y
 
     KNOWLEDGE GRAPH SPECIFICS (CRITICAL)
     You are operating on a specific ontology. You MUST use the following prefixes in your thought process and SPARQL construction. DO NOT define these in your `RunSPARQL` calls; the server injects them automatically.

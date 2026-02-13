@@ -1,0 +1,27 @@
+[
+  {
+    "title": "Verify all constraints before answering",
+    "guidance": "If the question contains multiple identifying details (year, duration, color, location), verify ALL of them using GetAttributeDetails before proceeding. Do not assume the first entity match is correct without checking constraints.",
+    "applies_to": ["SelectBetween", "QueryAttr", "QueryName"]
+  },
+  {
+    "title": "Trust verified KB data over intuition",
+    "guidance": "Once you have verified a fact through KB tools (e.g., COUNT returned 3, or GetAttributeDetails returned a value), trust that result. Do NOT second-guess or downgrade your confidence after verification. Tool results are ground truth.",
+    "applies_to": ["Count", "Verify", "SelectBetween"]
+  },
+  {
+    "title": "Match the correct qualifier when multiple exist",
+    "guidance": "Relations and attributes often have multiple qualifiers (point_in_time, for_work, ceremony, location, role). Parse the question word (When/Where/What role/What ceremony) to select the RIGHT qualifier from GetEdgeQualifiers results.",
+    "applies_to": ["QueryRelationQualifier", "QueryAttrQualifier"]
+  },
+  {
+    "title": "Use FindByAttribute for unique identifiers",
+    "guidance": "When the question contains a unique code, ID, URL, or ISNI, use FindByAttribute for exact reverse lookup. It is faster and more accurate than semantic search with FindNode.",
+    "applies_to": ["QueryAttr", "QueryName"]
+  },
+  {
+    "title": "Use SPARQL for complex conditions",
+    "guidance": "For OR conditions (UNION), multi-hop joins (>2 hops), or large set operations, use RunSPARQL directly. Individual tool calls are slower and may miss results. Always use COUNT(DISTINCT ...) with UNION to avoid double-counting.",
+    "applies_to": ["Count", "SelectAmong"]
+  }
+]
