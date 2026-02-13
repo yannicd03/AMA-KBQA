@@ -199,9 +199,9 @@ BENCHMARK_MODELS: List[ModelConfig] = [
 
 # LLM Judge configuration for multi-model mode (fast, cheap judge)
 JUDGE_MODEL_CONFIG = ModelConfig(
-    name="gemini-3-flash-judge",
+    name="deepseek-v3.2-judge",
     provider="openrouter",
-    model_id="google/gemini-3-flash-preview",
+    model_id="deepseek/deepseek-v3.2",
     base_url="https://openrouter.ai/api/v1",
     api_key_env="OPENROUTER_API_KEY"
 )
