@@ -1,1 +1,87 @@
-[]
+[
+  {
+    "question": "Is the ISNI of the human that was born in Waukesha (an administrative location in Wisconsin) equal to 0000 0001 1677 9459?",
+    "answer": "yes",
+    "qtype": "Verify",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Waukesha Wisconsin'}",
+        "result": "found ? (Waukesha)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q94919, place of birth",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q312405",
+        "result": "{\"node_id\":\"Q312405\",\"name\":\"Vernor Vinge\",\"node_type\":\"entity\",\"attributes\":{\"b"
+      },
+      {
+        "tool": "VerifyNumericCondition",
+        "args": "0000 0001 1677 9459 == 0000 0001 1677 9459",
+        "result": "FALSE"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetRelationDetails -> GetNodeSummary -> VerifyNumericCondition",
+    "tool_count": 4,
+    "collected_at": "2026-02-13T00:42:18.965521"
+  },
+  {
+    "question": "Does the legislative term that follows the 6th United States Congress, have its start time after 1206?",
+    "answer": "yes",
+    "qtype": "Verify",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': '6th United States Congress'}",
+        "result": "found ? (6th United States Congress)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q2395126, followed by",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q1906490, start time",
+        "result": "not found"
+      },
+      {
+        "tool": "VerifyNumericCondition",
+        "args": "1801 > 1206",
+        "result": "FALSE"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetRelationDetails -> GetAttributeDetails -> VerifyNumericCondition",
+    "tool_count": 4,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "Is 2880 square kilometres the area of the Pennsylvania county whose official website is http://co.centre.pa.us?",
+    "answer": "yes",
+    "qtype": "Verify",
+    "trace": [
+      {
+        "tool": "FindByAttribute",
+        "args": "official website, http://co.centre.pa.us",
+        "result": "{\"matches\":[{\"original_id\":\"Q494248\",\"name\":\"Centre County\",\"node_type\":\"entity\""
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q494248, area",
+        "result": "not found"
+      },
+      {
+        "tool": "VerifyNumericCondition",
+        "args": "2880 == 2880",
+        "result": "FALSE"
+      }
+    ],
+    "lesson": "Solved via: FindByAttribute -> GetAttributeDetails -> VerifyNumericCondition",
+    "tool_count": 4,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  }
+]

@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "question": "What language is the official webiste of the county of Florida (whose ISNI is 0000 0004 0631 7316, and official website is http://www.pascocountyfl.net)?",
+    "answer": "English",
+    "qtype": "QueryAttrQualifier",
+    "trace": [
+      {
+        "tool": "FindByAttribute",
+        "args": "ISNI, 0000 0004 0631 7316",
+        "result": "{\"matches\":[],\"result_count\":0}"
+      },
+      {
+        "tool": "FindByAttribute",
+        "args": "official website, http://www.pascocountyfl.net",
+        "result": "{\"matches\":[{\"original_id\":\"Q500992\",\"name\":\"Pasco County\",\"node_type\":\"entity\","
+      },
+      {
+        "tool": "GetEdgeQualifiers",
+        "args": "{'attribute_name': 'official website', 'base_node_id': 'Q500",
+        "result": "{   \"base_node\": \"Q500992\",   \"attribute\": \"official website\",   \"value\": null, "
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q500992",
+        "result": "{\"node_id\":\"Q500992\",\"name\":\"Pasco County\",\"node_type\":\"entity\",\"attributes\":{\"p"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q500992, country",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetNodeLabel",
+        "args": "{'node_id': 'Q30'}",
+        "result": "{   \"node_id\": \"Q30\",   \"label\": \"United States of America\",   \"node_type\": \"ent"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q500992, language",
+        "result": "not found"
+      },
+      {
+        "tool": "GetNodeLabel",
+        "args": "{'node_id': 'Q812'}",
+        "result": "{   \"node_id\": \"Q812\",   \"label\": \"Florida\",   \"node_type\": \"entity\",   \"status\""
+      }
+    ],
+    "lesson": "Solved via: FindByAttribute -> GetEdgeQualifiers -> GetNodeSummary -> GetRelationDetails -> GetNodeLabel -> GetAttributeDetails",
+    "tool_count": 8,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  }
+]

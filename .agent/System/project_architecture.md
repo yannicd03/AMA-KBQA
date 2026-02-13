@@ -26,6 +26,7 @@ ama-kbqa/
 │   ├── cli.py                  # CLI entrypoint (ama-kbqa command)
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
 │   ├── postprocessing.py       # PostProcessor class (choice/sparql/llm_judge/simple)
+│   ├── fewshot_generator.py    # LLM-based fewshot example generator (~480 lines)
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
@@ -87,6 +88,14 @@ ama-kbqa/
 │       │   ├── kb.json         # KQAPro knowledge base
 │       │   ├── convert_kb_to_nt.py
 │       │   └── fewshot-examples/
+│       ├── kqapro/
+│       │   ├── kb.json         # KQAPro knowledge base
+│       │   ├── convert_kb_to_nt.py
+│       │   └── fewshot-examples/
+│       │       ├── Count.json              # Per-qtype tool-trace examples
+│       │       ├── Query.json
+│       │       ├── _general.json           # Cross-type general guidance (max 10)
+│       │       └── _tool_tips.json         # Tool-specific tips (max 20)
 │       └── SciQA/
 │           ├── ORKG RDF dump 14.02.2023.nt  # ORKG knowledge graph
 │           ├── Handcrafted/    # 100 expert Q&A pairs
@@ -102,7 +111,8 @@ ama-kbqa/
 │               ├── console_output.txt  # Full console log
 │               ├── detailed_log.txt    # Intermediate thinking
 │               ├── judgments.json      # LLM judge evaluations (if llm_judge mode)
-│               └── tool_traces/        # Full conversation traces (NEW)
+│               ├── generated_fewshot.json  # LLM-generated fewshot audit log (if --generate-fewshot)
+│               └── tool_traces/        # Full conversation traces
 │                   ├── question_000.json
 │                   ├── question_001.json
 │                   └── question_002.json
@@ -197,6 +207,8 @@ All prompts are centralized in a separate module for easier maintenance:
 | `SYNTHESIS_PROMPT_TEMPLATE` | Final answer synthesis prompt |
 | `TOOL_LOOP_GUIDANCE` | Tool-specific loop recovery guidance |
 | `LOOP_INTERVENTION_TEMPLATE` | Loop detection intervention message |
+| `GENERAL_GUIDANCE_TEMPLATE` | Cross-type insights from _general.json |
+| `TOOL_TIPS_TEMPLATE` | Tool-specific tips from _tool_tips.json |
 
 ### 1.2 SciQAAgent (`ama_kbqa/agents/sciqa_agent/agent.py`)
 
@@ -367,7 +379,38 @@ ama-kbqa benchmark -s sciqa -n 50 --dataset auto --postprocessing simple
 | `-p, --postprocessing` | Evaluation method: `choice`, `sparql`, `llm_judge`, or `simple` (default: `llm_judge`) |
 | `-d, --dataset` | SciQA only: `handcrafted` or `auto` (default: handcrafted) |
 
-### 6. Frontend (Streamlit Multi-Page App)
+### 6. Fewshot Generator (`ama_kbqa/fewshot_generator.py`)
+
+LLM-based generator that analyzes benchmark results to produce fewshot learning material:
+
+**Three Output Types:**
+
+1. **Per-qtype examples** - Tool-trace examples saved to `db/datasets/kqapro/fewshot-examples/<QType>.json`
+2. **General guidance** - Cross-type insights saved to `_general.json` (max 10 entries)
+3. **Tool tips** - Tool-specific gotchas saved to `_tool_tips.json` (max 20 entries)
+
+**Generator Features:**
+- Uses `deepseek/deepseek-v3.2-speciale` (judge LLM config) for analysis
+- Analyzes both correct (argumentation_score >= 4) and incorrect answers
+- For correct answers: extracts successful patterns and notes inefficiencies
+- For incorrect answers: diagnoses mistakes and proposes corrected tool traces
+- Deduplicates by question/title/tool+pattern before saving
+- Audit log written to `benchmark_results/<timestamp>/<agent>/<model>/generated_fewshot.json`
+- Enabled via `--generate-fewshot` CLI flag (defaults to `false` in config.toml)
+- Runs after llm_judge evaluation completes
+
+**Pydantic Models:**
+- `FewshotQTypeExample` - Per-qtype tool-trace examples with lessons/pitfalls
+- `FewshotGeneralExample` - Cross-type guidance with applicability tags
+- `ToolTip` - Tool-specific problem patterns and guidance
+- `FewshotGeneratorOutput` - Combined output with optional fields
+
+**Integration:**
+- Agent loads general guidance via `_load_general_guidance()` (top 5 entries)
+- Agent loads tool tips via `_load_tool_tips()` (top 10 entries)
+- Injected into analysis context via `GENERAL_GUIDANCE_TEMPLATE` and `TOOL_TIPS_TEMPLATE`
+
+### 7. Frontend (Streamlit Multi-Page App)
 
 The frontend provides a web-based interface for all major system features. Built with Streamlit, it offers four pages accessible via the sidebar.
 

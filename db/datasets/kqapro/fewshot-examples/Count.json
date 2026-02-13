@@ -1,1 +1,52 @@
-[]
+[
+  {
+    "question": "How many historic counties of England are known as places where the screenwriter of Babylon 5: The Gathering was buried?",
+    "answer": "0",
+    "qtype": "Count",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Babylon 5: The Gathering'}",
+        "result": "found ? (Babylon 5: The Gathering)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q3494438, screenwriter",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q126941",
+        "result": "{\"node_id\":\"Q126941\",\"name\":\"J. Michael Straczynski\",\"node_type\":\"entity\",\"attri"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'burial'}",
+        "result": "found ? (cemetery)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q126941, place of burial",
+        "result": "0 targets"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'J. Michael Straczynski burial'}",
+        "result": "found ? (J. Michael Straczynski)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q126941, place of death",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q3494438, creator",
+        "result": "0 targets"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetRelationDetails -> GetNodeSummary",
+    "tool_count": 14,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  }
+]

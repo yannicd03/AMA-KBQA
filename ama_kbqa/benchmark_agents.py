@@ -740,6 +740,7 @@ def save_results_to_disk(
     console_log: StringIO,
     is_complete: bool = False,
     postprocessing_mode: str = "",
+    generate_fewshot: bool = False,
 ) -> Dict[str, Any]:
     """Save current results to disk (intermediate or final)."""
     if not results:
@@ -901,6 +902,17 @@ def save_results_to_disk(
         else:
             print(f"[INFO] No new tool-trace examples to export")
 
+        # LLM-based fewshot generation
+        if generate_fewshot:
+            from ama_kbqa.fewshot_generator import generate_and_save_fewshot_examples
+            print(f"\n[INFO] Running LLM-based fewshot example generation...")
+            gen_counts = generate_and_save_fewshot_examples(
+                results_data=results_data,
+                full_results=results,
+                agent_name=agent_name,
+                result_dir=result_dir,
+            )
+
     return summary
 
 
@@ -1060,6 +1072,7 @@ async def run_benchmark_for_model_agent(
     output_dir: Path,
     use_fewshot: bool = True,
     postprocessing_mode: str = "",
+    generate_fewshot: bool = False,
 ) -> Dict[str, Any]:
     """Run benchmark for a specific model/agent combination."""
     result_dir = output_dir / agent_name / model.name
@@ -1144,6 +1157,7 @@ async def run_benchmark_for_model_agent(
                 console_log=console_log,
                 is_complete=True,
                 postprocessing_mode=postprocessing_mode,
+                generate_fewshot=generate_fewshot,
             )
 
     if results and summary:
@@ -1176,6 +1190,7 @@ async def run_full_benchmark(
     questionnaire_path: Optional[str] = None,
     dataset_type: str = "handcrafted",
     stratified: bool = False,
+    generate_fewshot: bool = False,
 ):
     """Run the full benchmark across models and agents."""
     is_single_model = len(models) == 1 and models[0].name == "default"
@@ -1246,6 +1261,7 @@ async def run_full_benchmark(
                 output_dir=output_dir,
                 use_fewshot=use_fewshot,
                 postprocessing_mode=postprocessing_mode,
+                generate_fewshot=generate_fewshot,
             )
             all_summaries.append(summary)
         except Exception as e:
@@ -1469,6 +1485,8 @@ Examples:
                         help="SciQA dataset type (default: handcrafted)")
     parser.add_argument("--stratified", action="store_true",
                         help="Stratified sampling by question type")
+    parser.add_argument("--generate-fewshot", action="store_true", default=None,
+                        help="Generate LLM-based fewshot examples from results (default: from config.toml)")
 
     args = parser.parse_args()
 
@@ -1504,6 +1522,16 @@ Examples:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Resolve generate_fewshot: CLI flag > config.toml > False
+    generate_fewshot = args.generate_fewshot
+    if generate_fewshot is None:
+        try:
+            import toml as _toml
+            _cfg = _toml.load(PROJECT_ROOT / "config.toml")
+            generate_fewshot = _cfg.get("postprocessing", {}).get("generate_fewshot", False)
+        except Exception:
+            generate_fewshot = False
+
     result = asyncio.run(run_full_benchmark(
         models=models,
         agents=list(args.agents),
@@ -1519,6 +1547,7 @@ Examples:
         questionnaire_path=args.questionnaire,
         dataset_type=args.dataset,
         stratified=args.stratified,
+        generate_fewshot=generate_fewshot,
     ))
 
     # Exit with non-zero code if all runs failed
