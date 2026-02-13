@@ -48,5 +48,19 @@
     "lesson": "Solved via: FindNode -> GetRelationDetails -> GetNodeSummary",
     "tool_count": 14,
     "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "How many languages are spoken in France or are official languages of Switzerland?",
+    "answer": "8",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "FindNode", "args": "France", "result": "found Q142 (France)"},
+      {"tool": "FindNode", "args": "Switzerland", "result": "found Q39 (Switzerland)"},
+      {"tool": "RunSPARQL", "args": "SELECT (COUNT(DISTINCT ?lang) AS ?count) WHERE { { ex:Q142 prop:languages_spoken_or_written ex:?lang . } UNION { ex:Q39 prop:official_language ?lang . } }", "result": "count=8"}
+    ],
+    "lesson": "For OR/UNION counting, use RunSPARQL with UNION and COUNT(DISTINCT ...) to avoid double-counting entities that match both conditions. Do NOT fetch two lists and merge manually.",
+    "pitfall": "Without DISTINCT, entities matching both conditions are counted twice. Always use COUNT(DISTINCT ?var) with UNION patterns.",
+    "tool_count": 3,
+    "collected_at": "2026-02-13T12:00:00"
   }
 ]

@@ -1737,6 +1737,149 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
         )
 
 
+def _get_attribute_with_qualifiers_impl(base_node_id: str, attribute_name: str, sparql: SPARQLWrapper) -> Dict[str, Any]:
+    """Internal implementation for GetAttributeWithQualifiers (callable from other tools)."""
+
+    # Format the entity URI
+    base_uri = format_entity_uri(base_node_id)
+
+    # Construct attribute URI
+    sanitized_attr_name = attribute_name.replace(" ", "_")
+    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr_name}>"
+
+    logger.info(f"GetAttributeWithQualifiers: {base_uri} -> {attribute_name}")
+
+    # Comprehensive query that gets values AND their qualifiers in one go
+    # Uses two methods: blank-node pattern AND reification pattern (KQAPro standard)
+    query = f"""
+    {SPARQL_PREFIXES}
+
+    SELECT ?valueNode ?value ?numericValue ?unit ?qualPred ?qualVal ?reifQualPred ?reifQualVal WHERE {{
+        {base_uri} {attr_uri} ?valueNode .
+
+        # Resolve blank nodes (for quantities with units)
+        OPTIONAL {{
+            ?valueNode rdf:value ?numericValue .
+            OPTIONAL {{ ?valueNode unit:unit ?unit }}
+        }}
+
+        # METHOD 1: Get qualifiers via blank-node pattern
+        OPTIONAL {{
+            ?valueNode ?qualPred ?qualVal .
+            # Filter out structural predicates
+            FILTER(?qualPred != rdf:type && ?qualPred != rdf:value && ?qualPred != unit:unit)
+        }}
+
+        # METHOD 2: Get qualifiers via RDF reification pattern (KQAPro standard)
+        OPTIONAL {{
+            ?stmt rdf:subject {base_uri} ;
+                  rdf:predicate {attr_uri} ;
+                  rdf:object ?valueNode .
+            ?stmt ?reifQualPred ?reifQualVal .
+            FILTER(STRSTARTS(STR(?reifQualPred), "http://kqapro.org/qualifier/"))
+        }}
+
+        # Determine the actual value to return
+        BIND(IF(BOUND(?numericValue), ?numericValue, ?valueNode) AS ?value)
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        if not bindings:
+            logger.info(f"No values found for {attribute_name} on {base_node_id}")
+            return {
+                "node_id": base_node_id,
+                "attribute_name": attribute_name,
+                "values": [],
+                "status": f"No values found for attribute '{attribute_name}' on node {base_node_id}"
+            }
+
+        # Group results by value node (each value can have multiple qualifiers)
+        value_groups = {}
+        for binding in bindings:
+            value_node = binding.get("valueNode", {}).get("value", "")
+
+            # Initialize this value group if not seen
+            if value_node not in value_groups:
+                value_obj = {}
+
+                # Get the actual value
+                if "numericValue" in binding and binding["numericValue"].get("value"):
+                    value_obj["value"] = binding["numericValue"]["value"]
+
+                    # Add unit if present
+                    if "unit" in binding and binding["unit"].get("value"):
+                        unit_uri = binding["unit"]["value"]
+                        value_obj["unit"] = unit_uri.split("/")[-1] if "/" in unit_uri else unit_uri
+                    else:
+                        value_obj["unit"] = ""
+
+                    value_obj["resolved_from_bnode"] = value_node
+                    logger.debug(f"Resolved blank node {value_node}: {value_obj['value']}")
+                else:
+                    # Direct value (not a blank node)
+                    value_obj["value"] = binding.get("value", {}).get("value", "")
+
+                value_obj["qualifiers"] = {}
+                value_groups[value_node] = value_obj
+
+            # Handle common qualifiers specially for readability
+            qualifier_mappings = {
+                "P585": "point in time",
+                "P459": "determination method",
+                "P580": "start time",
+                "P582": "end time",
+                "P276": "location",
+                "P805": "statement is subject of",
+                "P1932": "object has role",
+            }
+
+            # Add qualifier if present (METHOD 1: blank-node pattern)
+            if "qualPred" in binding and "qualVal" in binding:
+                qual_pred_uri = binding["qualPred"]["value"]
+                qual_val = binding["qualVal"]["value"]
+
+                # Extract readable predicate name
+                qual_pred_name = qual_pred_uri.split("/")[-1]
+                display_name = qualifier_mappings.get(qual_pred_name, qual_pred_name)
+                value_groups[value_node]["qualifiers"][display_name] = qual_val
+
+            # Add qualifier if present (METHOD 2: reification pattern)
+            if "reifQualPred" in binding and "reifQualVal" in binding:
+                reif_pred_uri = binding["reifQualPred"]["value"]
+                reif_val = binding["reifQualVal"]["value"]
+
+                # Extract readable predicate name from qualifier URI
+                reif_pred_name = reif_pred_uri.split("/")[-1]
+                display_name = qualifier_mappings.get(reif_pred_name, reif_pred_name)
+                value_groups[value_node]["qualifiers"][display_name] = reif_val
+
+        # Convert to list format
+        values_list = list(value_groups.values())
+
+        logger.info(f"Found {len(values_list)} value(s) with qualifiers for {attribute_name}")
+
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "values": values_list,
+            "status": f"Found {len(values_list)} value(s) with qualifiers"
+        }
+
+    except Exception as e:
+        logger.error(f"GetAttributeWithQualifiers failed: {e}")
+        return {
+            "node_id": base_node_id,
+            "attribute_name": attribute_name,
+            "values": [],
+            "status": f"Error: {str(e)}"
+        }
+
+
 @mcp.tool
 @log_tool_duration
 def GetAttributeWithQualifiers(
@@ -1825,158 +1968,40 @@ def GetAttributeWithQualifiers(
     app_context: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = app_context.sparql
 
-    # Format the entity URI
-    base_uri = format_entity_uri(base_node_id)
+    result = _get_attribute_with_qualifiers_impl(base_node_id, attribute_name, sparql)
 
-    # Construct attribute URI
-    sanitized_attr_name = attribute_name.replace(" ", "_")
-    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr_name}>"
+    # AUTO-UPDATE JOURNAL
+    values_list = result.get("values", [])
+    if values_list:
+        if base_node_id not in session_journal.found_values:
+            session_journal.found_values[base_node_id] = {}
 
-    logger.info(f"GetAttributeWithQualifiers: {base_uri} -> {attribute_name}")
+        session_journal.found_values[base_node_id][attribute_name] = values_list
 
-    # Comprehensive query that gets values AND their qualifiers in one go
-    query = f"""
-    {SPARQL_PREFIXES}
-
-    SELECT ?valueNode ?value ?numericValue ?unit ?qualPred ?qualVal WHERE {{
-        {base_uri} {attr_uri} ?valueNode .
-
-        # Resolve blank nodes (for quantities with units)
-        OPTIONAL {{
-            ?valueNode rdf:value ?numericValue .
-            OPTIONAL {{ ?valueNode unit:unit ?unit }}
-        }}
-
-        # Get all qualifiers for this value
-        OPTIONAL {{
-            ?valueNode ?qualPred ?qualVal .
-            # Filter out structural predicates
-            FILTER(?qualPred != rdf:type && ?qualPred != rdf:value && ?qualPred != unit:unit)
-        }}
-
-        # Determine the actual value to return
-        BIND(IF(BOUND(?numericValue), ?numericValue, ?valueNode) AS ?value)
-    }}
-    """
-
-    try:
-        sparql.setQuery(query)
-        results = sparql.query().convert()
-        bindings = results.get("results", {}).get("bindings", [])
-
-        if not bindings:
-            logger.info(f"No values found for {attribute_name} on {base_node_id}")
-            return {
-                "node_id": base_node_id,
-                "attribute_name": attribute_name,
-                "values": [],
-                "status": f"No values found for attribute '{attribute_name}' on node {base_node_id}"
+        for val in values_list[:3]:
+            fact_entry = {
+                "subject": base_node_id,
+                "attribute": attribute_name,
+                "value": val.get("value"),
+                "qualifiers": val.get("qualifiers", {}),
+                "source": "GetAttributeWithQualifiers"
             }
+            if "unit" in val:
+                fact_entry["unit"] = val["unit"]
+            session_journal.verified_facts.append(fact_entry)
 
-        # Group results by value node (each value can have multiple qualifiers)
-        value_groups = {}
-        for binding in bindings:
-            value_node = binding.get("valueNode", {}).get("value", "")
-
-            # Initialize this value group if not seen
-            if value_node not in value_groups:
-                value_obj = {}
-
-                # Get the actual value
-                if "numericValue" in binding and binding["numericValue"].get("value"):
-                    value_obj["value"] = binding["numericValue"]["value"]
-
-                    # Add unit if present
-                    if "unit" in binding and binding["unit"].get("value"):
-                        unit_uri = binding["unit"]["value"]
-                        value_obj["unit"] = unit_uri.split("/")[-1] if "/" in unit_uri else unit_uri
-                    else:
-                        value_obj["unit"] = ""
-
-                    value_obj["resolved_from_bnode"] = value_node
-                    logger.debug(f"Resolved blank node {value_node}: {value_obj['value']}")
-                else:
-                    # Direct value (not a blank node)
-                    value_obj["value"] = binding.get("value", {}).get("value", "")
-
-                value_obj["qualifiers"] = {}
-                value_groups[value_node] = value_obj
-
-            # Add qualifier if present
-            if "qualPred" in binding and "qualVal" in binding:
-                qual_pred_uri = binding["qualPred"]["value"]
-                qual_val = binding["qualVal"]["value"]
-
-                # Extract readable predicate name
-                qual_pred_name = qual_pred_uri.split("/")[-1]
-
-                # Handle common qualifiers specially for readability
-                qualifier_mappings = {
-                    "P585": "point in time",
-                    "P459": "determination method",
-                    "P580": "start time",
-                    "P582": "end time",
-                    "P276": "location",
-                    "P805": "statement is subject of",
-                    "P1932": "object has role",
-                }
-
-                display_name = qualifier_mappings.get(qual_pred_name, qual_pred_name)
-                value_groups[value_node]["qualifiers"][display_name] = qual_val
-
-        # Convert to list format
-        values_list = list(value_groups.values())
-
-        logger.info(f"Found {len(values_list)} value(s) with qualifiers for {attribute_name}")
-
-        # AUTO-UPDATE JOURNAL
-        if values_list:
-            # Store in found_values
-            if base_node_id not in session_journal.found_values:
-                session_journal.found_values[base_node_id] = {}
-
-            session_journal.found_values[base_node_id][attribute_name] = values_list
-
-            # Log as verified facts
-            for val in values_list[:3]:  # First 3 values
-                fact_entry = {
-                    "subject": base_node_id,
-                    "attribute": attribute_name,
-                    "value": val.get("value"),
-                    "qualifiers": val.get("qualifiers", {}),
-                    "source": "GetAttributeWithQualifiers"
-                }
-                if "unit" in val:
-                    fact_entry["unit"] = val["unit"]
-
-                session_journal.verified_facts.append(fact_entry)
-
-            # Log completion
-            node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
-            session_journal.completed_steps.append(
-                f"Retrieved {attribute_name} with qualifiers for {node_name}"
-            )
-
-            logger.info(f"Journal auto-updated: Stored {attribute_name} with qualifiers for {base_node_id}")
-
-        return {
-            "node_id": base_node_id,
-            "attribute_name": attribute_name,
-            "values": values_list,
-            "status": f"Found {len(values_list)} value(s) with qualifiers"
-        }
-
-    except Exception as e:
-        logger.error(f"GetAttributeWithQualifiers failed: {e}")
-        session_journal.failed_attempts.append(
-            f"GetAttributeWithQualifiers({base_node_id}, {attribute_name}): {str(e)[:100]}"
+        node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
+        session_journal.completed_steps.append(
+            f"Retrieved {attribute_name} with qualifiers for {node_name}"
         )
-        return {
-            "node_id": base_node_id,
-            "attribute_name": attribute_name,
-            "values": [],
-            "status": f"Error: {str(e)}"
-        }
+        logger.info(f"Journal auto-updated: Stored {attribute_name} with qualifiers for {base_node_id}")
+
+    if not values_list and "Error" in result.get("status", ""):
+        session_journal.failed_attempts.append(
+            f"GetAttributeWithQualifiers({base_node_id}, {attribute_name}): {result['status'][:100]}"
+        )
+
+    return result
 
 
 @mcp.tool
@@ -2057,8 +2082,10 @@ def TemporalAttributeQuery(
 
     logger.info(f"TemporalAttributeQuery: {base_node_id} -> {attribute_name} @ {target_date}")
 
-    # First, get all values with qualifiers using our other tool
-    qualified_response = GetAttributeWithQualifiers(base_node_id, attribute_name, context)
+    # Get all values with qualifiers using the internal helper (not the MCP-wrapped tool)
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
+    qualified_response = _get_attribute_with_qualifiers_impl(base_node_id, attribute_name, sparql)
 
     if not qualified_response.get("values"):
         return {

@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "question": "When did Albert Einstein receive the Nobel Prize in Physics?",
+    "answer": "1921",
+    "qtype": "QueryRelationQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "Albert Einstein", "result": "found Q937 (Albert Einstein)"},
+      {"tool": "FindNode", "args": "Nobel Prize in Physics", "result": "found Q38104 (Nobel Prize in Physics)"},
+      {"tool": "GetRelationDetails", "args": "Q937, award received", "result": "3 targets including Nobel Prize in Physics (Q38104)"},
+      {"tool": "GetEdgeQualifiers", "args": "Q937, award_received, Q38104", "result": "qualifiers: {point_in_time: 1921, for_work: photoelectric effect}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: The question asks WHEN, so return point_in_time=1921, not for_work", "result": "updated"}
+    ],
+    "lesson": "When multiple qualifiers exist on a relation (e.g., point_in_time AND for_work), parse the question word (When/Where/What role) to select the correct qualifier. 'When' maps to point_in_time, not for_work.",
+    "pitfall": "Do NOT return the first qualifier blindly. 'When did X receive Y?' asks for the TIME qualifier, not the 'for work' qualifier.",
+    "tool_count": 5,
+    "collected_at": "2026-02-13T12:00:00"
+  },
+  {
+    "question": "In what role did Marie Curie work at the University of Paris?",
+    "answer": "professor",
+    "qtype": "QueryRelationQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "Marie Curie", "result": "found Q7186 (Marie Curie)"},
+      {"tool": "FindNode", "args": "University of Paris", "result": "found Q209842 (University of Paris)"},
+      {"tool": "GetRelationDetails", "args": "Q7186, employer", "result": "targets include University of Paris (Q209842)"},
+      {"tool": "GetEdgeQualifiers", "args": "Q7186, employer, Q209842", "result": "qualifiers: {object_has_role: professor, start_time: 1906}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: 'In what role' asks for the role qualifier = professor", "result": "updated"}
+    ],
+    "lesson": "Use GetEdgeQualifiers to retrieve all qualifiers on a relation, then match the question's intent: 'In what role' -> object_has_role, 'When' -> point_in_time/start_time, 'Where' -> location.",
+    "pitfall": "Do NOT confuse the relation itself (employer) with its qualifiers (role, start_time). The question asks about a DETAIL of the relation, not the relation itself.",
+    "tool_count": 5,
+    "collected_at": "2026-02-13T12:00:00"
+  },
+  {
+    "question": "What was the ceremony for the Academy Award received by Steven Spielberg for Schindler's List?",
+    "answer": "66th Academy Awards",
+    "qtype": "QueryRelationQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "Steven Spielberg", "result": "found Q8877 (Steven Spielberg)"},
+      {"tool": "FindNode", "args": "Academy Award for Best Director", "result": "found Q103360 (Academy Award for Best Director)"},
+      {"tool": "GetRelationDetails", "args": "Q8877, award received", "result": "multiple awards including Academy Award for Best Director (Q103360)"},
+      {"tool": "GetEdgeQualifiers", "args": "Q8877, award_received, Q103360", "result": "qualifiers: {for_work: Schindler's List, ceremony: 66th Academy Awards, point_in_time: 1994}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: 'What was the ceremony' -> ceremony qualifier = 66th Academy Awards. NOT for_work and NOT point_in_time.", "result": "updated"}
+    ],
+    "lesson": "When the question asks 'What ceremony' or 'At which event', return the ceremony qualifier. When it says 'for what work', return for_work. Always read the question carefully to pick the right qualifier from GetEdgeQualifiers results.",
+    "pitfall": "Multiple qualifiers will be present (ceremony, for_work, point_in_time). Do NOT default to the most prominent one — match the question word exactly.",
+    "tool_count": 5,
+    "collected_at": "2026-02-13T12:00:00"
+  }
+]

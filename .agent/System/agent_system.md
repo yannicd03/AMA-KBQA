@@ -84,13 +84,13 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 | `prompts.py` | All prompt strings and templates | ~665 |
 
 **Prompts Module (`prompts.py`) exports:**
-- `QTYPE_STRATEGIES` - Dict of 10 question-type-specific strategies (includes completion gates for Count and SelectBetween)
-- `SYSTEM_PROMPT` - Main agent system prompt (includes 7 critical rules, including anti-premature-termination rule)
+- `QTYPE_STRATEGIES` - Dict of 10 question-type-specific strategies (includes completion gates for Count and SelectBetween, OR/UNION counting section for Count with SPARQL UNION pattern, prepositional phrase note in QueryAttr)
+- `SYSTEM_PROMPT` - Main agent system prompt (includes 7 critical rules: anti-premature-termination rule, prepositional phrase disambiguation rule)
 - `CLASSIFICATION_PROMPT_TEMPLATE` - Question classification (uses `{question}`)
 - `ENTITY_EXTRACTION_PROMPT` - Entity/relation extraction
 - `ANALYSIS_CONTEXT_TEMPLATE` - Pre-analysis context (uses `{qtype}`, `{formatted_entities}`, etc.)
 - `FEWSHOT_EXAMPLES_TEMPLATE` - Few-shot examples section (loads all 10 qtypes: Count, Verify, Select, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName, Query)
-- `GENERAL_GUIDANCE_TEMPLATE` - Cross-type insights from `_general.json` (top 5 entries)
+- `GENERAL_GUIDANCE_TEMPLATE` - Cross-type insights from `_general.json` (top 5 entries: verify constraints, trust KB data, match qualifier, use FindByAttribute, use SPARQL)
 - `TOOL_TIPS_TEMPLATE` - Tool-specific tips from `_tool_tips.json` (top 10 entries)
 - `ANALYSIS_CONTEXT_SUFFIX` - Closing text for analysis
 - `JOURNAL_REFRESH_TEMPLATE` - Periodic memory refresh (uses `{iteration_count}`, `{journal_refresh}`)
@@ -161,7 +161,7 @@ The agent classifies questions into 10 types, each with a specific strategy:
 
 | Type | Description | Strategy | Completion Gate |
 |------|-------------|----------|-----------------|
-| **Count** | "How many..." | Use RunSPARQL with COUNT() for large sets | ✅ Property discovery + COUNT query execution + numeric result |
+| **Count** | "How many..." | Use RunSPARQL with COUNT() for large sets; OR/UNION conditions use UNION pattern with COUNT(DISTINCT) to avoid double-counting | ✅ Property discovery + COUNT query execution + numeric result |
 | **Verify** | "Is...", "Does..." | Use VerifyNumericCondition for TRUE/FALSE | - |
 | **Select** | General selection | Entity identification and attribute lookup | - |
 | **SelectBetween** | Compare 2 entities | Use CompareEntities, verify constraints | ✅ Both entity values retrieved + comparison made + answer identified |

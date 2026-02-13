@@ -1,0 +1,47 @@
+[
+  {
+    "tool_name": "FindNode",
+    "problem_pattern": "Question says 'the X in Y' or 'the X of Y'",
+    "guidance": "Do NOT assume X is Y. Find Y first, then search for sub-entities of type X related to Y (e.g., RunSPARQL: SELECT ?x WHERE { ?x prop:located_in ex:Y . ?x prop:instance_of ex:town . })."
+  },
+  {
+    "tool_name": "GetEdgeQualifiers",
+    "problem_pattern": "Multiple qualifiers returned for a relation",
+    "guidance": "Parse the question word to select the correct qualifier: 'When' -> point_in_time/start_time, 'Where' -> location, 'What role' -> object_has_role, 'What ceremony' -> ceremony, 'For what' -> for_work."
+  },
+  {
+    "tool_name": "GetAttributeWithQualifiers",
+    "problem_pattern": "Need attribute value AND its temporal/spatial context",
+    "guidance": "Use this when you need both the attribute value and its qualifiers (e.g., population with point_in_time). If qualifiers are missing, fall back to GetEdgeQualifiers which uses the reification pattern."
+  },
+  {
+    "tool_name": "TemporalAttributeQuery",
+    "problem_pattern": "Question asks for a value 'in [year]' or 'as of [date]'",
+    "guidance": "Use this for date-filtered attribute lookups. It handles date comparison automatically. Increase tolerance_days if exact date match fails."
+  },
+  {
+    "tool_name": "RunSPARQL",
+    "problem_pattern": "OR/UNION conditions or multi-hop counting",
+    "guidance": "Use UNION for OR conditions and always wrap with COUNT(DISTINCT ?var) to avoid double-counting. Do NOT define namespace prefixes — the server injects them automatically."
+  },
+  {
+    "tool_name": "FindByAttribute",
+    "problem_pattern": "Question contains a unique ID, code, URL, or ISNI",
+    "guidance": "Use this for exact reverse lookup instead of FindNode. Pass the value and attribute name (e.g., FindByAttribute('0000 0004 0631 7316', 'ISNI'))."
+  },
+  {
+    "tool_name": "GetRelationDetails",
+    "problem_pattern": "Need to find entities connected via a specific relation",
+    "guidance": "Returns all target entities for a relation. If 0 results, try the inverse direction or check available_predicates from FindNode for the correct relation name."
+  },
+  {
+    "tool_name": "CompareEntities",
+    "problem_pattern": "Need to compare an attribute across 2+ entities",
+    "guidance": "Pass a list of entity IDs and the comparison attribute. Returns sorted results. More efficient than calling GetAttributeDetails on each entity separately."
+  },
+  {
+    "tool_name": "VerifyNumericCondition",
+    "problem_pattern": "Need to compare two numbers or dates",
+    "guidance": "NEVER perform mental math. Always pass numeric comparisons to this tool. It handles type coercion and returns a reliable True/False verdict."
+  }
+]

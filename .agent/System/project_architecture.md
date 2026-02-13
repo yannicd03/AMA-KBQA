@@ -88,13 +88,10 @@ ama-kbqa/
 │       │   ├── kb.json         # KQAPro knowledge base
 │       │   ├── convert_kb_to_nt.py
 │       │   └── fewshot-examples/
-│       ├── kqapro/
-│       │   ├── kb.json         # KQAPro knowledge base
-│       │   ├── convert_kb_to_nt.py
-│       │   └── fewshot-examples/
-│       │       ├── Count.json              # Per-qtype tool-trace examples
-│       │       ├── Query.json
-│       │       ├── _general.json           # Cross-type general guidance (max 10)
+│       │       ├── Count.json              # Per-qtype tool-trace examples (includes UNION counting example)
+│       │       ├── QueryRelationQualifier.json  # 3 qualifier selection examples (point_in_time vs for_work, role, ceremony)
+│       │       ├── Query.json              # and 8 other qtype files
+│       │       ├── _general.json           # Cross-type general guidance (5 entries: verify constraints, trust KB, match qualifier, use FindByAttribute, use SPARQL)
 │       │       └── _tool_tips.json         # Tool-specific tips (max 20)
 │       └── SciQA/
 │           ├── ORKG RDF dump 14.02.2023.nt  # ORKG knowledge graph
@@ -199,16 +196,16 @@ All prompts are centralized in a separate module for easier maintenance:
 
 | Prompt | Purpose |
 |--------|---------|
-| `QTYPE_STRATEGIES` | 10 question-type-specific reasoning strategies |
-| `SYSTEM_PROMPT` | Main agent system prompt with KBQA rules |
+| `QTYPE_STRATEGIES` | 10 question-type-specific reasoning strategies (Count includes OR/UNION section with SPARQL pattern, QueryAttr includes prepositional phrase note) |
+| `SYSTEM_PROMPT` | Main agent system prompt with 7 KBQA rules (includes prepositional phrase disambiguation rule #7) |
 | `CLASSIFICATION_PROMPT_TEMPLATE` | Question classification prompt |
 | `ENTITY_EXTRACTION_PROMPT` | Entity/relation extraction prompt |
 | `ANALYSIS_CONTEXT_TEMPLATE` | Pre-analysis injection template |
 | `SYNTHESIS_PROMPT_TEMPLATE` | Final answer synthesis prompt |
 | `TOOL_LOOP_GUIDANCE` | Tool-specific loop recovery guidance |
 | `LOOP_INTERVENTION_TEMPLATE` | Loop detection intervention message |
-| `GENERAL_GUIDANCE_TEMPLATE` | Cross-type insights from _general.json |
-| `TOOL_TIPS_TEMPLATE` | Tool-specific tips from _tool_tips.json |
+| `GENERAL_GUIDANCE_TEMPLATE` | Cross-type insights from _general.json (5 entries: verify constraints, trust KB data, match qualifier, use FindByAttribute, use SPARQL) |
+| `TOOL_TIPS_TEMPLATE` | Tool-specific tips from _tool_tips.json (max 10 entries loaded) |
 
 ### 1.2 SciQAAgent (`ama_kbqa/agents/sciqa_agent/agent.py`)
 
@@ -258,9 +255,9 @@ Provides 21 tools for knowledge graph interaction:
 - `GetRelationDetails` - Connected entities via relation
 
 **Qualifier Tools:**
-- `GetEdgeQualifiers` - Attribute statement qualifiers
+- `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern)
 - `GetQualifiersByPredicate` - Relation statement qualifiers
-- `GetAttributeWithQualifiers` - Attribute values with all context
+- `GetAttributeWithQualifiers` - Attribute values with all context (uses dual-method SPARQL: blank-node pattern + RDF reification pattern for comprehensive qualifier coverage) ✨ UPDATED
 - `TemporalAttributeQuery` - Date-specific attribute lookup
 
 **Comparison Tools:**
