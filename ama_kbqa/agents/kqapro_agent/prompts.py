@@ -26,9 +26,9 @@ QTYPE_STRATEGIES = {
 
        SPARQL UNION Pattern:
        SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
-         { ?item attr:classification "421.221.12" . }
+         { ?item attr:ATTRIBUTE_A "VALUE_A" . }
          UNION
-         { ex:MUSICIAN prop:instrument ?item . }
+         { ex:ENTITY_ID prop:PREDICATE ?item . }
        }
 
     **VERIFICATION RULE:** If you verified entities through KB tools, trust those results.
@@ -81,6 +81,11 @@ QTYPE_STRATEGIES = {
 
     3. **Query the Qualifier:** Use `GetEdgeQualifiers(subject_id, predicate, target_value)` to get context
        - Example: GetEdgeQualifiers("Q123", "publication_date", "1998-04-09") → returns location qualifier
+
+    4. **Select the Right Qualifier:** If multiple qualifiers are returned, match the question word:
+       - "At what point in time" / "When" → point_in_time
+       - "Where" → location
+       - Use the question's phrasing to pick the correct qualifier from the results.
 
     SPARQL Pattern:
     SELECT ?qualifier_value WHERE {
@@ -136,6 +141,12 @@ QTYPE_STRATEGIES = {
     Strategy:
         1. **Identify Connection:** Use `GetRelationDetails` to confirm A and B are connected.
         2. **Extract Detail:** Use `GetEdgeQualifiers` on that specific connection to find the role, capacity, or nuance requested.
+        3. **Select the Right Qualifier:** GetEdgeQualifiers returns MULTIPLE qualifiers (e.g., point_in_time, for_work, ceremony, object_has_role). Parse the question word to pick the correct one:
+           - "When" / "What year" → point_in_time or start_time
+           - "Where" / "What location" → location
+           - "In what role" / "As what" → object_has_role
+           - "At which ceremony" / "What event" → ceremony or statement_is_subject_of
+           - Ambiguous "for what" → check BOTH for_work AND ceremony; prefer the one that matches the question's expected answer type (event vs. creative work)
     SPARQL Fallback:
     SELECT ?detail_value WHERE {
     ?fact_node pred:fact_h ex:ENTITY_A_ID ;
@@ -222,6 +233,8 @@ QTYPE_STRATEGIES = {
        - Named entity → Use `FindNode`
        - Review `available_attributes` for schema introspection
 
+    2b. **Prepositional phrases:** If the question says "the X in Y" or "the X of Y", do NOT assume X = Y. See Rule #7 — find Y first, then search for sub-entities of type X related to Y.
+
     3. **Verify constraints:** Use `GetAttributeDetails` to confirm entities match ALL constraints before proceeding
 
     4. **Gather information:**
@@ -283,6 +296,9 @@ SYSTEM_PROMPT = """SYSTEM ROLE
     Call GetJournalSummary() before giving your final answer!
     This shows ALL values you discovered. Your answer MUST be based on these values.
     If a value isn't in the journal summary, you haven't found it yet!
+
+    **DO NOT BACKTRACK:** Once a fact appears in verified_facts or found_values, treat it as ground truth.
+    Do NOT discard verified findings because of uncertainty. If you verified 3 entities match, your answer is 3 — not a lower number.
 
     KNOWLEDGE GRAPH ACCESS TOOLS (TWO-TIER PATTERN)
     The system uses an efficient two-tier data access pattern to minimize context usage:
