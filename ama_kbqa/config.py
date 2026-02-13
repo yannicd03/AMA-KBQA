@@ -1,7 +1,7 @@
 """Configuration management for AMA KBQA system.
 
 This module provides utilities to load configuration from config.toml
-and initialize LLM clients for different providers (OpenRouter, KIT Ollama, AIFB)
+and initialize LLM clients for different providers (OpenRouter, KIT Ollama, KIT)
 using the OpenAI client wrapper for compatibility.
 """
 
@@ -272,8 +272,7 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
     # Map providers to their environment variable names
     env_var_map = {
         "openrouter": "OPENROUTER_API_KEY",
-        "kit_ollama": "KIT_OLLAMA_TOKEN",
-        "aifb": "AIFB_API_KEY",
+        "kit": "KIT_API_KEY",
     }
 
     env_var = env_var_map.get(provider)

@@ -220,7 +220,6 @@ db/datasets/kqapro/train.json
 db/datasets/kqapro/val.json
 /.claude
 claude.md
-.agent/
 /db/datasets/SciQA/**
 /paper
 **.tex
@@ -228,3 +227,4 @@ claude.md
 **.log
 /benchmark_results
 /batch_results
+/.agent

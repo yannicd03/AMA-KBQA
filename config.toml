@@ -18,11 +18,7 @@ chat_model = "minimax/minimax-m2.5"
 embedding_model = "qwen/qwen3-embedding-8b"
 chat_model_provider = ""
 
-[kit_ollama]
-base_url = "https://ki-toolbox.scc.kit.edu/ollama/api"
-chat_model = "gpt-oss:120b"
-
-[aifb]
+[kit]
 base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
 chat_model = "azure.gpt-4.1-mini"
 

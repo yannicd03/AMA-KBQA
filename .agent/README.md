@@ -333,6 +333,18 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-13**: ✅ **LLM Provider Cleanup and KIT Model Expansion**
+  - **Provider renaming**: Renamed "aifb" provider to "kit" across all files (config.toml, config.py, benchmark_agents.py, frontend, CLAUDE.md)
+  - **Environment variable**: `AIFB_API_KEY` renamed to `KIT_API_KEY` (update your .env file)
+  - **Removed kit_ollama provider**: Completely removed broken "kit_ollama" provider (was using non-functional `/ollama/api` endpoint)
+  - **Migrated existing models**: `gpt-oss-120b-kit` and `qwen3-vl-235b-kit` now use the working KIT endpoint (`/api/v1`) instead of kit_ollama
+  - **Added 3 new KIT models** to BENCHMARK_MODELS:
+    - `o4-mini-kit` (azure.o4-mini)
+    - `mixtral-8x22b-kit` (kit.mixtral-8x22b-instruct)
+    - `minimax-m2.1-kit` (kit.minimax-m2.1-229b)
+  - **Total KIT models**: 5 benchmark models now available via KIT provider (gpt-oss-120b-kit, qwen3-vl-235b-kit, gpt-4.1-mini-kit, o4-mini-kit, mixtral-8x22b-kit, minimax-m2.1-kit)
+  - **Available providers**: Only `openrouter` and `kit` remain (removed lm_studio, deepseek, zai)
+  - Updated [SOP/changing_llm_provider.md](SOP/changing_llm_provider.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-13**: ✅ **Benchmark Folder Naming Pattern Change**
   - Changed benchmark output directory naming from timestamp-based (`YYYY-MM-DD_HH-MM-SS`) to date-based with incrementing run number (`YYYY-MM-DD-N`)
   - New pattern: `benchmark_results/2026-02-13-1/`, `benchmark_results/2026-02-13-2/`, etc.
@@ -378,7 +390,7 @@ When updating documentation:
   - Tool call arguments in `tool_calls` field are automatically parsed from JSON strings to objects for easier inspection
   - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-13**: ✅ **Provider Cleanup and UI Enhancements**
-  - **Removed LLM providers**: Removed `lm_studio`, `deepseek`, and `zai` provider support from config.toml, config.py, and frontend. Only `openrouter`, `kit_ollama`, and `aifb` providers remain.
+  - **Removed LLM providers**: Removed `lm_studio`, `deepseek`, and `zai` provider support from config.toml, config.py, and frontend. Only `openrouter` and `kit` providers remain.
   - **LLM judge model change**: Changed judge model from `meta-llama/llama-3.3-70b-instruct` and `google/gemini-3-flash-preview` to `deepseek/deepseek-v3.2` (via OpenRouter) in both `postprocessing.py` and `benchmark_agents.py`
   - **UI defaults**: Batch Processing page now defaults to `llm_judge` evaluation (was first in list: choice) and stratified sampling enabled (was unchecked)
   - **ETA display**: Progress bar now shows elapsed time and estimated remaining time during batch runs
@@ -504,11 +516,10 @@ When updating documentation:
   - Updated [System/agent_system.md](System/agent_system.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-05**: ✅ **Added KIT Direct Benchmark Model**
   - New benchmark models using KIT endpoints directly (bypass OpenRouter):
-    - `gpt-oss-120b-kit` (model_id: `gpt-oss:120b`) — KIT Ollama at `/ollama/v1`
-    - `qwen3-vl-235b-kit` (model_id: `qwen3-vl:235b-a22b-instruct`) — KIT Ollama at `/ollama/v1`
+    - `gpt-oss-120b-kit` (model_id: `kit.gpt-oss-120b`) — KIT AI Toolbox at `/api/v1`
+    - `qwen3-vl-235b-kit` (model_id: `kit.qwen3-vl-235b-a22b-instruct`) — KIT AI Toolbox at `/api/v1`
     - `gpt-4.1-mini-kit` (model_id: `azure.gpt-4.1-mini`) — KIT AI Toolbox at `/api/v1`
-  - KIT Ollama models use `KIT_OLLAMA_TOKEN`, AI Toolbox models use `AIFB_API_KEY`
-  - Note: KIT's `/ollama/api` is native Ollama (NOT OpenAI-compatible); `/ollama/v1` is the OpenAI-compatible endpoint
+  - All KIT models use `KIT_API_KEY`
   - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) with new model
 - **2026-02-05**: ✅ **Enhanced Multi-Model Benchmarking**
   - Added 2 new models: `qwen3-32b` (qwen/qwen3-32b:nitro), `nemotron-3-nano-30b` (nvidia/nemotron-3-nano-30b-a3b:nitro)
@@ -518,11 +529,11 @@ When updating documentation:
   - LLM judge now uses **JSON mode** for reliable response parsing with automatic fallback
   - Stricter judge prompt to reduce false positives (marks INCORRECT when in doubt)
   - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) with new models and features
-- **2026-02-05**: ✅ **Added AIFB LLM Provider**
-  - New provider "aifb" using KIT AI Toolbox API at `https://ki-toolbox.scc.kit.edu/api/v1`
+- **2026-02-05**: ✅ **Added KIT LLM Provider**
+  - New provider "kit" using KIT AI Toolbox API at `https://ki-toolbox.scc.kit.edu/api/v1`
   - Default model: `azure.gpt-4.1-mini`
-  - Requires `AIFB_API_KEY` environment variable
-  - Updated [SOP/changing_llm_provider.md](SOP/changing_llm_provider.md) with AIFB configuration
+  - Requires `KIT_API_KEY` environment variable
+  - Updated [SOP/changing_llm_provider.md](SOP/changing_llm_provider.md) with KIT configuration
 - **2026-02-04**: ✅ **LLM-as-Judge Evaluation for Multi-Model Benchmarking**
   - Updated `benchmark_agents.py` to use DeepSeek v3.2 as an LLM judge for answer evaluation
   - Replaces rule-based string matching with semantic equivalence checking
