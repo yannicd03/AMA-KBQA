@@ -54,3 +54,4 @@ judge_provider = "openrouter"
 judge_model = "deepseek/deepseek-v3.2"
 chat_model_provider = ""
 judge_temperature = 0.3
+generate_fewshot = false

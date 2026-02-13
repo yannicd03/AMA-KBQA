@@ -90,6 +90,8 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 - `ENTITY_EXTRACTION_PROMPT` - Entity/relation extraction
 - `ANALYSIS_CONTEXT_TEMPLATE` - Pre-analysis context (uses `{qtype}`, `{formatted_entities}`, etc.)
 - `FEWSHOT_EXAMPLES_TEMPLATE` - Few-shot examples section (loads all 10 qtypes: Count, Verify, Select, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName, Query)
+- `GENERAL_GUIDANCE_TEMPLATE` - Cross-type insights from `_general.json` (top 5 entries)
+- `TOOL_TIPS_TEMPLATE` - Tool-specific tips from `_tool_tips.json` (top 10 entries)
 - `ANALYSIS_CONTEXT_SUFFIX` - Closing text for analysis
 - `JOURNAL_REFRESH_TEMPLATE` - Periodic memory refresh (uses `{iteration_count}`, `{journal_refresh}`)
 - `NO_PROGRESS_TEMPLATE` - No progress intervention
@@ -116,7 +118,9 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 │    - Classify question type (9 types)                          │
 │    - Extract entities and relations                            │
 │    - Load question-type-specific strategy                      │
-│    - Load tool-trace few-shot examples (if enabled)             │
+│    - Load tool-trace few-shot examples (if enabled)            │
+│    - Load general guidance from _general.json (top 5)          │
+│    - Load tool tips from _tool_tips.json (top 10)              │
 │    - Inject pre-analysis context into message history          │
 └────────────────────────────────────────────────────────────────┘
                               │
@@ -777,9 +781,143 @@ def trace(agent_name: str, msg: str, color: str):
 
 ---
 
+## LLM-Based Fewshot Generator
+
+**Module:** `ama_kbqa/fewshot_generator.py`
+
+After benchmark runs with llm_judge evaluation, the system can optionally generate fewshot learning material by analyzing successful and failed attempts.
+
+### Generator Workflow
+
+1. **Qualification Filter** - Selects results worth learning from:
+   - Correct answers with `argumentation_score >= 4`
+   - Any incorrect answer (to learn from mistakes)
+
+2. **LLM Analysis** - Uses `deepseek/deepseek-v3.2-speciale` to analyze:
+   - Full conversation messages (truncated to last 20 messages, tool results to 500 chars)
+   - Tool trace overview
+   - Judge verdict (correctness reasoning, argumentation quality, score)
+   - Question metadata (type, gold answer, predicted answer)
+
+3. **Output Generation** - Produces up to 3 optional outputs per question:
+   - **QType Example** - Reusable strategy pattern for this question type
+   - **General Example** - Cross-type insight applicable to multiple types
+   - **Tool Tip** - Tool-specific gotcha or usage pattern
+
+4. **Deduplication & Storage**:
+   - Per-qtype examples: deduplicated by question text, saved to `<QType>.json` (max 5)
+   - General guidance: deduplicated by title, saved to `_general.json` (max 10)
+   - Tool tips: deduplicated by tool_name+problem_pattern, saved to `_tool_tips.json` (max 20)
+
+5. **Audit Logging** - All generated examples (pre-dedup) saved to `generated_fewshot.json`
+
+### Agent Integration
+
+The KQAProAgent automatically loads and injects generated material:
+
+**Loading Methods:**
+
+| Method | Source File | Limit | Format |
+|--------|-------------|-------|--------|
+| `_load_general_guidance()` | `_general.json` | Top 5 | `[applies_to] title: guidance` |
+| `_load_tool_tips()` | `_tool_tips.json` | Top 10 | `tool_name | When: pattern | Do: guidance` |
+
+**Injection Point:**
+
+Both are injected during `_build_analysis_context()` after few-shot examples and before the analysis context suffix:
+
+```
+[Pre-Analysis Context]
+├── Question Type
+├── Extracted Entities
+├── Type-Specific Strategy
+├── Few-Shot Examples (if enabled)
+├── General Guidance (if available)  <-- NEW
+├── Tool Tips (if available)         <-- NEW
+└── Context Suffix
+```
+
+**Templates:**
+
+```python
+GENERAL_GUIDANCE_TEMPLATE = """
+General Guidance (learned from previous runs):
+{general_guidance}
+"""
+
+TOOL_TIPS_TEMPLATE = """
+Tool Tips:
+{tool_tips}
+"""
+```
+
+### Configuration
+
+**Enable in CLI:**
+
+```bash
+python -m ama_kbqa.benchmark_agents --agents kqapro --postprocessing llm_judge --generate-fewshot
+```
+
+**Enable in config.toml:**
+
+```toml
+[postprocessing]
+generate_fewshot = true
+```
+
+**Priority:** CLI flag > config.toml > `false` (default)
+
+### Example Outputs
+
+**Per-QType Example (_general.json):**
+
+```json
+{
+  "question": "How many films did Christopher Nolan direct?",
+  "answer": "11",
+  "qtype": "Count",
+  "trace": [
+    {"tool": "FindNode", "args": "Christopher Nolan", "result": "Q123456"},
+    {"tool": "RunSPARQL", "args": "SELECT COUNT(?film) WHERE...", "result": "11"}
+  ],
+  "lesson": "For count queries, use RunSPARQL with COUNT() aggregation instead of iterating with GetRelationDetails.",
+  "pitfall": "Avoid calling GetRelationDetails repeatedly - it's inefficient for counting.",
+  "tool_count": 2,
+  "was_correct": true
+}
+```
+
+**General Guidance (_general.json):**
+
+```json
+{
+  "title": "SPARQL for Large Result Sets",
+  "guidance": "When counting or filtering many entities, prefer RunSPARQL over iterative tool calls. It's faster and avoids loop patterns.",
+  "applies_to": ["Count", "SelectAmong", "QueryName"],
+  "derived_from_qtype": "Count",
+  "was_correct": true
+}
+```
+
+**Tool Tip (_tool_tips.json):**
+
+```json
+{
+  "tool_name": "FindNode",
+  "problem_pattern": "Semantic search returns irrelevant entities",
+  "guidance": "Try exact ID match with GetNodeLabel or use FindByAttribute for attribute-based search",
+  "example_args": "entity_name='Boston' for city disambiguation",
+  "derived_from_question": "What is the population of Boston?"
+}
+```
+
+---
+
 ## Related Documentation
 
 - [Project Architecture](project_architecture.md) - System overview
 - [Database Schema](database_schema.md) - Qdrant/Virtuoso schemas
 - [../SOP/adding_new_tools.md](../SOP/adding_new_tools.md) - How to add tools
+- [../SOP/running_batch_processing.md](../SOP/running_batch_processing.md) - Batch processing with fewshot generation
 - [../../TOOLS_REFERENCE.md](../../TOOLS_REFERENCE.md) - Complete tool reference

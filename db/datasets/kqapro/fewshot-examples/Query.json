@@ -1,1 +1,142 @@
-[]
+[
+  {
+    "question": "How long is the movie Around the World in 80 Days (the one that has Arnold Schwarzenegger as a cast member)?",
+    "answer": "120 minute",
+    "qtype": "Query",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Around the World in 80 Days movie'}",
+        "result": "found ? (Around the World in 80 Days)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q1660599, cast member",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q696057, cast member",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q156519, cast member",
+        "result": "0 targets"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Arnold Schwarzenegger'}",
+        "result": "found ? (Arnold Schwarzenegger)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q156519, duration",
+        "result": "not found"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetRelationDetails -> GetAttributeDetails",
+    "tool_count": 6,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "When was the 2009 Sundance Film Festival held?",
+    "answer": "2009",
+    "qtype": "Query",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Sundance Film Festival'}",
+        "result": "found ? (Sundance Film Festival)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q3976987, point in time",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q3976987, month of the year",
+        "result": "not found"
+      },
+      {
+        "tool": "GetEdgeQualifiers",
+        "args": "{'attribute_name': 'point in time', 'base_node_id': 'Q397698",
+        "result": "{   \"base_node\": \"Q3976987\",   \"attribute\": \"point in time\",   \"value\": null,   "
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q3976987",
+        "result": "{\"node_id\":\"Q3976987\",\"name\":\"2009 Sundance Film Festival\",\"node_type\":\"entity\","
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q189887",
+        "result": "{\"node_id\":\"Q189887\",\"name\":\"Sundance Film Festival\",\"node_type\":\"entity\",\"attri"
+      },
+      {
+        "tool": "RunSPARQL",
+        "args": "SELECT ?startDate ?endDate WHERE {   ex:Q3976987 attr:point_",
+        "result": "0 results"
+      },
+      {
+        "tool": "GetNodeLabel",
+        "args": "{'node_id': 'Q108'}",
+        "result": "{   \"node_id\": \"Q108\",   \"label\": \"January\",   \"node_type\": \"entity\",   \"status\""
+      }
+    ],
+    "lesson": "Used SPARQL for Query question after entity discovery.",
+    "tool_count": 10,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "The cast of which visual artwork includes the person whose CANTIC-ID is a12218650?",
+    "answer": "Thor",
+    "qtype": "Query",
+    "trace": [
+      {
+        "tool": "FindByAttribute",
+        "args": "CANTIC-ID, a12218650",
+        "result": "{\"matches\":[{\"original_id\":\"Q126941\",\"name\":\"J. Michael Straczynski\",\"node_type\""
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q126941",
+        "result": "{\"node_id\":\"Q126941\",\"name\":\"J. Michael Straczynski\",\"node_type\":\"entity\",\"attri"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q126941, notable work",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q126941, filmography",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q126941, occupation",
+        "result": "0 targets"
+      },
+      {
+        "tool": "BatchGetNodeLabels",
+        "args": "{'node_ids': ['Q1930187', 'Q214917', 'Q28389', 'Q3282637', '",
+        "result": "{   \"resolved\": {     \"Q1930187\": \"journalist\",     \"Q214917\": \"playwright\",    "
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q126941, creator",
+        "result": "0 targets"
+      },
+      {
+        "tool": "BatchGetNodeLabels",
+        "args": "{'node_ids': ['Q3494438', 'Q737343', 'Q210146']}",
+        "result": "{   \"resolved\": {     \"Q3494438\": \"Babylon 5: The Gathering\",     \"Q737343\": \"Cr"
+      }
+    ],
+    "lesson": "Solved via: FindByAttribute -> GetNodeSummary -> GetRelationDetails -> BatchGetNodeLabels",
+    "tool_count": 11,
+    "collected_at": "2026-02-13T00:42:18.965521"
+  }
+]

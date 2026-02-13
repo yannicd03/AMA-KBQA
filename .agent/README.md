@@ -100,6 +100,7 @@ Additional documentation in the project root:
 | `ama_kbqa/cli.py` | CLI entrypoint (`ama-kbqa` command) |
 | `ama_kbqa/benchmark_agents.py` | Unified batch processing & multi-model benchmarking (~1400 lines) |
 | `ama_kbqa/postprocessing.py` | PostProcessor class with choice/sparql/llm_judge/simple modes (~850 lines) |
+| `ama_kbqa/fewshot_generator.py` | LLM-based fewshot example generator (~480 lines) |
 | `ama_kbqa/utils/trace_utils.py` | Tool trace extraction & few-shot export (~330 lines) |
 | `ama_kbqa/agents/kqapro_agent/agent.py` | KQAPro agent (inherits BaseKBQAAgent, ~290 lines) |
 | `ama_kbqa/agents/kqapro_agent/prompts.py` | KQAPro prompts (~665 lines) |
@@ -332,6 +333,19 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-13**: ✅ **LLM-Based Fewshot Example Generator**
+  - Added `ama_kbqa/fewshot_generator.py` - LLM-powered generator that analyzes benchmark results to produce three types of fewshot learning material
+  - **Per-qtype examples**: Saved to existing `db/datasets/kqapro/fewshot-examples/<QType>.json` files
+  - **General guidance**: Cross-type insights saved to `_general.json` (max 10 entries)
+  - **Tool tips**: Tool-specific tips saved to `_tool_tips.json` (max 20 entries)
+  - Generator uses `deepseek/deepseek-v3.2-speciale` (judge LLM config) to analyze correct/incorrect traces
+  - Outputs structured JSON with lessons, pitfalls, and corrected traces for incorrect answers
+  - Audit log written to `benchmark_results/<timestamp>/<agent>/<model>/generated_fewshot.json`
+  - Enabled via `--generate-fewshot` CLI flag (defaults to `false` in config.toml `[postprocessing]`)
+  - Runs after llm_judge evaluation completes, analyzes results with argumentation_score >= 4 (correct) or any score (incorrect)
+  - Agent updated: `KQAProAgent` now loads general guidance and tool tips via `_load_general_guidance()` and `_load_tool_tips()`
+  - New templates in `prompts.py`: `GENERAL_GUIDANCE_TEMPLATE` and `TOOL_TIPS_TEMPLATE`
+  - Updated [System/agent_system.md](System/agent_system.md), [System/project_architecture.md](System/project_architecture.md), and [SOP/running_batch_processing.md](SOP/running_batch_processing.md)
 - **2026-02-13**: ✅ **Tool Trace Export Per Question**
   - Added full conversation trace export in `benchmark_agents.py` - each question's complete `agent._messages` history is now saved to `tool_traces/question_NNN.json`
   - Trace files include: `question_id`, `question`, `gold_answer`, `predicted_answer`, `accuracy`, and `messages` (full conversation with tool call arguments parsed from JSON strings to objects)

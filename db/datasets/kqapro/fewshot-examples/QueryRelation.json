@@ -1,1 +1,182 @@
-[]
+[
+  {
+    "question": "How is Fluminense F.C. related to diving?",
+    "answer": "sport",
+    "qtype": "QueryRelation",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Fluminense F.C.'}",
+        "result": "found ? (Fluminense F.C.)"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q80987",
+        "result": "{\"node_id\":\"Q80987\",\"name\":\"Fluminense F.C.\",\"node_type\":\"entity\",\"attributes\":{"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q80987, sport",
+        "result": "0 targets"
+      },
+      {
+        "tool": "BatchGetNodeLabels",
+        "args": "{'node_ids': ['Q11420', 'Q1734', 'Q326827', 'Q3930', 'Q41323",
+        "result": "{   \"resolved\": {     \"Q11420\": \"judo\",     \"Q1734\": \"volleyball\",     \"Q326827\""
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetNodeSummary -> GetRelationDetails -> BatchGetNodeLabels",
+    "tool_count": 5,
+    "collected_at": "2026-02-13T00:42:18.965521"
+  },
+  {
+    "question": "What is the connection between Futurama (the one whose distribution format is DVD) to DVD?",
+    "answer": "distribution",
+    "qtype": "QueryRelation",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Futurama'}",
+        "result": "found ? (Futurama)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q235710, distribution",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q73622, distribution",
+        "result": "not found"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q73622",
+        "result": "{\"node_id\":\"Q73622\",\"name\":\"Futurama\",\"node_type\":\"entity\",\"attributes\":{\"number"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'DVD'}",
+        "result": "found ? (DVD)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q73622, distribution",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q235710",
+        "result": "{\"node_id\":\"Q235710\",\"name\":\"Futurama\",\"node_type\":\"entity\",\"attributes\":{\"publi"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q235710, distribution",
+        "result": "0 targets"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetAttributeDetails -> GetNodeSummary -> GetRelationDetails",
+    "tool_count": 9,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "What is the connection between Clint Eastwood (the one that has the occupation of film producer) to 62nd Golden Globe Awards?",
+    "answer": "award received",
+    "qtype": "QueryRelation",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Clint Eastwood'}",
+        "result": "found ? (Clint Eastwood)"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q43203",
+        "result": "{\"node_id\":\"Q43203\",\"name\":\"Clint Eastwood\",\"node_type\":\"entity\",\"attributes\":{\""
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q43203, occupation",
+        "result": "0 targets"
+      },
+      {
+        "tool": "BatchGetNodeLabels",
+        "args": "{'node_ids': ['Q2526255', 'Q28389', 'Q3282637', 'Q33999', 'Q",
+        "result": "{   \"resolved\": {     \"Q2526255\": \"film director\",     \"Q28389\": \"screenwriter\","
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': '62nd Golden Globe Awards'}",
+        "result": "found ? (62nd Golden Globe Awards)"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q43203, award received",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q43203, nominated for",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetQualifiersByPredicate",
+        "args": "{'base_node_id': 'Q43203', 'relation_name': 'award received'",
+        "result": "{   \"base_node\": \"Q43203\",   \"relation\": \"award received\",   \"target\": \"Q860885\""
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetNodeSummary -> GetRelationDetails -> BatchGetNodeLabels -> GetQualifiersByPredicate",
+    "tool_count": 10,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "How is the 9-season Alice related to the Primetime Emmy for Outstanding Supporting Actor in a Comedy Series?",
+    "answer": "nominated for",
+    "qtype": "QueryRelation",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Alice TV show'}",
+        "result": "found ? (Alice)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q1248019, number of seasons",
+        "result": "not found"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q1248019, award received",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q2539193",
+        "result": "{\"node_id\":\"Q2539193\",\"name\":\"37th Golden Globe Awards\",\"node_type\":\"entity\",\"at"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q1248019, nominated for",
+        "result": "0 targets"
+      },
+      {
+        "tool": "BatchGetNodeLabels",
+        "args": "{'node_ids': ['Q1277961', 'Q1285970', 'Q1287335', 'Q989450']",
+        "result": "{   \"resolved\": {     \"Q1277961\": \"Primetime Emmy Award for Outstanding Directin"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q1248019, cast member",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetNodeLabel",
+        "args": "{'node_id': 'Q234080'}",
+        "result": "{   \"node_id\": \"Q234080\",   \"label\": \"Diane Ladd\",   \"node_type\": \"entity\",   \"s"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetAttributeDetails -> GetRelationDetails -> GetNodeSummary -> BatchGetNodeLabels -> GetNodeLabel",
+    "tool_count": 14,
+    "collected_at": "2026-02-13T00:42:18.965521"
+  }
+]

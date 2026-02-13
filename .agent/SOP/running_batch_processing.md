@@ -83,6 +83,12 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 50 --seed 123
 python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 10 --seed 42 --postprocessing llm_judge
 ```
 
+### Generate Fewshot Examples
+
+```bash
+python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 50 --postprocessing llm_judge --generate-fewshot
+```
+
 ### Stratified Sampling
 
 ```bash
@@ -116,6 +122,7 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_qu
 | `--dry-run` | false | Preview what would run without executing |
 | `--export-csv` | false | Export results to CSV |
 | `--no-fewshot` | false | Disable few-shot example injection |
+| `--generate-fewshot` | false | Generate fewshot examples from benchmark results (requires llm_judge) |
 
 ### Postprocessing Mode Validation
 
@@ -138,6 +145,7 @@ benchmark_results/<timestamp>/
       console_output.txt           # Full console log
       detailed_log.txt             # Intermediate thinking per question
       judgments.json               # LLM judge evaluations (if llm_judge mode)
+      generated_fewshot.json       # LLM-generated fewshot audit log (if --generate-fewshot)
       tool_traces/                 # Full conversation traces (one file per question)
         question_000.json          # Question 0 full message history
         question_001.json          # Question 1 full message history
@@ -285,17 +293,173 @@ judge_temperature = 0.3
 
 ---
 
-## Tool-Trace Few-Shot Example Export
+## LLM-Based Fewshot Generation
 
-After each batch run with `llm_judge` postprocessing, **correct answers** with efficient tool usage (<=15 tool calls) are automatically exported as tool-trace examples to:
+**New in 2026-02-13:** The system can automatically generate fewshot learning material by analyzing benchmark results with an LLM.
+
+### Overview
+
+When `--generate-fewshot` is enabled, the system analyzes completed benchmark runs (with llm_judge evaluation) to generate three types of learning material:
+
+1. **Per-qtype examples** - Saved to `db/datasets/kqapro/fewshot-examples/<QType>.json`
+2. **General guidance** - Cross-type insights saved to `_general.json` (max 10)
+3. **Tool tips** - Tool-specific tips saved to `_tool_tips.json` (max 20)
+
+### How It Works
+
+1. **Qualification Filter** - Selects results worth learning from:
+   - Correct answers with `argumentation_score >= 4`
+   - Any incorrect answer (to diagnose mistakes)
+
+2. **LLM Analysis** - Uses `deepseek/deepseek-v3.2-speciale` (judge LLM config) to analyze:
+   - Full conversation trace (truncated for token budget)
+   - Tool call sequence
+   - Judge verdict and reasoning
+   - Question metadata
+
+3. **Output Generation** - LLM produces structured JSON with:
+   - For correct answers: successful strategy patterns and efficiency notes
+   - For incorrect answers: diagnosed mistakes and corrected tool traces
+   - Optional cross-type insights and tool-specific tips
+
+4. **Deduplication & Storage**:
+   - Examples deduplicated by question text / title / tool+pattern
+   - Sorted by correctness and efficiency (tool_count)
+   - Limited to max entries per file type
+
+5. **Audit Log** - All generated examples (pre-dedup) saved to `generated_fewshot.json`
+
+### Usage
+
+**Enable via CLI:**
+
+```bash
+python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 50 --postprocessing llm_judge --generate-fewshot
+```
+
+**Enable via config.toml:**
+
+```toml
+[postprocessing]
+generate_fewshot = true
+```
+
+**Priority:** CLI flag > config.toml > `false` (default)
+
+### Agent Integration
+
+The agent automatically loads generated material during the pre-agent hook:
+
+- **General guidance**: Top 5 entries from `_general.json`
+- **Tool tips**: Top 10 entries from `_tool_tips.json`
+
+Both are injected into the analysis context via templates:
+
+```
+[Pre-Analysis Context]
+├── Question Type
+├── Extracted Entities
+├── Type-Specific Strategy
+├── Few-Shot Examples (if --no-fewshot not set)
+├── General Guidance (if available)  <-- NEW
+├── Tool Tips (if available)         <-- NEW
+└── Context Suffix
+```
+
+### Output Files
 
 ```
 db/datasets/kqapro/fewshot-examples/
-├── Count.json
-├── Verify.json
-├── QueryAttr.json
-└── ...
+├── Count.json                  # Per-qtype tool-trace examples
+├── Query.json
+├── _general.json               # Cross-type general guidance (max 10)
+└── _tool_tips.json             # Tool-specific tips (max 20)
+
+benchmark_results/<timestamp>/<agent>/<model>/
+└── generated_fewshot.json      # Audit log of all generated examples
 ```
+
+### Example Output Formats
+
+**Per-QType Example (Count.json):**
+
+```json
+{
+  "question": "How many films did Christopher Nolan direct?",
+  "answer": "11",
+  "qtype": "Count",
+  "trace": [
+    {"tool": "FindNode", "args": "Christopher Nolan", "result": "Q123456"},
+    {"tool": "RunSPARQL", "args": "SELECT COUNT(?film)...", "result": "11"}
+  ],
+  "lesson": "Use RunSPARQL with COUNT() for large result sets",
+  "pitfall": "Avoid iterating with GetRelationDetails",
+  "tool_count": 2,
+  "was_correct": true,
+  "source": "auto_generator",
+  "collected_at": "2026-02-13T10:30:00"
+}
+```
+
+**General Guidance (_general.json):**
+
+```json
+{
+  "title": "SPARQL for Large Result Sets",
+  "guidance": "When counting or filtering many entities, prefer RunSPARQL over iterative tool calls",
+  "applies_to": ["Count", "SelectAmong", "QueryName"],
+  "derived_from_qtype": "Count",
+  "was_correct": true,
+  "source": "auto_generator",
+  "collected_at": "2026-02-13T10:30:00"
+}
+```
+
+**Tool Tip (_tool_tips.json):**
+
+```json
+{
+  "tool_name": "FindNode",
+  "problem_pattern": "Semantic search returns irrelevant entities",
+  "guidance": "Try exact ID match or use FindByAttribute for attribute-based search",
+  "example_args": "entity_name='Boston' for city disambiguation",
+  "derived_from_question": "What is the population of Boston?",
+  "source": "auto_generator",
+  "collected_at": "2026-02-13T10:30:00"
+}
+```
+
+### Configuration
+
+**Generator Settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MAX_PER_QTYPE` | 5 | Max examples per question type file |
+| `MAX_GENERAL` | 10 | Max general guidance entries |
+| `MAX_TOOL_TIPS` | 20 | Max tool tip entries |
+
+**LLM Configuration:**
+
+- Uses judge LLM config from `config.toml` (`[postprocessing]` section)
+- Model: `deepseek/deepseek-v3.2-speciale` (hardcoded in fewshot_generator.py)
+- Temperature: 0.3
+- Max tokens: 4000
+- Response format: JSON mode
+
+### Best Practices
+
+1. **Run on large batches** - More diverse results = better learning material
+2. **Enable LLM judge** - Generator requires judge evaluations to qualify results
+3. **Review audit log** - Check `generated_fewshot.json` to see what was generated
+4. **Iterate incrementally** - Run multiple smaller batches to build up examples over time
+5. **Check deduplication** - Existing examples won't be overwritten (deduplicated by question/title/pattern)
+
+---
+
+## Tool-Trace Few-Shot Example Export (Legacy)
+
+**Note:** The heuristic tool-trace export (correct answers with <=15 tool calls) still runs automatically after llm_judge evaluation, separate from the LLM-based generator.
 
 Use `--no-fewshot` to disable few-shot injection for ablation studies.
 

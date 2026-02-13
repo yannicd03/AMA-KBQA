@@ -226,3 +226,5 @@ claude.md
 **.tex
 **.pdf
 **.log
+/benchmark_results
+/batch_results

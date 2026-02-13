@@ -1,1 +1,177 @@
-[]
+[
+  {
+    "question": "Is The Savages or Get Him to the Greek shorter?",
+    "answer": "Get Him to the Greek",
+    "qtype": "Select",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'The Savages'}",
+        "result": "found ? (The Savages)"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Get Him to the Greek'}",
+        "result": "found ? (Get Him to the Greek)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q1213010, duration",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q940139, duration",
+        "result": "not found"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetAttributeDetails",
+    "tool_count": 5,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "Does Normandy (the one whose population is 3293092) or Corsica (the one whose official name is Collectivité de Corse) have the greater area?",
+    "answer": "Normandy",
+    "qtype": "Select",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Normandy'}",
+        "result": "found ? (Normandy)"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Corsica'}",
+        "result": "found ? (Corsica)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q18677875, population",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q14112, official name",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q18677875, area",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q14112, area",
+        "result": "not found"
+      },
+      {
+        "tool": "VerifyNumericCondition",
+        "args": "29906 > 8680",
+        "result": "FALSE"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetAttributeDetails -> VerifyNumericCondition",
+    "tool_count": 7,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "Which movie cost less to make, Shrek Forever After (the one whose composer is Harry Gregson-Williams) or Robin Hood (the one that has John Fiedler as a voice actor)?",
+    "answer": "Robin Hood",
+    "qtype": "Select",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Shrek Forever After'}",
+        "result": "found ? (Shrek Forever After)"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Robin Hood'}",
+        "result": "found ? (Robin Hood)"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q208131",
+        "result": "{\"node_id\":\"Q208131\",\"name\":\"Shrek Forever After\",\"node_type\":\"entity\",\"attribut"
+      },
+      {
+        "tool": "GetNodeSummary",
+        "args": "Q19090",
+        "result": "{\"node_id\":\"Q19090\",\"name\":\"Robin Hood\",\"node_type\":\"entity\",\"attributes\":{\"cost"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q208131, composer",
+        "result": "0 targets"
+      },
+      {
+        "tool": "GetRelationDetails",
+        "args": "Q19090, voice actor",
+        "result": "0 targets"
+      },
+      {
+        "tool": "BatchGetNodeLabels",
+        "args": "{'node_ids': ['Q314623', 'Q55796', 'Q944638']}",
+        "result": "{   \"resolved\": {     \"Q314623\": \"Harry Gregson-Williams\",     \"Q55796\": \"Peter "
+      },
+      {
+        "tool": "VerifyNumericCondition",
+        "args": "1500000 < 165000000",
+        "result": "FALSE"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetNodeSummary -> GetRelationDetails -> BatchGetNodeLabels -> VerifyNumericCondition",
+    "tool_count": 8,
+    "collected_at": "2026-02-13T01:50:37.950163"
+  },
+  {
+    "question": "Is the running time longer for Blues Brothers 2000, published on 1998-01-01, or Brothers, published on 2005-03-31?",
+    "answer": "Blues Brothers 2000",
+    "qtype": "Select",
+    "trace": [
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Blues Brothers 2000'}",
+        "result": "found ? (Blues Brothers 2000)"
+      },
+      {
+        "tool": "FindNode",
+        "args": "{'semantic_node_name': 'Brothers'}",
+        "result": "found ? (Brothers)"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q832515, publication date",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q832515, duration",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q18210456, publication date",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q18210456, duration",
+        "result": "not found"
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q948635, publication date",
+        "result": "⚠️ **INFINITE LOOP DETECTED**  **Detected Pattern:** Tool 'GetAttributeDetails' "
+      },
+      {
+        "tool": "GetAttributeDetails",
+        "args": "Q948635, duration",
+        "result": "not found"
+      }
+    ],
+    "lesson": "Solved via: FindNode -> GetAttributeDetails",
+    "tool_count": 11,
+    "collected_at": "2026-02-13T00:42:18.965521"
+  }
+]

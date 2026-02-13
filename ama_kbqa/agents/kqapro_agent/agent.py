@@ -30,6 +30,8 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
+    GENERAL_GUIDANCE_TEMPLATE,
+    TOOL_TIPS_TEMPLATE,
 )
 
 
@@ -176,7 +178,8 @@ class KQAProAgent(BaseKBQAAgent):
                         "question": example.get("question", ""),
                         "answer": example.get("answer", ""),
                         "trace": example.get("trace", []),
-                        "lesson": example.get("lesson", "")
+                        "lesson": example.get("lesson", ""),
+                        "pitfall": example.get("pitfall", ""),
                     })
 
             except (json.JSONDecodeError, Exception):
@@ -202,10 +205,64 @@ class KQAProAgent(BaseKBQAAgent):
 
             if example["lesson"]:
                 formatted += f'Lesson: {example["lesson"]}\n'
+            if example.get("pitfall"):
+                formatted += f'Pitfall: {example["pitfall"]}\n'
 
             formatted += "\n"
 
         return formatted
+
+    def _load_general_guidance(self) -> str:
+        """Load cross-type general guidance from _general.json."""
+        repo_root = Path(__file__).resolve().parents[3]
+        general_file = repo_root / "db" / "datasets" / "kqapro" / "fewshot-examples" / "_general.json"
+
+        if not general_file.exists():
+            return ""
+
+        try:
+            with open(general_file, "r", encoding="utf-8") as f:
+                examples = json.load(f)
+
+            if not examples:
+                return ""
+
+            lines = []
+            for ex in examples[:5]:
+                title = ex.get("title", "")
+                guidance = ex.get("guidance", "")
+                applies = ", ".join(ex.get("applies_to", ["all"]))
+                lines.append(f"- [{applies}] {title}: {guidance}")
+
+            return "\n".join(lines)
+        except (json.JSONDecodeError, Exception):
+            return ""
+
+    def _load_tool_tips(self, qtype: Optional[str] = None) -> str:
+        """Load tool tips from _tool_tips.json, optionally filtered by qtype relevance."""
+        repo_root = Path(__file__).resolve().parents[3]
+        tips_file = repo_root / "db" / "datasets" / "kqapro" / "fewshot-examples" / "_tool_tips.json"
+
+        if not tips_file.exists():
+            return ""
+
+        try:
+            with open(tips_file, "r", encoding="utf-8") as f:
+                tips = json.load(f)
+
+            if not tips:
+                return ""
+
+            lines = []
+            for tip in tips[:10]:
+                tool = tip.get("tool_name", "")
+                pattern = tip.get("problem_pattern", "")
+                guidance = tip.get("guidance", "")
+                lines.append(f"- {tool} | When: {pattern} | Do: {guidance}")
+
+            return "\n".join(lines)
+        except (json.JSONDecodeError, Exception):
+            return ""
 
     def _classify_question(self, question: str) -> Dict[str, str]:
         """
@@ -271,6 +328,20 @@ class KQAProAgent(BaseKBQAAgent):
                 qtype=qtype,
                 fewshot_examples=fewshot_examples
             )
+
+        # Append general guidance if available
+        if self.use_fewshot:
+            general_guidance = self._load_general_guidance()
+            if general_guidance:
+                context += GENERAL_GUIDANCE_TEMPLATE.format(
+                    general_guidance=general_guidance
+                )
+
+            tool_tips = self._load_tool_tips(qtype=qtype)
+            if tool_tips:
+                context += TOOL_TIPS_TEMPLATE.format(
+                    tool_tips=tool_tips
+                )
 
         context += ANALYSIS_CONTEXT_SUFFIX
 

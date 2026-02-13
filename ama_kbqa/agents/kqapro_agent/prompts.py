@@ -665,3 +665,15 @@ Your current approach is not making progress. You MUST change strategy.
 {journal_state}
 
 Based on the above, formulate a DIFFERENT strategy or acknowledge if the data doesn't exist."""
+
+# General guidance template (for cross-type insights from _general.json)
+GENERAL_GUIDANCE_TEMPLATE = """
+General Guidance (learned from previous runs):
+{general_guidance}
+"""
+
+# Tool tips template (for tool-specific tips from _tool_tips.json)
+TOOL_TIPS_TEMPLATE = """
+Tool Tips:
+{tool_tips}
+"""
