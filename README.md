@@ -106,10 +106,10 @@ ama-kbqa ask -s sciqa "What papers discuss machine learning?"
 ### Frontend (Streamlit)
 
 ```bash
-streamlit run ama_kbqa/frontend/app.py
+ama-kbqa-frontend
 ```
 
-This launches a multi-page web UI with Chat, Batch Processing, Evaluation, and Settings pages.
+This launches a multi-page web UI with Chat, Batch Processing, Evaluation, and Settings pages. Extra Streamlit arguments are passed through (e.g. `ama-kbqa-frontend --server.port 8502`).
 
 ### CLI
 

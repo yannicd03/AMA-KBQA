@@ -232,5 +232,11 @@ Examples:
         sys.exit(1)
 
 
+def frontend():
+    """Launch the Streamlit frontend."""
+    import subprocess
+    sys.exit(subprocess.call([sys.executable, "-m", "streamlit", "run", "ama_kbqa/frontend/app.py", *sys.argv[1:]]))
+
+
 if __name__ == "__main__":
     main()
