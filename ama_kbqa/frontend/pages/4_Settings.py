@@ -24,7 +24,7 @@ except Exception as e:
 import copy
 edited = copy.deepcopy(config)
 
-PROVIDERS = ["openrouter", "lm_studio", "kit_ollama", "deepseek", "zai", "aifb"]
+PROVIDERS = ["openrouter", "kit_ollama", "aifb"]
 
 # ── LLM Configuration ───────────────────────────────────────────────────────
 st.markdown("### LLM Configuration")

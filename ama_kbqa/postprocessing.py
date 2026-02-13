@@ -101,7 +101,7 @@ def load_judge_config() -> Dict[str, Any]:
         print("[WARNING] config.toml not found, using defaults")
         return {
             "provider": "openrouter",
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": "deepseek/deepseek-v3.2",
             "temperature": 0.0,
             "base_url": "https://openrouter.ai/api/v1",
             "api_key_env": "OPENROUTER_API_KEY",
@@ -115,7 +115,7 @@ def load_judge_config() -> Dict[str, Any]:
         provider = postprocessing.get("judge_provider", "openrouter")
         provider_config = config.get(provider, {})
 
-        judge_model = "meta-llama/llama-3.3-70b-instruct"
+        judge_model = "deepseek/deepseek-v3.2"
         chat_model_provider = postprocessing.get("chat_model_provider", "")
 
         return {
@@ -130,7 +130,7 @@ def load_judge_config() -> Dict[str, Any]:
         print(f"[WARNING] Failed to load judge config: {e}, using defaults")
         return {
             "provider": "openrouter",
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": "deepseek/deepseek-v3.2",
             "temperature": 0.0,
             "base_url": "https://openrouter.ai/api/v1",
             "api_key_env": "OPENROUTER_API_KEY",

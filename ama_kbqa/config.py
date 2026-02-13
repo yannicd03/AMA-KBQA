@@ -1,7 +1,7 @@
 """Configuration management for AMA KBQA system.
 
 This module provides utilities to load configuration from config.toml
-and initialize LLM clients for different providers (OpenRouter, LMStudio, KIT Ollama, etc.)
+and initialize LLM clients for different providers (OpenRouter, KIT Ollama, AIFB)
 using the OpenAI client wrapper for compatibility.
 """
 
@@ -273,9 +273,6 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
     env_var_map = {
         "openrouter": "OPENROUTER_API_KEY",
         "kit_ollama": "KIT_OLLAMA_TOKEN",
-        "deepseek": "DEEPSEEK_API_KEY",
-        "zai": "ZAI_API_KEY",
-        "lm_studio": "LM_STUDIO_API_KEY",  # Optional for local
         "aifb": "AIFB_API_KEY",
     }
 
@@ -286,11 +283,6 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
             f"No API key configuration found for provider '{provider}'"
         )
 
-    # For local providers like lm_studio, use a default if not set
-    if provider == "lm_studio":
-        return os.getenv(env_var, "lm-studio")
-
-    # For remote providers, require the environment variable
     api_key = os.getenv(env_var)
     if not api_key:
         raise KeyError(

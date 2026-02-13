@@ -44,6 +44,8 @@ if "batch_finished" not in st.session_state:
     st.session_state.batch_finished = False
 if "batch_return_code" not in st.session_state:
     st.session_state.batch_return_code = None
+if "batch_start_time" not in st.session_state:
+    st.session_state.batch_start_time = None
 
 # Thread-safe shared dict (avoids accessing st.session_state from bg thread)
 if "batch_shared" not in st.session_state:
@@ -74,12 +76,12 @@ with st.form("batch_config"):
         agent = st.selectbox("Agent", ["kqapro", "sciqa"], index=0)
         n_questions = st.number_input("Sample Size", min_value=1, max_value=500, value=10)
         seed = st.number_input("Seed", min_value=0, value=42)
-        stratified = st.checkbox("Stratified Sampling")
+        stratified = st.checkbox("Stratified Sampling", value=True)
 
     with col2:
         # Evaluation methods differ per agent
         if agent == "kqapro":
-            eval_options = ["choice", "sparql", "llm_judge"]
+            eval_options = ["llm_judge", "choice", "sparql"]
         else:
             eval_options = ["llm_judge", "simple"]
         eval_method = st.selectbox("Evaluation Method", eval_options)
@@ -197,6 +199,7 @@ if submitted and not st.session_state.batch_running:
 
     st.session_state.batch_proc = proc
     st.session_state.batch_running = True
+    st.session_state.batch_start_time = time.time()
     st.session_state.batch_shared = {"output": "", "return_code": None, "finished": False}
 
     t = threading.Thread(
@@ -253,13 +256,35 @@ if st.session_state.batch_running or st.session_state.batch_output:
     # tqdm outputs lines like: " 30%|███       | 3/10 [00:15<00:35, ...]"
     tqdm_pct = re.findall(r'(\d+)%\|', output_text)
     tqdm_frac = re.findall(r'\|\s*(\d+)/(\d+)\s*\[', output_text)
+
+    def _fmt_duration(seconds: float) -> str:
+        """Format seconds into a human-readable string."""
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        m, s = divmod(int(seconds), 60)
+        if m < 60:
+            return f"{m}m {s:02d}s"
+        h, m = divmod(m, 60)
+        return f"{h}h {m:02d}m"
+
+    elapsed = time.time() - st.session_state.batch_start_time if st.session_state.batch_start_time else 0
+
     if tqdm_frac:
         current, total = int(tqdm_frac[-1][0]), int(tqdm_frac[-1][1])
         if total > 0:
-            st.progress(current / total, text=f"Question {current}/{total}")
+            progress_text = f"Question {current}/{total}"
+            if current > 0 and elapsed > 0:
+                avg_per_q = elapsed / current
+                remaining = avg_per_q * (total - current)
+                progress_text += f"  |  Elapsed: {_fmt_duration(elapsed)}  |  ETA: ~{_fmt_duration(remaining)}"
+            st.progress(current / total, text=progress_text)
     elif tqdm_pct:
         pct = int(tqdm_pct[-1])
-        st.progress(min(pct / 100.0, 1.0), text=f"{pct}%")
+        progress_text = f"{pct}%"
+        if pct > 0 and elapsed > 0:
+            remaining = elapsed * (100 - pct) / pct
+            progress_text += f"  |  Elapsed: {_fmt_duration(elapsed)}  |  ETA: ~{_fmt_duration(remaining)}"
+        st.progress(min(pct / 100.0, 1.0), text=progress_text)
 
     # Resolve \r (tqdm overwrites) and show console output (last ~5000 chars)
     cleaned = _resolve_cr(output_text)
@@ -292,14 +317,18 @@ if st.session_state.batch_finished and not st.session_state.batch_running:
             try:
                 summary = load_summary(latest)
                 stats = summary.get("statistics", {})
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3, c4, c5, c6 = st.columns(6)
                 acc = stats.get("accuracy_rate") or stats.get("accuracy", 0)
                 c1.metric("Accuracy", f"{acc:.0%}")
                 c2.metric("Questions", stats.get("total_questions", "?"))
                 avg_dur = stats.get("average_duration_seconds") or stats.get("avg_time_seconds", 0)
                 c3.metric("Avg Duration", f"{avg_dur:.1f}s")
-                tok = stats.get("total_tokens_used") or stats.get("total_tokens", 0)
-                c4.metric("Total Tokens", f"{tok:,}")
+                avg_tok = stats.get("avg_tokens") or 0
+                c4.metric("Avg Tokens", f"{avg_tok:,.0f}")
+                total_cost = stats.get("estimated_cost_usd", 0)
+                c5.metric("Total Cost", f"${total_cost:.4f}")
+                n_q = stats.get("total_questions", 1) or 1
+                c6.metric("Avg Cost", f"${total_cost / n_q:.4f}")
                 label = latest.get("label", latest) if isinstance(latest, dict) else latest
                 st.info(f"Results saved as **{label}**. View details on the Evaluation page.")
             except Exception as e:
