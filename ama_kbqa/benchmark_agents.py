@@ -40,11 +40,15 @@ Output Structure
         console_output.txt
         detailed_log.txt
         judgments.json             # if llm_judge mode
+        tool_traces/               # full conversation per question
+          question_000.json
+          question_001.json
 """
 
 from __future__ import annotations
 import argparse
 import asyncio
+import copy
 import csv as csv_module
 import json
 import os
@@ -105,6 +109,7 @@ class QuestionResult:
     selected_answer: Optional[str] = None
     judgment: Optional[Dict] = None
     tool_trace: List[Dict] = field(default_factory=list)
+    full_messages: Optional[List[Dict]] = None
     tool_call_summary: Dict = field(default_factory=dict)
     intermediate_thinking: str = ""
     synthesized_sparql: Optional[str] = None
@@ -693,6 +698,9 @@ async def process_single_question(
     else:
         accuracy = False
 
+    # Capture full messages before reset clears them
+    full_messages = copy.deepcopy(agent._messages)
+
     # Soft reset for next question
     await agent.soft_reset()
 
@@ -710,6 +718,7 @@ async def process_single_question(
         selected_answer=pp_result.selected_answer,
         judgment=pp_result.judgment,
         tool_trace=tool_trace,
+        full_messages=full_messages,
         tool_call_summary=tool_summary,
         intermediate_thinking=pp_result.intermediate_thinking,
         synthesized_sparql=pp_result.synthesized_sparql,
@@ -873,6 +882,7 @@ def save_results_to_disk(
     # Save detailed_log.txt with intermediate thinking
     if is_complete:
         _save_detailed_log(result_dir, results)
+        _save_tool_traces(result_dir, results)
 
     # Save judgments.json if llm_judge mode
     if is_complete and postprocessing_mode == "llm_judge":
@@ -948,6 +958,50 @@ def _save_detailed_log(result_dir: Path, results: List[QuestionResult]):
             f.write("\n")
 
     print(f"[OK] Saved detailed log to: {detailed_log_file}")
+
+
+def _save_tool_traces(result_dir: Path, results: List[QuestionResult]):
+    """Save full tool traces as separate JSON files per question."""
+    traces_dir = result_dir / "tool_traces"
+    traces_dir.mkdir(exist_ok=True)
+
+    for i, r in enumerate(results):
+        if not r.full_messages:
+            continue
+
+        # Process messages: parse tool_calls arguments from JSON strings
+        processed_messages = []
+        for msg in r.full_messages:
+            msg_copy = dict(msg)
+            if msg_copy.get("tool_calls"):
+                parsed_calls = []
+                for tc in msg_copy["tool_calls"]:
+                    tc_copy = dict(tc)
+                    args = tc_copy.get("arguments", tc_copy.get("function", {}).get("arguments", ""))
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    tc_copy["arguments"] = args
+                    parsed_calls.append(tc_copy)
+                msg_copy["tool_calls"] = parsed_calls
+            processed_messages.append(msg_copy)
+
+        trace_data = {
+            "question_id": r.question_id,
+            "question": r.question,
+            "gold_answer": r.gold_answer,
+            "predicted_answer": r.predicted_answer,
+            "accuracy": r.accuracy,
+            "messages": processed_messages,
+        }
+
+        trace_file = traces_dir / f"question_{i:03d}.json"
+        with open(trace_file, "w", encoding="utf-8") as f:
+            json.dump(trace_data, f, indent=2, ensure_ascii=False, default=str)
+
+    print(f"[OK] Saved tool traces to: {traces_dir}")
 
 
 def _save_judgments(

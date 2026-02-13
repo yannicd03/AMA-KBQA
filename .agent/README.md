@@ -332,6 +332,20 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-13**: ✅ **Tool Trace Export Per Question**
+  - Added full conversation trace export in `benchmark_agents.py` - each question's complete `agent._messages` history is now saved to `tool_traces/question_NNN.json`
+  - Trace files include: `question_id`, `question`, `gold_answer`, `predicted_answer`, `accuracy`, and `messages` (full conversation with tool call arguments parsed from JSON strings to objects)
+  - Trace directory (`tool_traces/`) is created inside each result directory (e.g., `benchmark_results/<timestamp>/kqapro/<model>/tool_traces/`)
+  - Messages are deep-copied before `soft_reset()` clears agent state
+  - Tool call arguments in `tool_calls` field are automatically parsed from JSON strings to objects for easier inspection
+  - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) and [System/project_architecture.md](System/project_architecture.md)
+- **2026-02-13**: ✅ **Provider Cleanup and UI Enhancements**
+  - **Removed LLM providers**: Removed `lm_studio`, `deepseek`, and `zai` provider support from config.toml, config.py, and frontend. Only `openrouter`, `kit_ollama`, and `aifb` providers remain.
+  - **LLM judge model change**: Changed judge model from `meta-llama/llama-3.3-70b-instruct` and `google/gemini-3-flash-preview` to `deepseek/deepseek-v3.2` (via OpenRouter) in both `postprocessing.py` and `benchmark_agents.py`
+  - **UI defaults**: Batch Processing page now defaults to `llm_judge` evaluation (was first in list: choice) and stratified sampling enabled (was unchecked)
+  - **ETA display**: Progress bar now shows elapsed time and estimated remaining time during batch runs
+  - **Cost metrics**: Completion summary displays total cost and average cost per question alongside accuracy/tokens metrics
+  - Updated [SOP/changing_llm_provider.md](SOP/changing_llm_provider.md), [SOP/running_batch_processing.md](SOP/running_batch_processing.md), and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-13**: ✅ **Batch Processing Enhancements**
   - **Bug fix**: Fixed single-model mode config corruption in `benchmark_agents.py` - `override_model_config()` was setting `chat_provider="config"` (invalid provider). Now skips override when `model.name == "default"` to preserve config.toml values.
   - **Exit code**: Added non-zero exit code when all benchmark runs fail (helps CI/CD pipelines detect failures)

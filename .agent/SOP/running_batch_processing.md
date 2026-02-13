@@ -138,6 +138,10 @@ benchmark_results/<timestamp>/
       console_output.txt           # Full console log
       detailed_log.txt             # Intermediate thinking per question
       judgments.json               # LLM judge evaluations (if llm_judge mode)
+      tool_traces/                 # Full conversation traces (one file per question)
+        question_000.json          # Question 0 full message history
+        question_001.json          # Question 1 full message history
+        question_002.json          # Question 2 full message history
   sciqa/
     <model-name>/
       ...
@@ -211,6 +215,52 @@ Summary uses a superset schema with dual field names for backward compatibility:
 }
 ```
 
+### tool_traces/question_NNN.json Format
+
+Each question's full conversation is saved as a separate JSON file with the following structure:
+
+```json
+{
+    "question_id": 0,
+    "question": "What is the population of Boston?",
+    "gold_answer": "688701",
+    "predicted_answer": "The population of Boston is 688,701.",
+    "accuracy": true,
+    "messages": [
+        {
+            "role": "user",
+            "content": "What is the population of Boston?"
+        },
+        {
+            "role": "assistant",
+            "content": "I'll search for Boston in the knowledge graph.",
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "name": "FindNode",
+                    "arguments": {
+                        "semantic_node_name": "Boston"
+                    }
+                }
+            ]
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_abc123",
+            "name": "FindNode",
+            "content": "Found Q100 (Boston, Massachusetts)"
+        }
+    ]
+}
+```
+
+**Key Features:**
+- Full message history includes all LLM responses and tool calls
+- Tool call arguments are parsed from JSON strings to objects for easier inspection
+- Includes question metadata (ID, text, gold/predicted answers, accuracy)
+- One file per question (numbered with zero-padded index: `question_000.json`)
+- Saved only on completion (`is_complete=True`)
+
 ---
 
 ## LLM Judge Mode
@@ -222,13 +272,15 @@ When `--postprocessing llm_judge`, each answer is evaluated for:
 3. **Score** - 1-5 rating
 4. **Improvement Suggestions** - Actionable feedback
 
+**Judge Model:** The system uses `deepseek/deepseek-v3.2` (via OpenRouter) as the default judge model. This is configured both in `config.toml` and in `benchmark_agents.py` for multi-model mode.
+
 Judge configuration in `config.toml`:
 
 ```toml
 [postprocessing]
 judge_provider = "openrouter"
-judge_model = "google/gemini-2.5-flash"
-judge_temperature = 0.0
+judge_model = "deepseek/deepseek-v3.2"
+judge_temperature = 0.3
 ```
 
 ---
@@ -279,8 +331,8 @@ The Streamlit frontend (`streamlit run ama_kbqa/frontend/app.py`) provides a vis
 - **Agent selector** - Choose between KQAPro or SciQA
 - **Sample size** - Number of questions to process (1-500)
 - **Random seed** - For reproducible sampling
-- **Stratified sampling** - Optional checkbox for balanced question type distribution
-- **Evaluation method** - Mode-specific options (KQAPro: choice/sparql/llm_judge; SciQA: llm_judge/simple)
+- **Stratified sampling** - Enabled by default for balanced question type distribution
+- **Evaluation method** - Defaults to `llm_judge` (KQAPro: llm_judge/choice/sparql; SciQA: llm_judge/simple)
 - **Dataset picker** - For SciQA only (handcrafted or auto)
 - **Optional questionnaire path** - Pre-generated JSON questionnaire file
 - **Few-shot toggle** - Disable for ablation studies
@@ -294,6 +346,7 @@ The Streamlit frontend (`streamlit run ama_kbqa/frontend/app.py`) provides a vis
 
 **Live Progress Display:**
 - **Tqdm progress bar** - Real-time question counter (e.g., "Question 5/10")
+- **ETA calculation** - Shows elapsed time and estimated remaining time in progress bar
 - **Console output** - Live ANSI-colored terminal with auto-scroll
 - **Carriage-return handling** - tqdm overwrites collapse to latest output (not stacked)
 - **Timestamp metadata** - Full console log and detailed thinking traces saved to output directory
@@ -302,7 +355,9 @@ The Streamlit frontend (`streamlit run ama_kbqa/frontend/app.py`) provides a vis
 - **Accuracy metric** - Percentage of correct answers
 - **Question count** - Total processed
 - **Average duration** - Time per question in seconds
-- **Total tokens** - Cumulative LLM token usage
+- **Average tokens** - Average LLM token usage per question
+- **Total cost** - Estimated total cost in USD (based on model pricing)
+- **Average cost** - Cost per question in USD
 
 ### Starting a Batch Run
 
