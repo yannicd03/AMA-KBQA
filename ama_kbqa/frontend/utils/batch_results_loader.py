@@ -13,7 +13,7 @@ BENCHMARK_RESULTS_DIR = Path(__file__).resolve().parents[3] / "benchmark_results
 def list_batches() -> list[dict[str, Any]]:
     """Return batch run entries sorted newest-first.
 
-    Scans ``benchmark_results/<timestamp>/<agent>/<model>/`` directories.
+    Scans ``benchmark_results/<YYYY-MM-DD-N>/<agent>/<model>/`` directories.
     Each entry that contains a ``summary.json`` is returned as a dict with
     keys: ``label``, ``timestamp``, ``agent``, ``model``, ``path``.
 

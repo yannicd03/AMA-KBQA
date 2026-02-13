@@ -16,7 +16,7 @@ CLI Arguments
   --agents AGENTS         Which agents to test: kqapro, sciqa, or both (default: both)
   --models MODELS         Filter to specific models by name (default: config model)
   --n-questions N         Limit questions per agent (default: all)
-  --output-dir DIR        Custom output directory
+  --output-dir DIR        Custom output directory (default: YYYY-MM-DD-N)
   --timeout SECONDS       Timeout per question (default: 300)
   --resume                Skip completed runs
   --dry-run               Preview what would run
@@ -30,7 +30,7 @@ CLI Arguments
 
 Output Structure
 ----------------
-  benchmark_results/<timestamp>/
+  benchmark_results/<YYYY-MM-DD-N>/
     overview.json                  # Multi-model leaderboard (multi-model only)
     benchmark_results.csv          # CSV export (if --export-csv)
     kqapro/
@@ -1460,7 +1460,7 @@ Examples:
     parser.add_argument("--n-questions", type=int, default=None,
                         help="Limit questions per agent (default: all)")
     parser.add_argument("--output-dir", type=str, default=None,
-                        help="Output directory (default: benchmark_results/<timestamp>)")
+                        help="Output directory (default: benchmark_results/<YYYY-MM-DD-N>)")
     parser.add_argument("--timeout", type=int, default=300,
                         help="Timeout per question in seconds (default: 300)")
     parser.add_argument("--resume", action="store_true",
@@ -1517,8 +1517,19 @@ Examples:
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        output_dir = PROJECT_ROOT / "benchmark_results" / timestamp
+        base_dir = PROJECT_ROOT / "benchmark_results"
+        date_prefix = datetime.now().strftime("%Y-%m-%d")
+        # Find the next available run number for today
+        n = 1
+        if base_dir.exists():
+            for d in base_dir.iterdir():
+                if d.is_dir() and d.name.startswith(date_prefix + "-"):
+                    try:
+                        existing_n = int(d.name[len(date_prefix) + 1:])
+                        n = max(n, existing_n + 1)
+                    except ValueError:
+                        pass
+        output_dir = base_dir / f"{date_prefix}-{n}"
 
     output_dir.mkdir(parents=True, exist_ok=True)
 

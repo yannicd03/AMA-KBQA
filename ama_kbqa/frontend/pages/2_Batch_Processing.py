@@ -117,7 +117,7 @@ with st.form("batch_config"):
             output_dir = st.text_input(
                 "Output Directory (optional)",
                 value="",
-                help="Custom output path. Leave blank for benchmark_results/<timestamp>.",
+                help="Custom output path. Leave blank for benchmark_results/<YYYY-MM-DD-N>.",
             )
         with adv2:
             resume = st.checkbox(
