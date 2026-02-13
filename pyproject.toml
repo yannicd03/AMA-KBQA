@@ -35,6 +35,7 @@ dependencies = [
 
 [project.scripts]
 ama-kbqa = "ama_kbqa.cli:main"
+ama-kbqa-frontend = "ama_kbqa.cli:frontend"
 
 [tool.setuptools.packages.find]
 where = ["."]
