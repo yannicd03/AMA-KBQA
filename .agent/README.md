@@ -333,6 +333,21 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-02-13**: ✅ **Benchmark Folder Naming Pattern Change**
+  - Changed benchmark output directory naming from timestamp-based (`YYYY-MM-DD_HH-MM-SS`) to date-based with incrementing run number (`YYYY-MM-DD-N`)
+  - New pattern: `benchmark_results/2026-02-13-1/`, `benchmark_results/2026-02-13-2/`, etc.
+  - Benefits: easier to identify runs from the same day, cleaner folder names, automatic run numbering
+  - Updated files: `benchmark_agents.py`, `frontend/pages/2_Batch_Processing.py`, `frontend/utils/batch_results_loader.py`
+  - Updated documentation: [SOP/running_batch_processing.md](SOP/running_batch_processing.md), [System/project_architecture.md](System/project_architecture.md), [System/agent_system.md](System/agent_system.md)
+- **2026-02-13**: ✅ **Agent Prompt Refinements (Post-Benchmark Iteration)**
+  - **Genericized Count UNION example**: Removed benchmark-specific data from Count strategy UNION example that leaked actual answers, replaced with generic placeholder syntax (ATTRIBUTE_A, VALUE_A, ENTITY_ID, PREDICATE)
+  - **Qualifier selection guidance enhanced**: Added step 3 to QueryRelationQualifier strategy with question-word-to-qualifier mapping (When→point_in_time, Where→location, In what role→object_has_role, At which ceremony→ceremony, For what→AMBIGUOUS: check both for_work and ceremony)
+  - **QueryAttrQualifier step 4 added**: Similar qualifier selection guidance added to QueryAttrQualifier strategy to match the question's phrasing (When→point_in_time, Where→location)
+  - **Prepositional phrase cross-reference**: Added Rule #7 reference to Query strategy step 2b (prepositional phrase disambiguation for "the X in Y" patterns)
+  - **Journal confidence rule**: Added "DO NOT BACKTRACK" rule to SYSTEM_PROMPT (line 300-301): once facts appear in verified_facts/found_values, treat as ground truth, do NOT discard verified findings
+  - **Tool tip ambiguous qualifier fix**: Changed _tool_tips.json GetEdgeQualifiers entry for "For what" from "for_work (creative work)" to "AMBIGUOUS: check both for_work (creative work) and ceremony/statement_is_subject_of (event). Pick the one matching the expected answer type."
+  - **Analysis source**: Changes derived from minimax-m2.5 80% accuracy benchmark run (2026-02-13), addressing qualifier disambiguation failures, premature answer rejection, and leaked data in examples
+  - Updated [System/agent_system.md](System/agent_system.md) and [System/project_architecture.md](System/project_architecture.md)
 - **2026-02-13**: ✅ **Agent Prompt Enhancements and Qualifier Resolution Fix**
   - **QueryRelationQualifier few-shot examples**: Populated with 3 synthetic examples teaching qualifier selection patterns (was empty `[]`). Examples demonstrate: point_in_time vs for_work disambiguation, object_has_role selection, ceremony vs for_work parsing.
   - **Count strategy enhancement**: Added OR/UNION counting section to QTYPE_STRATEGIES with SPARQL UNION pattern and COUNT(DISTINCT ...) to avoid double-counting entities matching multiple conditions.
@@ -349,7 +364,7 @@ When updating documentation:
   - **Tool tips**: Tool-specific tips saved to `_tool_tips.json` (max 20 entries)
   - Generator uses `deepseek/deepseek-v3.2-speciale` (judge LLM config) to analyze correct/incorrect traces
   - Outputs structured JSON with lessons, pitfalls, and corrected traces for incorrect answers
-  - Audit log written to `benchmark_results/<timestamp>/<agent>/<model>/generated_fewshot.json`
+  - Audit log written to `benchmark_results/<YYYY-MM-DD-N>/<agent>/<model>/generated_fewshot.json`
   - Enabled via `--generate-fewshot` CLI flag (defaults to `false` in config.toml `[postprocessing]`)
   - Runs after llm_judge evaluation completes, analyzes results with argumentation_score >= 4 (correct) or any score (incorrect)
   - Agent updated: `KQAProAgent` now loads general guidance and tool tips via `_load_general_guidance()` and `_load_tool_tips()`
@@ -358,7 +373,7 @@ When updating documentation:
 - **2026-02-13**: ✅ **Tool Trace Export Per Question**
   - Added full conversation trace export in `benchmark_agents.py` - each question's complete `agent._messages` history is now saved to `tool_traces/question_NNN.json`
   - Trace files include: `question_id`, `question`, `gold_answer`, `predicted_answer`, `accuracy`, and `messages` (full conversation with tool call arguments parsed from JSON strings to objects)
-  - Trace directory (`tool_traces/`) is created inside each result directory (e.g., `benchmark_results/<timestamp>/kqapro/<model>/tool_traces/`)
+  - Trace directory (`tool_traces/`) is created inside each result directory (e.g., `benchmark_results/<YYYY-MM-DD-N>/kqapro/<model>/tool_traces/`)
   - Messages are deep-copied before `soft_reset()` clears agent state
   - Tool call arguments in `tool_calls` field are automatically parsed from JSON strings to objects for easier inspection
   - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) and [System/project_architecture.md](System/project_architecture.md)
@@ -387,7 +402,7 @@ When updating documentation:
   - Created `ama_kbqa/postprocessing.py` with PostProcessor class (choice/sparql/llm_judge/simple modes)
   - Created `ama_kbqa/utils/trace_utils.py` for tool trace extraction and few-shot export
   - Deleted old batch_runner.py files from agent directories
-  - Frontend updated: batch_results_loader.py now scans `benchmark_results/<timestamp>/<agent>/<model>/` directories
+  - Frontend updated: batch_results_loader.py now scans `benchmark_results/<YYYY-MM-DD-N>/<agent>/<model>/` directories
   - Batch Processing page now calls ama_kbqa.benchmark_agents with unified CLI args (--agents, --n-questions, --postprocessing, --seed, --stratified, --questionnaire, --dataset)
   - Evaluation page handles superset summary.json schema with dual field names (e.g., accuracy/accuracy_rate)
   - Updated [SOP/running_batch_processing.md](SOP/running_batch_processing.md) and [System/project_architecture.md](System/project_architecture.md)

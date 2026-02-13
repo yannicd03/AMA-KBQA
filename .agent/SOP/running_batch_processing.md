@@ -116,7 +116,7 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_qu
 | `--postprocessing, -p` | llm_judge | `choice`, `sparql`, `llm_judge`, or `simple` |
 | `--dataset, -d` | handcrafted | SciQA dataset type: `handcrafted` or `auto` |
 | `--stratified` | false | Stratified sampling by question type |
-| `--output-dir` | `benchmark_results/<timestamp>` | Output directory |
+| `--output-dir` | `benchmark_results/<YYYY-MM-DD-N>` | Output directory |
 | `--timeout` | 300 | Timeout per question in seconds |
 | `--resume` | false | Skip completed model/agent combinations |
 | `--dry-run` | false | Preview what would run without executing |
@@ -135,7 +135,7 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_qu
 ## Output Structure
 
 ```
-benchmark_results/<timestamp>/
+benchmark_results/<YYYY-MM-DD-N>/
   overview.json                    # Multi-model leaderboard (multi-model mode only)
   benchmark_results.csv            # CSV export (if --export-csv)
   kqapro/
@@ -375,7 +375,7 @@ db/datasets/kqapro/fewshot-examples/
 ├── _general.json               # Cross-type general guidance (max 10)
 └── _tool_tips.json             # Tool-specific tips (max 20)
 
-benchmark_results/<timestamp>/<agent>/<model>/
+benchmark_results/<YYYY-MM-DD-N>/<agent>/<model>/
 └── generated_fewshot.json      # Audit log of all generated examples
 ```
 
@@ -503,7 +503,7 @@ The Streamlit frontend (`streamlit run ama_kbqa/frontend/app.py`) provides a vis
 - **Models multi-select** - Select multiple models for multi-model benchmarking (leave empty for single-model using config.toml)
 - **Advanced Options** (collapsible expander):
   - **Timeout** - Maximum seconds per question (default: 300)
-  - **Output Directory** - Custom output path (default: `benchmark_results/<timestamp>`)
+  - **Output Directory** - Custom output path (default: `benchmark_results/<YYYY-MM-DD-N>`)
   - **Resume** - Skip model/agent combinations that already have results
   - **Export CSV** - Generate CSV summary alongside JSON results
   - **Dry Run** - Preview what would run without executing benchmarks

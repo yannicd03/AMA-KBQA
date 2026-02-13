@@ -84,8 +84,8 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 | `prompts.py` | All prompt strings and templates | ~665 |
 
 **Prompts Module (`prompts.py`) exports:**
-- `QTYPE_STRATEGIES` - Dict of 10 question-type-specific strategies (includes completion gates for Count and SelectBetween, OR/UNION counting section for Count with SPARQL UNION pattern, prepositional phrase note in QueryAttr)
-- `SYSTEM_PROMPT` - Main agent system prompt (includes 7 critical rules: anti-premature-termination rule, prepositional phrase disambiguation rule)
+- `QTYPE_STRATEGIES` - Dict of 10 question-type-specific strategies (includes completion gates for Count and SelectBetween, OR/UNION counting section for Count with genericized SPARQL UNION pattern using placeholders, prepositional phrase note in QueryAttr, qualifier selection guidance in QueryRelationQualifier step 3 and QueryAttrQualifier step 4, prepositional phrase cross-reference in Query step 2b)
+- `SYSTEM_PROMPT` - Main agent system prompt (includes 8 critical rules: anti-premature-termination rule, prepositional phrase disambiguation rule #7, DO NOT BACKTRACK journal confidence rule at lines 300-301)
 - `CLASSIFICATION_PROMPT_TEMPLATE` - Question classification (uses `{question}`)
 - `ENTITY_EXTRACTION_PROMPT` - Entity/relation extraction
 - `ANALYSIS_CONTEXT_TEMPLATE` - Pre-analysis context (uses `{qtype}`, `{formatted_entities}`, etc.)
@@ -161,17 +161,17 @@ The agent classifies questions into 10 types, each with a specific strategy:
 
 | Type | Description | Strategy | Completion Gate |
 |------|-------------|----------|-----------------|
-| **Count** | "How many..." | Use RunSPARQL with COUNT() for large sets; OR/UNION conditions use UNION pattern with COUNT(DISTINCT) to avoid double-counting | ✅ Property discovery + COUNT query execution + numeric result |
+| **Count** | "How many..." | Use RunSPARQL with COUNT() for large sets; OR/UNION conditions use genericized UNION pattern with COUNT(DISTINCT) to avoid double-counting (placeholders: ATTRIBUTE_A, VALUE_A, ENTITY_ID, PREDICATE) | ✅ Property discovery + COUNT query execution + numeric result |
 | **Verify** | "Is...", "Does..." | Use VerifyNumericCondition for TRUE/FALSE | - |
 | **Select** | General selection | Entity identification and attribute lookup | - |
 | **SelectBetween** | Compare 2 entities | Use CompareEntities, verify constraints | ✅ Both entity values retrieved + comparison made + answer identified |
 | **SelectAmong** | Superlative (most, least) | Use RunSPARQL with ORDER BY LIMIT 1 | - |
-| **QueryAttr** | Direct attribute lookup | Use GetAttributeDetails | - |
-| **QueryAttrQualifier** | Attribute with context | Use GetEdgeQualifiers | - |
+| **QueryAttr** | Direct attribute lookup | Use GetAttributeDetails (note: prepositional phrase disambiguation applies) | - |
+| **QueryAttrQualifier** | Attribute with context | Use GetEdgeQualifiers (step 4: question-word-to-qualifier mapping: When→point_in_time, Where→location) | - |
 | **QueryRelation** | Relationship identification | Use GetRelationDetails | - |
-| **QueryRelationQualifier** | Relation with context | Use GetQualifiersByPredicate | - |
+| **QueryRelationQualifier** | Relation with context | Use GetQualifiersByPredicate (step 3: question-word-to-qualifier mapping: When→point_in_time/start_time, Where→location, What role→object_has_role, What ceremony→ceremony, For what→AMBIGUOUS: check both for_work and ceremony) | - |
 | **QueryName** | Reverse lookup | Use FindByAttribute or RunSPARQL | - |
-| **Query** | General query | Multi-step reasoning | - |
+| **Query** | General query | Multi-step reasoning (step 2b: prepositional phrase cross-reference to Rule #7) | - |
 
 **Completion Gates:** Some question types have explicit completion gates to prevent premature termination. The agent must complete all checkpoints in the gate before stopping. This prevents the agent from concluding "I cannot answer" before attempting all necessary steps.
 
@@ -474,7 +474,7 @@ python -m ama_kbqa.benchmark_agents --agents sciqa --n-questions 50 --dataset au
 
 **Output Structure:**
 ```
-benchmark_results/<timestamp>/
+benchmark_results/<YYYY-MM-DD-N>/
 ├── sciqa/
 │   └── <model-name>/       # or "default" for single-model mode
 │       ├── results.json    # Per-question results
@@ -667,7 +667,7 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 10 --postproce
 
 **Output Structure:**
 ```
-benchmark_results/<timestamp>/
+benchmark_results/<YYYY-MM-DD-N>/
 ├── kqapro/
 │   └── <model-name>/           # or "default" for single-model mode
 │       ├── results.json        # Per-question results
