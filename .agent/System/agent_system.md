@@ -91,7 +91,7 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 - `ANALYSIS_CONTEXT_TEMPLATE` - Pre-analysis context (uses `{qtype}`, `{formatted_entities}`, etc.)
 - `FEWSHOT_EXAMPLES_TEMPLATE` - Few-shot examples section (loads all 10 qtypes: Count, Verify, Select, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName, Query)
 - `GENERAL_GUIDANCE_TEMPLATE` - Cross-type insights from `_general.json` (top 5 entries: verify constraints, trust KB data, match qualifier, use FindByAttribute, use SPARQL)
-- `TOOL_TIPS_TEMPLATE` - Tool-specific tips from `_tool_tips.json` (top 10 entries)
+- `TOOL_TIPS_TEMPLATE` - Tool-specific tips from `_tool_tips.json` (top 10 entries; GetEdgeQualifiers entry updated 2026-02-13: "For what" marked AMBIGUOUS - must check both for_work AND ceremony)
 - `ANALYSIS_CONTEXT_SUFFIX` - Closing text for analysis
 - `JOURNAL_REFRESH_TEMPLATE` - Periodic memory refresh (uses `{iteration_count}`, `{journal_refresh}`)
 - `NO_PROGRESS_TEMPLATE` - No progress intervention

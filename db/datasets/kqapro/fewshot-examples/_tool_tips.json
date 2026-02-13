@@ -7,7 +7,7 @@
   {
     "tool_name": "GetEdgeQualifiers",
     "problem_pattern": "Multiple qualifiers returned for a relation",
-    "guidance": "Parse the question word to select the correct qualifier: 'When' -> point_in_time/start_time, 'Where' -> location, 'What role' -> object_has_role, 'What ceremony' -> ceremony, 'For what' -> for_work."
+    "guidance": "Parse the question word to select the correct qualifier: 'When' -> point_in_time/start_time, 'Where' -> location, 'What role' -> object_has_role, 'What ceremony' -> ceremony, 'For what' -> AMBIGUOUS: check both for_work (creative work) and ceremony/statement_is_subject_of (event). Pick the one matching the expected answer type."
   },
   {
     "tool_name": "GetAttributeWithQualifiers",

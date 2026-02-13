@@ -88,11 +88,11 @@ ama-kbqa/
 │       │   ├── kb.json         # KQAPro knowledge base
 │       │   ├── convert_kb_to_nt.py
 │       │   └── fewshot-examples/
-│       │       ├── Count.json              # Per-qtype tool-trace examples (includes UNION counting example)
+│       │       ├── Count.json              # Per-qtype tool-trace examples (includes genericized UNION counting example with placeholders)
 │       │       ├── QueryRelationQualifier.json  # 3 qualifier selection examples (point_in_time vs for_work, role, ceremony)
 │       │       ├── Query.json              # and 8 other qtype files
 │       │       ├── _general.json           # Cross-type general guidance (5 entries: verify constraints, trust KB, match qualifier, use FindByAttribute, use SPARQL)
-│       │       └── _tool_tips.json         # Tool-specific tips (max 20)
+│       │       └── _tool_tips.json         # Tool-specific tips (GetEdgeQualifiers updated 2026-02-13: "For what" marked AMBIGUOUS - check both for_work AND ceremony)
 │       └── SciQA/
 │           ├── ORKG RDF dump 14.02.2023.nt  # ORKG knowledge graph
 │           ├── Handcrafted/    # 100 expert Q&A pairs
@@ -196,8 +196,8 @@ All prompts are centralized in a separate module for easier maintenance:
 
 | Prompt | Purpose |
 |--------|---------|
-| `QTYPE_STRATEGIES` | 10 question-type-specific reasoning strategies (Count includes OR/UNION section with SPARQL pattern, QueryAttr includes prepositional phrase note) |
-| `SYSTEM_PROMPT` | Main agent system prompt with 7 KBQA rules (includes prepositional phrase disambiguation rule #7) |
+| `QTYPE_STRATEGIES` | 10 question-type-specific reasoning strategies (Count includes OR/UNION section with genericized SPARQL pattern using placeholders, QueryAttr includes prepositional phrase note, QueryRelationQualifier includes step 3 qualifier selection guidance with question-word mapping, QueryAttrQualifier includes step 4 qualifier selection, Query includes prepositional phrase cross-reference in step 2b) |
+| `SYSTEM_PROMPT` | Main agent system prompt with 8 KBQA rules (includes prepositional phrase disambiguation rule #7 at lines 273-276, DO NOT BACKTRACK journal confidence rule at lines 300-301) |
 | `CLASSIFICATION_PROMPT_TEMPLATE` | Question classification prompt |
 | `ENTITY_EXTRACTION_PROMPT` | Entity/relation extraction prompt |
 | `ANALYSIS_CONTEXT_TEMPLATE` | Pre-analysis injection template |
