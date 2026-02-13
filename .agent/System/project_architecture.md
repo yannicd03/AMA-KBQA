@@ -9,7 +9,7 @@ AMA KBQA (Knowledge Base Question Answering) is a multi-agent system for answeri
 - **SciQA/ORKG** - Scientific research papers and contributions (~160MB, 468 Q&A pairs) ✅ Active
 
 The system uses a combination of:
-- **LLM-based reasoning** (via OpenRouter, KIT Ollama, AIFB)
+- **LLM-based reasoning** (via OpenRouter, KIT)
 - **Vector semantic search** (Qdrant)
 - **SPARQL queries** (Virtuoso)
 - **MCP (Model Context Protocol)** for tool communication
@@ -531,8 +531,7 @@ User Question
 | API | Purpose | Configuration |
 |-----|---------|---------------|
 | OpenRouter | Cloud LLM access | `OPENROUTER_API_KEY` in `.env` |
-| KIT Ollama | KIT-specific endpoint | `KIT_OLLAMA_TOKEN` in `.env` |
-| AIFB | KIT AI Toolbox | `AIFB_API_KEY` in `.env` |
+| KIT | KIT AI Toolbox | `KIT_API_KEY` in `.env` |
 
 ### Database Connections
 

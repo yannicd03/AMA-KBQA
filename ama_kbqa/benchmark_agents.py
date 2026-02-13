@@ -181,24 +181,45 @@ BENCHMARK_MODELS: List[ModelConfig] = [
     ),
     ModelConfig(
         name="gpt-oss-120b-kit",
-        provider="kit_ollama",
-        model_id="gpt-oss:120b",
-        base_url="https://ki-toolbox.scc.kit.edu/ollama/v1",
-        api_key_env="KIT_OLLAMA_TOKEN"
+        provider="kit",
+        model_id="kit.gpt-oss-120b",
+        base_url="https://ki-toolbox.scc.kit.edu/api/v1",
+        api_key_env="KIT_API_KEY"
     ),
     ModelConfig(
         name="qwen3-vl-235b-kit",
-        provider="kit_ollama",
-        model_id="qwen3-vl:235b-a22b-instruct",
-        base_url="https://ki-toolbox.scc.kit.edu/ollama/v1",
-        api_key_env="KIT_OLLAMA_TOKEN"
+        provider="kit",
+        model_id="kit.qwen3-vl-235b-a22b-instruct",
+        base_url="https://ki-toolbox.scc.kit.edu/api/v1",
+        api_key_env="KIT_API_KEY"
     ),
     ModelConfig(
         name="gpt-4.1-mini-kit",
-        provider="aifb",
+        provider="kit",
         model_id="azure.gpt-4.1-mini",
         base_url="https://ki-toolbox.scc.kit.edu/api/v1",
-        api_key_env="AIFB_API_KEY"
+        api_key_env="KIT_API_KEY"
+    ),
+    ModelConfig(
+        name="o4-mini-kit",
+        provider="kit",
+        model_id="azure.o4-mini",
+        base_url="https://ki-toolbox.scc.kit.edu/api/v1",
+        api_key_env="KIT_API_KEY"
+    ),
+    ModelConfig(
+        name="mixtral-8x22b-kit",
+        provider="kit",
+        model_id="kit.mixtral-8x22b-instruct",
+        base_url="https://ki-toolbox.scc.kit.edu/api/v1",
+        api_key_env="KIT_API_KEY"
+    ),
+    ModelConfig(
+        name="minimax-m2.1-kit",
+        provider="kit",
+        model_id="kit.minimax-m2.1-229b",
+        base_url="https://ki-toolbox.scc.kit.edu/api/v1",
+        api_key_env="KIT_API_KEY"
     ),
 ]
 
