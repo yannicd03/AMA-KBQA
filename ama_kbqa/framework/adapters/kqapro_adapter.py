@@ -90,7 +90,7 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
                 "attribute": "Attribute",
             },
             domain_settings={
-                "max_iterations": 50,
+                "max_iterations": 25,
                 "journal_refresh_interval": 5,
                 "fewshot_examples_dir": "db/datasets/kqapro/fewshot-examples",
             },
