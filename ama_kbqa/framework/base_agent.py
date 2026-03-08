@@ -314,15 +314,16 @@ Change strategy or acknowledge the data doesn't exist."""
     # PRE-AGENT HOOKS
     # =========================================================================
 
-    def _classify_question(self, question: str) -> Dict[str, str]:
+    def _classify_and_extract(self, question: str) -> Dict[str, Any]:
         """
-        Classify a question into the KG taxonomy.
+        Combined classification + entity extraction in a single LLM call.
+        Saves ~2-4k tokens by avoiding a second round-trip.
 
         Args:
-            question: The question to classify
+            question: The question to classify and analyze
 
         Returns:
-            Dict with 'question_type' key
+            Dict with 'question_type', 'entities', and 'relations' keys
         """
         prompt = self._get_classification_prompt(question)
 
@@ -332,6 +333,7 @@ Change strategy or acknowledge the data doesn't exist."""
                 messages=[{"role": "system", "content": prompt}],
                 temperature=get_chat_temperature(),
                 response_format={"type": "json_object"},
+                max_tokens=300,
                 timeout=30.0
             )
 
@@ -342,51 +344,23 @@ Change strategy or acknowledge the data doesn't exist."""
             result = json.loads(json_content)
             return {
                 "question_type": result.get("question_type", "Query"),
-                "fewshot_examples": ""
-            }
-
-        except Exception as e:
-            self._trace(f"Question classification failed: {e}", COLOR_YELLOW)
-            return {"question_type": "Query", "fewshot_examples": ""}
-
-    def _extract_entities(self, question: str) -> Dict[str, List[str]]:
-        """
-        Extract entities and relations from a question.
-
-        Args:
-            question: The question to analyze
-
-        Returns:
-            Dict with 'entities' and 'relations' keys
-        """
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self._get_entity_extraction_prompt()},
-                    {"role": "user", "content": question}
-                ],
-                temperature=get_chat_temperature(),
-                response_format={"type": "json_object"},
-                timeout=30.0
-            )
-
-            if response.usage:
-                self._track_token_usage(response.usage)
-
-            json_content = response.choices[0].message.content
-            if not json_content:
-                self._trace("LLM returned empty content for entity extraction", COLOR_YELLOW)
-                return {"entities": [], "relations": []}
-            result = json.loads(json_content)
-            return {
                 "entities": result.get("entities", []),
                 "relations": result.get("relations", [])
             }
 
         except Exception as e:
-            self._trace(f"Entity extraction failed: {e}", COLOR_YELLOW)
-            return {"entities": [], "relations": []}
+            self._trace(f"Classification+extraction failed: {e}", COLOR_YELLOW)
+            return {"question_type": "Query", "entities": [], "relations": []}
+
+    def _classify_question(self, question: str) -> Dict[str, str]:
+        """Legacy: delegates to combined call."""
+        result = self._classify_and_extract(question)
+        return {"question_type": result["question_type"], "fewshot_examples": ""}
+
+    def _extract_entities(self, question: str) -> Dict[str, List[str]]:
+        """Legacy: delegates to combined call."""
+        result = self._classify_and_extract(question)
+        return {"entities": result["entities"], "relations": result["relations"]}
 
     def _build_analysis_context(
         self,
@@ -565,16 +539,18 @@ Change strategy or acknowledge the data doesn't exist."""
             # Add query to messages
             self._messages.append({"role": "user", "content": query})
 
-            # Run pre-agent hooks
+            # Run pre-agent hooks (combined classification + extraction = 1 LLM call)
             self._trace("Starting pre-agent classification hook", COLOR_CYAN)
 
-            qtype_data = self._classify_question(query)
-            self._trace(f"Question classification: {qtype_data['question_type']}", COLOR_GREEN)
-
-            entities_data = self._extract_entities(query)
+            combined_data = self._classify_and_extract(query)
+            qtype_data = {"question_type": combined_data.get("question_type", "Query"), "fewshot_examples": ""}
+            entities_data = {
+                "entities": combined_data.get("entities", []),
+                "relations": combined_data.get("relations", [])
+            }
             self._trace(
-                f"Entity extraction: {len(entities_data['entities'])} entities, "
-                f"{len(entities_data['relations'])} relations",
+                f"Classification: {qtype_data['question_type']} | "
+                f"Entities: {len(entities_data['entities'])}, Relations: {len(entities_data['relations'])}",
                 COLOR_GREEN
             )
 
@@ -691,6 +667,18 @@ Change strategy or acknowledge the data doesn't exist."""
                 self._messages.append({
                     "role": "user",
                     "content": self._get_journal_summary_answer_prompt()
+                })
+
+            # Early exit: nudge agent to wrap up after iteration 15
+            if iteration_count >= 15 and iteration_count % 5 == 0:
+                self._trace(f"Iteration {iteration_count} - injecting wrap-up nudge", COLOR_YELLOW)
+                self._messages.append({
+                    "role": "user",
+                    "content": (
+                        f"You are on iteration {iteration_count}. If you have found relevant data, "
+                        "call GetJournalSummary and provide your answer now. "
+                        "Only continue if you have a concrete next step that will yield new information."
+                    )
                 })
 
         # Run synthesis
@@ -889,21 +877,22 @@ Change strategy or acknowledge the data doesn't exist."""
 
     def _manage_context_window(self) -> None:
         """
-        Manage context window by summarizing old tool results when approaching limits.
+        Manage context window by truncating old tool results.
 
-        Uses a rough heuristic of len(text) / 3.5 to estimate token count.
-        Preserves the system message and the most recent 6 message pairs.
+        Two-tier approach:
+        - At 50% capacity: truncate old tool results to 150 chars
+        - At 75% capacity: truncate aggressively to 80 chars and drop old user injection messages
         """
         context_limit = getattr(self, '_context_limit', 100000)
 
-        # Estimate total tokens
+        # Estimate total tokens (rough heuristic)
         total_chars = sum(
             len(msg.get("content", "") or "") for msg in self._messages
         )
         estimated_tokens = total_chars / 3.5
 
-        if estimated_tokens < context_limit * 0.8:
-            return  # Under threshold, no action needed
+        if estimated_tokens < context_limit * 0.5:
+            return  # Under threshold
 
         self._trace(
             f"Context management: ~{int(estimated_tokens)} tokens "
@@ -911,33 +900,48 @@ Change strategy or acknowledge the data doesn't exist."""
             COLOR_YELLOW
         )
 
-        # Determine how aggressively to trim
-        truncate_len = 200 if estimated_tokens < context_limit * 0.9 else 100
+        # Tier 1: Moderate trimming at 50%
+        truncate_len = 150
+        # Tier 2: Aggressive at 75%
+        if estimated_tokens >= context_limit * 0.75:
+            truncate_len = 80
 
-        # Never touch system message (index 0) or last 12 messages (~6 pairs)
-        protected_tail = 12
+        # Never touch system message (index 0) or last 8 messages (~4 pairs)
+        protected_tail = 8
         if len(self._messages) <= protected_tail + 1:
-            return  # Not enough messages to trim
+            return
 
         trimmed_count = 0
         for i in range(1, len(self._messages) - protected_tail):
             msg = self._messages[i]
             content = msg.get("content", "") or ""
 
-            # Only trim tool results (they tend to be the largest)
+            # Trim tool results (largest messages)
             if msg.get("role") == "tool" and len(content) > truncate_len + 50:
                 self._messages[i] = {
                     **msg,
-                    "content": content[:truncate_len] + "... [summarized]"
+                    "content": content[:truncate_len] + "...[trimmed]"
                 }
                 trimmed_count += 1
 
+            # At tier 2, also trim verbose user injection messages (journal refreshes, etc.)
+            if estimated_tokens >= context_limit * 0.75:
+                if msg.get("role") == "user" and len(content) > 500 and i > 2:
+                    self._messages[i] = {
+                        **msg,
+                        "content": content[:200] + "...[trimmed]"
+                    }
+                    trimmed_count += 1
+
         if trimmed_count > 0:
-            self._trace(f"Trimmed {trimmed_count} old tool results to {truncate_len} chars", COLOR_YELLOW)
+            self._trace(f"Trimmed {trimmed_count} messages to {truncate_len} chars", COLOR_YELLOW)
 
     async def _run_synthesis(self, query: str) -> str:
         """
         Run the deterministic synthesis step.
+
+        Uses a MINIMAL message set (system + journal + query) instead of the
+        full conversation history. This saves 30-80k tokens per question.
 
         Args:
             query: Original query
@@ -957,11 +961,16 @@ Change strategy or acknowledge the data doesn't exist."""
             query=query
         )
 
-        self._messages.append({"role": "user", "content": synthesis_prompt})
+        # Use MINIMAL messages for synthesis instead of full history
+        # This is the single biggest token saving in the pipeline
+        synthesis_messages = [
+            {"role": "system", "content": "You are a precise question-answering system. Answer based strictly on the provided journal data."},
+            {"role": "user", "content": synthesis_prompt}
+        ]
 
-        # Make synthesis call
-        self._trace("Making final synthesis LLM call...", COLOR_YELLOW)
-        final_answer = self._llm_call_synthesis()
+        # Make synthesis call with minimal context
+        self._trace("Making final synthesis LLM call (minimal context)...", COLOR_YELLOW)
+        final_answer = self._llm_call_synthesis(messages_override=synthesis_messages)
 
         if final_answer and final_answer.strip():
             # Verification pass: if synthesis indicates failure but journal has data, re-prompt
@@ -981,17 +990,16 @@ Change strategy or acknowledge the data doesn't exist."""
 
                 if has_data and not journal_seems_empty:
                     self._trace("Synthesis indicated failure but journal has data - re-prompting", COLOR_YELLOW)
-                    self._messages.append({"role": "assistant", "content": final_answer})
-                    self._messages.append({
+                    synthesis_messages.append({"role": "assistant", "content": final_answer})
+                    synthesis_messages.append({
                         "role": "user",
                         "content": (
-                            "Your answer indicates you could not find data, but your journal "
-                            "contains discovered values and resource IDs. Please re-read the "
-                            "journal summary above carefully and provide an answer based on "
-                            "the data you DID find. Use the specific values from the journal."
+                            "Your answer indicates you could not find data, but the journal "
+                            "contains discovered values. Re-read the journal and answer using "
+                            "the specific values found."
                         )
                     })
-                    final_answer = self._llm_call_synthesis()
+                    final_answer = self._llm_call_synthesis(messages_override=synthesis_messages)
                     if final_answer and final_answer.strip():
                         self._trace(f"Re-synthesis complete ({len(final_answer)} chars)", COLOR_GREEN)
 
@@ -1082,11 +1090,11 @@ Change strategy or acknowledge the data doesn't exist."""
             self._trace(f"LLM text-only call failed: {e}", COLOR_RED)
             raise
 
-    def _llm_call_synthesis(self) -> str:
-        """Execute synthesis LLM call."""
+    def _llm_call_synthesis(self, messages_override: Optional[List[Dict[str, Any]]] = None) -> str:
+        """Execute synthesis LLM call with optional minimal message set."""
         call_params = {
             "model": self.synthesis_model,
-            "messages": self._messages,
+            "messages": messages_override if messages_override is not None else self._messages,
             "timeout": self.request_timeout,
             "temperature": get_synthesis_temperature(),
             "max_tokens": get_synthesis_max_tokens(),

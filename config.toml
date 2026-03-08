@@ -2,7 +2,7 @@
 chat_provider = "openrouter"
 embedding_provider = "openrouter"
 chat_temperature = 0.2
-chat_max_tokens = 15000
+chat_max_tokens = 4096
 embedding_temperature = 0.0
 
 [synthesis]
@@ -10,7 +10,7 @@ synthesis_provider = "openrouter"
 synthesis_model = "deepseek/deepseek-v3.2"
 synthesis_model_provider = ""
 synthesis_temperature = 0.3
-synthesis_max_tokens = 8000
+synthesis_max_tokens = 2048
 
 [openrouter]
 base_url = "https://openrouter.ai/api/v1"
