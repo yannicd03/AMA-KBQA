@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.framework.config import KnowledgeGraphConfig
@@ -33,6 +33,31 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
     GENERAL_GUIDANCE_TEMPLATE,
     TOOL_TIPS_TEMPLATE,
 )
+
+
+    # Tools always included regardless of question type
+CORE_TOOLS = {
+    "FindNode", "GetNodeSummary", "GetAttributeDetails", "GetRelationDetails",
+    "ManageJournal", "GetJournalSummary", "RunSPARQL", "GetNodeLabel",
+    "BatchGetNodeLabels",
+}
+
+# Extra tools per question type (on top of CORE_TOOLS)
+QTYPE_TOOL_MAP: Dict[str, set] = {
+    "Count":                 {"CompareEntities", "FindByAttribute", "FindEntitiesByRelationPath"},
+    "Verify":                {"VerifyNumericCondition", "CompareEntities", "FindByAttribute"},
+    "SelectBetween":         {"CompareEntities", "GetSchemaForAttribute"},
+    "SelectAmong":           {"CompareEntities", "GetSchemaForAttribute", "FindByAttribute"},
+    "QueryAttr":             {"FindByAttribute", "GetSchemaForAttribute"},
+    "QueryAttrQualifier":    {"GetEdgeQualifiers", "GetQualifiersByPredicate",
+                              "GetAttributeWithQualifiers", "TemporalAttributeQuery",
+                              "GetSchemaForAttribute"},
+    "QueryRelation":         {"ExploreNeighborhood", "FindEntitiesByRelationPath"},
+    "QueryRelationQualifier":{"GetEdgeQualifiers", "GetQualifiersByPredicate",
+                              "ExploreNeighborhood"},
+    "QueryName":             {"FindByAttribute", "FindEntitiesByRelationPath",
+                              "ExploreNeighborhood"},
+}
 
 
 class KQAProAgent(BaseKBQAAgent):
@@ -120,6 +145,14 @@ class KQAProAgent(BaseKBQAAgent):
     def _get_journal_summary_answer_prompt(self) -> str:
         """Get the prompt to inject after GetJournalSummary."""
         return JOURNAL_SUMMARY_ANSWER_PROMPT
+
+    def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
+        """Return set of tool names allowed for this question type, or None for all."""
+        extra = QTYPE_TOOL_MAP.get(qtype)
+        if extra is None:
+            # Unknown qtype → allow all tools
+            return None
+        return CORE_TOOLS | extra
 
     # =========================================================================
     # KQAPRO-SPECIFIC METHODS
@@ -264,29 +297,19 @@ class KQAProAgent(BaseKBQAAgent):
         except (json.JSONDecodeError, Exception):
             return ""
 
-    def _classify_question(self, question: str) -> Dict[str, str]:
+    def _classify_question(self, question: str) -> Dict[str, Any]:
         """
         Classify a question and load relevant few-shot examples.
-
-        Override to add KQAPro-specific few-shot example loading.
-
-        Args:
-            question: The question to classify
-
-        Returns:
-            Dict with 'question_type' and 'fewshot_examples' keys
+        Enriches base result with KQAPro-specific fewshot examples.
         """
-        # Call parent classification
         result = super()._classify_question(question)
 
-        # Load few-shot examples for this question type (unless disabled)
         if self.use_fewshot:
             qtype = result.get("question_type", "Query")
-            fewshot_examples = self._load_fewshot_examples(
+            result["fewshot_examples"] = self._load_fewshot_examples(
                 max_per_type=3,
                 specific_qtype=qtype
             )
-            result["fewshot_examples"] = fewshot_examples
         else:
             result["fewshot_examples"] = ""
 
