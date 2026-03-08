@@ -301,6 +301,14 @@ WHAT YOU'VE DISCOVERED:
 
 Change strategy or acknowledge the data doesn't exist."""
 
+    def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
+        """
+        Return set of allowed tool names for this question type.
+        Return None to allow all tools (default).
+        Override in subclass for qtype-specific tool filtering.
+        """
+        return None
+
     def _get_journal_summary_answer_prompt(self) -> str:
         """
         Get the prompt to inject after GetJournalSummary.
@@ -352,10 +360,18 @@ Change strategy or acknowledge the data doesn't exist."""
             self._trace(f"Classification+extraction failed: {e}", COLOR_YELLOW)
             return {"question_type": "Query", "entities": [], "relations": []}
 
-    def _classify_question(self, question: str) -> Dict[str, str]:
-        """Legacy: delegates to combined call."""
+    def _classify_question(self, question: str) -> Dict[str, Any]:
+        """
+        Classify question and extract entities in one LLM call.
+        Subclasses can override to enrich the result (e.g. add fewshot examples).
+        """
         result = self._classify_and_extract(question)
-        return {"question_type": result["question_type"], "fewshot_examples": ""}
+        return {
+            "question_type": result["question_type"],
+            "entities": result.get("entities", []),
+            "relations": result.get("relations", []),
+            "fewshot_examples": "",
+        }
 
     def _extract_entities(self, question: str) -> Dict[str, List[str]]:
         """Legacy: delegates to combined call."""
@@ -542,23 +558,18 @@ Change strategy or acknowledge the data doesn't exist."""
             # Run pre-agent hooks (combined classification + extraction = 1 LLM call)
             self._trace("Starting pre-agent classification hook", COLOR_CYAN)
 
-            combined_data = self._classify_and_extract(query)
-            qtype_data = {"question_type": combined_data.get("question_type", "Query"), "fewshot_examples": ""}
-            entities_data = {
-                "entities": combined_data.get("entities", []),
-                "relations": combined_data.get("relations", [])
-            }
-            self._trace(
-                f"Classification: {qtype_data['question_type']} | "
-                f"Entities: {len(entities_data['entities'])}, Relations: {len(entities_data['relations'])}",
-                COLOR_GREEN
-            )
-
-            # Build and inject analysis context
+            # Call _classify_question (overrideable by subclasses for fewshot loading etc.)
+            qtype_data = self._classify_question(query)
             qtype = qtype_data.get("question_type", "Query")
             fewshot_examples = qtype_data.get("fewshot_examples", "")
-            entities = entities_data.get("entities", [])
-            relations = entities_data.get("relations", [])
+            entities = qtype_data.get("entities", [])
+            relations = qtype_data.get("relations", [])
+
+            self._trace(
+                f"Classification: {qtype} | "
+                f"Entities: {len(entities)}, Relations: {len(relations)}",
+                COLOR_GREEN
+            )
 
             analysis_context = self._build_analysis_context(
                 qtype, entities, relations, fewshot_examples
@@ -566,6 +577,29 @@ Change strategy or acknowledge the data doesn't exist."""
             self._messages.append({"role": "user", "content": analysis_context})
 
             self._trace(f"Pre-agent hook complete - Type: {qtype}", COLOR_GREEN)
+
+            # === FAST PATH: Skip agent loop for simple 1-hop questions ===
+            fast_path_types = {"QueryAttr", "QueryRelation", "QueryName"}
+            if (qtype in fast_path_types
+                    and len(entities) == 1
+                    and len(relations) <= 1
+                    and config.domain_settings.get("enable_fast_path", True)):
+                self._trace(f"FAST PATH: Simple {qtype} with 1 entity", COLOR_GREEN)
+                fast_answer = await self._try_fast_path(query, qtype, entities, relations)
+                if fast_answer is not None:
+                    self._trace(f"Fast path succeeded ({len(fast_answer)} chars)", COLOR_GREEN)
+                    return fast_answer
+                self._trace("Fast path failed - falling back to full loop", COLOR_YELLOW)
+
+            # Filter tools by question type (saves ~2-3k tokens per iteration)
+            allowed_tools = self._get_allowed_tools_for_qtype(qtype)
+            if allowed_tools is not None:
+                filtered_tools = [t for t in openai_tools if t["function"]["name"] in allowed_tools]
+                self._trace(
+                    f"Tool filtering: {len(openai_tools)} → {len(filtered_tools)} tools for {qtype}",
+                    COLOR_GREEN
+                )
+                openai_tools = filtered_tools
 
             # Run tool loop (config already loaded above)
             max_iterations = config.domain_settings.get("max_iterations", 50)
@@ -583,6 +617,83 @@ Change strategy or acknowledge the data doesn't exist."""
 
         finally:
             await self._finalize_question()
+
+    async def _try_fast_path(
+        self,
+        query: str,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+    ) -> Optional[str]:
+        """
+        Attempt to answer simple 1-hop questions without the full agent loop.
+
+        Executes: FindNode → GetNodeSummary → Synthesis
+        Returns None if the fast path cannot answer (fallback to full loop).
+        """
+        entity_name = entities[0]
+
+        try:
+            # Step 1: Find the entity
+            find_result = await self.mcp.call_tool("FindNode", {"semantic_node_name": entity_name})
+
+            # Parse the result to get node_id
+            import re as _re
+            id_match = _re.search(r'"original_id":\s*"([^"]+)"', find_result)
+            if not id_match:
+                return None
+            node_id = id_match.group(1)
+
+            # Step 2: Get full node summary
+            summary_result = await self.mcp.call_tool("GetNodeSummary", {"node_id": node_id})
+
+            # Track tool calls
+            self.tool_call_counts["FindNode"] = self.tool_call_counts.get("FindNode", 0) + 1
+            self.tool_call_counts["GetNodeSummary"] = self.tool_call_counts.get("GetNodeSummary", 0) + 1
+
+            # Step 3: If relation-specific, also get relation details
+            relation_result = ""
+            if relations and qtype == "QueryRelation":
+                try:
+                    relation_result = await self.mcp.call_tool(
+                        "GetRelationDetails",
+                        {"base_node_id": node_id, "relation_name": relations[0]}
+                    )
+                    self.tool_call_counts["GetRelationDetails"] = self.tool_call_counts.get("GetRelationDetails", 0) + 1
+                except Exception:
+                    pass
+
+            # Step 4: Synthesize answer from gathered data
+            data_context = f"Entity: {entity_name} (ID: {node_id})\n"
+            data_context += f"Node Summary:\n{summary_result}\n"
+            if relation_result:
+                data_context += f"Relation Details:\n{relation_result}\n"
+
+            synthesis_prompt = self._get_synthesis_prompt_template().format(
+                journal_summary=data_context,
+                query=query
+            )
+
+            synthesis_messages = [
+                {"role": "system", "content": "You are a precise question-answering system. Answer based strictly on the provided data. Give only the answer value."},
+                {"role": "user", "content": synthesis_prompt}
+            ]
+
+            answer = self._llm_call_synthesis(messages_override=synthesis_messages)
+
+            if answer and answer.strip():
+                # Check for failure indicators
+                failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
+                                   "unable to determine", "could not find"]
+                if any(phrase in answer.lower() for phrase in failure_phrases):
+                    return None  # Fallback to full loop
+                return answer.strip()
+
+            return None
+
+        except Exception as e:
+            self._trace(f"Fast path error: {e}", COLOR_YELLOW)
+            return None
 
     async def _run_tool_loop(
         self,
@@ -621,9 +732,11 @@ Change strategy or acknowledge the data doesn't exist."""
             if iteration_count % refresh_interval == 0 and iteration_count > 0:
                 await self._inject_journal_refresh(iteration_count)
 
-            # Call LLM
-            self._trace(f"Calling LLM with {len(self._messages)} messages...", COLOR_YELLOW)
-            response = self._llm_call(tools=tools)
+            # Call LLM - use tool_choice="required" for early iterations
+            # to force the model to call a tool instead of "thinking"
+            tc = "required" if iteration_count <= 3 else "auto"
+            self._trace(f"Calling LLM with {len(self._messages)} messages (tool_choice={tc})...", COLOR_YELLOW)
+            response = self._llm_call(tools=tools, tool_choice=tc)
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
 
@@ -1040,8 +1153,12 @@ Change strategy or acknowledge the data doesn't exist."""
     # LLM CALLS
     # =========================================================================
 
-    def _llm_call(self, tools: Optional[List[Dict[str, Any]]] = None):
-        """Execute LLM call with tools."""
+    def _llm_call(
+        self,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,
+    ):
+        """Execute LLM call with tools and optional tool_choice."""
         call_params = {
             "model": self.model,
             "messages": self._messages,
@@ -1050,6 +1167,9 @@ Change strategy or acknowledge the data doesn't exist."""
             "max_tokens": get_chat_max_tokens(),
             "tools": tools
         }
+
+        if tool_choice and tools:
+            call_params["tool_choice"] = tool_choice
 
         provider_prefs = get_provider_preferences()
         if provider_prefs:
