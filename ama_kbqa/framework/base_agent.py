@@ -301,6 +301,14 @@ WHAT YOU'VE DISCOVERED:
 
 Change strategy or acknowledge the data doesn't exist."""
 
+    def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
+        """
+        Return set of allowed tool names for this question type.
+        Return None to allow all tools (default).
+        Override in subclass for qtype-specific tool filtering.
+        """
+        return None
+
     def _get_journal_summary_answer_prompt(self) -> str:
         """
         Get the prompt to inject after GetJournalSummary.
@@ -314,15 +322,16 @@ Change strategy or acknowledge the data doesn't exist."""
     # PRE-AGENT HOOKS
     # =========================================================================
 
-    def _classify_question(self, question: str) -> Dict[str, str]:
+    def _classify_and_extract(self, question: str) -> Dict[str, Any]:
         """
-        Classify a question into the KG taxonomy.
+        Combined classification + entity extraction in a single LLM call.
+        Saves ~2-4k tokens by avoiding a second round-trip.
 
         Args:
-            question: The question to classify
+            question: The question to classify and analyze
 
         Returns:
-            Dict with 'question_type' key
+            Dict with 'question_type', 'entities', and 'relations' keys
         """
         prompt = self._get_classification_prompt(question)
 
@@ -332,6 +341,7 @@ Change strategy or acknowledge the data doesn't exist."""
                 messages=[{"role": "system", "content": prompt}],
                 temperature=get_chat_temperature(),
                 response_format={"type": "json_object"},
+                max_tokens=300,
                 timeout=30.0
             )
 
@@ -342,51 +352,31 @@ Change strategy or acknowledge the data doesn't exist."""
             result = json.loads(json_content)
             return {
                 "question_type": result.get("question_type", "Query"),
-                "fewshot_examples": ""
-            }
-
-        except Exception as e:
-            self._trace(f"Question classification failed: {e}", COLOR_YELLOW)
-            return {"question_type": "Query", "fewshot_examples": ""}
-
-    def _extract_entities(self, question: str) -> Dict[str, List[str]]:
-        """
-        Extract entities and relations from a question.
-
-        Args:
-            question: The question to analyze
-
-        Returns:
-            Dict with 'entities' and 'relations' keys
-        """
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self._get_entity_extraction_prompt()},
-                    {"role": "user", "content": question}
-                ],
-                temperature=get_chat_temperature(),
-                response_format={"type": "json_object"},
-                timeout=30.0
-            )
-
-            if response.usage:
-                self._track_token_usage(response.usage)
-
-            json_content = response.choices[0].message.content
-            if not json_content:
-                self._trace("LLM returned empty content for entity extraction", COLOR_YELLOW)
-                return {"entities": [], "relations": []}
-            result = json.loads(json_content)
-            return {
                 "entities": result.get("entities", []),
                 "relations": result.get("relations", [])
             }
 
         except Exception as e:
-            self._trace(f"Entity extraction failed: {e}", COLOR_YELLOW)
-            return {"entities": [], "relations": []}
+            self._trace(f"Classification+extraction failed: {e}", COLOR_YELLOW)
+            return {"question_type": "Query", "entities": [], "relations": []}
+
+    def _classify_question(self, question: str) -> Dict[str, Any]:
+        """
+        Classify question and extract entities in one LLM call.
+        Subclasses can override to enrich the result (e.g. add fewshot examples).
+        """
+        result = self._classify_and_extract(question)
+        return {
+            "question_type": result["question_type"],
+            "entities": result.get("entities", []),
+            "relations": result.get("relations", []),
+            "fewshot_examples": "",
+        }
+
+    def _extract_entities(self, question: str) -> Dict[str, List[str]]:
+        """Legacy: delegates to combined call."""
+        result = self._classify_and_extract(question)
+        return {"entities": result["entities"], "relations": result["relations"]}
 
     def _build_analysis_context(
         self,
@@ -565,24 +555,21 @@ Change strategy or acknowledge the data doesn't exist."""
             # Add query to messages
             self._messages.append({"role": "user", "content": query})
 
-            # Run pre-agent hooks
+            # Run pre-agent hooks (combined classification + extraction = 1 LLM call)
             self._trace("Starting pre-agent classification hook", COLOR_CYAN)
 
+            # Call _classify_question (overrideable by subclasses for fewshot loading etc.)
             qtype_data = self._classify_question(query)
-            self._trace(f"Question classification: {qtype_data['question_type']}", COLOR_GREEN)
-
-            entities_data = self._extract_entities(query)
-            self._trace(
-                f"Entity extraction: {len(entities_data['entities'])} entities, "
-                f"{len(entities_data['relations'])} relations",
-                COLOR_GREEN
-            )
-
-            # Build and inject analysis context
             qtype = qtype_data.get("question_type", "Query")
             fewshot_examples = qtype_data.get("fewshot_examples", "")
-            entities = entities_data.get("entities", [])
-            relations = entities_data.get("relations", [])
+            entities = qtype_data.get("entities", [])
+            relations = qtype_data.get("relations", [])
+
+            self._trace(
+                f"Classification: {qtype} | "
+                f"Entities: {len(entities)}, Relations: {len(relations)}",
+                COLOR_GREEN
+            )
 
             analysis_context = self._build_analysis_context(
                 qtype, entities, relations, fewshot_examples
@@ -590,6 +577,29 @@ Change strategy or acknowledge the data doesn't exist."""
             self._messages.append({"role": "user", "content": analysis_context})
 
             self._trace(f"Pre-agent hook complete - Type: {qtype}", COLOR_GREEN)
+
+            # === FAST PATH: Skip agent loop for simple 1-hop questions ===
+            fast_path_types = {"QueryAttr", "QueryRelation", "QueryName"}
+            if (qtype in fast_path_types
+                    and len(entities) == 1
+                    and len(relations) <= 1
+                    and config.domain_settings.get("enable_fast_path", True)):
+                self._trace(f"FAST PATH: Simple {qtype} with 1 entity", COLOR_GREEN)
+                fast_answer = await self._try_fast_path(query, qtype, entities, relations)
+                if fast_answer is not None:
+                    self._trace(f"Fast path succeeded ({len(fast_answer)} chars)", COLOR_GREEN)
+                    return fast_answer
+                self._trace("Fast path failed - falling back to full loop", COLOR_YELLOW)
+
+            # Filter tools by question type (saves ~2-3k tokens per iteration)
+            allowed_tools = self._get_allowed_tools_for_qtype(qtype)
+            if allowed_tools is not None:
+                filtered_tools = [t for t in openai_tools if t["function"]["name"] in allowed_tools]
+                self._trace(
+                    f"Tool filtering: {len(openai_tools)} → {len(filtered_tools)} tools for {qtype}",
+                    COLOR_GREEN
+                )
+                openai_tools = filtered_tools
 
             # Run tool loop (config already loaded above)
             max_iterations = config.domain_settings.get("max_iterations", 50)
@@ -607,6 +617,83 @@ Change strategy or acknowledge the data doesn't exist."""
 
         finally:
             await self._finalize_question()
+
+    async def _try_fast_path(
+        self,
+        query: str,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+    ) -> Optional[str]:
+        """
+        Attempt to answer simple 1-hop questions without the full agent loop.
+
+        Executes: FindNode → GetNodeSummary → Synthesis
+        Returns None if the fast path cannot answer (fallback to full loop).
+        """
+        entity_name = entities[0]
+
+        try:
+            # Step 1: Find the entity
+            find_result = await self.mcp.call_tool("FindNode", {"semantic_node_name": entity_name})
+
+            # Parse the result to get node_id
+            import re as _re
+            id_match = _re.search(r'"original_id":\s*"([^"]+)"', find_result)
+            if not id_match:
+                return None
+            node_id = id_match.group(1)
+
+            # Step 2: Get full node summary
+            summary_result = await self.mcp.call_tool("GetNodeSummary", {"node_id": node_id})
+
+            # Track tool calls
+            self.tool_call_counts["FindNode"] = self.tool_call_counts.get("FindNode", 0) + 1
+            self.tool_call_counts["GetNodeSummary"] = self.tool_call_counts.get("GetNodeSummary", 0) + 1
+
+            # Step 3: If relation-specific, also get relation details
+            relation_result = ""
+            if relations and qtype == "QueryRelation":
+                try:
+                    relation_result = await self.mcp.call_tool(
+                        "GetRelationDetails",
+                        {"base_node_id": node_id, "relation_name": relations[0]}
+                    )
+                    self.tool_call_counts["GetRelationDetails"] = self.tool_call_counts.get("GetRelationDetails", 0) + 1
+                except Exception:
+                    pass
+
+            # Step 4: Synthesize answer from gathered data
+            data_context = f"Entity: {entity_name} (ID: {node_id})\n"
+            data_context += f"Node Summary:\n{summary_result}\n"
+            if relation_result:
+                data_context += f"Relation Details:\n{relation_result}\n"
+
+            synthesis_prompt = self._get_synthesis_prompt_template().format(
+                journal_summary=data_context,
+                query=query
+            )
+
+            synthesis_messages = [
+                {"role": "system", "content": "You are a precise question-answering system. Answer based strictly on the provided data. Give only the answer value."},
+                {"role": "user", "content": synthesis_prompt}
+            ]
+
+            answer = self._llm_call_synthesis(messages_override=synthesis_messages)
+
+            if answer and answer.strip():
+                # Check for failure indicators
+                failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
+                                   "unable to determine", "could not find"]
+                if any(phrase in answer.lower() for phrase in failure_phrases):
+                    return None  # Fallback to full loop
+                return answer.strip()
+
+            return None
+
+        except Exception as e:
+            self._trace(f"Fast path error: {e}", COLOR_YELLOW)
+            return None
 
     async def _run_tool_loop(
         self,
@@ -645,9 +732,11 @@ Change strategy or acknowledge the data doesn't exist."""
             if iteration_count % refresh_interval == 0 and iteration_count > 0:
                 await self._inject_journal_refresh(iteration_count)
 
-            # Call LLM
-            self._trace(f"Calling LLM with {len(self._messages)} messages...", COLOR_YELLOW)
-            response = self._llm_call(tools=tools)
+            # Call LLM - use tool_choice="required" for early iterations
+            # to force the model to call a tool instead of "thinking"
+            tc = "required" if iteration_count <= 3 else "auto"
+            self._trace(f"Calling LLM with {len(self._messages)} messages (tool_choice={tc})...", COLOR_YELLOW)
+            response = self._llm_call(tools=tools, tool_choice=tc)
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
 
@@ -691,6 +780,18 @@ Change strategy or acknowledge the data doesn't exist."""
                 self._messages.append({
                     "role": "user",
                     "content": self._get_journal_summary_answer_prompt()
+                })
+
+            # Early exit: nudge agent to wrap up after iteration 15
+            if iteration_count >= 15 and iteration_count % 5 == 0:
+                self._trace(f"Iteration {iteration_count} - injecting wrap-up nudge", COLOR_YELLOW)
+                self._messages.append({
+                    "role": "user",
+                    "content": (
+                        f"You are on iteration {iteration_count}. If you have found relevant data, "
+                        "call GetJournalSummary and provide your answer now. "
+                        "Only continue if you have a concrete next step that will yield new information."
+                    )
                 })
 
         # Run synthesis
@@ -889,21 +990,22 @@ Change strategy or acknowledge the data doesn't exist."""
 
     def _manage_context_window(self) -> None:
         """
-        Manage context window by summarizing old tool results when approaching limits.
+        Manage context window by truncating old tool results.
 
-        Uses a rough heuristic of len(text) / 3.5 to estimate token count.
-        Preserves the system message and the most recent 6 message pairs.
+        Two-tier approach:
+        - At 50% capacity: truncate old tool results to 150 chars
+        - At 75% capacity: truncate aggressively to 80 chars and drop old user injection messages
         """
         context_limit = getattr(self, '_context_limit', 100000)
 
-        # Estimate total tokens
+        # Estimate total tokens (rough heuristic)
         total_chars = sum(
             len(msg.get("content", "") or "") for msg in self._messages
         )
         estimated_tokens = total_chars / 3.5
 
-        if estimated_tokens < context_limit * 0.8:
-            return  # Under threshold, no action needed
+        if estimated_tokens < context_limit * 0.5:
+            return  # Under threshold
 
         self._trace(
             f"Context management: ~{int(estimated_tokens)} tokens "
@@ -911,33 +1013,48 @@ Change strategy or acknowledge the data doesn't exist."""
             COLOR_YELLOW
         )
 
-        # Determine how aggressively to trim
-        truncate_len = 200 if estimated_tokens < context_limit * 0.9 else 100
+        # Tier 1: Moderate trimming at 50%
+        truncate_len = 150
+        # Tier 2: Aggressive at 75%
+        if estimated_tokens >= context_limit * 0.75:
+            truncate_len = 80
 
-        # Never touch system message (index 0) or last 12 messages (~6 pairs)
-        protected_tail = 12
+        # Never touch system message (index 0) or last 8 messages (~4 pairs)
+        protected_tail = 8
         if len(self._messages) <= protected_tail + 1:
-            return  # Not enough messages to trim
+            return
 
         trimmed_count = 0
         for i in range(1, len(self._messages) - protected_tail):
             msg = self._messages[i]
             content = msg.get("content", "") or ""
 
-            # Only trim tool results (they tend to be the largest)
+            # Trim tool results (largest messages)
             if msg.get("role") == "tool" and len(content) > truncate_len + 50:
                 self._messages[i] = {
                     **msg,
-                    "content": content[:truncate_len] + "... [summarized]"
+                    "content": content[:truncate_len] + "...[trimmed]"
                 }
                 trimmed_count += 1
 
+            # At tier 2, also trim verbose user injection messages (journal refreshes, etc.)
+            if estimated_tokens >= context_limit * 0.75:
+                if msg.get("role") == "user" and len(content) > 500 and i > 2:
+                    self._messages[i] = {
+                        **msg,
+                        "content": content[:200] + "...[trimmed]"
+                    }
+                    trimmed_count += 1
+
         if trimmed_count > 0:
-            self._trace(f"Trimmed {trimmed_count} old tool results to {truncate_len} chars", COLOR_YELLOW)
+            self._trace(f"Trimmed {trimmed_count} messages to {truncate_len} chars", COLOR_YELLOW)
 
     async def _run_synthesis(self, query: str) -> str:
         """
         Run the deterministic synthesis step.
+
+        Uses a MINIMAL message set (system + journal + query) instead of the
+        full conversation history. This saves 30-80k tokens per question.
 
         Args:
             query: Original query
@@ -957,11 +1074,16 @@ Change strategy or acknowledge the data doesn't exist."""
             query=query
         )
 
-        self._messages.append({"role": "user", "content": synthesis_prompt})
+        # Use MINIMAL messages for synthesis instead of full history
+        # This is the single biggest token saving in the pipeline
+        synthesis_messages = [
+            {"role": "system", "content": "You are a precise question-answering system. Answer based strictly on the provided journal data."},
+            {"role": "user", "content": synthesis_prompt}
+        ]
 
-        # Make synthesis call
-        self._trace("Making final synthesis LLM call...", COLOR_YELLOW)
-        final_answer = self._llm_call_synthesis()
+        # Make synthesis call with minimal context
+        self._trace("Making final synthesis LLM call (minimal context)...", COLOR_YELLOW)
+        final_answer = self._llm_call_synthesis(messages_override=synthesis_messages)
 
         if final_answer and final_answer.strip():
             # Verification pass: if synthesis indicates failure but journal has data, re-prompt
@@ -981,17 +1103,16 @@ Change strategy or acknowledge the data doesn't exist."""
 
                 if has_data and not journal_seems_empty:
                     self._trace("Synthesis indicated failure but journal has data - re-prompting", COLOR_YELLOW)
-                    self._messages.append({"role": "assistant", "content": final_answer})
-                    self._messages.append({
+                    synthesis_messages.append({"role": "assistant", "content": final_answer})
+                    synthesis_messages.append({
                         "role": "user",
                         "content": (
-                            "Your answer indicates you could not find data, but your journal "
-                            "contains discovered values and resource IDs. Please re-read the "
-                            "journal summary above carefully and provide an answer based on "
-                            "the data you DID find. Use the specific values from the journal."
+                            "Your answer indicates you could not find data, but the journal "
+                            "contains discovered values. Re-read the journal and answer using "
+                            "the specific values found."
                         )
                     })
-                    final_answer = self._llm_call_synthesis()
+                    final_answer = self._llm_call_synthesis(messages_override=synthesis_messages)
                     if final_answer and final_answer.strip():
                         self._trace(f"Re-synthesis complete ({len(final_answer)} chars)", COLOR_GREEN)
 
@@ -1032,8 +1153,12 @@ Change strategy or acknowledge the data doesn't exist."""
     # LLM CALLS
     # =========================================================================
 
-    def _llm_call(self, tools: Optional[List[Dict[str, Any]]] = None):
-        """Execute LLM call with tools."""
+    def _llm_call(
+        self,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: Optional[str] = None,
+    ):
+        """Execute LLM call with tools and optional tool_choice."""
         call_params = {
             "model": self.model,
             "messages": self._messages,
@@ -1042,6 +1167,9 @@ Change strategy or acknowledge the data doesn't exist."""
             "max_tokens": get_chat_max_tokens(),
             "tools": tools
         }
+
+        if tool_choice and tools:
+            call_params["tool_choice"] = tool_choice
 
         provider_prefs = get_provider_preferences()
         if provider_prefs:
@@ -1082,11 +1210,11 @@ Change strategy or acknowledge the data doesn't exist."""
             self._trace(f"LLM text-only call failed: {e}", COLOR_RED)
             raise
 
-    def _llm_call_synthesis(self) -> str:
-        """Execute synthesis LLM call."""
+    def _llm_call_synthesis(self, messages_override: Optional[List[Dict[str, Any]]] = None) -> str:
+        """Execute synthesis LLM call with optional minimal message set."""
         call_params = {
             "model": self.synthesis_model,
-            "messages": self._messages,
+            "messages": messages_override if messages_override is not None else self._messages,
             "timeout": self.request_timeout,
             "temperature": get_synthesis_temperature(),
             "max_tokens": get_synthesis_max_tokens(),

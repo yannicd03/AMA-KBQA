@@ -397,14 +397,32 @@ mcp = FastMCP("KG-Search-Server", lifespan=server_lifespan)
 # --- 4. Helper Function (now needs the client passed in) ---
 
 
+# LRU cache for embeddings to avoid redundant API calls
+_embedding_cache: Dict[str, list] = {}
+_EMBEDDING_CACHE_MAX = 256
+
+
 def get_embedding(client: OpenAI, text: str) -> list[float]:
     text = text.replace("\n", " ")
+    cache_key = text.strip().lower()
+
+    if cache_key in _embedding_cache:
+        return _embedding_cache[cache_key]
+
     response = client.embeddings.create(
         model=EMBEDDING_MODEL,
         input=[text],
         encoding_format="float"
     )
-    return response.data[0].embedding
+    embedding = response.data[0].embedding
+
+    # Evict oldest entry if cache is full
+    if len(_embedding_cache) >= _EMBEDDING_CACHE_MAX:
+        oldest_key = next(iter(_embedding_cache))
+        del _embedding_cache[oldest_key]
+
+    _embedding_cache[cache_key] = embedding
+    return embedding
 
 
 def log_tool_duration(func):

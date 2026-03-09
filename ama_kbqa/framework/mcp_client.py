@@ -191,33 +191,70 @@ class MCPClient:
             # Additional cleanup delay to ensure resources are fully released
             await asyncio.sleep(0.2)
 
-    def get_tool_schema(self, mcp_tool: McpTool) -> Dict:
+    @staticmethod
+    def _compress_description(description: str, max_chars: int = 300) -> str:
+        """
+        Compress a tool description to save tokens.
+        Keeps the first line (summary) and truncates the rest.
+
+        Args:
+            description: Original tool description
+            max_chars: Maximum characters to keep
+
+        Returns:
+            Compressed description
+        """
+        if not description or len(description) <= max_chars:
+            return description or ""
+
+        # Keep first meaningful paragraph
+        lines = description.strip().split('\n')
+        result = []
+        char_count = 0
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if char_count + len(stripped) > max_chars:
+                break
+            result.append(stripped)
+            char_count += len(stripped)
+
+        return ' '.join(result) if result else description[:max_chars]
+
+    def get_tool_schema(self, mcp_tool: McpTool, compress: bool = True) -> Dict:
         """
         Convert an MCP tool to OpenAI function calling format.
 
         Args:
             mcp_tool: The MCP tool to convert
+            compress: Whether to compress descriptions for token savings
 
         Returns:
             Tool schema in OpenAI format
         """
+        description = mcp_tool.description or ""
+        if compress:
+            description = self._compress_description(description)
+
         return {
             "type": "function",
             "function": {
                 "name": mcp_tool.name,
-                "description": mcp_tool.description,
+                "description": description,
                 "parameters": mcp_tool.inputSchema
             }
         }
 
-    def convert_tools_to_openai_format(self, mcp_tools: List[McpTool]) -> List[Dict]:
+    def convert_tools_to_openai_format(self, mcp_tools: List[McpTool], compress: bool = True) -> List[Dict]:
         """
         Convert a list of MCP tools to OpenAI function calling format.
 
         Args:
             mcp_tools: List of MCP tools
+            compress: Whether to compress descriptions
 
         Returns:
             List of tools in OpenAI format
         """
-        return [self.get_tool_schema(t) for t in mcp_tools]
+        return [self.get_tool_schema(t, compress=compress) for t in mcp_tools]
