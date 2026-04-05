@@ -14,14 +14,12 @@ class TestJournalState:
             question_text="What is the capital of France?",
             question_type="QueryAttr",
             target_entities=["France"],
-            target_attributes=["capital"],
             kg_name="KQAPro",
         )
 
         assert state.question_text == "What is the capital of France?"
         assert state.question_type == "QueryAttr"
         assert "France" in state.target_entities
-        assert "capital" in state.target_attributes
         assert state.kg_name == "KQAPro"
 
     def test_journal_state_defaults(self):
@@ -84,7 +82,6 @@ class TestJournalState:
             question_type="QueryAttr",
             kg_name="KQAPro",
             target_entities=["France"],
-            target_attributes=["capital"],
             visited_nodes={"Q123": "France"},
             found_values={"Q123": {"capital": "Paris"}},
             completed_steps=["Found entity France (Q123)"],
@@ -118,13 +115,11 @@ class TestJournalManager:
             text="What is the population of Paris?",
             qtype="QueryAttr",
             entities=["Paris"],
-            attributes=["population"],
         )
 
         assert manager.state.question_text == "What is the population of Paris?"
         assert manager.state.question_type == "QueryAttr"
         assert "Paris" in manager.state.target_entities
-        assert "population" in manager.state.target_attributes
 
     def test_add_visited_node(self):
         """Test adding a visited node."""

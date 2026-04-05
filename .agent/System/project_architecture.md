@@ -152,7 +152,7 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 |--------|---------|-------|
 | `types.py` | Response dataclasses (EntityMatch, NodeDetails, etc.) | ~280 |
 | `config.py` | Configuration classes (NamespaceConfig, KnowledgeGraphConfig) | ~220 |
-| `state.py` | JournalState and JournalManager | ~180 |
+| `state.py` | JournalState (Pydantic BaseModel, single source of truth with caps/helpers) and JournalManager | ~340 |
 | `mcp_client.py` | Shared MCPClient for MCP server communication | ~120 |
 | `base_agent.py` | BaseKBQAAgent ABC with full tool-calling loop | ~600 |
 | `adapters/base_adapter.py` | BaseKGAdapter ABC for KG configuration | ~200 |
@@ -265,8 +265,14 @@ Provides 21 tools for knowledge graph interaction:
 - `VerifyNumericCondition` - Deterministic math comparison
 
 **State Management:**
-- `ManageJournal` - Scratchpad management
+- `ManageJournal` - Scratchpad management (actions: `set_question` ✨ NEW, `update_plan` splits newlines into list ✨ UPDATED, `update`)
 - `GetJournalSummary` - Summary of discoveries
+
+**Key implementation details:**
+- `JournalState` imported from `ama_kbqa.framework.state` (no longer defined locally) ✨ UPDATED
+- `FindNode` deduplicates via `visited_nodes`: skips Qdrant search if label already cached (case-insensitive) ✨ UPDATED
+- `RunSPARQL` stores results in `found_values["sparql_result_N"]` so they survive message truncation ✨ UPDATED
+- `completed_steps` capped at 20 entries; `failed_attempts` capped at 10 entries; all append sites use `add_completed_step()` / `add_failed_attempt()` helpers ✨ UPDATED
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 

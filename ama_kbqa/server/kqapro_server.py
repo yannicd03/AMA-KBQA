@@ -218,101 +218,7 @@ class CompareEntitiesResponse(BaseModel):
     status: str = Field(..., description="Status message.")
 
 
-class JournalState(BaseModel):
-    """The scratchpad state for the current reasoning session."""
-
-    # Question Understanding (Phase 2)
-    question_text: str = Field(default="", description="The original question being answered")
-    question_type: str = Field(default="", description="Question type: Count, Verify, SelectBetween, etc.")
-    target_entities: list[str] = Field(default_factory=list, description="Entity names we're looking for")
-    target_attributes: list[str] = Field(default_factory=list, description="Attributes we need to find")
-
-    # Exploration Tracking (Phase 1 + 2)
-    visited_nodes: dict[str, str] = Field(
-        default_factory=dict, description="Map of {node_id: node_name} already explored")
-    verified_facts: list[dict] = Field(default_factory=list, description="Verified facts with structure")
-    failed_attempts: list[str] = Field(default_factory=list, description="Track what didn't work to avoid repeating")
-
-    # Intermediate Results (Phase 1 - CRITICAL!)
-    found_values: dict[str, dict[str, Any]] = Field(
-        default_factory=dict,
-        description="Map of {entity_id: {attribute: value}} storing all discovered values"
-    )
-
-    # Reasoning Chain (Phase 2)
-    current_plan: list[str] = Field(default_factory=list, description="Step-by-step plan for remaining steps")
-    completed_steps: list[str] = Field(default_factory=list, description="Steps that have been completed")
-
-    # Answer Building (Phase 2)
-    partial_answer: str = Field(default="", description="Intermediate answer being constructed")
-
-    def to_str(self) -> str:
-        """Enhanced visualization with better structure and readability."""
-        lines = ["=" * 70]
-        lines.append("SCRATCHPAD STATE")
-        lines.append("=" * 70)
-
-        # Question context
-        if self.question_type:
-            lines.append(f"Question Type: {self.question_type}")
-        if self.target_entities:
-            lines.append(f"Target Entities: {', '.join(self.target_entities)}")
-
-        # Explored nodes
-        if self.visited_nodes:
-            lines.append(f"\nEXPLORED NODES ({len(self.visited_nodes)}):")
-            for node_id, node_name in list(self.visited_nodes.items())[:5]:
-                lines.append(f"  • {node_name} ({node_id})")
-            if len(self.visited_nodes) > 5:
-                lines.append(f"  ... and {len(self.visited_nodes) - 5} more")
-
-        # Discovered values (MOST IMPORTANT!)
-        if self.found_values:
-            lines.append(f"\nDISCOVERED VALUES:")
-            for entity_id, attrs in self.found_values.items():
-                entity_name = self.visited_nodes.get(entity_id, entity_id)
-                lines.append(f"  {entity_name}:")
-                for attr_name, attr_data in attrs.items():
-                    if isinstance(attr_data, list) and attr_data:
-                        # Handle list of values (from GetAttributeDetails)
-                        for val_item in attr_data[:3]:  # Show first 3
-                            if isinstance(val_item, dict):
-                                val_str = val_item.get("value", "?")
-                                unit_str = val_item.get("unit", "")
-                                lines.append(f"    - {attr_name}: {val_str} {unit_str}".strip())
-                            else:
-                                lines.append(f"    - {attr_name}: {val_item}")
-                    else:
-                        lines.append(f"    - {attr_name}: {attr_data}")
-
-        # Progress tracking
-        if self.completed_steps:
-            lines.append(f"\nCOMPLETED STEPS ({len(self.completed_steps)}):")
-            for step in self.completed_steps[-3:]:  # Last 3
-                lines.append(f"  ✓ {step}")
-
-        # Current plan
-        if self.current_plan:
-            lines.append(f"\nNEXT STEPS:")
-            for i, step in enumerate(self.current_plan[:3], 1):  # Next 3
-                lines.append(f"  {i}. {step}")
-
-        # Failed attempts (for debugging)
-        if self.failed_attempts:
-            lines.append(f"\nFAILED ATTEMPTS ({len(self.failed_attempts)}):")
-            for attempt in self.failed_attempts[-2:]:  # Last 2
-                lines.append(f"  ✗ {attempt}")
-
-        # Partial answer
-        if self.partial_answer:
-            lines.append(f"\nPARTIAL ANSWER: {self.partial_answer}")
-
-        # Statistics
-        lines.append(
-            f"\nSTATS: {len(self.visited_nodes)} nodes, {len(self.found_values)} entities with data, {len(self.completed_steps)} steps done")
-
-        lines.append("=" * 70)
-        return "\n".join(lines)
+from ama_kbqa.framework.state import JournalState
 
 
 # Global state container (resets when the agent process restarts the server)
@@ -621,7 +527,7 @@ async def BatchGetNodeLabels(
         
         # Log failed resolutions
         for nid in not_found:
-            session_journal.failed_attempts.append(f"BatchGetNodeLabels: {nid} not found")
+            session_journal.add_failed_attempt(f"BatchGetNodeLabels: {nid} not found")
         
         response = {
             "resolved": resolved,
@@ -899,7 +805,7 @@ async def GetEdgeQualifiers(
                 "status": f"No qualifiers found for {attribute_name} on {base_node_id}"
             }
             logger.warning(f"GetEdgeQualifiers: No qualifiers found")
-            session_journal.failed_attempts.append(f"GetEdgeQualifiers({base_node_id}, {attribute_name}): No qualifiers")
+            session_journal.add_failed_attempt(f"GetEdgeQualifiers({base_node_id}, {attribute_name}): No qualifiers")
             return json.dumps(response, indent=2)
         
         # Parse qualifiers
@@ -978,7 +884,7 @@ async def GetEdgeQualifiers(
     except Exception as e:
         error_msg = f"Error extracting edge qualifiers: {str(e)}"
         logger.error(error_msg)
-        session_journal.failed_attempts.append(f"GetEdgeQualifiers: {str(e)}")
+        session_journal.add_failed_attempt(f"GetEdgeQualifiers: {str(e)}")
         return json.dumps({"error": error_msg}, indent=2)
 
 
@@ -1061,7 +967,7 @@ async def GetQualifiersByPredicate(
                 "status": f"No qualifiers found for {relation_name} from {base_node_id}"
             }
             logger.warning(f"GetQualifiersByPredicate: No qualifiers found")
-            session_journal.failed_attempts.append(f"GetQualifiersByPredicate({base_node_id}, {relation_name}): No qualifiers")
+            session_journal.add_failed_attempt(f"GetQualifiersByPredicate({base_node_id}, {relation_name}): No qualifiers")
             return json.dumps(response, indent=2)
         
         # Parse results
@@ -1140,7 +1046,7 @@ async def GetQualifiersByPredicate(
     except Exception as e:
         error_msg = f"Error extracting relation qualifiers: {str(e)}"
         logger.error(error_msg)
-        session_journal.failed_attempts.append(f"GetQualifiersByPredicate: {str(e)}")
+        session_journal.add_failed_attempt(f"GetQualifiersByPredicate: {str(e)}")
         return json.dumps({"error": error_msg}, indent=2)
 
 
@@ -1148,7 +1054,7 @@ async def GetQualifiersByPredicate(
 @mcp.tool
 @log_tool_duration
 def ManageJournal(
-    action: Literal["add_visited", "add_fact", "update_plan", "set_qtype", "set_target", "set_partial_answer", "read", "clear"],
+    action: Literal["add_visited", "add_fact", "update_plan", "set_question", "set_qtype", "set_target", "set_partial_answer", "read", "clear"],
     content: str,
     context: Context
 ) -> str:
@@ -1162,6 +1068,7 @@ def ManageJournal(
             - "add_visited": (DEPRECATED - auto-updated by FindNode) Log a visited node
             - "add_fact": (DEPRECATED - auto-updated by tools) Save a verified fact
             - "update_plan": Update your reasoning plan (manual)
+            - "set_question": Store the original question text
             - "set_qtype": Set the question type (e.g., "Count", "SelectBetween")
             - "set_target": Add a target entity or attribute you're looking for
             - "set_partial_answer": Store your intermediate answer reasoning
@@ -1186,8 +1093,11 @@ def ManageJournal(
             session_journal.verified_facts.append({"fact": content, "source": "manual"})
 
     elif action == "update_plan":
-        # We overwrite the plan as it changes dynamically
-        session_journal.current_plan = [content] if content else []
+        # Split on newlines to support multi-step plans
+        session_journal.current_plan = [s.strip() for s in content.split("\n") if s.strip()] if content else []
+
+    elif action == "set_question":
+        session_journal.question_text = content
 
     elif action == "set_qtype":
         session_journal.question_type = content
@@ -1294,6 +1204,22 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
     search_term_clean = semantic_node_name.strip()
     logger.info(f"FindNode: Searching for '{search_term_clean}'")
 
+    # Dedup: check if this exact entity is already in visited_nodes
+    for node_id, node_name in session_journal.visited_nodes.items():
+        if node_name.lower() == search_term_clean.lower():
+            logger.info(f"FindNode: Already found '{search_term_clean}' as {node_id} — returning cached result")
+            return SearchResponse(
+                matches=[NodeMatch(
+                    original_id=node_id,
+                    name=node_name,
+                    node_type="entity",
+                    relevance_score=1.0,
+                    available_attributes=[],
+                    available_predicates=[],
+                )],
+                result_count=1,
+            )
+
     # Debugging: Version prüfen
     try:
         logger.info(f"DEBUG: Qdrant Client Version: {qdrant_client.__version__}")
@@ -1383,7 +1309,7 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
     if matches:
         for m in matches[:5]:
             session_journal.visited_nodes[m.original_id] = m.name
-        session_journal.completed_steps.append(f"Found {len(matches)} nodes for '{semantic_node_name}'")
+        session_journal.add_completed_step(f"Found {len(matches)} nodes for '{semantic_node_name}'")
 
     return SearchResponse(matches=matches, result_count=len(matches))
 
@@ -1563,7 +1489,7 @@ def GetNodeSummary(node_id: str, context: Context) -> Dict[str, Any]:
             for attr_name, attr_values in attributes.items():
                 session_journal.found_values[node_id][attr_name] = attr_values
 
-        session_journal.completed_steps.append(
+        session_journal.add_completed_step(
             f"Explored {node_name}: {len(attributes)} attributes, {len(relations)} relations"
         )
 
@@ -1584,7 +1510,7 @@ def GetNodeSummary(node_id: str, context: Context) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"GetNodeSummary failed: {e}")
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"GetNodeSummary({node_id}): {str(e)[:100]}"
         )
         return {
@@ -1728,7 +1654,7 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
 
             # Log completion
             node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
-            session_journal.completed_steps.append(
+            session_journal.add_completed_step(
                 f"Retrieved {attribute_name} for {node_name}"
             )
 
@@ -1744,7 +1670,7 @@ def GetAttributeDetails(base_node_id: str, attribute_name: str, context: Context
     except Exception as e:
         logger.error(f"Error querying attribute details: {e}")
         # Log failure
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"GetAttributeDetails({base_node_id}, {attribute_name}): {str(e)[:100]}"
         )
         return AttributeDetailsResponse(
@@ -2009,13 +1935,13 @@ def GetAttributeWithQualifiers(
             session_journal.verified_facts.append(fact_entry)
 
         node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
-        session_journal.completed_steps.append(
+        session_journal.add_completed_step(
             f"Retrieved {attribute_name} with qualifiers for {node_name}"
         )
         logger.info(f"Journal auto-updated: Stored {attribute_name} with qualifiers for {base_node_id}")
 
     if not values_list and "Error" in result.get("status", ""):
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"GetAttributeWithQualifiers({base_node_id}, {attribute_name}): {result['status'][:100]}"
         )
 
@@ -2312,7 +2238,7 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
                 session_journal.verified_facts.append(fact_entry)
 
             node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
-            session_journal.completed_steps.append(
+            session_journal.add_completed_step(
                 f"Found {len(simplified_triples)} relations for {node_name} -> {relation_name}"
             )
 
@@ -2328,7 +2254,7 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
     except Exception as e:
         logger.error(f"Error querying relation details: {e}")
         # Log failure
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"GetRelationDetails({base_node_id}, {relation_name}): {str(e)[:100]}"
         )
         return RelationDetailsResponse(
@@ -2451,7 +2377,7 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
                 session_journal.verified_facts.append(fact_entry)
 
                 node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
-                session_journal.completed_steps.append(
+                session_journal.add_completed_step(
                     f"Explored {node_name} -> {predicate_raw}: found {len(objects_found)} objects"
                 )
 
@@ -2471,7 +2397,7 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
             logger.warning(f"SPARQL Error checking {pred_uri}: {e}")
             continue
 
-    session_journal.failed_attempts.append(
+    session_journal.add_failed_attempt(
         f"ExploreNeighborhood({base_node_id}, {semantic_relation_name}): No match found"
     )
 
@@ -2654,7 +2580,7 @@ def FindEntitiesByRelationPath(
             "source": "FindEntitiesByRelationPath"
         })
 
-        session_journal.completed_steps.append(
+        session_journal.add_completed_step(
             f"Navigated {len(relation_path)}-hop path from {start_node_id}: found {len(final_entities)} entities"
         )
 
@@ -2669,7 +2595,7 @@ def FindEntitiesByRelationPath(
 
     except Exception as e:
         logger.error(f"FindEntitiesByRelationPath failed: {e}")
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"FindEntitiesByRelationPath({start_node_id}): {str(e)[:100]}"
         )
         return {
@@ -2802,7 +2728,16 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
                 "source": "RunSPARQL"
             }
             session_journal.verified_facts.append(fact_entry)
-            session_journal.completed_steps.append(
+
+            # Store SPARQL results in found_values for persistence across context window
+            sparql_count = sum(1 for k in session_journal.found_values if k.startswith("sparql_result_"))
+            sparql_key = f"sparql_result_{sparql_count + 1}"
+            session_journal.found_values[sparql_key] = {
+                "query": query[:200],
+                "results": simplified_rows[:10],
+            }
+
+            session_journal.add_completed_step(
                 f"Executed SPARQL query: {len(simplified_rows)} results"
             )
             logger.info(f"Journal auto-updated: Stored {len(simplified_rows)} SPARQL results")
@@ -2818,7 +2753,7 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
         # Auch hier sicheres Logging im Fehlerfall
         logger.error("RunSPARQL: Failed query was:\n{}", full_query)
 
-        session_journal.failed_attempts.append(f"RunSPARQL failed: {str(e)[:100]}")
+        session_journal.add_failed_attempt(f"RunSPARQL failed: {str(e)[:100]}")
 
         return SPARQLResponse(
             vars=[],
@@ -2924,7 +2859,7 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
         # Auto-update Journal (no `global` needed - only modifying attributes)
         for m in matches[:5]:
             session_journal.visited_nodes[m.original_id] = m.name
-        session_journal.completed_steps.append(
+        session_journal.add_completed_step(
             f"Found {len(matches)} entities with {attribute_name}={value}"
         )
 
@@ -2933,7 +2868,7 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
 
     except Exception as e:
         logger.error(f"FindByAttribute failed: {e}")
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"FindByAttribute({attribute_name}={value}): {str(e)[:100]}"
         )
         return SearchResponse(matches=[], result_count=0)
@@ -3048,7 +2983,7 @@ def VerifyNumericCondition(
             "fact": explanation,
             "source": "VerifyNumericCondition"
         })
-        session_journal.completed_steps.append(f"Verified: {explanation}")
+        session_journal.add_completed_step(f"Verified: {explanation}")
 
         return NumericComparisonResponse(
             verdict=verdict,
@@ -3060,7 +2995,7 @@ def VerifyNumericCondition(
 
     except Exception as e:
         logger.error(f"VerifyNumericCondition failed: {e}")
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"VerifyNumericCondition({value1} {operator} {value2}): {str(e)[:100]}"
         )
         return NumericComparisonResponse(
@@ -3228,7 +3163,7 @@ def CompareEntities(
                 session_journal.found_values[result.entity_id] = {}
             session_journal.found_values[result.entity_id][attribute_name] = result.value
 
-        session_journal.completed_steps.append(
+        session_journal.add_completed_step(
             f"Compared {attribute_name} for {len(entity_ids)} entities"
         )
 
@@ -3247,7 +3182,7 @@ def CompareEntities(
 
     except Exception as e:
         logger.error(f"CompareEntities failed: {e}")
-        session_journal.failed_attempts.append(
+        session_journal.add_failed_attempt(
             f"CompareEntities({attribute_name}): {str(e)[:100]}"
         )
         return CompareEntitiesResponse(

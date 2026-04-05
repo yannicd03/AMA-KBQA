@@ -1,50 +1,131 @@
 """
 State management for KBQA agents.
 
-Provides JournalState dataclass and JournalManager for tracking agent
+Provides JournalState (Pydantic model) and JournalManager for tracking agent
 progress, visited nodes, found values, and verified facts.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 import json
 from datetime import datetime
 
+from pydantic import BaseModel, Field
 
-@dataclass
-class JournalState:
+
+class JournalState(BaseModel):
     """
     Represents the current state of an agent's investigation journal.
 
-    This state is automatically updated by tools and periodically
-    summarized for the LLM's working memory.
+    This is the single source of truth used by both the MCP server scratchpad
+    and the framework's JournalManager.
     """
-    question_text: str = ""
-    question_type: str = ""
-    target_entities: List[str] = field(default_factory=list)
-    target_attributes: List[str] = field(default_factory=list)
-    visited_nodes: Dict[str, str] = field(default_factory=dict)  # {id: label}
-    found_values: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # {entity_id: {attr: value}}
-    verified_facts: List[Dict[str, Any]] = field(default_factory=list)
-    failed_attempts: List[str] = field(default_factory=list)
-    completed_steps: List[str] = field(default_factory=list)
-    current_plan: List[str] = field(default_factory=list)
-    partial_answer: str = ""
-    kg_name: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    question_text: str = Field(default="", description="The original question being answered")
+    question_type: str = Field(default="", description="Question type: Count, Verify, SelectBetween, etc.")
+    target_entities: list[str] = Field(default_factory=list, description="Entity names we're looking for")
+
+    visited_nodes: dict[str, str] = Field(
+        default_factory=dict, description="Map of {node_id: node_name} already explored")
+    found_values: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Map of {entity_id: {attribute: value}} storing all discovered values")
+    verified_facts: list[dict] = Field(default_factory=list, description="Verified facts with structure")
+    failed_attempts: list[str] = Field(
+        default_factory=list, description="Track what didn't work to avoid repeating")
+
+    current_plan: list[str] = Field(default_factory=list, description="Step-by-step plan for remaining steps")
+    completed_steps: list[str] = Field(default_factory=list, description="Steps that have been completed")
+
+    partial_answer: str = Field(default="", description="Intermediate answer being constructed")
+
+    kg_name: str = Field(default="", description="Knowledge graph name (e.g., KQAPro)")
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+    MAX_COMPLETED_STEPS: ClassVar[int] = 20
+    MAX_FAILED_ATTEMPTS: ClassVar[int] = 10
+
+    def add_completed_step(self, step: str) -> None:
+        """Append a completed step, capping to last MAX_COMPLETED_STEPS."""
+        self.completed_steps.append(step)
+        if len(self.completed_steps) > self.MAX_COMPLETED_STEPS:
+            self.completed_steps = self.completed_steps[-self.MAX_COMPLETED_STEPS:]
+
+    def add_failed_attempt(self, attempt: str) -> None:
+        """Append a failed attempt, capping to last MAX_FAILED_ATTEMPTS."""
+        self.failed_attempts.append(attempt)
+        if len(self.failed_attempts) > self.MAX_FAILED_ATTEMPTS:
+            self.failed_attempts = self.failed_attempts[-self.MAX_FAILED_ATTEMPTS:]
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return asdict(self)
+        return self.model_dump()
 
     def to_json(self) -> str:
         """Convert to JSON string."""
         return json.dumps(self.to_dict(), indent=2, ensure_ascii=False)
 
+    def to_str(self) -> str:
+        """Enhanced visualization with better structure and readability (for MCP server)."""
+        lines = ["=" * 70]
+        lines.append("SCRATCHPAD STATE")
+        lines.append("=" * 70)
+
+        if self.question_type:
+            lines.append(f"Question Type: {self.question_type}")
+        if self.target_entities:
+            lines.append(f"Target Entities: {', '.join(self.target_entities)}")
+
+        if self.visited_nodes:
+            lines.append(f"\nEXPLORED NODES ({len(self.visited_nodes)}):")
+            for node_id, node_name in list(self.visited_nodes.items())[:5]:
+                lines.append(f"  \u2022 {node_name} ({node_id})")
+            if len(self.visited_nodes) > 5:
+                lines.append(f"  ... and {len(self.visited_nodes) - 5} more")
+
+        if self.found_values:
+            lines.append(f"\nDISCOVERED VALUES:")
+            for entity_id, attrs in self.found_values.items():
+                entity_name = self.visited_nodes.get(entity_id, entity_id)
+                lines.append(f"  {entity_name}:")
+                for attr_name, attr_data in attrs.items():
+                    if isinstance(attr_data, list) and attr_data:
+                        for val_item in attr_data[:3]:
+                            if isinstance(val_item, dict):
+                                val_str = val_item.get("value", "?")
+                                unit_str = val_item.get("unit", "")
+                                lines.append(f"    - {attr_name}: {val_str} {unit_str}".strip())
+                            else:
+                                lines.append(f"    - {attr_name}: {val_item}")
+                    else:
+                        lines.append(f"    - {attr_name}: {attr_data}")
+
+        if self.completed_steps:
+            lines.append(f"\nCOMPLETED STEPS ({len(self.completed_steps)}):")
+            for step in self.completed_steps[-3:]:
+                lines.append(f"  \u2713 {step}")
+
+        if self.current_plan:
+            lines.append(f"\nNEXT STEPS:")
+            for i, step in enumerate(self.current_plan[:3], 1):
+                lines.append(f"  {i}. {step}")
+
+        if self.failed_attempts:
+            lines.append(f"\nFAILED ATTEMPTS ({len(self.failed_attempts)}):")
+            for attempt in self.failed_attempts[-2:]:
+                lines.append(f"  \u2717 {attempt}")
+
+        if self.partial_answer:
+            lines.append(f"\nPARTIAL ANSWER: {self.partial_answer}")
+
+        lines.append(
+            f"\nSTATS: {len(self.visited_nodes)} nodes, {len(self.found_values)} entities with data, {len(self.completed_steps)} steps done")
+
+        lines.append("=" * 70)
+        return "\n".join(lines)
+
     def to_summary_str(self) -> str:
-        """Generate a formatted summary string for the LLM."""
+        """Generate a formatted summary string for the LLM (framework format)."""
         lines = []
 
         lines.append(f"Question: {self.question_text}")
@@ -52,28 +133,18 @@ class JournalState:
         lines.append(f"Knowledge Graph: {self.kg_name}")
         lines.append("")
 
-        # Target entities
         if self.target_entities:
             lines.append("Target Entities:")
             for entity in self.target_entities:
                 lines.append(f"  - {entity}")
             lines.append("")
 
-        # Target attributes
-        if self.target_attributes:
-            lines.append("Target Attributes:")
-            for attr in self.target_attributes:
-                lines.append(f"  - {attr}")
-            lines.append("")
-
-        # Visited nodes
         if self.visited_nodes:
             lines.append("Visited Nodes:")
             for node_id, label in self.visited_nodes.items():
                 lines.append(f"  - {node_id}: {label}")
             lines.append("")
 
-        # Found values
         if self.found_values:
             lines.append("Found Values:")
             for entity_id, attrs in self.found_values.items():
@@ -82,7 +153,6 @@ class JournalState:
                     lines.append(f"    - {attr_name}: {value}")
             lines.append("")
 
-        # Verified facts
         if self.verified_facts:
             lines.append("Verified Facts:")
             for fact in self.verified_facts:
@@ -93,21 +163,18 @@ class JournalState:
                 lines.append(f"  - [{subject}] --{predicate}--> [{obj}] (from: {source})")
             lines.append("")
 
-        # Completed steps
         if self.completed_steps:
             lines.append("Completed Steps:")
             for i, step in enumerate(self.completed_steps, 1):
                 lines.append(f"  {i}. {step}")
             lines.append("")
 
-        # Failed attempts
         if self.failed_attempts:
             lines.append("Failed Attempts:")
             for attempt in self.failed_attempts:
                 lines.append(f"  - {attempt}")
             lines.append("")
 
-        # Partial answer
         if self.partial_answer:
             lines.append("Partial Answer:")
             lines.append(f"  {self.partial_answer}")
@@ -122,7 +189,6 @@ class JournalState:
             question_text=data.get("question_text", ""),
             question_type=data.get("question_type", ""),
             target_entities=data.get("target_entities", []),
-            target_attributes=data.get("target_attributes", []),
             visited_nodes=data.get("visited_nodes", {}),
             found_values=data.get("found_values", {}),
             verified_facts=data.get("verified_facts", []),
@@ -163,13 +229,11 @@ class JournalManager:
         text: str,
         qtype: str,
         entities: Optional[List[str]] = None,
-        attributes: Optional[List[str]] = None,
     ) -> None:
         """Set the current question being answered."""
         self._state.question_text = text
         self._state.question_type = qtype
         self._state.target_entities = entities or []
-        self._state.target_attributes = attributes or []
         self._update_timestamp()
 
     def add_visited_node(self, node_id: str, label: str) -> None:
@@ -207,13 +271,13 @@ class JournalManager:
         self._update_timestamp()
 
     def add_failed_attempt(self, description: str) -> None:
-        """Record a failed attempt."""
-        self._state.failed_attempts.append(description)
+        """Record a failed attempt (capped)."""
+        self._state.add_failed_attempt(description)
         self._update_timestamp()
 
     def add_completed_step(self, description: str) -> None:
-        """Record a completed step."""
-        self._state.completed_steps.append(description)
+        """Record a completed step (capped)."""
+        self._state.add_completed_step(description)
         self._update_timestamp()
 
     def set_current_plan(self, steps: List[str]) -> None:
