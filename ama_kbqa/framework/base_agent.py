@@ -955,9 +955,16 @@ Change strategy or acknowledge the data doesn't exist."""
 
         return intervention
 
+    # Marker prefix used to identify journal refresh messages for replace-not-append
+    _JOURNAL_REFRESH_MARKER = "<!-- JOURNAL_REFRESH -->"
+
     async def _inject_journal_refresh(self, iteration_count: int) -> None:
         """
-        Inject a journal refresh message.
+        Inject a journal refresh message, replacing any previous refresh.
+
+        Uses replace-not-append strategy: removes all prior journal refresh
+        messages from self._messages before adding the new one, so only one
+        (current) refresh exists at any time.
 
         Args:
             iteration_count: Current iteration number
@@ -975,9 +982,17 @@ Change strategy or acknowledge the data doesn't exist."""
             else:
                 template = self._get_journal_refresh_template()
 
+            # Remove all previous journal refresh messages (replace-not-append)
+            self._messages = [
+                msg for msg in self._messages
+                if not (msg.get("role") == "user"
+                        and isinstance(msg.get("content"), str)
+                        and msg["content"].startswith(self._JOURNAL_REFRESH_MARKER))
+            ]
+
             self._messages.append({
                 "role": "user",
-                "content": template.format(
+                "content": self._JOURNAL_REFRESH_MARKER + template.format(
                     iteration_count=iteration_count,
                     journal_refresh=journal_refresh
                 )
