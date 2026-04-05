@@ -167,7 +167,6 @@ class JournalState(BaseModel):
     question_text: str = Field(default="", description="The original question")
     question_type: str = Field(default="", description="Question type classification")
     target_entities: List[str] = Field(default_factory=list, description="Entities we're looking for")
-    target_attributes: List[str] = Field(default_factory=list, description="Attributes we need to find")
 
     visited_nodes: Dict[str, str] = Field(default_factory=dict, description="Map of {node_id: node_name}")
     verified_facts: List[Dict] = Field(default_factory=list, description="Verified facts")

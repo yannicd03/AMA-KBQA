@@ -56,7 +56,7 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 | `mcp_client.py` | Shared MCPClient class | ~120 |
 | `types.py` | Response types (EntityMatch, NodeDetails, etc.) | ~280 |
 | `config.py` | Configuration dataclasses | ~220 |
-| `state.py` | JournalState and JournalManager | ~180 |
+| `state.py` | JournalState (Pydantic BaseModel, single source of truth) and JournalManager — caps, helpers, `to_str()`/`to_summary_str()` | ~340 |
 | `adapters/base_adapter.py` | BaseKGAdapter ABC | ~200 |
 | `adapters/kqapro_adapter.py` | KQAPro-specific config | ~150 |
 | `adapters/sciqa_adapter.py` | SciQA-specific config (includes sparql_cap: 10) | ~180 |
@@ -214,36 +214,54 @@ The agent classifies questions into 10 types, each with a specific strategy:
 
 ### Journal (Scratchpad) System
 
-**File:** `ama_kbqa/server/kqapro_server.py` (JournalState class)
+**File:** `ama_kbqa/framework/state.py` (single source of truth — Pydantic `BaseModel`)
+
+`kqapro_server.py` and `sciqa_server.py` both import `JournalState` from `ama_kbqa.framework.state` instead of defining their own. The class has `ClassVar` constants for caps and two serialization methods: `to_str()` (compact MCP server format) and `to_summary_str()` (framework / synthesis format).
 
 The journal tracks agent progress:
 
 ```python
-class JournalState:
+class JournalState(BaseModel):
     # Question context
-    question_text: str
+    question_text: str          # set via ManageJournal("set_question", ...)
     question_type: str
     target_entities: list[str]
 
     # Exploration tracking
     visited_nodes: dict[str, str]      # {node_id: node_name}
     verified_facts: list[dict]
-    failed_attempts: list[str]
+    failed_attempts: list[str]         # capped at MAX_FAILED_ATTEMPTS = 10
 
     # CRITICAL - Discovered values
     found_values: dict[str, dict]      # {entity_id: {attr: value}}
+                                       # also receives sparql_result_N entries from RunSPARQL
 
     # Progress
-    current_plan: list[str]
-    completed_steps: list[str]
+    current_plan: list[str]            # set as a list via ManageJournal("update_plan", ...)
+    completed_steps: list[str]         # capped at MAX_COMPLETED_STEPS = 20
     partial_answer: str
+
+    # Class-level caps (ClassVar)
+    MAX_COMPLETED_STEPS: ClassVar[int] = 20
+    MAX_FAILED_ATTEMPTS: ClassVar[int] = 10
 ```
 
+**Helper methods on JournalState:**
+- `add_completed_step(step)` - Appends and caps to last 20 entries
+- `add_failed_attempt(attempt)` - Appends and caps to last 10 entries
+
 **Auto-Updates:**
-- `visited_nodes` - Updated by FindNode, GetNodeLabel
-- `found_values` - Updated by GetAttributeDetails, GetNodeSummary
+- `visited_nodes` - Updated by FindNode (with dedup: skips Qdrant search if label already in `visited_nodes`), GetNodeLabel
+- `found_values` - Updated by GetAttributeDetails, GetNodeSummary; also by RunSPARQL (stores results as `sparql_result_N` with `{"query": query[:200], "results": simplified_rows[:10]}`)
 - `verified_facts` - Updated by various tools
-- `failed_attempts` - Logged when tools fail
+- `failed_attempts` - Logged when tools fail (via `add_failed_attempt()` helper)
+- `completed_steps` - Logged on tool success (via `add_completed_step()` helper)
+- `question_text` - Set by `ManageJournal("set_question", content)`
+
+**ManageJournal actions:**
+- `"set_question"` - Sets `session_journal.question_text = content` ✨ NEW
+- `"update_plan"` - Splits `content` on newlines into a list (`[s.strip() for s in content.split("\n") if s.strip()]`); agent passes multi-step plans as newline-separated text ✨ UPDATED (was: wrapped content in a 1-element list)
+- `"update"` - General journal update (reflection notes)
 
 **Scratchpad-Enforced Reflection:**
 

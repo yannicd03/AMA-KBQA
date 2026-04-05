@@ -333,6 +333,15 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-04-05**: ✅ **Scratchpad / Journal System Improvements (7 changes)**
+  - **Removed `target_attributes` field**: Removed dead field from `JournalState`, `kqapro_server.py`, and `sciqa_server.py` — it was never auto-populated or read
+  - **`set_question` action**: `ManageJournal` now accepts `"set_question"` action to set `session_journal.question_text = content`
+  - **Multi-step `update_plan`**: `ManageJournal("update_plan", content)` now splits content on newlines into a list instead of wrapping in a 1-element list; agent passes plans as newline-separated text
+  - **Capped `completed_steps` / `failed_attempts`**: `completed_steps` capped at 20, `failed_attempts` capped at 10; new `add_completed_step()` and `add_failed_attempt()` helpers enforce caps; all ~20 append sites in `kqapro_server.py` updated to use helpers
+  - **SPARQL results in `found_values`**: `RunSPARQL` now stores results in `session_journal.found_values["sparql_result_N"]` with `{"query": query[:200], "results": simplified_rows[:10]}` — ensures results survive message truncation
+  - **Unified `JournalState`**: `ama_kbqa/framework/state.py` is the single source of truth (converted from dataclass to Pydantic `BaseModel`). Both servers now import from `ama_kbqa.framework.state`. Added `to_str()` (MCP format) and `to_summary_str()` (framework format). `ClassVar` constants for caps.
+  - **`FindNode` dedup**: `_find_node_impl()` checks `session_journal.visited_nodes` for exact label match (case-insensitive) before calling Qdrant; returns cached result immediately to avoid redundant embedding API calls
+  - Updated [System/agent_system.md](System/agent_system.md), [System/project_architecture.md](System/project_architecture.md), and [SOP/adding_new_tools.md](SOP/adding_new_tools.md)
 - **2026-02-13**: ✅ **LLM Provider Cleanup and KIT Model Expansion**
   - **Provider renaming**: Renamed "aifb" provider to "kit" across all files (config.toml, config.py, benchmark_agents.py, frontend, CLAUDE.md)
   - **Environment variable**: `AIFB_API_KEY` renamed to `KIT_API_KEY` (update your .env file)
