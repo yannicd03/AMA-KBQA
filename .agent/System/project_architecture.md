@@ -51,7 +51,7 @@ ama-kbqa/
 │   │   └── orchestrator_agent/ # Multi-agent router
 │   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
-│   │   ├── kqapro_server.py    # KQAPro tools (21 tools)
+│   │   ├── kqapro_server.py    # KQAPro tools (22 tools)
 │   │   ├── sciqa_server.py     # SciQA/ORKG tools (18 tools: 4 discovery, 6 retrieval, 6 domain, 1 SPARQL, 1 verification) ✅ Active
 │   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
@@ -130,7 +130,7 @@ ama-kbqa/
 |-----------|------------|---------|
 | **Language** | Python 3.12+ | Primary implementation |
 | **Agent Framework** | openai-agents, FastMCP | Tool-calling agents with MCP |
-| **Vector DB** | Qdrant | Semantic entity/relation search |
+| **Vector DB** | Qdrant (`qdrant-client>=1.17.0`) | Semantic entity/relation search via `query_points` API |
 | **Graph DB** | Virtuoso 7 | RDF triple store, SPARQL queries |
 | **LLM Access** | OpenAI SDK | Compatible with OpenRouter, LMStudio, etc. |
 | **Embedding** | qwen/qwen3-embedding-8b (4096 dim) | Entity/relation embeddings |
@@ -180,7 +180,7 @@ The main KBQA agent that answers questions by inheriting from `BaseKBQAAgent`:
 3. **Post-Agent Hook** - Synthesizes final answer from journal
 
 **Key Features (inherited from BaseKBQAAgent):**
-- Question type classification (9 types: Count, Verify, Query, etc.)
+- Question type classification (10 types: Count, Verify, Select, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName)
 - Multi-layered loop detection (4 detection patterns)
 - Automatic journal tracking (visited nodes, found values)
 - Separate synthesis model configuration
@@ -196,8 +196,8 @@ All prompts are centralized in a separate module for easier maintenance:
 
 | Prompt | Purpose |
 |--------|---------|
-| `QTYPE_STRATEGIES` | 10 question-type-specific reasoning strategies (Count includes OR/UNION section with genericized SPARQL pattern using placeholders, QueryAttr includes prepositional phrase note, QueryRelationQualifier includes step 3 qualifier selection guidance with question-word mapping, QueryAttrQualifier includes step 4 qualifier selection, Query includes prepositional phrase cross-reference in step 2b) |
-| `SYSTEM_PROMPT` | Main agent system prompt with 8 KBQA rules (includes prepositional phrase disambiguation rule #7 at lines 273-276, DO NOT BACKTRACK journal confidence rule at lines 300-301) |
+| `QTYPE_STRATEGIES` | 10 question-type-specific reasoning strategies. Count: FilterEntities for attribute filtering + RunSPARQL COUNT for large sets + OR/UNION section. Verify: VerifyNumericCondition for numeric/date, VerifyString for text. QueryAttrQualifier: QualifierFilter for narrowing by qualifier conditions + question-word-to-qualifier mapping (When→point_in_time, Where→location). QueryRelationQualifier: QualifierFilter + qualifier mapping (When→point_in_time/start_time, Where→location, What role→object_has_role, ceremony, For what→AMBIGUOUS). QueryName: FilterEntities for type+attribute conditions. Query: prepositional phrase cross-reference in step 2b. |
+| `SYSTEM_PROMPT` | Main agent system prompt with 8 KBQA rules. Tool tier section updated with T1.5 Filtering (FilterEntities, QualifierFilter) and T4 Verify (VerifyNumericCondition, VerifyString). Includes prepositional phrase disambiguation rule #7 and DO NOT BACKTRACK journal confidence rule. |
 | `CLASSIFICATION_PROMPT_TEMPLATE` | Question classification prompt |
 | `ENTITY_EXTRACTION_PROMPT` | Entity/relation extraction prompt |
 | `ANALYSIS_CONTEXT_TEMPLATE` | Pre-analysis injection template |
@@ -243,36 +243,55 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
-Provides 21 tools for knowledge graph interaction:
+Provides 22 tools for knowledge graph interaction, organized by tier:
 
-**Discovery Tools:**
-- `FindNode` - Semantic entity search
-- `FindByAttribute` - Reverse lookup by attribute value
+**T1 Discovery:**
+- `FindNode` - Semantic entity search (deduplicates via `visited_nodes` cache)
+- `FindByAttribute` - Reverse lookup by attribute value (prefer for unique IDs/codes/URLs)
 
-**Retrieval Tools:**
+**T1.5 Filtering:** ✨ NEW TIER
+- `FilterEntities` - Unified filtering by concept type and/or attribute value with operator support. Handles string, numeric, date, and year auto-detection. Supports chaining via `entity_ids` parameter. Parameters: `concept`, `attribute_name`, `attribute_value`, `operator` (=,!=,<,>,<=,>=,contains), `entity_ids`, `limit`. Returns `SearchResponse`.
+- `QualifierFilter` - Filters entities by qualifier values on reified RDF statements (facts about facts). Handles QFilterStr/QFilterNum/QFilterYear/QFilterDate KoPL patterns. Parameters: `entity_ids`, `relation_or_attribute`, `qualifier_name`, `qualifier_value`, `operator`, `limit`. Returns `SearchResponse`.
+
+**T2 Retrieval:**
 - `GetNodeSummary` - Complete node data in one call
 - `GetAttributeDetails` - Specific attribute values
 - `GetRelationDetails` - Connected entities via relation
 
-**Qualifier Tools:**
+**T3 Qualifiers:**
 - `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern)
 - `GetQualifiersByPredicate` - Relation statement qualifiers
-- `GetAttributeWithQualifiers` - Attribute values with all context (uses dual-method SPARQL: blank-node pattern + RDF reification pattern for comprehensive qualifier coverage) ✨ UPDATED
+- `GetAttributeWithQualifiers` - Attribute values with all context (dual-method SPARQL: blank-node pattern + RDF reification pattern)
 - `TemporalAttributeQuery` - Date-specific attribute lookup
 
-**Comparison Tools:**
-- `CompareEntities` - Compare attribute across entities
-- `VerifyNumericCondition` - Deterministic math comparison
+**T4 Verify:**
+- `VerifyNumericCondition` - Deterministic math/date comparison (TRUE/FALSE/ERROR)
+- `VerifyString` - Deterministic string comparison with 4 modes: `exact`, `case_insensitive`, `contains`, `normalize` (default — strips diacritics, punctuation, whitespace). Parameters: `value1`, `value2`, `mode`. Returns `StringComparisonResponse`. ✨ NEW
 
-**State Management:**
-- `ManageJournal` - Scratchpad management (actions: `set_question` ✨ NEW, `update_plan` splits newlines into list ✨ UPDATED, `update`)
-- `GetJournalSummary` - Summary of discoveries
+**Complex:**
+- `RunSPARQL` - Raw SPARQL queries (stores results in `found_values["sparql_result_N"]` to survive message truncation)
+- `CompareEntities` - Compare attribute across multiple entities
+- `FindEntitiesByRelationPath` - Multi-hop entity discovery
+
+**Utility:**
+- `GetNodeLabel` - Quick label lookup for an entity ID
+- `BatchGetNodeLabels` - Batch label resolution
+- `GetSchemaForAttribute` - Discover how an attribute is encoded in the KB
+- `ManageJournal` - Scratchpad management (actions: `set_question`, `update_plan`, `update`)
+- `GetJournalSummary` - Summary of all discoveries
+- `ExploreNeighborhood` - Explore entity's full neighborhood (deprecated)
+
+**New Pydantic Model:**
+- `StringComparisonResponse` - Response model for `VerifyString` with `verdict` (TRUE/FALSE/ERROR), `explanation`, and `mode_used` fields.
+
+**CORE_TOOLS (always available regardless of qtype):**
+`FindNode`, `FindByAttribute`, `GetAttributeDetails`, `GetRelationDetails`, `GetNodeSummary`, `RunSPARQL`, `GetNodeLabel`, `BatchGetNodeLabels`, `ManageJournal`, `GetJournalSummary`, `FilterEntities`
 
 **Key implementation details:**
-- `JournalState` imported from `ama_kbqa.framework.state` (no longer defined locally) ✨ UPDATED
-- `FindNode` deduplicates via `visited_nodes`: skips Qdrant search if label already cached (case-insensitive) ✨ UPDATED
-- `RunSPARQL` stores results in `found_values["sparql_result_N"]` so they survive message truncation ✨ UPDATED
-- `completed_steps` capped at 20 entries; `failed_attempts` capped at 10 entries; all append sites use `add_completed_step()` / `add_failed_attempt()` helpers ✨ UPDATED
+- `JournalState` imported from `ama_kbqa.framework.state` (not defined locally)
+- `FindNode` deduplicates via `visited_nodes`: skips Qdrant search if label already cached (case-insensitive)
+- `RunSPARQL` stores results in `found_values["sparql_result_N"]` so they survive message truncation
+- `completed_steps` capped at 20 entries; `failed_attempts` capped at 10 entries; all append sites use `add_completed_step()` / `add_failed_attempt()` helpers
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 

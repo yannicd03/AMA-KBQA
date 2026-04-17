@@ -218,6 +218,15 @@ class CompareEntitiesResponse(BaseModel):
     status: str = Field(..., description="Status message.")
 
 
+class StringComparisonResponse(BaseModel):
+    """Response from deterministic string comparison verification."""
+    verdict: Literal["TRUE", "FALSE", "ERROR"] = Field(..., description="The comparison result.")
+    explanation: str = Field(..., description="Human-readable explanation of the comparison.")
+    value1: str = Field(..., description="First value (as provided).")
+    value2: str = Field(..., description="Second value (as provided).")
+    mode: str = Field(..., description="Comparison mode used.")
+
+
 from ama_kbqa.framework.state import JournalState
 
 
@@ -1268,14 +1277,13 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
     search_results = []
 
     try:
-        # Nur Standard .search() nutzen - kein Legacy Fallback mehr!
-        search_results = app_context.qdrant.search(
+        search_results = app_context.qdrant.query_points(
             collection_name=COLLECTION_ENTITIES,
-            query_vector=vector,
+            query=vector,
             limit=TOP_N,
             with_payload=True,
             score_threshold=SCORE_THRESHHOLD
-        )
+        ).points
     except Exception as e:
         logger.error(f"FindNode: Semantic search failed: {e}")
         search_results = []
@@ -2302,20 +2310,12 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 
     # 2. Find candidates in Qdrant
     # HINWEIS: Wenn dies fehlschlägt, ist app_context.qdrant falsch initialisiert (siehe unten).
-    try:
-        candidates = app_context.qdrant.search(
-            collection_name=COLLECTION_RELATIONS,
-            query_vector=vector,
-            limit=TOP_N,
-            with_payload=True
-        )
-    except AttributeError:
-        # Fallback: Falls es ein LangChain-Objekt ist oder der Client 'query_points' nutzt
-        logger.error(f"⚠️ 'search' method missing on {client_type}. Trying fallback/checking imports.")
-        raise RuntimeError(
-            f"Der Qdrant-Client ({client_type}) hat keine 'search'-Methode. "
-            "Prüfe 'kqapro_server.py': Importiere 'from qdrant_client import QdrantClient'."
-        )
+    candidates = app_context.qdrant.query_points(
+        collection_name=COLLECTION_RELATIONS,
+        query=vector,
+        limit=TOP_N,
+        with_payload=True
+    ).points
 
     checked_log = []
 
@@ -3190,6 +3190,443 @@ def CompareEntities(
             results=[],
             sorted_by="error",
             status=f"Error: {str(e)}"
+        )
+
+
+@mcp.tool
+@log_tool_duration
+def FilterEntities(
+    context: Context,
+    concept: str = "",
+    attribute_name: str = "",
+    attribute_value: str = "",
+    operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
+    entity_ids: list[str] | None = None,
+    limit: int = 50
+) -> SearchResponse:
+    """
+    Filter entities by concept type and/or attribute value conditions.
+
+    This is the go-to tool for narrowing down entity sets. It replaces manual SPARQL
+    construction for the most common filtering patterns: by type, by string/numeric/date
+    attribute, or a combination of both.
+
+    **When to use:**
+    - "How many cities in Germany have population > 1M?" → FilterEntities(concept="city", attribute_name="population", attribute_value="1000000", operator=">")
+    - "Which humans are members of Duran Duran?" → First get member IDs via GetRelationDetails, then FilterEntities(entity_ids=[...], concept="human")
+    - "Find all films with duration > 120" → FilterEntities(concept="film", attribute_name="duration", attribute_value="120", operator=">")
+
+    **Chaining:** Pass entity_ids from a previous tool call to further filter results.
+
+    Args:
+        concept: Entity type to filter by (e.g., "human", "city in New Jersey", "film"). Leave empty to skip type filtering.
+        attribute_name: Attribute to filter on (e.g., "population", "duration"). Leave empty to skip attribute filtering.
+        attribute_value: Value to compare against. Auto-detects type: dates (YYYY-MM-DD), numbers, or strings.
+        operator: Comparison operator. Use "contains" for substring matching on strings.
+        entity_ids: Optional list of entity IDs to restrict the search to (for chaining with other tools).
+        limit: Maximum number of results to return.
+
+    Returns:
+        SearchResponse: List of matching entities.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
+
+    if not concept and not attribute_name:
+        return SearchResponse(matches=[], result_count=0)
+
+    logger.info(f"FilterEntities: concept={concept}, attr={attribute_name}, val={attribute_value}, op={operator}")
+
+    # Build WHERE clauses
+    where_clauses = []
+    filter_clauses = []
+
+    # Entity restriction via VALUES
+    values_clause = ""
+    if entity_ids:
+        entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
+        values_clause = f"VALUES ?entity {{ {entity_uris} }}"
+
+    # Concept filtering
+    if concept:
+        sanitized_concept = concept.replace(" ", "_")
+        where_clauses.append(f"?entity rdf:type <{NS_ENTITY}{sanitized_concept}> .")
+
+    # Attribute filtering
+    if attribute_name and attribute_value:
+        sanitized_attr = attribute_name.replace(" ", "_")
+        attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr}>"
+        safe_value = attribute_value.replace('"', '\\"')
+
+        # Auto-detect value type
+        import re
+        is_date = bool(re.match(r"^\d{4}-\d{2}-\d{2}$", attribute_value))
+        is_year = bool(re.match(r"^\d{4}$", attribute_value)) and not is_date
+        is_numeric = False
+        if not is_date and not is_year:
+            try:
+                float(attribute_value.replace(",", ""))
+                is_numeric = True
+            except ValueError:
+                pass
+
+        if operator == "contains":
+            # String substring match
+            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
+            filter_clauses.append(f'FILTER(CONTAINS(LCASE(STR(?attrVal)), LCASE("{safe_value}")))')
+        elif operator == "=" and not is_numeric and not is_date and not is_year:
+            # Exact string match
+            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
+            filter_clauses.append(f'FILTER(STR(?attrVal) = "{safe_value}")')
+        elif is_date:
+            # Date comparison - handle both direct values and blank nodes with qualifiers
+            sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}[operator]
+            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
+            filter_clauses.append(
+                f'FILTER(xsd:date(STR(?attrVal)) {sparql_op} "{safe_value}"^^xsd:date)'
+            )
+        elif is_year:
+            # Year comparison
+            sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}[operator]
+            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
+            filter_clauses.append(f"FILTER(YEAR(xsd:date(STR(?attrVal))) {sparql_op} {safe_value})")
+        else:
+            # Numeric comparison - handle both direct values and blank nodes (rdf:value)
+            sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}[operator]
+            numeric_val = attribute_value.replace(",", "")
+            where_clauses.append(f"""
+                ?entity {attr_uri} ?attrRaw .
+                OPTIONAL {{ ?attrRaw rdf:value ?blankVal }}
+                BIND(COALESCE(?blankVal, ?attrRaw) AS ?attrVal)
+            """)
+            filter_clauses.append(
+                f"FILTER(xsd:decimal(STR(?attrVal)) {sparql_op} {numeric_val})"
+            )
+    elif attribute_name and not attribute_value:
+        # Just check that the attribute exists (no value condition)
+        sanitized_attr = attribute_name.replace(" ", "_")
+        attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr}>"
+        where_clauses.append(f"?entity {attr_uri} ?attrVal .")
+
+    # Always get label
+    where_clauses.append("OPTIONAL { ?entity rdfs:label ?entityName }")
+
+    # Assemble query
+    where_body = "\n        ".join([values_clause] + where_clauses + filter_clauses)
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT DISTINCT ?entity ?entityName WHERE {{
+        {where_body}
+    }}
+    LIMIT {limit}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        matches = []
+        for binding in bindings:
+            entity_uri = binding.get("entity", {}).get("value", "")
+            entity_name = binding.get("entityName", {}).get("value", "Unknown")
+
+            if "/entity/" in entity_uri:
+                entity_id = entity_uri.split("/entity/")[-1]
+            else:
+                entity_id = entity_uri
+
+            matches.append(NodeMatch(
+                original_id=entity_id,
+                name=entity_name,
+                node_type="entity",
+                relevance_score=1.0,
+                available_attributes=[],
+                available_predicates=[]
+            ))
+
+        # Auto-update journal
+        filter_desc = []
+        if concept:
+            filter_desc.append(f"type={concept}")
+        if attribute_name:
+            filter_desc.append(f"{attribute_name}{operator}{attribute_value}")
+        desc = ", ".join(filter_desc)
+
+        for m in matches[:5]:
+            session_journal.visited_nodes[m.original_id] = m.name
+        session_journal.add_completed_step(
+            f"FilterEntities({desc}): {len(matches)} results"
+        )
+
+        logger.info(f"FilterEntities: Found {len(matches)} entities")
+        return SearchResponse(matches=matches, result_count=len(matches))
+
+    except Exception as e:
+        logger.error(f"FilterEntities failed: {e}")
+        logger.error("FilterEntities: Failed query was:\n{}", query)
+        session_journal.add_failed_attempt(
+            f"FilterEntities({concept}, {attribute_name}): {str(e)[:100]}"
+        )
+        return SearchResponse(matches=[], result_count=0)
+
+
+@mcp.tool
+@log_tool_duration
+def QualifierFilter(
+    entity_ids: list[str],
+    relation_or_attribute: str,
+    qualifier_name: str,
+    qualifier_value: str,
+    context: Context,
+    operator: Literal["=", "!=", "<", ">", "<=", ">="] = "=",
+    limit: int = 50
+) -> SearchResponse:
+    """
+    Filter entities by qualifier values on their statements (facts about facts).
+
+    Use this when you need to narrow down entities based on WHEN, WHERE, or HOW
+    a relationship or attribute holds. This replaces manual SPARQL for QFilter operations.
+
+    **When to use:**
+    - "Who married Mel Brooks starting in 1964?" → QualifierFilter(entity_ids=[spouse_ids], relation_or_attribute="spouse", qualifier_name="start time", qualifier_value="1964", operator="=")
+    - "Which member of Duran Duran joined in 2001?" → QualifierFilter(entity_ids=[member_ids], relation_or_attribute="member of", qualifier_name="start time", qualifier_value="2001")
+
+    **How it works:** Looks up reified statements (rdf:Statement) connecting the entity to the
+    base predicate, then filters by the qualifier value on that statement.
+
+    Args:
+        entity_ids: List of entity IDs to filter (from a previous relation/filter call).
+        relation_or_attribute: The base predicate name (e.g., "spouse", "member of", "population").
+        qualifier_name: The qualifier to filter on (e.g., "start time", "point in time", "location").
+        qualifier_value: The value to compare against. Supports dates (YYYY-MM-DD), years, and strings.
+        operator: Comparison operator for the qualifier value.
+        limit: Maximum number of results to return.
+
+    Returns:
+        SearchResponse: Entities whose statements match the qualifier condition.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql_client: SPARQLWrapper = app_context.sparql
+
+    if not entity_ids:
+        return SearchResponse(matches=[], result_count=0)
+
+    logger.info(f"QualifierFilter: {len(entity_ids)} entities, {relation_or_attribute}.{qualifier_name}{operator}{qualifier_value}")
+
+    entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
+    sanitized_pred = relation_or_attribute.replace(" ", "_")
+    sanitized_qual = qualifier_name.replace(" ", "_")
+    safe_value = qualifier_value.replace('"', '\\"')
+
+    # Auto-detect value type for qualifier
+    import re
+    is_date = bool(re.match(r"^\d{4}-\d{2}-\d{2}$", qualifier_value))
+    is_year = bool(re.match(r"^\d{4}$", qualifier_value))
+
+    # Build qualifier filter
+    if is_date:
+        sparql_op = operator
+        qual_filter = f'FILTER(xsd:date(STR(?qualVal)) {sparql_op} "{safe_value}"^^xsd:date)'
+    elif is_year:
+        sparql_op = operator
+        qual_filter = f"FILTER(YEAR(xsd:date(STR(?qualVal))) {sparql_op} {safe_value})"
+    else:
+        if operator == "=":
+            qual_filter = f'FILTER(STR(?qualVal) = "{safe_value}")'
+        elif operator == "!=":
+            qual_filter = f'FILTER(STR(?qualVal) != "{safe_value}")'
+        else:
+            # Try numeric for non-string operators
+            try:
+                float(qualifier_value.replace(",", ""))
+                numeric_val = qualifier_value.replace(",", "")
+                qual_filter = f"FILTER(xsd:decimal(STR(?qualVal)) {operator} {numeric_val})"
+            except ValueError:
+                qual_filter = f'FILTER(STR(?qualVal) = "{safe_value}")'
+
+    # Try both prop: (relation) and attr: (attribute) predicates
+    # The reified statement pattern uses pred:fact_h, pred:fact_r, pred:fact_t
+    # But KQAPro uses standard rdf:Statement reification
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT DISTINCT ?entity ?entityName WHERE {{
+        VALUES ?entity {{ {entity_uris} }}
+        OPTIONAL {{ ?entity rdfs:label ?entityName }}
+
+        ?stmt rdf:type rdf:Statement .
+        {{
+            ?stmt rdf:subject ?entity .
+            ?stmt rdf:predicate prop:{sanitized_pred} .
+        }} UNION {{
+            ?stmt rdf:object ?entity .
+            ?stmt rdf:predicate prop:{sanitized_pred} .
+        }} UNION {{
+            ?stmt rdf:subject ?entity .
+            ?stmt rdf:predicate attr:{sanitized_pred} .
+        }}
+
+        ?stmt qual:{sanitized_qual} ?qualVal .
+        {qual_filter}
+    }}
+    LIMIT {limit}
+    """
+
+    try:
+        sparql_client.setQuery(query)
+        results = sparql_client.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        matches = []
+        for binding in bindings:
+            entity_uri = binding.get("entity", {}).get("value", "")
+            entity_name = binding.get("entityName", {}).get("value", "Unknown")
+
+            if "/entity/" in entity_uri:
+                entity_id = entity_uri.split("/entity/")[-1]
+            else:
+                entity_id = entity_uri
+
+            matches.append(NodeMatch(
+                original_id=entity_id,
+                name=entity_name,
+                node_type="entity",
+                relevance_score=1.0,
+                available_attributes=[],
+                available_predicates=[]
+            ))
+
+        for m in matches[:5]:
+            session_journal.visited_nodes[m.original_id] = m.name
+        session_journal.add_completed_step(
+            f"QualifierFilter({relation_or_attribute}.{qualifier_name}{operator}{qualifier_value}): {len(matches)} results"
+        )
+
+        logger.info(f"QualifierFilter: Found {len(matches)} matching entities")
+        return SearchResponse(matches=matches, result_count=len(matches))
+
+    except Exception as e:
+        logger.error(f"QualifierFilter failed: {e}")
+        logger.error("QualifierFilter: Failed query was:\n{}", query)
+        session_journal.add_failed_attempt(
+            f"QualifierFilter({qualifier_name}{operator}{qualifier_value}): {str(e)[:100]}"
+        )
+        return SearchResponse(matches=[], result_count=0)
+
+
+@mcp.tool
+@log_tool_duration
+def VerifyString(
+    value1: str,
+    value2: str,
+    mode: Literal["exact", "case_insensitive", "contains", "normalize"] = "normalize",
+    context: Context = None
+) -> StringComparisonResponse:
+    """
+    Performs deterministic string comparison between two values.
+
+    This is the "String Judge" - it returns a definitive TRUE/FALSE verdict for string
+    comparisons, analogous to VerifyNumericCondition but for text. Use this instead of
+    guessing whether two strings match.
+
+    **When to use:**
+    - Any "Verify" question comparing string values (names, labels, categories)
+    - "Is X's native name Y?" → VerifyString(actual_name, "Y")
+    - "Is the capital of France Paris?" → VerifyString("Paris", "Paris")
+
+    **Modes:**
+    - "exact": Strict byte-for-byte equality
+    - "case_insensitive": Lowered comparison
+    - "contains": TRUE if either string contains the other
+    - "normalize" (default): Strips whitespace, lowercases, removes diacritics and
+      punctuation — best for KG answer matching where formatting varies
+
+    Args:
+        value1: First string value (typically the value retrieved from the KG).
+        value2: Second string value (typically the expected/question value).
+        mode: Comparison mode.
+
+    Returns:
+        StringComparisonResponse: Verdict (TRUE/FALSE/ERROR) with explanation.
+    """
+    logger.info(f"VerifyString: '{value1}' vs '{value2}' (mode={mode})")
+
+    try:
+        if mode == "exact":
+            result = value1 == value2
+            explanation = f"Exact comparison: '{value1}' == '{value2}' → {result}"
+
+        elif mode == "case_insensitive":
+            result = value1.lower() == value2.lower()
+            explanation = f"Case-insensitive: '{value1.lower()}' == '{value2.lower()}' → {result}"
+
+        elif mode == "contains":
+            v1_lower = value1.lower()
+            v2_lower = value2.lower()
+            result = v1_lower in v2_lower or v2_lower in v1_lower
+            explanation = f"Contains check: '{value1}' ↔ '{value2}' → {result}"
+
+        elif mode == "normalize":
+            import unicodedata
+            import re
+
+            def normalize(s: str) -> str:
+                # Strip whitespace
+                s = s.strip()
+                # Normalize unicode (decompose diacritics)
+                s = unicodedata.normalize("NFKD", s)
+                # Remove diacritical marks
+                s = "".join(c for c in s if not unicodedata.combining(c))
+                # Lowercase
+                s = s.lower()
+                # Remove punctuation except hyphens (important for compound names)
+                s = re.sub(r"[^\w\s-]", "", s)
+                # Collapse whitespace
+                s = re.sub(r"\s+", " ", s).strip()
+                return s
+
+            norm1 = normalize(value1)
+            norm2 = normalize(value2)
+            result = norm1 == norm2
+            explanation = f"Normalized: '{norm1}' == '{norm2}' → {result}"
+        else:
+            return StringComparisonResponse(
+                verdict="ERROR",
+                explanation=f"Unknown mode: {mode}",
+                value1=value1,
+                value2=value2,
+                mode=mode
+            )
+
+        verdict = "TRUE" if result else "FALSE"
+
+        # Auto-update journal
+        session_journal.verified_facts.append({
+            "fact": explanation,
+            "source": "VerifyString"
+        })
+        session_journal.add_completed_step(f"Verified: {explanation}")
+
+        logger.info(f"VerifyString result: {verdict}")
+        return StringComparisonResponse(
+            verdict=verdict,
+            explanation=explanation,
+            value1=value1,
+            value2=value2,
+            mode=mode
+        )
+
+    except Exception as e:
+        logger.error(f"VerifyString failed: {e}")
+        session_journal.add_failed_attempt(
+            f"VerifyString('{value1}' vs '{value2}'): {str(e)[:100]}"
+        )
+        return StringComparisonResponse(
+            verdict="ERROR",
+            explanation=f"Could not compare values: {str(e)}",
+            value1=value1,
+            value2=value2,
+            mode=mode
         )
 
 

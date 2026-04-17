@@ -39,22 +39,22 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
 CORE_TOOLS = {
     "FindNode", "GetNodeSummary", "GetAttributeDetails", "GetRelationDetails",
     "ManageJournal", "GetJournalSummary", "RunSPARQL", "GetNodeLabel",
-    "BatchGetNodeLabels",
+    "BatchGetNodeLabels", "FilterEntities",
 }
 
 # Extra tools per question type (on top of CORE_TOOLS)
 QTYPE_TOOL_MAP: Dict[str, set] = {
     "Count":                 {"CompareEntities", "FindByAttribute", "FindEntitiesByRelationPath"},
-    "Verify":                {"VerifyNumericCondition", "CompareEntities", "FindByAttribute"},
+    "Verify":                {"VerifyNumericCondition", "VerifyString", "CompareEntities", "FindByAttribute"},
     "SelectBetween":         {"CompareEntities", "GetSchemaForAttribute"},
     "SelectAmong":           {"CompareEntities", "GetSchemaForAttribute", "FindByAttribute"},
     "QueryAttr":             {"FindByAttribute", "GetSchemaForAttribute"},
     "QueryAttrQualifier":    {"GetEdgeQualifiers", "GetQualifiersByPredicate",
                               "GetAttributeWithQualifiers", "TemporalAttributeQuery",
-                              "GetSchemaForAttribute"},
+                              "GetSchemaForAttribute", "QualifierFilter"},
     "QueryRelation":         {"ExploreNeighborhood", "FindEntitiesByRelationPath"},
     "QueryRelationQualifier":{"GetEdgeQualifiers", "GetQualifiersByPredicate",
-                              "ExploreNeighborhood"},
+                              "ExploreNeighborhood", "QualifierFilter"},
     "QueryName":             {"FindByAttribute", "FindEntitiesByRelationPath",
                               "ExploreNeighborhood"},
 }
