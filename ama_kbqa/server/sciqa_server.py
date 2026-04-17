@@ -408,12 +408,12 @@ async def FindResource(
     try:
         query_vector = get_embedding(app.embedding_client, semantic_query)
 
-        search_results = app.qdrant.search(
+        search_results = app.qdrant.query_points(
             collection_name=COLLECTION_ENTITIES,
-            query_vector=query_vector,
+            query=query_vector,
             limit=top_n,
             score_threshold=ENTITY_THRESHOLD
-        )
+        ).points
 
         matches = []
         for hit in search_results:
@@ -494,12 +494,12 @@ async def FindPredicate(
     try:
         query_vector = get_embedding(app.embedding_client, semantic_query)
 
-        search_results = app.qdrant.search(
+        search_results = app.qdrant.query_points(
             collection_name=COLLECTION_RELATIONS,
-            query_vector=query_vector,
+            query=query_vector,
             limit=top_n,
             score_threshold=RELATION_THRESHOLD
-        )
+        ).points
 
         matches = []
         for hit in search_results:

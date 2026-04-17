@@ -250,13 +250,13 @@ def _search_qdrant(qdrant: QdrantClient, vectors_map: dict) -> dict:
             if not vector:
                 continue
             try:
-                hits = qdrant.search(
+                hits = qdrant.query_points(
                     collection_name=collection_name,
-                    query_vector=vector,
+                    query=vector,
                     limit=TOP_N,
                     with_payload=True,
                     score_threshold=SCORE_THRESHOLD
-                )
+                ).points
                 candidates = []
                 for hit in hits:
                     candidates.append({
