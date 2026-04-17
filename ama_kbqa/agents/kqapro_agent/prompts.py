@@ -10,6 +10,7 @@ to keep the main agent.py file more manageable.
 QTYPE_STRATEGIES = {
     "Count": """STRATEGY: Count → integer answer
 Small set (<20): GetRelationDetails + count. Large/unknown set: RunSPARQL with COUNT(DISTINCT).
+Filtered count: FilterEntities(concept=..., attribute_name=...) then count results, or RunSPARQL with COUNT.
 Multi-hop: RunSPARQL with JOIN+COUNT. OR conditions: UNION + COUNT(DISTINCT).
 Pattern: SELECT (COUNT(DISTINCT ?t) AS ?c) WHERE { ex:ID prop:PRED ?t . }
 Trust verified counts. Don't downgrade after verification.""",
@@ -26,11 +27,13 @@ Key distinction: "movie's language"=NodeAttr vs "language of website dated 1998-
 Steps: 1) Find base fact via GetAttributeDetails/GetRelationDetails
 2) GetEdgeQualifiers(subject_id, predicate, target_value)
 3) Match question word to qualifier: When→point_in_time, Where→location
+Filtering by qualifier: Use QualifierFilter(entity_ids, predicate, qualifier_name, value) to narrow entities by qualifier conditions.
 Pattern: SELECT ?qv WHERE { ?f pred:fact_h ex:ID; pred:fact_r prop:P; pred:fact_t "VAL". ?f qual:Q ?qv. }""",
 
     "QueryName": """STRATEGY: QueryName → identify entity from description
 Unique ID/code → FindByAttribute immediately.
 Single condition: FindNode + GetRelationDetails.
+Type+attribute conditions: FilterEntities(concept=..., attribute_name=..., attribute_value=...) for combined filtering.
 Multiple conditions: RunSPARQL with multiple WHERE clauses (avoid manual intersection).
 Pattern: SELECT ?label WHERE { ?s prop:P1 ex:O1. ?s prop:P2 ex:O2. ?s rdfs:label ?label. }""",
 
@@ -41,6 +44,7 @@ Fallback: SELECT DISTINCT ?p ?label WHERE { { ex:A ?p ex:B } UNION { ex:B ?p ex:
     "QueryRelationQualifier": """STRATEGY: QueryRelationQualifier → context of a relation
 1) Confirm connection via GetRelationDetails. 2) GetEdgeQualifiers on that connection.
 3) Match qualifier: When→point_in_time, Where→location, Role→object_has_role, Ceremony→ceremony.
+Filtering by qualifier: Use QualifierFilter(entity_ids, relation, qualifier_name, value) to narrow entities by qualifier conditions.
 Pattern: SELECT ?v WHERE { ?f pred:fact_h ex:A; pred:fact_r prop:P; pred:fact_t ex:B. ?f qual:Q ?v. }""",
 
     "SelectAmong": """STRATEGY: SelectAmong → superlative from group
@@ -54,7 +58,7 @@ Pattern: SELECT ?label ?v WHERE { ?i prop:instance_of ex:GRP. ?i attr:ATTR ?v. ?
 Pattern: SELECT ?label ?v WHERE { VALUES ?i { ex:A ex:B } ?i attr:ATTR ?v. ?i rdfs:label ?label. } ORDER BY DESC(?v) LIMIT 1""",
 
     "Verify": """STRATEGY: Verify → True/False
-GetAttributeDetails to get value, then VerifyNumericCondition for comparison. Never do mental math.
+GetAttributeDetails to get value, then VerifyNumericCondition for numeric/date comparison, VerifyString for text comparison. Never do mental math or guess string equality.
 Fallback: ASK { ex:ID attr:ATTR ?v. FILTER(?v > "VAL"^^xsd:decimal) }""",
 
     "Query": """STRATEGY: General Query
@@ -80,9 +84,10 @@ ex:=Entities, prop:=Properties, attr:=Attributes, qual:=Qualifiers, unit:=Units
 
 TOOL TIERS:
 T1 Discovery: FindNode (semantic search) | FindByAttribute (exact ID/code/URL lookup - prefer this for unique IDs)
+T1.5 Filtering: FilterEntities (by concept type and/or attribute value - replaces manual SPARQL filters) | QualifierFilter (filter entities by qualifier on statements)
 T2 Retrieval: GetAttributeDetails | GetRelationDetails | GetNodeSummary (all data in ONE call)
 T3 Qualifiers: GetEdgeQualifiers (facts about facts - use when question has time/place context)
-T4 Verify: VerifyNumericCondition (never do mental math)
+T4 Verify: VerifyNumericCondition (never do mental math) | VerifyString (never guess string equality)
 Complex: RunSPARQL (for multi-hop >2, COUNT, UNION) | CompareEntities | FindEntitiesByRelationPath
 
 QUALIFIER DECISION: Question specifies TIME/PLACE for a fact? → GetEdgeQualifiers. General property? → GetAttributeDetails.

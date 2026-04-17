@@ -65,7 +65,7 @@ Additional documentation in the project root:
 |----------|-------------|
 | [CLAUDE.md](../CLAUDE.md) | AI assistant instructions and project context |
 | [AGENT_ARCHITECTURE.md](../AGENT_ARCHITECTURE.md) | Detailed agent architecture (1000+ lines) |
-| [TOOLS_REFERENCE.md](../TOOLS_REFERENCE.md) | Complete reference for KQAPro MCP tools (21 tools) |
+| [TOOLS_REFERENCE.md](../TOOLS_REFERENCE.md) | Complete reference for KQAPro MCP tools (22 tools) |
 | [CONFIG_GUIDE.md](../CONFIG_GUIDE.md) | Configuration guide (if exists) |
 | [README.md](../README.md) | Project README with setup instructions |
 
@@ -106,7 +106,7 @@ Additional documentation in the project root:
 | `ama_kbqa/agents/kqapro_agent/prompts.py` | KQAPro prompts (~665 lines) |
 | `ama_kbqa/agents/sciqa_agent/agent.py` | SciQA agent (inherits BaseKBQAAgent, ~190 lines) |
 | `ama_kbqa/agents/sciqa_agent/prompts.py` | SciQA/ORKG prompts (~890 lines) |
-| `ama_kbqa/server/kqapro_server.py` | KQAPro MCP server (21 tools) |
+| `ama_kbqa/server/kqapro_server.py` | KQAPro MCP server (22 tools) |
 | `ama_kbqa/server/sciqa_server.py` | SciQA MCP server (18 tools) |
 | `ama_kbqa/config.py` | Configuration loader module |
 
@@ -332,6 +332,25 @@ When updating documentation:
 ---
 
 ## Recent Changes
+
+- **2026-04-16**: ✅ **3 new MCP tools added to KQAPro server (19 → 22 tools)**
+  - `FilterEntities` (`kqapro_server.py`) — Unified filtering by concept type and/or attribute value with operator support (=,!=,<,>,<=,>=,contains). Handles string/numeric/date/year auto-detection. Supports chaining via `entity_ids`. Returns `SearchResponse`.
+  - `QualifierFilter` (`kqapro_server.py`) — Filters entities by qualifier values on reified RDF statements (facts about facts). Handles QFilterStr/QFilterNum/QFilterYear/QFilterDate KoPL patterns. Returns `SearchResponse`.
+  - `VerifyString` (`kqapro_server.py`) — Deterministic string comparison with 4 modes: `exact`, `case_insensitive`, `contains`, `normalize` (default — strips diacritics, punctuation, whitespace). Returns new `StringComparisonResponse` model.
+  - `FilterEntities` added to `CORE_TOOLS` in `agent.py` (always available regardless of qtype)
+  - `VerifyString` added to Verify qtype tool map; `QualifierFilter` added to QueryAttrQualifier and QueryRelationQualifier tool maps
+  - System prompt in `prompts.py` updated with new tool tier **T1.5 Filtering** (FilterEntities, QualifierFilter) and **T4 Verify** (VerifyNumericCondition, VerifyString); qtype strategies updated for Count, Verify, QueryAttrQualifier, QueryRelationQualifier, QueryName
+  - Updated [System/agent_system.md](System/agent_system.md) and [System/project_architecture.md](System/project_architecture.md)
+
+- **2026-04-16**: ✅ **qdrant-client upgraded to 1.17+ — `query_points` API**
+  - `pyproject.toml`: `qdrant-client>=1.15.1` → `qdrant-client>=1.17.0`
+  - The `.search()` method was removed in qdrant-client 1.16. All 5 call sites across 3 server files were updated to the new `query_points` API:
+    - `kqapro_server.py` (2 sites): `.search(collection_name=..., query_vector=...)` → `.query_points(collection_name=..., query=...)`, result now accessed via `.points`
+    - `sciqa_server.py` (2 sites): same pattern
+    - `orchestrator_server.py` (1 site): same pattern
+  - Removed an unnecessary `AttributeError` fallback block in `kqapro_server.py` that existed to handle the old API
+  - **API contract change**: `query_points(...)` returns a `QueryResponse` object; actual `List[ScoredPoint]` is in `.points`. Old `.search(...)` returned `List[ScoredPoint]` directly.
+  - Updated [System/project_architecture.md](System/project_architecture.md) (tech stack table)
 
 - **2026-04-05**: ✅ **Scratchpad / Journal System Improvements (7 changes)**
   - **Removed `target_attributes` field**: Removed dead field from `JournalState`, `kqapro_server.py`, and `sciqa_server.py` — it was never auto-populated or read
@@ -592,5 +611,5 @@ When updating documentation:
 
 ---
 
-*Last updated: February 5, 2026 (SciQA Prompts Refactor - type-specific strategy loading)*
+*Last updated: April 16, 2026 (3 new KQAPro MCP tools: FilterEntities, QualifierFilter, VerifyString — 22 tools total)*
 
