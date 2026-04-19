@@ -160,6 +160,17 @@ python -m ama_kbqa.benchmark_agents --export-csv
 python -m ama_kbqa.benchmark_agents --resume
 ```
 
+## Testing Todolist
+
+Models to test:
+- [ ] `google/gemma-4-26b-a4b-it`
+- [ ] `qwen/qwen3.5-35b-a3b`
+- [ ] `qwen/qwen3.5-27b`
+- [ ] `google/gemma-4-31b-it`
+- [ ] `openai/gpt-oss-120b`
+- [ ] `minimax/minimax-m2.7`
+- [ ] `openrouter/elephant-alpha`
+
 ## Project Structure
 
 | File | Purpose |
