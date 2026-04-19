@@ -115,7 +115,10 @@ def load_judge_config() -> Dict[str, Any]:
         provider = postprocessing.get("judge_provider", "openrouter")
         provider_config = config.get(provider, {})
 
-        judge_model = "deepseek/deepseek-v3.2"
+        judge_model = postprocessing.get(
+            "judge_model",
+            provider_config.get("chat_model", "deepseek/deepseek-v3.2"),
+        )
         chat_model_provider = postprocessing.get("chat_model_provider", "")
 
         return {
