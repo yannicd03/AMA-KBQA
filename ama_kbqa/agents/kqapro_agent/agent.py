@@ -26,6 +26,7 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
     JOURNAL_REFRESH_TEMPLATE,
     NO_PROGRESS_TEMPLATE,
     SYNTHESIS_PROMPT_TEMPLATE,
+    SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL,
     JOURNAL_SUMMARY_ANSWER_PROMPT,
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
@@ -119,7 +120,10 @@ class KQAProAgent(BaseKBQAAgent):
         return ANALYSIS_CONTEXT_TEMPLATE
 
     def _get_synthesis_prompt_template(self) -> str:
-        """Get the synthesis prompt template."""
+        """Get the synthesis prompt template — style depends on synthesis_mode."""
+        from ama_kbqa.config import get_synthesis_mode
+        if get_synthesis_mode() == "conversational":
+            return SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL
         return SYNTHESIS_PROMPT_TEMPLATE
 
     def _get_journal_refresh_template(self) -> str:

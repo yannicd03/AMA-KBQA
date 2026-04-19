@@ -890,6 +890,29 @@ You MUST change your approach NOW."""
 # Synthesis Prompt
 # ==============================================================================
 
+SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL = """You have completed your investigation of the ORKG. Here is EVERYTHING you discovered:
+
+JOURNAL SUMMARY - ALL DISCOVERED INFORMATION
+
+{journal_summary}
+
+YOUR TASK
+
+Write a clear, friendly, human-readable answer for the user to this question:
+
+"{query}"
+
+Guidelines:
+- Lead with the direct answer in a natural sentence.
+- Add 2–4 sentences (or a short list) of supporting context from the journal:
+  key entities, numeric values, dates, paper/resource names, etc., when helpful.
+- Cite resource IDs (e.g. R12345) inline when referring to specific ORKG entries.
+- Do NOT invent facts beyond the journal. If data is insufficient, state exactly
+  what is missing rather than guessing.
+- Do not describe your tool-calling process; answer as if speaking to the user.
+
+YOUR FINAL ANSWER:"""
+
 SYNTHESIS_PROMPT_TEMPLATE = """You have completed your investigation of the ORKG. Here is EVERYTHING you discovered:
 
 JOURNAL SUMMARY - ALL DISCOVERED INFORMATION

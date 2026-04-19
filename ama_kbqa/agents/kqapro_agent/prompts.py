@@ -154,13 +154,30 @@ NO_PROGRESS_TEMPLATE = """NO PROGRESS (iter {iteration_count}). Journal unchange
 {journal_refresh}
 REQUIRED: 1) Try RunSPARQL 2) Search connected entity 3) Check available_attributes 4) Or answer with current data."""
 
-# Synthesis prompt template (for final answer generation) - COMPACT
+# Synthesis prompt template (for final answer generation) - COMPACT (benchmark)
 SYNTHESIS_PROMPT_TEMPLATE = """DISCOVERED DATA:
 {journal_summary}
 
 QUESTION: "{query}"
 
 Answer directly using the discovered data above. Be concise. If data is missing, say what's missing."""
+
+# Synthesis prompt template - CONVERSATIONAL (user-facing)
+SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL = """DISCOVERED DATA:
+{journal_summary}
+
+QUESTION: "{query}"
+
+Write a clear, friendly, human-readable answer for the user.
+
+Guidelines:
+- Lead with the direct answer in a natural sentence (not just a bare value).
+- Add 1–3 sentences of helpful supporting context drawn from the discovered data
+  (e.g., related entities, dates, categories) when it aids understanding.
+- You may use short lists or paragraphs; keep it tight — no filler.
+- Do NOT invent facts beyond the discovered data. If something is missing or
+  uncertain, say so plainly.
+- Do not describe your tool-calling process; speak to the user about the answer."""
 
 # GetJournalSummary follow-up prompt
 JOURNAL_SUMMARY_ANSWER_PROMPT = "You have reviewed everything you discovered in your journal. Now you MUST provide your final answer to the original question as clear, direct text. Do NOT call any more tools."
