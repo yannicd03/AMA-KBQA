@@ -16,7 +16,7 @@ Welcome to the AMA KBQA project documentation. This folder contains all the crit
 2. **Need to set up databases?** See [SOP/database_setup.md](SOP/database_setup.md) (covers both KQAPro and SciQA)
 3. **Want to run benchmarks?** Check [SOP/running_batch_processing.md](SOP/running_batch_processing.md)
 4. **Comparing multiple LLM models?** See [Multi-Model Benchmarking](#multi-model-benchmarking) section in SOP
-5. **Adding new tools?** Follow [SOP/adding_new_tools.md](SOP/adding_new_tools.md)
+5. **Adding new tools?** Follow [SOP/adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) (journal write checklist — see also the journal data model in agent_system.md)
 6. **Working on SciQA agent?** See [Tasks/sciqa-agent-implementation.md](Tasks/sciqa-agent-implementation.md)
 7. **Adding a new knowledge graph?** See [Tasks/generic-framework-implementation.md](Tasks/generic-framework-implementation.md) and [generic-framework.md](../generic-framework.md)
 
@@ -42,7 +42,7 @@ Step-by-step guides for common tasks.
 |----------|-------------|
 | [database_setup.md](SOP/database_setup.md) | Setting up Virtuoso and Qdrant databases |
 | [running_batch_processing.md](SOP/running_batch_processing.md) | Running batch benchmarks with LLM judge |
-| [adding_new_tools.md](SOP/adding_new_tools.md) | How to add new MCP tools to the server |
+| [adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) | Checklist for adding KQAPro tools that produce answer values (journal write invariants) |
 | [changing_llm_provider.md](SOP/changing_llm_provider.md) | Configuring different LLM providers |
 
 ### Tasks (PRD & Implementation Plans)
@@ -333,6 +333,19 @@ When updating documentation:
 
 ## Recent Changes
 
+- **2026-04-19**: ✅ **Journal data model clarified; synthesis bypass flag; new KQAPro tool SOP; `auto_inject_journal` toggle**
+  - Root-caused and documented the `GetRelationDetails → found_values` bug: relation answers were invisible to synthesis because the tool only wrote to `verified_facts`, not `found_values`. Fix: `GetRelationDetails` now writes to both.
+  - `GetNodeLabel` and `BatchGetNodeLabels` now backfill `found_values` entries with resolved labels after a node is looked up.
+  - `GetJournalSummary` now renders a `🔗 VERIFIED FACTS` block (up to 15 triples with labels resolved via `visited_nodes`), and the `DISCOVERED VALUES` block resolves `related_id` → label at render time.
+  - `_run_synthesis` heuristic updated: `has_data` now keys off literal strings emitted by the renderer (`"discovered values"`, `"verified facts"`, `"partial answer:"`, `"orkgr:"`) instead of internal field names that never appeared in the rendered output.
+  - New `synthesis_enabled` config flag (`[synthesis]` in `config.toml`, getter `get_synthesis_enabled()` in `config.py`): when `false`, skips the synthesis LLM call and returns the agent's last message directly. Falls back to synthesis if agent produced no content.
+  - New frontend toggle "Run synthesis step" in `pages/4_Settings.py` wired through existing `apply_to_session` / `save_config` flow.
+  - New `auto_inject_journal` config flag (`[agent]` in `config.toml`, getter `get_auto_inject_journal()` in `config.py`, default `true`): when `false`, disables the periodic journal refresh injected every N iterations and suppresses the "answer now" prompt that fires after the agent calls `GetJournalSummary`. The tool itself remains available; only the automatic pushes are skipped.
+  - New frontend toggle "Auto-inject journal into context" in `pages/4_Settings.py` → Agent Configuration section.
+  - Updated [System/agent_system.md](System/agent_system.md): journal data model section, GetRelationDetails dual-write, GetNodeLabel backfill, GetJournalSummary rendered format, synthesis configuration section, new `auto_inject_journal` subsection.
+  - Updated [System/project_architecture.md](System/project_architecture.md): T2 Retrieval tool descriptions, key implementation details, configuration system section (new `[agent]` TOML section, `get_auto_inject_journal` getter).
+  - Created [SOP/adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md): checklist for adding tools that produce answer values (journal write invariants, anti-patterns).
+
 - **2026-04-16**: ✅ **3 new MCP tools added to KQAPro server (19 → 22 tools)**
   - `FilterEntities` (`kqapro_server.py`) — Unified filtering by concept type and/or attribute value with operator support (=,!=,<,>,<=,>=,contains). Handles string/numeric/date/year auto-detection. Supports chaining via `entity_ids`. Returns `SearchResponse`.
   - `QualifierFilter` (`kqapro_server.py`) — Filters entities by qualifier values on reified RDF statements (facts about facts). Handles QFilterStr/QFilterNum/QFilterYear/QFilterDate KoPL patterns. Returns `SearchResponse`.
@@ -611,5 +624,5 @@ When updating documentation:
 
 ---
 
-*Last updated: April 16, 2026 (3 new KQAPro MCP tools: FilterEntities, QualifierFilter, VerifyString — 22 tools total)*
+*Last updated: April 19, 2026 (journal data model, synthesis bypass flag, new KQAPro tool SOP, auto_inject_journal toggle)*
 

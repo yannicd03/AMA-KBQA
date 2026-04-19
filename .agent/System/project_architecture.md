@@ -256,7 +256,7 @@ Provides 22 tools for knowledge graph interaction, organized by tier:
 **T2 Retrieval:**
 - `GetNodeSummary` - Complete node data in one call
 - `GetAttributeDetails` - Specific attribute values
-- `GetRelationDetails` - Connected entities via relation
+- `GetRelationDetails` - Connected entities via relation. Writes to **both** `verified_facts` (provenance) and `found_values` (answer visibility to synthesis). Before April 2026 it only wrote to `verified_facts`, making relation-based answers invisible to the synthesis step.
 
 **T3 Qualifiers:**
 - `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern)
@@ -274,8 +274,8 @@ Provides 22 tools for knowledge graph interaction, organized by tier:
 - `FindEntitiesByRelationPath` - Multi-hop entity discovery
 
 **Utility:**
-- `GetNodeLabel` - Quick label lookup for an entity ID
-- `BatchGetNodeLabels` - Batch label resolution
+- `GetNodeLabel` - Quick label lookup for an entity ID. Also backfills `found_values` entries whose `related_id` matches the resolved node (upgrades opaque IDs to human labels in the rendered summary).
+- `BatchGetNodeLabels` - Batch label resolution. Same `found_values` backfill behavior as `GetNodeLabel`.
 - `GetSchemaForAttribute` - Discover how an attribute is encoded in the KB
 - `ManageJournal` - Scratchpad management (actions: `set_question`, `update_plan`, `update`)
 - `GetJournalSummary` - Summary of all discoveries
@@ -291,7 +291,11 @@ Provides 22 tools for knowledge graph interaction, organized by tier:
 - `JournalState` imported from `ama_kbqa.framework.state` (not defined locally)
 - `FindNode` deduplicates via `visited_nodes`: skips Qdrant search if label already cached (case-insensitive)
 - `RunSPARQL` stores results in `found_values["sparql_result_N"]` so they survive message truncation
+- `GetRelationDetails` writes to both `verified_facts` (provenance) and `found_values` (required for synthesis visibility)
+- `GetNodeLabel` / `BatchGetNodeLabels` backfill `value` fields in `found_values` entries after resolving a node's label
+- `GetJournalSummary` renders `found_values` as `📊 DISCOVERED VALUES` and `verified_facts` as `🔗 VERIFIED FACTS` (up to 15 triples); IDs are resolved to labels via `visited_nodes` at render time
 - `completed_steps` capped at 20 entries; `failed_attempts` capped at 10 entries; all append sites use `add_completed_step()` / `add_failed_attempt()` helpers
+- Synthesis runs with minimal context (system + journal + query only); `_run_synthesis` detects data presence by checking for literal substrings `"discovered values"`, `"verified facts"`, `"partial answer:"`, `"orkgr:"` in the rendered summary
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
@@ -335,14 +339,26 @@ Centralized configuration loaded from `config.toml`:
 
 ```python
 from ama_kbqa.config import (
-    get_chat_client,        # OpenAI-compatible client
-    get_embedding_client,   # For vector embeddings
-    get_chat_model_name,    # Current chat model
-    get_synthesis_client,   # Synthesis-specific client
-    get_qdrant_host,        # Database connection
-    get_virtuoso_endpoint,  # SPARQL endpoint
+    get_chat_client,           # OpenAI-compatible client
+    get_embedding_client,      # For vector embeddings
+    get_chat_model_name,       # Current chat model
+    get_synthesis_client,      # Synthesis-specific client
+    get_synthesis_enabled,     # bool — whether to run the synthesis LLM step (default True)
+    get_auto_inject_journal,   # bool — whether to auto-push journal into tool loop (default True)
+    get_qdrant_host,           # Database connection
+    get_virtuoso_endpoint,     # SPARQL endpoint
 )
 ```
+
+**`synthesis_enabled` config key** (`[synthesis]` section in `config.toml`):
+- `true` (default) — run the dedicated synthesis LLM call after the tool loop
+- `false` — return the agent's own last assistant message directly; saves one LLM call but loses deterministic answer shaping
+- Exposed as a toggle in the Settings UI (`pages/4_Settings.py`, "Run synthesis step")
+
+**`auto_inject_journal` config key** (`[agent]` section in `config.toml`):
+- `true` (default) — `_run_tool_loop` periodically injects a journal refresh every N iterations and appends an "answer now" prompt whenever the agent calls `GetJournalSummary`
+- `false` — both automatic injections are suppressed; `GetJournalSummary` remains available as a tool the agent can call voluntarily
+- Exposed as a toggle in the Settings UI (`pages/4_Settings.py`, "Auto-inject journal into context", under Agent Configuration)
 
 ### 4. Orchestrator Agent (`ama_kbqa/agents/orchestrator_agent/agent.py`)
 

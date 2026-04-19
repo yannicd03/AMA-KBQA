@@ -24,7 +24,9 @@ from ama_kbqa.config import (
     get_chat_temperature,
     get_chat_max_tokens,
     get_provider_preferences,
+    get_auto_inject_journal,
     get_synthesis_client,
+    get_synthesis_enabled,
     get_synthesis_model_name,
     get_synthesis_temperature,
     get_synthesis_max_tokens,
@@ -229,6 +231,30 @@ Proceed with your investigation."""
 Based on this information, answer: "{query}"
 
 YOUR FINAL ANSWER:"""
+
+    def _get_synthesis_system_prompt(self) -> str:
+        """Return the system message used during the final synthesis call.
+
+        Switches between benchmark (terse) and conversational (verbose) based
+        on the `synthesis.synthesis_mode` setting in config.toml.
+        """
+        try:
+            from ama_kbqa.config import get_synthesis_mode
+            mode = get_synthesis_mode()
+        except Exception:
+            mode = "benchmark"
+
+        if mode == "conversational":
+            return (
+                "You are a helpful assistant answering a user's question using "
+                "the provided journal data. Write a clear, friendly, human-readable "
+                "response. Lead with the direct answer, then add brief supporting "
+                "context from the data. Do not invent facts beyond the journal."
+            )
+        return (
+            "You are a precise question-answering system. Answer based strictly "
+            "on the provided journal data. Give only the answer value."
+        )
 
     def _get_journal_refresh_template(self) -> str:
         """
@@ -675,7 +701,7 @@ Change strategy or acknowledge the data doesn't exist."""
             )
 
             synthesis_messages = [
-                {"role": "system", "content": "You are a precise question-answering system. Answer based strictly on the provided data. Give only the answer value."},
+                {"role": "system", "content": self._get_synthesis_system_prompt()},
                 {"role": "user", "content": synthesis_prompt}
             ]
 
@@ -715,6 +741,7 @@ Change strategy or acknowledge the data doesn't exist."""
             Final answer string
         """
         iteration_count = 0
+        final_agent_content: Optional[str] = None
 
         while True:
             iteration_count += 1
@@ -728,8 +755,12 @@ Change strategy or acknowledge the data doesn't exist."""
             # Manage context window before LLM call
             self._manage_context_window()
 
-            # Periodic journal refresh
-            if iteration_count % refresh_interval == 0 and iteration_count > 0:
+            # Periodic journal refresh (can be disabled via agent.auto_inject_journal)
+            if (
+                get_auto_inject_journal()
+                and iteration_count % refresh_interval == 0
+                and iteration_count > 0
+            ):
                 await self._inject_journal_refresh(iteration_count)
 
             # Call LLM - use tool_choice="required" for early iterations
@@ -747,12 +778,14 @@ Change strategy or acknowledge the data doesn't exist."""
 
             if message.content:
                 self._trace(f"Thought: {message.content}", COLOR_BLUE)
+                final_agent_content = message.content
 
             # No tool calls - break for synthesis
             if not message.tool_calls:
                 self._trace("No more tool calls - breaking to synthesis", COLOR_GREEN)
                 if message.content:
                     self._messages.append({"role": "assistant", "content": message.content})
+                final_agent_content = message.content
                 break
 
             # Add assistant message to history
@@ -775,7 +808,8 @@ Change strategy or acknowledge the data doesn't exist."""
             called_get_journal_summary = await self._execute_tool_calls(message.tool_calls)
 
             # Inject answer prompt if GetJournalSummary was called
-            if called_get_journal_summary:
+            # (can be disabled via agent.auto_inject_journal)
+            if called_get_journal_summary and get_auto_inject_journal():
                 self._trace("GetJournalSummary called - injecting answer prompt", COLOR_CYAN)
                 self._messages.append({
                     "role": "user",
@@ -793,6 +827,21 @@ Change strategy or acknowledge the data doesn't exist."""
                         "Only continue if you have a concrete next step that will yield new information."
                     )
                 })
+
+        # Synthesis can be bypassed via config (synthesis.synthesis_enabled = false)
+        # to use the agent's own final message as the answer. This saves a
+        # second LLM call at the cost of losing the deterministic answer shaping.
+        if not get_synthesis_enabled():
+            if final_agent_content and final_agent_content.strip():
+                self._trace(
+                    "Synthesis bypassed - using agent's final message as answer",
+                    COLOR_CYAN,
+                )
+                return final_agent_content.strip()
+            self._trace(
+                "Synthesis bypassed but agent produced no final content - falling back to synthesis",
+                COLOR_YELLOW,
+            )
 
         # Run synthesis
         return await self._run_synthesis(query)
@@ -1092,7 +1141,7 @@ Change strategy or acknowledge the data doesn't exist."""
         # Use MINIMAL messages for synthesis instead of full history
         # This is the single biggest token saving in the pipeline
         synthesis_messages = [
-            {"role": "system", "content": "You are a precise question-answering system. Answer based strictly on the provided journal data."},
+            {"role": "system", "content": self._get_synthesis_system_prompt()},
             {"role": "user", "content": synthesis_prompt}
         ]
 
@@ -1106,14 +1155,26 @@ Change strategy or acknowledge the data doesn't exist."""
                                "unable to determine", "could not find", "no information"]
             answer_lower = final_answer.lower()
             if any(phrase in answer_lower for phrase in failure_phrases):
-                # Check if journal actually has useful data
-                has_data = ("found_values" in journal_summary.lower() or
-                           "verified_facts" in journal_summary.lower() or
-                           "orkgr:" in journal_summary.lower() or
-                           "R" in journal_summary)
+                # Check if journal actually has useful data. Key off markers
+                # the renderer emits, not arbitrary substrings.
+                summary_lower = journal_summary.lower()
+                has_discovered_values = (
+                    "discovered values" in summary_lower
+                    and "no values discovered yet" not in summary_lower
+                )
+                has_verified_facts = "verified facts" in summary_lower
+                has_partial = "partial answer:" in summary_lower
+                has_orkg = "orkgr:" in summary_lower
+                has_data = (
+                    has_discovered_values
+                    or has_verified_facts
+                    or has_partial
+                    or has_orkg
+                )
                 journal_seems_empty = (
-                    "none" in journal_summary.lower()
-                    and len(journal_summary) < 200
+                    "no values discovered yet" in summary_lower
+                    and not has_verified_facts
+                    and not has_partial
                 )
 
                 if has_data and not journal_seems_empty:

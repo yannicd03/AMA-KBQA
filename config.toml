@@ -1,26 +1,37 @@
 [llm]
-chat_provider = "openrouter"
+chat_provider = "llamacpp"
 embedding_provider = "openrouter"
-chat_temperature = 0.2
-chat_max_tokens = 4096
+chat_temperature = 1.0
+chat_max_tokens = 16000
 embedding_temperature = 0.0
 
+[agent]
+auto_inject_journal = false
+
 [synthesis]
+synthesis_enabled = false
 synthesis_provider = "openrouter"
 synthesis_model = "deepseek/deepseek-v3.2"
 synthesis_model_provider = ""
-synthesis_temperature = 0.3
+synthesis_temperature = 0.7
 synthesis_max_tokens = 2048
+synthesis_mode = "conversational"
 
 [openrouter]
 base_url = "https://openrouter.ai/api/v1"
-chat_model = "minimax/minimax-m2.5"
+chat_model = "openrouter/elephant-alpha"
 embedding_model = "qwen/qwen3-embedding-8b"
 chat_model_provider = ""
 
 [kit]
 base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
 chat_model = "azure.gpt-4.1-mini"
+
+[llamacpp]
+base_url = "http://localhost:8080/v1"
+chat_model = "local-model"
+embedding_model = "local-model"
+api_key = "sk-no-key-required"
 
 [database]
 qdrant_host = "localhost"
@@ -49,5 +60,5 @@ level = "INFO"
 judge_provider = "openrouter"
 judge_model = "deepseek/deepseek-v3.2"
 chat_model_provider = ""
-judge_temperature = 0.3
+judge_temperature = 0.7
 generate_fewshot = false
