@@ -436,6 +436,17 @@ async def GetNodeLabel(
         
         label = bindings[0].get("label", {}).get("value", "")
         session_journal.visited_nodes[node_id] = label
+
+        # Backfill: if any previously-stored relation target references this
+        # node_id (e.g. GetRelationDetails stored "Q3012" before we knew it was
+        # "Ulm"), upgrade those entries in place so the journal summary shows
+        # the human label instead of the opaque ID.
+        for _entity_id, _attrs in session_journal.found_values.items():
+            for _attr_name, _attr_data in _attrs.items():
+                if isinstance(_attr_data, list):
+                    for _item in _attr_data:
+                        if isinstance(_item, dict) and _item.get("related_id") == node_id:
+                            _item["value"] = label
         
         # Type check
         type_query = f"""
@@ -531,6 +542,14 @@ async def BatchGetNodeLabels(
                 found_ids.add(entity_id)
                 # Update journal
                 session_journal.visited_nodes[entity_id] = label
+                # Backfill any previously-stored relation targets that refer
+                # to this ID so the journal summary shows the human label.
+                for _attrs in session_journal.found_values.values():
+                    for _attr_data in _attrs.values():
+                        if isinstance(_attr_data, list):
+                            for _item in _attr_data:
+                                if isinstance(_item, dict) and _item.get("related_id") == entity_id:
+                                    _item["value"] = label
         
         not_found = [nid for nid in unique_ids if nid not in found_ids]
         
@@ -1161,7 +1180,14 @@ def GetJournalSummary(context: Context) -> str:
                 if isinstance(attr_data, list) and attr_data:
                     for val_item in attr_data[:3]:
                         if isinstance(val_item, dict):
+                            related_id = val_item.get("related_id")
                             val_str = val_item.get("value", "?")
+                            if related_id:
+                                label = session_journal.visited_nodes.get(related_id)
+                                if label and not label.startswith("("):
+                                    val_str = f"{label} ({related_id})"
+                                else:
+                                    val_str = related_id
                             unit_str = val_item.get("unit", "")
                             summary_lines.append(f"    ✓ {attr_name}: {val_str} {unit_str}".strip())
                         else:
@@ -1170,6 +1196,25 @@ def GetJournalSummary(context: Context) -> str:
                     summary_lines.append(f"    ✓ {attr_name}: {attr_data}")
     else:
         summary_lines.append(f"\n⚠️  NO VALUES DISCOVERED YET - You need to call GetAttributeDetails!")
+
+    # Verified facts (structured triples: subject -rel-> related_id/label)
+    if session_journal.verified_facts:
+        summary_lines.append(f"\n🔗 VERIFIED FACTS (subject -relation-> target):")
+        for fact in session_journal.verified_facts[:15]:
+            subj_id = fact.get("subject", "?")
+            subj_name = session_journal.visited_nodes.get(subj_id, subj_id)
+            rel = fact.get("relation", "?")
+            related_id = fact.get("related_id", "?")
+            related_name = session_journal.visited_nodes.get(related_id)
+            if related_name and not related_name.startswith("("):
+                target = f"{related_name} ({related_id})"
+            else:
+                target = related_id
+            direction = fact.get("direction")
+            arrow = "->" if direction != "reverse" else "<-"
+            summary_lines.append(f"  • {subj_name} ({subj_id}) {arrow}[{rel}]-> {target}")
+        if len(session_journal.verified_facts) > 15:
+            summary_lines.append(f"  ... and {len(session_journal.verified_facts) - 15} more")
 
     # Progress
     summary_lines.append(f"\n📈 PROGRESS:")
@@ -2244,6 +2289,27 @@ def GetRelationDetails(base_node_id: str, relation_name: str, context: Context) 
                     "source": "GetRelationDetails"
                 }
                 session_journal.verified_facts.append(fact_entry)
+
+            # Also record as DISCOVERED VALUES so synthesis can see them.
+            # Relation targets are answers just as much as attribute values are.
+            if base_node_id not in session_journal.found_values:
+                session_journal.found_values[base_node_id] = {}
+            related_entries = []
+            for triple in simplified_triples[:5]:
+                related_id = triple.get("related_id")
+                related_label = session_journal.visited_nodes.get(related_id)
+                entry = {
+                    "value": related_label if related_label and not related_label.startswith("(") else related_id,
+                    "related_id": related_id,
+                }
+                if triple.get("direction"):
+                    entry["direction"] = triple["direction"]
+                related_entries.append(entry)
+            existing = session_journal.found_values[base_node_id].get(relation_name)
+            if isinstance(existing, list):
+                session_journal.found_values[base_node_id][relation_name] = existing + related_entries
+            else:
+                session_journal.found_values[base_node_id][relation_name] = related_entries
 
             node_name = session_journal.visited_nodes.get(base_node_id, base_node_id)
             session_journal.add_completed_step(

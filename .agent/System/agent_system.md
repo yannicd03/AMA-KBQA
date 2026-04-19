@@ -250,13 +250,61 @@ class JournalState(BaseModel):
 - `add_completed_step(step)` - Appends and caps to last 20 entries
 - `add_failed_attempt(attempt)` - Appends and caps to last 10 entries
 
+#### Journal Data Model: Three Distinct Buckets
+
+The three fields `found_values`, `verified_facts`, and `visited_nodes` serve distinct roles. Understanding the difference is critical for writing correct tools.
+
+| Field | Type | Role | Rendered in summary as |
+|-------|------|------|------------------------|
+| `found_values` | `dict[entity_id, dict[attr, list]]` | **Answer-bearing values.** The synthesis step receives ONLY the rendered journal summary (minimal-context synthesis: system prompt + journal + query, no conversation history). `GetJournalSummary` builds the "DISCOVERED VALUES" block from `found_values`. If an answer is not here, synthesis cannot see it. | `📊 DISCOVERED VALUES` section |
+| `verified_facts` | `list[dict]` | Relation triples confirmed as true (subject → relation → target). Used for provenance tracking and the `🔗 VERIFIED FACTS` block. Before April 2026, only `verified_facts` was populated by `GetRelationDetails`, causing synthesis to miss relation-based answers entirely. | `🔗 VERIFIED FACTS` section (up to 15 triples with labels) |
+| `visited_nodes` | `dict[node_id, node_name]` | **Label resolution map.** Records every node explored as `{id: human_label}`. Used at render time by `GetJournalSummary` to resolve opaque IDs (like `Q3012`) into readable labels (like `Ulm`). Both the `DISCOVERED VALUES` and `VERIFIED FACTS` sections resolve IDs via this dict at render time. | Referenced inline to resolve IDs |
+
+**Architectural invariant — every answer-producing tool MUST write to `found_values`:**
+
+Synthesis runs with minimal context (system prompt + journal summary + query only — no conversation history). Any value that is only in `verified_facts` or only returned in a tool response is invisible to synthesis. This was the root cause of a class of bugs where relation-resolved answers would succeed in the tool loop but fail at synthesis with "⚠️ NO VALUES DISCOVERED YET". If you add a new tool that produces an answer value, it must write to `found_values`.
+
 **Auto-Updates:**
-- `visited_nodes` - Updated by FindNode (with dedup: skips Qdrant search if label already in `visited_nodes`), GetNodeLabel
-- `found_values` - Updated by GetAttributeDetails, GetNodeSummary; also by RunSPARQL (stores results as `sparql_result_N` with `{"query": query[:200], "results": simplified_rows[:10]}`)
-- `verified_facts` - Updated by various tools
+- `visited_nodes` - Updated by FindNode (with dedup: skips Qdrant search if label already in `visited_nodes`), GetNodeLabel, BatchGetNodeLabels
+- `found_values` - Updated by: GetAttributeDetails, GetNodeSummary, RunSPARQL (stores results as `sparql_result_N` with `{"query": query[:200], "results": simplified_rows[:10]}`), **GetRelationDetails** (stores relation targets so synthesis can see them — see below), FilterEntities
+- `verified_facts` - Updated by GetRelationDetails and other relation tools
 - `failed_attempts` - Logged when tools fail (via `add_failed_attempt()` helper)
 - `completed_steps` - Logged on tool success (via `add_completed_step()` helper)
 - `question_text` - Set by `ManageJournal("set_question", content)`
+
+#### GetRelationDetails: Dual Journal Write
+
+`GetRelationDetails` now writes to **both** `verified_facts` and `found_values`:
+
+```python
+# verified_facts entry (for provenance)
+{"subject": base_node_id, "relation": relation_name,
+ "related_id": related_id, "direction": direction, "source": "GetRelationDetails"}
+
+# found_values entry (so synthesis can see the answer)
+found_values[base_node_id][relation_name] = [
+    {"value": related_label_or_id, "related_id": related_id, "direction": direction},
+    ...
+]
+```
+
+The `value` field is pre-populated with the label from `visited_nodes` if already resolved, or falls back to the raw ID. Calling `GetNodeLabel` / `BatchGetNodeLabels` afterwards will backfill the `value` field in any matching `found_values` entry.
+
+#### GetNodeLabel / BatchGetNodeLabels: `found_values` Backfill
+
+After resolving a label for a node ID, both tools scan `session_journal.found_values` for any list entry with a matching `related_id` and upgrade its `value` field from the opaque ID to the human label. This means calling `GetNodeLabel("Q3012")` after `GetRelationDetails` automatically upgrades `"value": "Q3012"` to `"value": "Ulm"` in the rendered summary.
+
+#### GetJournalSummary: Rendered Output Format
+
+The summary text that synthesis receives contains these sections (in order):
+
+1. **`📊 DISCOVERED VALUES`** — one block per entity in `found_values`, with attribute/relation names and values. IDs resolved via `visited_nodes` at render time. Shows up to 3 entries per attribute.
+2. **`🔗 VERIFIED FACTS`** — up to 15 subject→relation→target triples from `verified_facts`, with subjects and targets resolved via `visited_nodes`.
+3. **`📈 PROGRESS`** — node/fact/step counts.
+4. **`🔍 EXPLORED NODES`** — first 5 visited nodes with a `✓ HAS DATA` / `○ no data yet` marker.
+5. **`💭 PARTIAL ANSWER`** — if set.
+
+The empty-state marker `⚠️ NO VALUES DISCOVERED YET` appears only when `found_values` is empty. `_run_synthesis` in `base_agent.py` keys off the literal strings emitted by this renderer (not internal field names) to determine whether the journal has data.
 
 **ManageJournal actions:**
 - `"set_question"` - Sets `session_journal.question_text = content` ✨ NEW
@@ -657,11 +705,44 @@ The agent uses **separate LLM configuration** for final answer synthesis:
 ```toml
 # config.toml
 [synthesis]
+synthesis_enabled = true          # Set false to skip synthesis and use agent's final message
 synthesis_provider = "openrouter"
-synthesis_model = "google/gemini-2.5-flash"
+synthesis_model = "deepseek/deepseek-v3.2"
 synthesis_temperature = 0.2
 synthesis_max_tokens = 8000
+synthesis_mode = "benchmark"      # "benchmark" (short exact-match) or "conversational"
 ```
+
+**`synthesis_enabled` flag (added April 2026):**
+
+When `synthesis_enabled = false`, `_run_tool_loop` returns the agent's own last assistant message directly, bypassing the second LLM call entirely. Falls back to synthesis if the agent produced no final content (e.g., max-iteration abort).
+
+- **Getter:** `get_synthesis_enabled()` in `ama_kbqa/config.py` (defaults to `True`)
+- **Frontend toggle:** "Run synthesis step" in `pages/4_Settings.py` → Synthesis Configuration section
+- **Tradeoff:** saves one LLM call per question; answer shape is less deterministic (no explicit "give a short, exact answer" shaping)
+
+**`auto_inject_journal` flag (added April 2026):**
+
+Controls whether `_run_tool_loop` automatically pushes journal state into the conversation. Configured under the new `[agent]` TOML section; defaults to `true`.
+
+Two injection sites in `_run_tool_loop` are guarded by this flag:
+
+1. **Periodic refresh** — every `journal_refresh_interval` iterations (default: every 5), `_inject_journal_refresh` is called. It fetches `GetJournalSummary`, applies the `WORKING MEMORY REFRESH (Iteration N)` template (or the `WARNING: NO PROGRESS DETECTED` template when the journal state is unchanged), strips any prior refresh message from history (replace-not-append strategy), and appends the new one. When `auto_inject_journal = false` this call is skipped entirely.
+
+2. **Post-GetJournalSummary answer prompt** — when the agent voluntarily calls `GetJournalSummary` as a tool, `_execute_tool_calls` sets a flag and `_run_tool_loop` injects `"Now provide your final answer. Do NOT call more tools."` immediately after the tool result. When `auto_inject_journal = false` this prompt is suppressed.
+
+`GetJournalSummary` remains available as a callable tool regardless of this flag. The toggle only disables *automatic* pushes; the agent can still consult the journal on its own initiative.
+
+- **Getter:** `get_auto_inject_journal()` in `ama_kbqa/config.py` (defaults to `True`)
+- **Frontend toggle:** "Auto-inject journal into context" in `pages/4_Settings.py` → Agent Configuration section (above Synthesis Configuration)
+- **Tradeoff:** disabling yields a leaner conversation (no periodic refresh tokens), but the agent must track its own progress solely from tool-result history; useful when the model has strong working memory or when minimizing context size is critical
+
+**How synthesis works (when enabled):**
+
+1. `_run_synthesis` calls `GetJournalSummary` to obtain the rendered journal text.
+2. A minimal two-message conversation is built: `[system_prompt, synthesis_prompt(journal + query)]`. No conversation history — this is the primary token saving (30-80k tokens per question).
+3. If synthesis returns a failure phrase ("cannot answer", "not found", etc.) but the journal contains `discovered values` or `verified facts` markers, a re-prompt is issued with the rendered journal data.
+4. The `has_data` check keys off literal strings emitted by the renderer: `"discovered values"` (excluding `"no values discovered yet"`), `"verified facts"`, `"partial answer:"`, `"orkgr:"`. Do not change these marker strings in `GetJournalSummary` without updating the heuristic in `_run_synthesis`.
 
 **Benefits:**
 - Use faster/cheaper model for synthesis

@@ -24,7 +24,7 @@ except Exception as e:
 import copy
 edited = copy.deepcopy(config)
 
-PROVIDERS = ["openrouter", "kit"]
+PROVIDERS = ["openrouter", "kit", "llamacpp"]
 
 # ── LLM Configuration ───────────────────────────────────────────────────────
 st.markdown("### LLM Configuration")
@@ -50,8 +50,8 @@ with col2:
     chat_temp = st.slider(
         "Chat Temperature",
         min_value=0.0,
-        max_value=1.0,
-        value=float(edited["llm"].get("chat_temperature", 0.2)),
+        max_value=2.0,
+        value=min(float(edited["llm"].get("chat_temperature", 1.0)), 2.0),
         step=0.05,
     )
     edited["llm"]["chat_temperature"] = chat_temp
@@ -60,35 +60,136 @@ with col2:
         "Chat Max Tokens",
         min_value=100,
         max_value=100000,
-        value=int(edited["llm"].get("chat_max_tokens", 15000)),
+        value=int(edited["llm"].get("chat_max_tokens", 16000)),
         step=500,
     )
     edited["llm"]["chat_max_tokens"] = chat_max_tokens
+
+# ── Agent Configuration ──────────────────────────────────────────────────────
+st.markdown("### Agent Configuration")
+
+agent_cfg = edited.get("agent", {})
+
+auto_inject = st.toggle(
+    "Auto-inject journal into context",
+    value=bool(agent_cfg.get("auto_inject_journal", True)),
+    help=(
+        "When enabled, the journal summary is periodically injected into the "
+        "agent's context and an answer prompt is appended after the agent "
+        "calls GetJournalSummary. Disable to let the agent rely solely on its "
+        "own tool-result history (GetJournalSummary is still available as a "
+        "tool it can call explicitly)."
+    ),
+    key="agent_auto_inject_journal",
+)
+agent_cfg["auto_inject_journal"] = auto_inject
+edited["agent"] = agent_cfg
 
 # ── Synthesis Configuration ──────────────────────────────────────────────────
 st.markdown("### Synthesis Configuration")
 
 synthesis = edited.get("synthesis", {})
-syn_col1, syn_col2 = st.columns(2)
+
+syn_enabled = st.toggle(
+    "Run synthesis step",
+    value=bool(synthesis.get("synthesis_enabled", True)),
+    help=(
+        "When enabled, a dedicated synthesis LLM call shapes the final answer "
+        "from the journal. When disabled, the agent's own final message is "
+        "returned directly (skips one LLM call, but answer shape is less "
+        "deterministic)."
+    ),
+    key="syn_enabled",
+)
+synthesis["synthesis_enabled"] = syn_enabled
+
+SYNTHESIS_MODES = ["benchmark", "conversational"]
+current_mode = synthesis.get("synthesis_mode", "benchmark")
+if current_mode not in SYNTHESIS_MODES:
+    current_mode = "benchmark"
+mode_labels = {
+    "benchmark": "Benchmark — short exact-match answers (for evaluation)",
+    "conversational": "Conversational — verbose, human-friendly answers",
+}
+syn_mode = st.radio(
+    "Answer style",
+    options=SYNTHESIS_MODES,
+    index=SYNTHESIS_MODES.index(current_mode),
+    format_func=lambda m: mode_labels[m],
+    horizontal=True,
+    key="syn_mode",
+)
+synthesis["synthesis_mode"] = syn_mode
+
+syn_col1, syn_col2, syn_col3 = st.columns(3)
 
 with syn_col1:
+    current_syn_provider = synthesis.get("synthesis_provider", "openrouter")
+    syn_provider_idx = (
+        PROVIDERS.index(current_syn_provider)
+        if current_syn_provider in PROVIDERS
+        else 0
+    )
+    syn_provider = st.selectbox(
+        "Synthesis Provider", PROVIDERS, index=syn_provider_idx, key="syn_provider"
+    )
+    synthesis["synthesis_provider"] = syn_provider
+
+with syn_col2:
     syn_model = st.text_input(
         "Synthesis Model",
         value=synthesis.get("synthesis_model", ""),
     )
     synthesis["synthesis_model"] = syn_model
 
-with syn_col2:
+with syn_col3:
     syn_temp = st.slider(
         "Synthesis Temperature",
         min_value=0.0,
-        max_value=1.0,
-        value=float(synthesis.get("synthesis_temperature", 0.3)),
+        max_value=2.0,
+        value=min(float(synthesis.get("synthesis_temperature", 0.3)), 2.0),
         step=0.05,
     )
     synthesis["synthesis_temperature"] = syn_temp
 
 edited["synthesis"] = synthesis
+
+# ── Judge Configuration ──────────────────────────────────────────────────────
+st.markdown("### Judge Configuration")
+
+postproc = edited.get("postprocessing", {})
+judge_col1, judge_col2, judge_col3 = st.columns(3)
+
+with judge_col1:
+    current_judge_provider = postproc.get("judge_provider", "openrouter")
+    judge_provider_idx = (
+        PROVIDERS.index(current_judge_provider)
+        if current_judge_provider in PROVIDERS
+        else 0
+    )
+    judge_provider = st.selectbox(
+        "Judge Provider", PROVIDERS, index=judge_provider_idx, key="judge_provider"
+    )
+    postproc["judge_provider"] = judge_provider
+
+with judge_col2:
+    judge_model = st.text_input(
+        "Judge Model",
+        value=postproc.get("judge_model", ""),
+    )
+    postproc["judge_model"] = judge_model
+
+with judge_col3:
+    judge_temp = st.slider(
+        "Judge Temperature",
+        min_value=0.0,
+        max_value=2.0,
+        value=min(float(postproc.get("judge_temperature", 0.3)), 2.0),
+        step=0.05,
+    )
+    postproc["judge_temperature"] = judge_temp
+
+edited["postprocessing"] = postproc
 
 # ── Search Configuration ─────────────────────────────────────────────────────
 st.markdown("### Search Configuration")

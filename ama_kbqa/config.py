@@ -128,7 +128,7 @@ def get_chat_temperature() -> float:
         float: The chat temperature value
     """
     config = load_config()
-    return config["llm"].get("chat_temperature", 0.2)
+    return config["llm"].get("chat_temperature", 1.0)
 
 
 def get_chat_max_tokens() -> int:
@@ -138,7 +138,7 @@ def get_chat_max_tokens() -> int:
         int: The max tokens value
     """
     config = load_config()
-    return config["llm"].get("chat_max_tokens", 4000)
+    return config["llm"].get("chat_max_tokens", 16000)
 
 
 def get_chat_model_provider() -> Optional[str]:
@@ -268,6 +268,10 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
     # Check if API key is specified directly in config
     if "api_key" in provider_config:
         return provider_config["api_key"]
+
+    # Local providers that don't require an API key (e.g., self-hosted llama.cpp)
+    if provider == "llamacpp":
+        return "sk-no-key-required"
 
     # Map providers to their environment variable names
     env_var_map = {
@@ -410,7 +414,7 @@ def get_synthesis_temperature() -> float:
         return config["synthesis"].get("synthesis_temperature", 0.2)
     else:
         # Fallback to chat temperature if synthesis not configured
-        return config["llm"].get("chat_temperature", 0.2)
+        return config["llm"].get("chat_temperature", 1.0)
 
 
 def get_synthesis_max_tokens() -> int:
@@ -427,6 +431,55 @@ def get_synthesis_max_tokens() -> int:
     else:
         # Default to 2000 tokens for synthesis
         return 2000
+
+
+def get_auto_inject_journal() -> bool:
+    """Whether to auto-inject journal summaries into the tool-loop context.
+
+    When True (default), the base agent:
+      - periodically injects a GetJournalSummary refresh every N iterations
+      - injects an "answer now" prompt right after the agent calls
+        GetJournalSummary itself
+
+    When False, the agent still has GetJournalSummary available as a tool but
+    no journal text is auto-pushed into the conversation. The agent must read
+    its own tool results to track state.
+
+    Returns:
+        bool: True to enable auto-injection (default), False to disable.
+    """
+    config = load_config()
+    return bool(config.get("agent", {}).get("auto_inject_journal", True))
+
+
+def get_synthesis_enabled() -> bool:
+    """Whether to run the dedicated synthesis LLM step after the tool loop.
+
+    When False, the agent's own final assistant message is returned directly
+    as the answer, skipping the second (synthesis) LLM call entirely.
+
+    Returns:
+        bool: True if synthesis is enabled (default), False to bypass.
+    """
+    config = load_config()
+    return bool(config.get("synthesis", {}).get("synthesis_enabled", True))
+
+
+def get_synthesis_mode() -> str:
+    """Get the synthesis answer style.
+
+    Returns:
+        "benchmark" (short exact-match answers) or
+        "conversational" (verbose, user-friendly answers). Default: "benchmark".
+    """
+    config = load_config()
+    mode = config.get("synthesis", {}).get("synthesis_mode", "benchmark")
+    if mode not in ("benchmark", "conversational"):
+        logger.warning(
+            f"Unknown synthesis_mode '{mode}', falling back to 'benchmark'"
+        )
+        return "benchmark"
+    return mode
 
 
 def get_synthesis_provider_preferences() -> Optional[dict]:
