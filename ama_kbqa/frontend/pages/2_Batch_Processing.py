@@ -29,6 +29,10 @@ AVAILABLE_MODELS = [
     "gpt-oss-120b-kit",
     "qwen3-vl-235b-kit",
     "gpt-4.1-mini-kit",
+    "gemma-4-26b",
+    "gemma-4-31b",
+    "qwen3.5-35b",
+    "qwen3.5-27b",
 ]
 
 # ── Session state init ───────────────────────────────────────────────────────
