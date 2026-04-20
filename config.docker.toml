@@ -15,7 +15,7 @@ synthesis_model = "deepseek/deepseek-v3.2"
 synthesis_model_provider = ""
 synthesis_temperature = 0.7
 synthesis_max_tokens = 2048
-synthesis_mode = "conversational"
+synthesis_mode = "benchmark"
 
 [openrouter]
 base_url = "https://openrouter.ai/api/v1"
@@ -34,11 +34,11 @@ embedding_model = "local-model"
 api_key = "sk-no-key-required"
 
 [database]
-qdrant_host = "localhost"
-qdrant_port = 6335
+qdrant_host = "qdrant"
+qdrant_port = 6333
 collection_entities = "kqapro-entities"
 collection_relations = "kqapro-relations"
-virtuoso_endpoint = "http://localhost:8890/sparql"
+virtuoso_endpoint = "http://virtuoso:8890/sparql"
 
 [search]
 top_n = 5

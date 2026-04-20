@@ -40,8 +40,9 @@ Step-by-step guides for common tasks.
 
 | Document | Description |
 |----------|-------------|
-| [database_setup.md](SOP/database_setup.md) | Setting up Virtuoso and Qdrant databases |
+| [database_setup.md](SOP/database_setup.md) | Setting up Virtuoso and Qdrant databases | *(file referenced but not yet created — see hetzner_deployment.md for Qdrant restore and RDF load steps)* |
 | [running_batch_processing.md](SOP/running_batch_processing.md) | Running batch benchmarks with LLM judge |
+| [hetzner_deployment.md](SOP/hetzner_deployment.md) | Hetzner VPS deployment runbook: 3-service compose stack, Qdrant port, frontend container, RDF bootstrap, SSH tunnel |
 | [adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) | Checklist for adding KQAPro tools that produce answer values (journal write invariants) |
 | [changing_llm_provider.md](SOP/changing_llm_provider.md) | Configuring different LLM providers |
 
@@ -54,6 +55,15 @@ Feature requests and implementation tracking.
 | [generic-framework-implementation.md](Tasks/generic-framework-implementation.md) | ✅ **Complete** | Generic KBQA framework with BaseKBQAAgent, adapters, 97 tests |
 | [sciqa-agent-implementation.md](Tasks/sciqa-agent-implementation.md) | ✅ **Complete** | SciQA/ORKG scientific KG agent with 468 ground truth Q&A |
 | [scratchpad-enforced-agent-loop.md](Tasks/scratchpad-enforced-agent-loop.md) | ✅ **Complete** | Scratchpad-first agent loop with tool response truncation and journal reflection |
+| [benchmark-persistence-refactor.md](Tasks/benchmark_persistence_refactor.md) | 📋 **Planned** | Decouple benchmark runs from Streamlit session; incremental disk writes + job_id reconnect (see Orca's `batch_queue.py` for the reference pattern) |
+
+---
+
+### Changelog
+
+| Document | Description |
+|----------|-------------|
+| [CHANGELOG.md](CHANGELOG.md) | Doc-affecting changes, newest first |
 
 ---
 
