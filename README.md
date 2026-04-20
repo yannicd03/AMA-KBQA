@@ -45,6 +45,11 @@ docker compose up -d
 
 This starts **Virtuoso** (SPARQL endpoint, port 8890) and **Qdrant** (vector DB, port 6333).
 
+> **Note (Hetzner deployment):** On the Hetzner VPS, Qdrant is mapped to host port **6335**
+> (to avoid collision with the Orca project). The `config.toml` there already reflects this.
+> A third `frontend` service is also included in the compose stack --
+> see [.agent/SOP/hetzner_deployment.md](.agent/SOP/hetzner_deployment.md).
+
 ### 4. Set Up Datasets
 
 > **Quick Setup:** To skip manual data processing, download the pre-built datasets and Qdrant snapshots from our [Google Drive](https://drive.google.com/drive/folders/1iEYFboH7l9yRa1xOcJgiYSZlu6Mk2Hhj?usp=sharing). The Drive contains:
@@ -105,11 +110,28 @@ ama-kbqa ask -s sciqa "What papers discuss machine learning?"
 
 ### Frontend (Streamlit)
 
+**Option A -- host install (local dev):**
+
 ```bash
 ama-kbqa-frontend
 ```
 
 This launches a multi-page web UI with Chat, Batch Processing, Evaluation, and Settings pages. Extra Streamlit arguments are passed through (e.g. `ama-kbqa-frontend --server.port 8502`).
+
+**Option B -- Docker container (server / Hetzner deployment):**
+
+The `frontend` service in `db/docker-compose.yml` builds and runs the Streamlit UI as a container alongside Virtuoso and Qdrant:
+
+```bash
+cd db
+docker compose up -d          # starts all 3 services including frontend
+# or just restart the frontend after a config change:
+docker compose restart frontend
+```
+
+The container uses `network_mode: host` so it can reach Qdrant and Virtuoso at `localhost` without config changes. `config.toml` is bind-mounted read-only -- edit on the host, then `docker compose restart frontend`. Access via SSH tunnel on port 8502.
+
+See [.agent/SOP/hetzner_deployment.md](.agent/SOP/hetzner_deployment.md) for the full deployment runbook.
 
 ### CLI
 
