@@ -282,6 +282,34 @@ BENCHMARK_MODELS: List[ModelConfig] = [
         base_url="https://ki-toolbox.scc.kit.edu/api/v1",
         api_key_env="KIT_API_KEY"
     ),
+    ModelConfig(
+        name="gemma-4-26b",
+        provider="openrouter",
+        model_id="google/gemma-4-26b-a4b-it",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
+        name="gemma-4-31b",
+        provider="openrouter",
+        model_id="google/gemma-4-31b-it",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
+        name="qwen3.5-35b",
+        provider="openrouter",
+        model_id="qwen/qwen3.5-35b-a3b",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
+    ModelConfig(
+        name="qwen3.5-27b",
+        provider="openrouter",
+        model_id="qwen/qwen3.5-27b",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY"
+    ),
 ]
 
 # LLM Judge configuration for multi-model mode (fast, cheap judge)
