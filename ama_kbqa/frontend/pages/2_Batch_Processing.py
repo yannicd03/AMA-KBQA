@@ -102,6 +102,17 @@ with st.form("batch_config"):
         default=[],
         help="Select models to benchmark. Leave empty to use the model from config.toml (single-model mode).",
     )
+    custom_models = st.text_input(
+        "Custom model IDs (comma-separated)",
+        value="",
+        help=(
+            "Free-text model IDs to append. Forms: "
+            "`provider:model_id` (providers: openrouter, kit) or bare model_id "
+            "(treated as openrouter). Examples: "
+            "`openrouter:minimax/minimax-m2.5`, `kit:azure.o4-mini`, "
+            "`openrouter/elephant-alpha`. Comma-separated."
+        ),
+    )
 
     # ── Advanced Options ─────────────────────────────────────────────────────
     with st.expander("Advanced Options"):
@@ -167,8 +178,10 @@ if submitted and not st.session_state.batch_running:
     if questionnaire.strip():
         cmd += ["--questionnaire", questionnaire.strip()]
 
-    if models:
-        cmd += ["--models"] + models
+    extra_models = [m.strip() for m in custom_models.split(",") if m.strip()]
+    all_models = list(dict.fromkeys(models + extra_models))
+    if all_models:
+        cmd += ["--models"] + all_models
 
     if timeout != 300:
         cmd += ["--timeout", str(timeout)]
