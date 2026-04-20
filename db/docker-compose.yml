@@ -51,7 +51,7 @@ services:
       # (host-side config.toml still uses localhost for direct ama-kbqa CLI use).
       - ../config.docker.toml:/app/config.toml
       - ../.streamlit_cache:/app/.streamlit
-      - ./datasets:/app/db/datasets:ro
+      - ./datasets:/app/db/datasets
       - ./kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
       - ./sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro
       - ../benchmark_results:/app/benchmark_results
