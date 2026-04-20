@@ -6,6 +6,7 @@ that host knowledge graph tools.
 """
 
 from __future__ import annotations
+import os
 import sys
 import asyncio
 from pathlib import Path
@@ -85,11 +86,13 @@ class MCPClient:
             raise FileNotFoundError(f"MCP server not found: {self.server_path}")
 
         try:
+            # env=None would make MCP SDK use a minimal default env (PATH only),
+            # stripping API keys from the server subprocess. Pass parent env.
             client_gen = stdio_client(
                 StdioServerParameters(
                     command=sys.executable,
                     args=[str(self.server_path)],
-                    env=None
+                    env=os.environ.copy(),
                 )
             )
 
