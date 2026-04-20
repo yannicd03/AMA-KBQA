@@ -78,6 +78,67 @@ load_dotenv(override=True)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _git_commit_sha() -> Optional[str]:
+    """Return short git HEAD sha, or None if not a repo / git unavailable."""
+    try:
+        import subprocess
+        out = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip() or None
+    except Exception:
+        pass
+    return None
+
+
+def _write_run_manifest(output_dir: Path, args, resolved_models) -> None:
+    """Persist a full reproducibility snapshot of this batch run.
+
+    Writes <output_dir>/run_manifest.json containing:
+      - timestamp, git SHA, python version, cwd, command line
+      - parsed CLI args (argparse Namespace → dict)
+      - resolved ModelConfig list (name, provider, model_id, base_url, api_key_env)
+      - full config.toml contents
+    """
+    try:
+        import platform
+        import tomllib
+        config_path = PROJECT_ROOT / "config.toml"
+        config_snapshot: Any = None
+        if config_path.exists():
+            with open(config_path, "rb") as f:
+                config_snapshot = tomllib.load(f)
+
+        manifest = {
+            "timestamp": datetime.now().isoformat(),
+            "git_commit": _git_commit_sha(),
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+            "cwd": str(Path.cwd()),
+            "command_line": sys.argv,
+            "cli_args": {k: v for k, v in vars(args).items()},
+            "resolved_models": [
+                {
+                    "name": m.name,
+                    "provider": m.provider,
+                    "model_id": m.model_id,
+                    "base_url": m.base_url,
+                    "api_key_env": m.api_key_env,
+                }
+                for m in resolved_models
+            ],
+            "config_toml": config_snapshot,
+        }
+
+        with open(output_dir / "run_manifest.json", "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False, default=str)
+    except Exception as e:
+        # Manifest is diagnostic — never fail the run if it can't be written.
+        print(f"WARNING: could not write run_manifest.json: {e}")
+
+
 # ============================================================================
 # DATA STRUCTURES
 # ============================================================================
@@ -1513,9 +1574,31 @@ Examples:
 
     # Determine mode: multi-model or single-model
     if args.models:
-        models = [m for m in BENCHMARK_MODELS if m.name in args.models]
+        by_name = {m.name: m for m in BENCHMARK_MODELS}
+        provider_defaults = {
+            "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+            "kit": ("https://ki-toolbox.scc.kit.edu/api/v1", "KIT_API_KEY"),
+        }
+        models = []
+        for entry in args.models:
+            if entry in by_name:
+                models.append(by_name[entry])
+                continue
+            # Free-form entry: either "provider:model_id" or bare model_id
+            if ":" in entry and entry.split(":", 1)[0] in provider_defaults:
+                provider, model_id = entry.split(":", 1)
+            else:
+                provider, model_id = "openrouter", entry
+            base_url, api_key_env = provider_defaults[provider]
+            models.append(ModelConfig(
+                name=entry.replace("/", "_").replace(":", "_"),
+                provider=provider,
+                model_id=model_id,
+                base_url=base_url,
+                api_key_env=api_key_env,
+            ))
         if not models:
-            print(f"ERROR: No matching models found. Available: {[m.name for m in BENCHMARK_MODELS]}")
+            print(f"ERROR: No models resolved. Available presets: {[m.name for m in BENCHMARK_MODELS]}")
             sys.exit(1)
     else:
         # Single-model mode: use model from config.toml
@@ -1553,6 +1636,8 @@ Examples:
         output_dir = base_dir / f"{date_prefix}-{n}"
 
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    _write_run_manifest(output_dir, args, models)
 
     # Resolve generate_fewshot: CLI flag > config.toml > False
     generate_fewshot = args.generate_fewshot
