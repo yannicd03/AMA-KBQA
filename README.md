@@ -39,7 +39,6 @@ Review `config.toml` for LLM provider settings.
 ### 3. Start Docker Services
 
 ```bash
-cd db
 docker compose up -d
 ```
 

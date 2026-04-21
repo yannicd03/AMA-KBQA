@@ -79,7 +79,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _git_commit_sha() -> Optional[str]:
-    """Return short git HEAD sha, or None if not a repo / git unavailable."""
+    """Return short git HEAD sha, or None if unavailable.
+
+    Resolution order (first hit wins):
+      1. $GIT_COMMIT / $GIT_COMMIT_SHA — set by CI or baked into a Docker image
+         at build time (the container has no .git/ so `git` below returns None).
+      2. `git rev-parse --short HEAD` in PROJECT_ROOT.
+    """
+    for env_var in ("GIT_COMMIT", "GIT_COMMIT_SHA"):
+        val = os.environ.get(env_var)
+        if val:
+            return val.strip()[:12] or None
+
     try:
         import subprocess
         out = subprocess.run(
@@ -1220,6 +1231,28 @@ async def run_benchmark_for_model_agent(
     results: List[QuestionResult] = []
     summary = {}
 
+    # Fail-fast MCP startup check: if the tool server can't come up, abort the
+    # whole run rather than writing N identical "Failed to start MCP server"
+    # rows. Prior runs (2026-04-20-1, -3) silently failed this way.
+    try:
+        await agent._init_mcp()
+    except Exception as e:
+        log_print(f"[FATAL] MCP server failed to start for {model.name}/{agent_name}: {e}")
+        log_print(f"[FATAL] Aborting this model/agent run; no questions will be processed.")
+        try:
+            await agent.close()
+        except Exception:
+            pass
+        # Persist the failure context so the manifest + console_output
+        # capture *why* the run is empty, instead of looking like it was never attempted.
+        console_out_path = result_dir / "console_output.txt"
+        console_out_path.write_text(console_log.getvalue(), encoding="utf-8")
+        return {
+            "error": f"MCP startup failed: {e}",
+            "model": model.name,
+            "agent": agent_name,
+        }
+
     try:
         pbar = tqdm(questions, desc=f"{model.name}/{agent_name}", unit="q")
 
@@ -1599,6 +1632,18 @@ Examples:
                         help="Generate LLM-based fewshot examples from results (default: from config.toml)")
 
     args = parser.parse_args()
+
+    # Timeout sanity check. kqapro/sciqa agents routinely need 30–60 s per
+    # question (FindNode + several tool calls); run 2026-04-20-4 hit --timeout 60
+    # and killed its only question mid-reasoning after 108k tokens.
+    MIN_SAFE_TIMEOUT = 120
+    if args.timeout < MIN_SAFE_TIMEOUT:
+        print(
+            f"WARNING: --timeout {args.timeout}s is below the recommended floor of "
+            f"{MIN_SAFE_TIMEOUT}s. Agents typically need 30–60s per question, so "
+            f"low timeouts produce false-positive error rows. Consider --timeout 300.",
+            file=sys.stderr,
+        )
 
     # Determine mode: multi-model or single-model
     if args.models:

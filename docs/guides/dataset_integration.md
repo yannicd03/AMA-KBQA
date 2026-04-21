@@ -125,9 +125,9 @@ db/datasets/<dataset_name>/
 The Docker compose file maps `db/datasets` to `/usr/share/proj` in the Virtuoso container:
 
 ```yaml
-# db/docker-compose.yml
+# docker-compose.yml
 volumes:
-  - ./datasets:/usr/share/proj:rw
+  - ./db/datasets:/usr/share/proj:rw
 ```
 
 ### Choose a Graph URI

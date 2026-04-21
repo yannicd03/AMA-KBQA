@@ -6,7 +6,7 @@ chat_max_tokens = 16000
 embedding_temperature = 0.0
 
 [agent]
-auto_inject_journal = false
+auto_inject_journal = true
 
 [synthesis]
 synthesis_enabled = false

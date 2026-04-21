@@ -66,13 +66,16 @@ class MCPClient:
         """Check if the client is connected."""
         return self._connected
 
-    async def start(self) -> None:
+    async def start(self, max_attempts: int = 3, backoff_seconds: float = 1.0) -> None:
         """
         Start the MCP server and establish connection.
 
-        Raises:
-            FileNotFoundError: If the server file doesn't exist
-            RuntimeError: If connection fails
+        Retries on transient startup failures (e.g. subprocess stdio race,
+        slow first-time import). Raises only after `max_attempts` failures.
+
+        Args:
+            max_attempts: Total number of start attempts (>=1).
+            backoff_seconds: Initial delay between attempts; doubles each retry.
         """
         if self._connected:
             return
@@ -85,38 +88,61 @@ class MCPClient:
             )
             raise FileNotFoundError(f"MCP server not found: {self.server_path}")
 
-        try:
-            # env=None would make MCP SDK use a minimal default env (PATH only),
-            # stripping API keys from the server subprocess. Pass parent env.
-            client_gen = stdio_client(
-                StdioServerParameters(
-                    command=sys.executable,
-                    args=[str(self.server_path)],
-                    env=os.environ.copy(),
-                )
-            )
-
-            read, write = await self.exit_stack.enter_async_context(client_gen)
-            self.session = await self.exit_stack.enter_async_context(
-                ClientSession(read, write)
-            )
-            await self.session.initialize()
-            self._connected = True
-
-        except Exception as e:
-            # Clean up partially entered async contexts to avoid orphaned anyio tasks
+        last_err: Optional[BaseException] = None
+        for attempt in range(1, max_attempts + 1):
             try:
-                await self.exit_stack.aclose()
-            except Exception:
-                pass
-            self.exit_stack = AsyncExitStack()
-            self.session = None
-            trace(
-                self.agent_name,
-                f"{COLOR_RED}Failed to start MCP server: {e}{COLOR_END}",
-                COLOR_RED
-            )
-            raise RuntimeError(f"Failed to start MCP server: {e}")
+                # env=None would make MCP SDK use a minimal default env (PATH only),
+                # stripping API keys from the server subprocess. Pass parent env.
+                client_gen = stdio_client(
+                    StdioServerParameters(
+                        command=sys.executable,
+                        args=[str(self.server_path)],
+                        env=os.environ.copy(),
+                    )
+                )
+
+                read, write = await self.exit_stack.enter_async_context(client_gen)
+                self.session = await self.exit_stack.enter_async_context(
+                    ClientSession(read, write)
+                )
+                await self.session.initialize()
+                self._connected = True
+                if attempt > 1:
+                    trace(
+                        self.agent_name,
+                        f"{COLOR_GREEN}MCP server started on attempt {attempt}/{max_attempts}{COLOR_END}",
+                        COLOR_GREEN,
+                    )
+                return
+
+            except Exception as e:
+                last_err = e
+                # Clean up partially entered async contexts to avoid orphaned anyio tasks
+                try:
+                    await self.exit_stack.aclose()
+                except Exception:
+                    pass
+                self.exit_stack = AsyncExitStack()
+                self.session = None
+
+                if attempt < max_attempts:
+                    trace(
+                        self.agent_name,
+                        f"{COLOR_YELLOW}MCP start attempt {attempt}/{max_attempts} failed: {e}. "
+                        f"Retrying in {backoff_seconds:.1f}s...{COLOR_END}",
+                        COLOR_YELLOW,
+                    )
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+
+        trace(
+            self.agent_name,
+            f"{COLOR_RED}Failed to start MCP server after {max_attempts} attempts: {last_err}{COLOR_END}",
+            COLOR_RED,
+        )
+        raise RuntimeError(
+            f"Failed to start MCP server after {max_attempts} attempts: {last_err}"
+        )
 
     async def list_tools(self) -> List[McpTool]:
         """
