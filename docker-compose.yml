@@ -15,9 +15,9 @@ services:
       # 1. Bind mount for the persistent database files
       - ama_virtuoso_data:/database
       # 2. Bind mount for your data to be loaded
-      - ./datasets/kqapro:/usr/share/proj
+      - ./db/datasets/kqapro:/usr/share/proj
       # 3. SciQA/ORKG dataset mount
-      - ./datasets/SciQA:/usr/share/proj/sciqa
+      - ./db/datasets/SciQA:/usr/share/proj/sciqa
     environment:
       - DBA_PASSWORD=kit_ama_kbqa
       - SPARQL_UPDATE=true

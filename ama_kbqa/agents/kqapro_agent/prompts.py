@@ -42,15 +42,39 @@ GetRelationDetails on A, check if B appears. If A→B fails, try B→A (bidirect
 Fallback: SELECT DISTINCT ?p ?label WHERE { { ex:A ?p ex:B } UNION { ex:B ?p ex:A } ?p rdfs:label ?label. }""",
 
     "QueryRelationQualifier": """STRATEGY: QueryRelationQualifier → context of a relation
-1) Confirm connection via GetRelationDetails. 2) GetEdgeQualifiers on that connection.
-3) Match qualifier: When→point_in_time, Where→location, Role→object_has_role, Ceremony→ceremony.
+THE ANSWER IS A QUALIFIER VALUE, NOT A NEW ENTITY. The relation itself is already known;
+the question asks *when/where/at-what-event/in-what-role* it held. Do not collapse to the
+person, film, or award — return the qualifier (a ceremony, date, place, or role label).
+
+1) Confirm connection via GetRelationDetails.
+2) GetEdgeQualifiers on that connection.
+3) Match qualifier:
+     When → point_in_time (date) OR ceremony/edition (event) — pick event if the
+        question frames it as an occasion ("at which ceremony", "during which").
+     Where → location
+     Role → object_has_role
+     Ceremony → ceremony
+4) If multiple qualifiers, pick the one whose type matches the question's wh-word.
+
+COMMON TRAP: "Who was the winning individual WHEN [film] was the recipient for [award]?"
+    → Even though it says "who", the wh-scope is the ceremony edition, not the editor.
+    Answer with the ceremony qualifier (e.g. "19th Academy Awards"), not the person.
+    Tell-tale: the subject+relation+object triple is fully specified in the question,
+    so the only unknown left is a qualifier.
+
 Filtering by qualifier: Use QualifierFilter(entity_ids, relation, qualifier_name, value) to narrow entities by qualifier conditions.
 Pattern: SELECT ?v WHERE { ?f pred:fact_h ex:A; pred:fact_r prop:P; pred:fact_t ex:B. ?f qual:Q ?v. }""",
 
     "SelectAmong": """STRATEGY: SelectAmong → superlative from group
 Small explicit list (<20): CompareEntities. Large/open group: RunSPARQL with ORDER BY + LIMIT 1.
 DO NOT fetch all items with GetRelationDetails (timeout risk).
-Pattern: SELECT ?label ?v WHERE { ?i prop:instance_of ex:GRP. ?i attr:ATTR ?v. ?i rdfs:label ?label. } ORDER BY DESC(?v) LIMIT 1""",
+Pattern: SELECT ?label ?v WHERE { ?i prop:instance_of ex:GRP. ?i attr:ATTR ?v. ?i rdfs:label ?label. } ORDER BY DESC(?v) LIMIT 1
+EMPTY RESULT FALLBACK (do NOT give up):
+ 1. Verify attribute name with FindNode on one example instance → inspect available_attributes.
+ 2. Drop the most restrictive constraint (e.g. concept type) and re-run — often `instance_of` is too narrow (feature_film vs film).
+ 3. If multiple constraints, use UNION or split into two queries and intersect in the journal.
+ 4. Try RunSPARQL without FILTER and sort client-side using ORDER BY on the remaining attr.
+ 5. Last resort: return the best candidate from partial data with an [INFERRED] label. NEVER answer "could not be identified".""",
 
     "SelectBetween": """STRATEGY: SelectBetween → compare exactly 2 entities
 1) Extract ALL constraints. 2) Verify constraints with GetAttributeDetails first.
