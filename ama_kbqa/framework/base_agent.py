@@ -583,6 +583,17 @@ Change strategy or acknowledge the data doesn't exist."""
             # Populate known tool names for validation (Fix 6)
             self._known_tool_names = {t.name for t in mcp_tools}
 
+            # For text-mode models: attach a plain-text tool catalog so the
+            # model can produce <tool_call>...</tool_call> blocks without us
+            # passing OpenAI-style `tools=...` on the API call (which makes
+            # some endpoints expect native function-call output and silently
+            # revert to prose when the model can't comply).
+            if self._text_tool_call_mode:
+                from ama_kbqa.framework.text_tool_calls import build_text_mode_tool_catalog
+                catalog = build_text_mode_tool_catalog(openai_tools)
+                self._messages.append({"role": "system", "content": catalog})
+                self._trace("Injected text-mode tool catalog", COLOR_CYAN)
+
             # Read per-agent config for tool caps
             config = self.get_config()
             self._find_resource_cap = config.domain_settings.get("find_resource_cap", 8)
@@ -778,7 +789,12 @@ Change strategy or acknowledge the data doesn't exist."""
             # to force the model to call a tool instead of "thinking"
             tc = "required" if iteration_count <= 3 else "auto"
             self._trace(f"Calling LLM with {len(self._messages)} messages (tool_choice={tc})...", COLOR_YELLOW)
-            response = self._llm_call(tools=tools, tool_choice=tc)
+            # Text-mode: don't pass tools= to the API call. The catalog is in
+            # the system prompt and the format is in the format-instruction.
+            if self._text_tool_call_mode:
+                response = self._llm_call(tools=None, tool_choice=None)
+            else:
+                response = self._llm_call(tools=tools, tool_choice=tc)
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
 
@@ -1275,14 +1291,17 @@ Change strategy or acknowledge the data doesn't exist."""
         tool_choice: Optional[str] = None,
     ):
         """Execute LLM call with tools and optional tool_choice."""
-        call_params = {
+        call_params: Dict[str, Any] = {
             "model": self.model,
             "messages": self._messages,
             "timeout": self.request_timeout,
             "temperature": get_chat_temperature(),
             "max_tokens": get_chat_max_tokens(),
-            "tools": tools
         }
+        # Only include tools= when we actually have some — for text-mode models
+        # we pass tools=None on purpose, and some servers reject a literal null.
+        if tools:
+            call_params["tools"] = tools
 
         if tool_choice and tools:
             call_params["tool_choice"] = tool_choice
