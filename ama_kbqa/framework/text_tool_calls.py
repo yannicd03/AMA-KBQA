@@ -136,3 +136,48 @@ def strip_tool_call_blocks(content: Optional[str]) -> str:
     if not content:
         return ""
     return _TOOL_CALL_RE.sub("", content).strip()
+
+
+def build_text_mode_tool_catalog(openai_tools: List[Any]) -> str:
+    """Render an OpenAI-format tool list as a plain-text catalog for text-mode
+    models. The catalog is appended as a system message so the model knows what
+    tools are available without us having to send `tools=...` on the API call
+    (which causes some endpoints to expect native function-call output and
+    silently revert to prose when the underlying model can't comply).
+
+    `openai_tools` is the list returned by `MCPClient.convert_tools_to_openai_format`.
+    Each entry is a dict shaped like:
+      {"type": "function", "function": {"name": ..., "description": ..., "parameters": {...}}}
+    """
+    lines = [
+        "AVAILABLE TOOLS — call these via the <tool_call>...</tool_call> format above.",
+        "Each tool's parameters are JSON Schema; pass the matching keys in the `arguments` object.",
+        "",
+    ]
+    for t in openai_tools:
+        fn = t.get("function") if isinstance(t, dict) else None
+        if not fn:
+            continue
+        name = fn.get("name", "?")
+        desc = (fn.get("description") or "").strip()
+        # Keep description short — first line / first ~250 chars.
+        desc_short = desc.splitlines()[0][:250] if desc else ""
+        params = fn.get("parameters", {})
+        props = params.get("properties", {}) if isinstance(params, dict) else {}
+        required = set(params.get("required", []) if isinstance(params, dict) else [])
+        param_parts = []
+        for pname, pschema in props.items():
+            if not isinstance(pschema, dict):
+                continue
+            ptype = pschema.get("type") or pschema.get("anyOf", [{}])[0].get("type") or "?"
+            marker = "*" if pname in required else ""
+            param_parts.append(f"{pname}{marker}:{ptype}")
+        sig = ", ".join(param_parts)
+        lines.append(f"- {name}({sig})")
+        if desc_short:
+            lines.append(f"    {desc_short}")
+    lines.append("")
+    lines.append("Asterisk (*) marks required parameters. Always emit one or more")
+    lines.append("<tool_call>{\"name\": \"...\", \"arguments\": {...}}</tool_call> blocks per turn,")
+    lines.append("UNTIL you have enough data to answer — then reply with the final answer in plain text.")
+    return "\n".join(lines)
