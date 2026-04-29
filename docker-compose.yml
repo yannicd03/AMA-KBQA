@@ -5,11 +5,12 @@ services:
   virtuoso:
     image: openlink/virtuoso-opensource-7
     container_name: virtuoso_ama_kbqa
+    restart: unless-stopped
     ports:
       # 8890 is the HTTP port (set in virtuoso.ini)
-      - "8890:8890"
+      - "127.0.0.1:8890:8890"
       # 1111 is the SQL port (set in virtuoso.ini)
-      - "1111:1111"
+      - "127.0.0.1:1111:1111"
 
     volumes:
       # 1. Bind mount for the persistent database files
@@ -25,11 +26,47 @@ services:
   qdrant:
     image: qdrant/qdrant
     container_name: qdrant_ama_kbqa
+    restart: unless-stopped
     ports:
-      - 6333:6333
+      - "127.0.0.1:6335:6333"
     volumes:
       - ama_qdrant_data:/qdrant/storage
 
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: ama-kbqa-frontend
+    container_name: frontend_ama_kbqa
+    restart: unless-stopped
+    # Bridge network (default) so the frontend can reach 'qdrant' and
+    # 'virtuoso' by service name; ports: exposes Streamlit to 127.0.0.1:8502
+    # on the host (SSH-tunnel-only per our deployment model).
+    ports:
+      - "127.0.0.1:8502:8502"
+    env_file:
+      - ./.env
+    volumes:
+      # Container-specific config that references service-name hostnames
+      # (host-side config.toml still uses localhost for direct ama-kbqa CLI use).
+      - ./config.docker.toml:/app/config.toml
+      - ./.streamlit_cache:/app/.streamlit
+      - ./db/datasets:/app/db/datasets
+      - ./db/kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
+      - ./db/sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro
+      - ./benchmark_results:/app/benchmark_results
+      - ./batch_results:/app/batch_results
+    depends_on:
+      qdrant:
+        condition: service_started
+      virtuoso:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8502/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 volumes:
   ama_qdrant_data:
   ama_virtuoso_data:

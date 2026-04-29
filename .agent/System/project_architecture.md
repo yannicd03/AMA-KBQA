@@ -14,7 +14,8 @@ The system uses a combination of:
 - **SPARQL queries** (Virtuoso)
 - **MCP (Model Context Protocol)** for tool communication
 
-**Platform:** Windows (all commands and paths are Windows-compatible)
+**Platform:** Linux (Hetzner VPS for server deployment; originally developed on Windows).
+Commands shown use Linux/bash syntax. Windows users may need path adjustments.
 
 ---
 
@@ -80,7 +81,7 @@ ama-kbqa/
 │       ├── test_state.py       # State management tests
 │       └── test_adapters.py    # Adapter tests
 ├── db/                         # Database utilities
-│   ├── docker-compose.yml      # Virtuoso + Qdrant setup
+│   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
 │   ├── populate_vector_db.py   # KQAPro Qdrant initialization
 │   ├── populate_sciqa_vectors.py # SciQA Qdrant initialization
 │   └── datasets/
@@ -580,7 +581,7 @@ User Question
 |---------|------|---------|
 | Virtuoso HTTP | 8890 | SPARQL endpoint |
 | Virtuoso SQL | 1111 | Direct SQL access |
-| Qdrant | 6333 | Vector database |
+| Qdrant | 6333 (default) / **6335 on Hetzner** | Vector database (host port offset on Hetzner to avoid Orca collision) |
 
 ### MCP Protocol
 
