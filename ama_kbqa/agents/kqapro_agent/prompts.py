@@ -9,13 +9,17 @@ to keep the main agent.py file more manageable.
 # These are injected during the pre-agent hook based on QtypePrediction results
 QTYPE_STRATEGIES = {
     "Count": """STRATEGY: Count → integer answer
-PREFER: CountEntities — returns the EXACT count (no truncation). Examples:
-  - "How many cities in Germany?" → CountEntities(concept="city", ...)
-  - "How many counties have pop > 7800 OR < 40M?" → CountEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name":"population","attribute_value":"40000000","operator":"<"}])
+USE CountEntities. It is the only tool you should reach for. It returns the EXACT count via SPARQL COUNT(DISTINCT) with NO truncation.
+
+  - "How many cities in Germany?" → first FindNode("Germany") → Q-id, then CountEntities(concept="city", entity_ids=...) — or use a relation pattern via FilterEntities + entity_ids.
+  - "How many counties pop > 7800 OR < 40M?" → CountEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name":"population","attribute_value":"40000000","operator":"<"}])
   - "How many mammals?" → CountEntities(concept="mammal", transitive_concept=True)
-DO NOT use FilterEntities + len() — it caps at limit=50 and silently lies above that.
-Small set already in journal (<20): just count what's there. Multi-hop joins / unusual shapes: RunSPARQL with COUNT(DISTINCT).
-Trust verified counts. Don't downgrade after verification.""",
+  - "How many films directed by Nolan?" → GetRelationDetails(Q25191, director, inverse) → entity_ids; then CountEntities(entity_ids=...).
+
+FORBIDDEN: FilterEntities + len(matches) [caps at limit=50, returns wrong number].
+FORBIDDEN as default: hand-written RunSPARQL COUNT [error-prone with KQAPro's namespaces]. Reach for it ONLY for genuinely 3+ hop joins where CountEntities can't express the join.
+
+Trust the integer CountEntities returns. Don't downgrade after verification.""",
 
     "QueryAttr": """STRATEGY: QueryAttr → attribute lookup
 Standard: FindNode → GetAttributeDetails (literals) or GetRelationDetails (linked entities).
@@ -68,28 +72,39 @@ Filtering by qualifier: Use QualifierFilter(entity_ids, relation, qualifier_name
 Pattern: SELECT ?v WHERE { ?f pred:fact_h ex:A; pred:fact_r prop:P; pred:fact_t ex:B. ?f qual:Q ?v. }""",
 
     "SelectAmong": """STRATEGY: SelectAmong → superlative from group
-PREFER: SelectExtreme — returns the actual winner via SPARQL ORDER BY (don't make the LLM compare manually). Examples:
+USE SelectExtreme. It runs SPARQL ORDER BY on the server and returns the actual winner — do NOT make the LLM compare values from CompareEntities by hand.
+
   - "Smallest former French region with pop != 97000?" → SelectExtreme(concept="former French region", attribute_name="population", mode="min", filter_attribute_name="population", filter_attribute_value="97000", filter_operator="!=")
   - "Top 3 most-populous cities?" → SelectExtreme(concept="city", attribute_name="population", mode="max", k=3)
   - "Longest film?" → SelectExtreme(concept="film", attribute_name="duration", mode="max")
-Small explicit list already in journal: CompareEntities for the table, then read off the extreme.
-DO NOT fetch all items with GetRelationDetails (timeout risk).
+
+FORBIDDEN as default: GetRelationDetails-fetch-everything-then-compare [timeout risk on large concepts].
+FORBIDDEN as default: RunSPARQL with hand-written ORDER BY [you'll get the namespaces or the bnode-unwrap wrong].
+
 EMPTY RESULT FALLBACK (do NOT give up):
  1. Verify attribute name with FindNode on one example instance → inspect available_attributes.
- 2. Drop the most restrictive constraint (e.g. concept type) and re-run — often `instance_of` is too narrow (feature_film vs film). Try transitive_concept=True.
- 3. If multiple constraints, use UNION or split into two queries and intersect in the journal.
- 4. Last resort: return the best candidate from partial data with an [INFERRED] label. NEVER answer "could not be identified".""",
+ 2. Try transitive_concept=True (the concept may need its subclasses, e.g. feature_film under film).
+ 3. Drop or relax the filter_attribute_* and re-run.
+ 4. Last resort: return best candidate from partial data with [INFERRED]. NEVER "could not be identified".""",
 
     "SelectBetween": """STRATEGY: SelectBetween → compare exactly 2 entities
-PREFER: SelectExtreme(entity_ids=[id_A, id_B], attribute_name=..., mode="max"|"min") returns the winner directly.
+USE SelectExtreme(entity_ids=[id_A, id_B], attribute_name=..., mode="max"|"min"). It returns the winner directly via SPARQL ORDER BY.
+
 For dates: "Who is older?" → mode="min" on date_of_birth (earlier date = older).
-1) Extract ALL constraints. 2) Verify constraints with GetAttributeDetails first.
-3) SelectExtreme over [id_A, id_B] OR CompareEntities for a side-by-side table.""",
+For dates: "More recent?" → mode="max".
+
+1) FindNode each entity to get its Q-id. 2) Verify each entity's constraints with GetAttributeDetails (films may share titles). 3) SelectExtreme over [id_A, id_B].
+
+CompareEntities is fine for diagnostic display ("show me both values") but SelectExtreme is the answer-producing call -- the LLM should not pick the winner by reading numbers from a table.""",
 
     "Verify": """STRATEGY: Verify → True/False
-PREFER: VerifyFact(subject_id, predicate, target) for plain fact-existence checks ("Is 129586 the visa number of X?", "Did Nolan direct Inception?"). Returns boolean.
-For numeric/date comparison: GetAttributeDetails → VerifyNumericCondition. For text equality: VerifyString. Never do mental math or guess string equality.
-Fallback: ASK { ex:ID attr:ATTR ?v. FILTER(?v > "VAL"^^xsd:decimal) }""",
+For fact-existence ("Is 129586 the visa number of X?", "Did Nolan direct Inception?", "Is X an instance of Y?"): USE VerifyFact(subject_id, predicate, target). It runs a single SPARQL ASK and returns TRUE/FALSE. predicate_type='auto' tries attribute first, then relation.
+
+For numeric/date COMPARISON ("Is the population > 1M?", "Was X released after 2000?"): GetAttributeDetails to fetch the value, then VerifyNumericCondition for the inequality. VerifyFact does NOT handle inequalities.
+
+For text equality ("Is the capital named Y?"): VerifyString.
+
+Never do mental math or guess string equality. Never reason "GetAttributeDetails returned nothing therefore the answer is no" — use VerifyFact for a definitive answer instead.""",
 
     "Query": """STRATEGY: General Query
 1) Extract all constraints. 2) Locate: ID→FindByAttribute, Name→FindNode.

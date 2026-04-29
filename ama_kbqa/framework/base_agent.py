@@ -121,6 +121,17 @@ class BaseKBQAAgent(ABC):
             {"role": "system", "content": self._get_system_prompt()}
         ]
 
+        # Some models on some endpoints (e.g. minimax-m2.7 on KIT) don't emit
+        # OpenAI-style structured tool_calls. Detect and append a plain-text
+        # tool-call format instruction so the client-side parser can pick them up.
+        from ama_kbqa.framework.text_tool_calls import (
+            needs_text_tool_calls,
+            TEXT_TOOL_CALL_INSTRUCTION,
+        )
+        self._text_tool_call_mode = needs_text_tool_calls(self.model)
+        if self._text_tool_call_mode:
+            self._messages.append({"role": "system", "content": TEXT_TOOL_CALL_INSTRUCTION})
+
     # =========================================================================
     # ABSTRACT METHODS - Must be implemented by subclasses
     # =========================================================================
@@ -780,6 +791,27 @@ Change strategy or acknowledge the data doesn't exist."""
                 self._trace(f"Thought: {message.content}", COLOR_BLUE)
                 final_agent_content = message.content
 
+            # Text-mode fallback: model didn't emit structured tool_calls but
+            # may have written `<tool_call>{...}</tool_call>` blocks in content.
+            # Parse them into synthetic tool_calls so the rest of the loop runs
+            # unchanged. Applied only for known text-mode models so well-behaved
+            # endpoints aren't double-parsed.
+            text_mode_synthetic = False
+            if self._text_tool_call_mode and not message.tool_calls and message.content:
+                from ama_kbqa.framework.text_tool_calls import parse_text_tool_calls
+                synthetic = parse_text_tool_calls(message.content)
+                if synthetic:
+                    self._trace(
+                        f"Parsed {len(synthetic)} text tool_call(s) from content",
+                        COLOR_CYAN,
+                    )
+                    message.tool_calls = synthetic
+                    text_mode_synthetic = True
+                    # Keep content as-is (do NOT strip) — for text-mode models
+                    # the conversation history needs to preserve the model's
+                    # original `<tool_call>...</tool_call>` blocks so the next
+                    # turn sees its own format and continues to comply.
+
             # No tool calls - break for synthesis
             if not message.tool_calls:
                 self._trace("No more tool calls - breaking to synthesis", COLOR_GREEN)
@@ -788,9 +820,12 @@ Change strategy or acknowledge the data doesn't exist."""
                 final_agent_content = message.content
                 break
 
-            # Add assistant message to history
+            # Add assistant message to history. For text-mode we keep the
+            # original content (with `<tool_call>` blocks) and DON'T attach the
+            # OpenAI-style structured `tool_calls` field — minimax-style models
+            # weren't trained on that shape and including it confuses replies.
             msg_dict: Dict[str, Any] = {"role": message.role, "content": message.content}
-            if message.tool_calls:
+            if message.tool_calls and not text_mode_synthetic:
                 msg_dict["tool_calls"] = [
                     {
                         "id": tc.id,
@@ -804,8 +839,11 @@ Change strategy or acknowledge the data doesn't exist."""
                 ]
             self._messages.append(msg_dict)
 
-            # Execute tool calls
-            called_get_journal_summary = await self._execute_tool_calls(message.tool_calls)
+            # Execute tool calls. Tell the executor whether to wrap results as
+            # `role=tool` (native) or `role=user` plain prose (text-mode).
+            called_get_journal_summary = await self._execute_tool_calls(
+                message.tool_calls, as_user_messages=text_mode_synthetic,
+            )
 
             # Inject answer prompt if GetJournalSummary was called
             # (can be disabled via agent.auto_inject_journal)
@@ -846,12 +884,15 @@ Change strategy or acknowledge the data doesn't exist."""
         # Run synthesis
         return await self._run_synthesis(query)
 
-    async def _execute_tool_calls(self, tool_calls: List) -> bool:
+    async def _execute_tool_calls(self, tool_calls: List, as_user_messages: bool = False) -> bool:
         """
         Execute a batch of tool calls.
 
         Args:
             tool_calls: List of tool calls from LLM response
+            as_user_messages: If True, append results as `role=user` prose
+                instead of `role=tool` records. Used for text-mode models that
+                weren't trained on the OpenAI tool-message schema.
 
         Returns:
             True if GetJournalSummary was called
@@ -859,14 +900,23 @@ Change strategy or acknowledge the data doesn't exist."""
         called_get_journal_summary = False
         self._trace(f"Processing {len(tool_calls)} tool call(s)", COLOR_YELLOW)
 
-        for tool_call in tool_calls:
-            if not tool_call.function or not tool_call.function.name:
+        def _append_tool_result(tc, name: str, content: str) -> None:
+            if as_user_messages:
+                self._messages.append({
+                    "role": "user",
+                    "content": f"<tool_result name=\"{name}\">{content}</tool_result>",
+                })
+            else:
                 self._messages.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": "invalid_tool",
-                    "content": "Error: Invalid tool call."
+                    "tool_call_id": tc.id,
+                    "name": name,
+                    "content": content,
                 })
+
+        for tool_call in tool_calls:
+            if not tool_call.function or not tool_call.function.name:
+                _append_tool_result(tool_call, "invalid_tool", "Error: Invalid tool call.")
                 continue
 
             func_name = tool_call.function.name
@@ -879,12 +929,7 @@ Change strategy or acknowledge the data doesn't exist."""
                     f"Available tools: {', '.join(sorted(known_tools))}"
                 )
                 self._trace(f"Unknown tool called: {func_name}", COLOR_RED)
-                self._messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": func_name,
-                    "content": tool_result
-                })
+                _append_tool_result(tool_call, func_name, tool_result)
                 continue
 
             if func_name == "GetJournalSummary":
@@ -910,12 +955,7 @@ Change strategy or acknowledge the data doesn't exist."""
             else:
                 tool_result = await self._execute_single_tool(func_name, func_args)
 
-            self._messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "name": func_name,
-                "content": tool_result
-            })
+            _append_tool_result(tool_call, func_name, tool_result)
 
         return called_get_journal_summary
 

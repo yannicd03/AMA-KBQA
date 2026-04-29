@@ -21,8 +21,23 @@
   },
   {
     "tool_name": "RunSPARQL",
-    "problem_pattern": "OR/UNION conditions or multi-hop counting",
-    "guidance": "Use UNION for OR conditions and always wrap with COUNT(DISTINCT ?var) to avoid double-counting. Do NOT define namespace prefixes — the server injects them automatically."
+    "problem_pattern": "Genuinely 3+ hop joins or unusual patterns not expressible via existing tools",
+    "guidance": "LAST RESORT only. For Count, use CountEntities (handles or_conditions and transitive_concept). For SelectAmong/SelectBetween, use SelectExtreme. For Verify (existence), use VerifyFact. Reach for RunSPARQL only when the question genuinely needs a multi-relation join or an aggregation pattern none of the typed tools cover. Do NOT define namespace prefixes — the server injects them automatically."
+  },
+  {
+    "tool_name": "CountEntities",
+    "problem_pattern": "ANY 'How many?' question",
+    "guidance": "ALWAYS prefer over FilterEntities + len() (which truncates at limit=50) and over hand-written RunSPARQL COUNT (error-prone with KQAPro namespaces). Returns the EXACT count. For OR conditions, pass or_conditions=[{...}]. For concept hierarchies (e.g. 'all mammals' covering subspecies), set transitive_concept=True."
+  },
+  {
+    "tool_name": "SelectExtreme",
+    "problem_pattern": "SelectAmong (superlative over a typed group) or SelectBetween (compare 2 entities)",
+    "guidance": "ALWAYS prefer over CompareEntities + manual pick. Returns the actual winner via SPARQL ORDER BY. SelectAmong: pass concept + attribute_name + mode='max'|'min'. SelectBetween: pass entity_ids=[id_A, id_B] + attribute_name + mode. Dates: mode='min' = earliest = older. filter_attribute_* applies a pre-filter before ranking."
+  },
+  {
+    "tool_name": "VerifyFact",
+    "problem_pattern": "Verify question that asks if a specific fact exists",
+    "guidance": "ALWAYS prefer over GetAttributeDetails-then-empty-means-no for fact-existence questions. Single SPARQL ASK, deterministic boolean. predicate_type='auto' tries attribute first, then relation. For numeric/date COMPARISONS, still use VerifyNumericCondition; VerifyFact handles equality/existence only."
   },
   {
     "tool_name": "FindByAttribute",

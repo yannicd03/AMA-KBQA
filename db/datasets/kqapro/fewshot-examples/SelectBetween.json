@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "question": "Is The Savages or Get Him to the Greek shorter?",
+    "answer": "Get Him to the Greek",
+    "qtype": "SelectBetween",
+    "trace": [
+      {"tool": "FindNode", "args": "{'semantic_node_name': 'The Savages'}", "result": "found Q940139"},
+      {"tool": "FindNode", "args": "{'semantic_node_name': 'Get Him to the Greek'}", "result": "found Q1213010"},
+      {"tool": "SelectExtreme", "args": "{'entity_ids': ['Q940139', 'Q1213010'], 'attribute_name': 'duration', 'mode': 'min'}", "result": "{\"mode\": \"min\", \"results\": [{\"entity_id\": \"Q1213010\", \"entity_name\": \"Get Him to the Greek\", \"value\": \"109\"}]}"}
+    ],
+    "lesson": "SelectBetween = SelectExtreme over a list of 2 entity_ids. 'Shorter' = mode='min' on duration. 'Older' = mode='min' on date_of_birth (earlier date = older).",
+    "tool_count": 3,
+    "collected_at": "2026-04-29T14:00:00"
+  },
+  {
+    "question": "Who is older, Albert Einstein or Niels Bohr?",
+    "answer": "Niels Bohr",
+    "qtype": "SelectBetween",
+    "trace": [
+      {"tool": "FindNode", "args": "{'semantic_node_name': 'Albert Einstein'}", "result": "found Q937"},
+      {"tool": "FindNode", "args": "{'semantic_node_name': 'Niels Bohr'}", "result": "found Q7949"},
+      {"tool": "SelectExtreme", "args": "{'entity_ids': ['Q937', 'Q7949'], 'attribute_name': 'date of birth', 'mode': 'min'}", "result": "{\"mode\": \"min\", \"results\": [{\"entity_id\": \"Q7949\", \"entity_name\": \"Niels Bohr\", \"value\": \"1885-10-07\"}]}"}
+    ],
+    "lesson": "For 'older', the earlier date_of_birth wins -- mode='min'. For 'younger', mode='max'. Don't reason about dates manually; SelectExtreme handles ordering deterministically.",
+    "tool_count": 3,
+    "collected_at": "2026-04-29T14:00:00"
+  }
+]
