@@ -1,0 +1,30 @@
+# AMA-KBQA Streamlit frontend — containerized for auto-restart and lifecycle uniformity.
+#
+# Runs ama-kbqa-frontend on port 8502, bound to 0.0.0.0 inside the container so
+# compose can publish it on 127.0.0.1:8502. The compose stack uses the default
+# bridge network; in-cluster the frontend reaches qdrant/virtuoso by service name
+# (config.docker.toml uses those hostnames).
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependency resolution — cached layer (only invalidates when pyproject/lock change)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --no-dev --no-install-project
+
+# App code — rebuilds this layer on every source change, leaves deps cached
+COPY ama_kbqa/ ./ama_kbqa/
+COPY config.toml ./config.toml
+RUN uv pip install --no-deps -e .
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8502
+
+CMD ["ama-kbqa-frontend", "--server.port", "8502", "--server.address", "0.0.0.0", "--server.headless", "true"]
