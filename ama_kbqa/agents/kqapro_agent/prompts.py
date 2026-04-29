@@ -9,10 +9,12 @@ to keep the main agent.py file more manageable.
 # These are injected during the pre-agent hook based on QtypePrediction results
 QTYPE_STRATEGIES = {
     "Count": """STRATEGY: Count → integer answer
-Small set (<20): GetRelationDetails + count. Large/unknown set: RunSPARQL with COUNT(DISTINCT).
-Filtered count: FilterEntities(concept=..., attribute_name=...) then count results, or RunSPARQL with COUNT.
-Multi-hop: RunSPARQL with JOIN+COUNT. OR conditions: UNION + COUNT(DISTINCT).
-Pattern: SELECT (COUNT(DISTINCT ?t) AS ?c) WHERE { ex:ID prop:PRED ?t . }
+PREFER: CountEntities — returns the EXACT count (no truncation). Examples:
+  - "How many cities in Germany?" → CountEntities(concept="city", ...)
+  - "How many counties have pop > 7800 OR < 40M?" → CountEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name":"population","attribute_value":"40000000","operator":"<"}])
+  - "How many mammals?" → CountEntities(concept="mammal", transitive_concept=True)
+DO NOT use FilterEntities + len() — it caps at limit=50 and silently lies above that.
+Small set already in journal (<20): just count what's there. Multi-hop joins / unusual shapes: RunSPARQL with COUNT(DISTINCT).
 Trust verified counts. Don't downgrade after verification.""",
 
     "QueryAttr": """STRATEGY: QueryAttr → attribute lookup
@@ -66,23 +68,27 @@ Filtering by qualifier: Use QualifierFilter(entity_ids, relation, qualifier_name
 Pattern: SELECT ?v WHERE { ?f pred:fact_h ex:A; pred:fact_r prop:P; pred:fact_t ex:B. ?f qual:Q ?v. }""",
 
     "SelectAmong": """STRATEGY: SelectAmong → superlative from group
-Small explicit list (<20): CompareEntities. Large/open group: RunSPARQL with ORDER BY + LIMIT 1.
+PREFER: SelectExtreme — returns the actual winner via SPARQL ORDER BY (don't make the LLM compare manually). Examples:
+  - "Smallest former French region with pop != 97000?" → SelectExtreme(concept="former French region", attribute_name="population", mode="min", filter_attribute_name="population", filter_attribute_value="97000", filter_operator="!=")
+  - "Top 3 most-populous cities?" → SelectExtreme(concept="city", attribute_name="population", mode="max", k=3)
+  - "Longest film?" → SelectExtreme(concept="film", attribute_name="duration", mode="max")
+Small explicit list already in journal: CompareEntities for the table, then read off the extreme.
 DO NOT fetch all items with GetRelationDetails (timeout risk).
-Pattern: SELECT ?label ?v WHERE { ?i prop:instance_of ex:GRP. ?i attr:ATTR ?v. ?i rdfs:label ?label. } ORDER BY DESC(?v) LIMIT 1
 EMPTY RESULT FALLBACK (do NOT give up):
  1. Verify attribute name with FindNode on one example instance → inspect available_attributes.
- 2. Drop the most restrictive constraint (e.g. concept type) and re-run — often `instance_of` is too narrow (feature_film vs film).
+ 2. Drop the most restrictive constraint (e.g. concept type) and re-run — often `instance_of` is too narrow (feature_film vs film). Try transitive_concept=True.
  3. If multiple constraints, use UNION or split into two queries and intersect in the journal.
- 4. Try RunSPARQL without FILTER and sort client-side using ORDER BY on the remaining attr.
- 5. Last resort: return the best candidate from partial data with an [INFERRED] label. NEVER answer "could not be identified".""",
+ 4. Last resort: return the best candidate from partial data with an [INFERRED] label. NEVER answer "could not be identified".""",
 
     "SelectBetween": """STRATEGY: SelectBetween → compare exactly 2 entities
+PREFER: SelectExtreme(entity_ids=[id_A, id_B], attribute_name=..., mode="max"|"min") returns the winner directly.
+For dates: "Who is older?" → mode="min" on date_of_birth (earlier date = older).
 1) Extract ALL constraints. 2) Verify constraints with GetAttributeDetails first.
-3) CompareEntities([id_A, id_B], attribute) for comparison.
-Pattern: SELECT ?label ?v WHERE { VALUES ?i { ex:A ex:B } ?i attr:ATTR ?v. ?i rdfs:label ?label. } ORDER BY DESC(?v) LIMIT 1""",
+3) SelectExtreme over [id_A, id_B] OR CompareEntities for a side-by-side table.""",
 
     "Verify": """STRATEGY: Verify → True/False
-GetAttributeDetails to get value, then VerifyNumericCondition for numeric/date comparison, VerifyString for text comparison. Never do mental math or guess string equality.
+PREFER: VerifyFact(subject_id, predicate, target) for plain fact-existence checks ("Is 129586 the visa number of X?", "Did Nolan direct Inception?"). Returns boolean.
+For numeric/date comparison: GetAttributeDetails → VerifyNumericCondition. For text equality: VerifyString. Never do mental math or guess string equality.
 Fallback: ASK { ex:ID attr:ATTR ?v. FILTER(?v > "VAL"^^xsd:decimal) }""",
 
     "Query": """STRATEGY: General Query
@@ -108,11 +114,12 @@ ex:=Entities, prop:=Properties, attr:=Attributes, qual:=Qualifiers, unit:=Units
 
 TOOL TIERS:
 T1 Discovery: FindNode (semantic search) | FindByAttribute (exact ID/code/URL lookup - prefer this for unique IDs)
-T1.5 Filtering: FilterEntities (by concept type and/or attribute value - replaces manual SPARQL filters) | QualifierFilter (filter entities by qualifier on statements)
+T1.5 Filtering: FilterEntities (by concept type and/or attribute value, supports or_conditions and transitive_concept) | QualifierFilter (by qualifier on statements)
 T2 Retrieval: GetAttributeDetails | GetRelationDetails | GetNodeSummary (all data in ONE call)
 T3 Qualifiers: GetEdgeQualifiers (facts about facts - use when question has time/place context)
-T4 Verify: VerifyNumericCondition (never do mental math) | VerifyString (never guess string equality)
-Complex: RunSPARQL (for multi-hop >2, COUNT, UNION) | CompareEntities | FindEntitiesByRelationPath
+T4 Verify: VerifyFact (deterministic ASK for "does this fact exist") | VerifyNumericCondition (never do mental math) | VerifyString (never guess string equality)
+T5 Aggregate: CountEntities (exact, no truncation, supports OR/transitive) | SelectExtreme (argmax/argmin via SPARQL ORDER BY)
+Complex: RunSPARQL (multi-hop >2, unusual joins) | CompareEntities | FindEntitiesByRelationPath
 
 QUALIFIER DECISION: Question specifies TIME/PLACE for a fact? → GetEdgeQualifiers. General property? → GetAttributeDetails.
 PREPOSITIONAL: "X in Y" → find Y first, then find X related to Y. Return X's attribute, not Y's.
@@ -216,6 +223,9 @@ TOOL_LOOP_GUIDANCE = {
     "ExploreNeighborhood": "DEPRECATED. Use GetNodeSummary instead.",
     "GetAttributeWithQualifiers": "No qualifiers. Try GetAttributeDetails or TemporalAttributeQuery.",
     "TemporalAttributeQuery": "Date not found. Increase tolerance_days or use GetAttributeWithQualifiers.",
+    "CountEntities": "Count was 0 / unexpected. Try transitive_concept=True (concept may have subtypes), or check the concept label is correct via FindNode, or drop the attribute filter to count by concept alone first.",
+    "SelectExtreme": "No winner returned. Verify the attribute_name via FindNode, try transitive_concept=True if filtering by concept, drop the filter_attribute pre-filter, or fall back to CompareEntities on a smaller candidate set.",
+    "VerifyFact": "Returned FALSE / not found. Try predicate_type='auto' if you used a specific type, check the predicate spelling via FindNode's available_predicates, or use GetAttributeDetails to inspect the actual stored value.",
 }
 
 # Generic loop recovery guidance

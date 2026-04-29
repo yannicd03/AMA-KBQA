@@ -265,6 +265,124 @@ def format_property_uri(predicate_id: str) -> str:
     return f"<{NS_PROPERTY}{predicate_id}>"
 
 
+def _attr_condition_sparql(
+    attribute_name: str,
+    attribute_value: str,
+    operator: str,
+    suffix: str,
+    entity_var: str = "?entity",
+) -> str:
+    """Build a SPARQL WHERE-block for one attribute condition on `entity_var`.
+
+    Handles the three KQAPro attribute storage shapes:
+    - direct literal: `?e attr:k <literal>`
+    - quantity blank node: `?e attr:k _:b ; _:b rdf:value ?v ; _:b unit:unit ?u`
+    - typed (xsd:date / xsd:gYear / xsd:decimal) literals
+
+    Returns a single block of SPARQL (no surrounding braces) suitable for embedding
+    inside a `{ ... }` group. Variable names are uniquified with `suffix` so several
+    blocks can be UNION'd safely.
+    """
+    import re
+
+    sanitized_attr = attribute_name.replace(" ", "_")
+    attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr}>"
+    safe_value = attribute_value.replace('"', '\\"')
+
+    is_date = bool(re.match(r"^\d{4}-\d{2}-\d{2}$", attribute_value))
+    is_year = bool(re.match(r"^\d{4}$", attribute_value)) and not is_date
+    is_numeric = False
+    if not is_date and not is_year and attribute_value:
+        try:
+            float(attribute_value.replace(",", ""))
+            is_numeric = True
+        except ValueError:
+            pass
+
+    sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}.get(operator, "=")
+
+    if not attribute_value:
+        # Existence-only check
+        return f"{entity_var} {attr_uri} ?attrVal{suffix} .\n"
+
+    if operator == "contains":
+        return (
+            f"{entity_var} {attr_uri} ?attrVal{suffix} .\n"
+            f'FILTER(CONTAINS(LCASE(STR(?attrVal{suffix})), LCASE("{safe_value}")))\n'
+        )
+    if operator == "=" and not is_numeric and not is_date and not is_year:
+        return (
+            f"{entity_var} {attr_uri} ?attrVal{suffix} .\n"
+            f'FILTER(STR(?attrVal{suffix}) = "{safe_value}")\n'
+        )
+    if is_date:
+        return (
+            f"{entity_var} {attr_uri} ?attrVal{suffix} .\n"
+            f'FILTER(xsd:date(STR(?attrVal{suffix})) {sparql_op} "{safe_value}"^^xsd:date)\n'
+        )
+
+    numeric_val = attribute_value.replace(",", "")
+    # A 4-digit value like "1990" is ambiguous: could be a year (xsd:gYear stored
+    # attribute, e.g. "release year") or a number (xsd:decimal in a bnode quantity,
+    # e.g. small population). We can't tell from the input alone, so emit a UNION
+    # of both interpretations and let the data decide. The DATATYPE filter on each
+    # branch keeps SPARQL from evaluating the wrong cast on the wrong literal.
+    if is_year:
+        # Year branch: extract the 4-digit year from xsd:gYear or xsd:date as an integer
+        # (works because gYear's lexical form IS the 4-digit string, and xsd:date strings
+        # start with YYYY which integer-cast picks up via SUBSTR). For non-year-typed
+        # storage (decimal in a bnode), fall back to numeric comparison.
+        return (
+            f"{{\n"
+            f"  {entity_var} {attr_uri} ?attrYear{suffix} .\n"
+            f"  FILTER(DATATYPE(?attrYear{suffix}) = xsd:gYear || DATATYPE(?attrYear{suffix}) = xsd:date)\n"
+            f"  FILTER(xsd:integer(SUBSTR(STR(?attrYear{suffix}), 1, 4)) {sparql_op} {numeric_val})\n"
+            f"}} UNION {{\n"
+            f"  {entity_var} {attr_uri} ?attrRaw{suffix} .\n"
+            f"  OPTIONAL {{ ?attrRaw{suffix} rdf:value ?blankVal{suffix} }}\n"
+            f"  BIND(COALESCE(?blankVal{suffix}, ?attrRaw{suffix}) AS ?attrVal{suffix})\n"
+            f"  FILTER(DATATYPE(?attrVal{suffix}) != xsd:gYear && DATATYPE(?attrVal{suffix}) != xsd:date)\n"
+            f"  FILTER(xsd:decimal(STR(?attrVal{suffix})) {sparql_op} {numeric_val})\n"
+            f"}}\n"
+        )
+    # Pure numeric — handle bnode (rdf:value) and direct decimal literals
+    return (
+        f"{entity_var} {attr_uri} ?attrRaw{suffix} .\n"
+        f"OPTIONAL {{ ?attrRaw{suffix} rdf:value ?blankVal{suffix} }}\n"
+        f"BIND(COALESCE(?blankVal{suffix}, ?attrRaw{suffix}) AS ?attrVal{suffix})\n"
+        f"FILTER(xsd:decimal(STR(?attrVal{suffix})) {sparql_op} {numeric_val})\n"
+    )
+
+
+def _concept_clause(concept: str, transitive: bool, entity_var: str = "?entity") -> str:
+    """Build the rdf:type clause for a concept filter (direct or transitive).
+
+    `concept` may be either:
+    - a Q-ID like "Q5" (matched directly against `ex:Q5`), or
+    - a human-readable label like "human" or "county of Pennsylvania" (resolved
+      via `rdfs:label` inside the SPARQL).
+
+    Underscores in labels are tolerated (converted back to spaces before label match).
+    """
+    if not concept:
+        return ""
+    type_path = "rdf:type/rdf:type*" if transitive else "rdf:type"
+
+    import re as _re
+    if _re.match(r"^[QP]\d+$", concept.strip()):
+        # Direct Q-ID
+        sanitized = concept.strip()
+        return f"{entity_var} {type_path} <{NS_ENTITY}{sanitized}> .\n"
+
+    # Label-based: match the concept's rdfs:label. Keep the label as a literal
+    # (Virtuoso indexes labels) so we don't pay the FILTER cost for case folding.
+    label = concept.replace("_", " ").replace('"', '\\"')
+    return (
+        f"{entity_var} {type_path} ?conceptIRI .\n"
+        f'?conceptIRI rdfs:label "{label}" .\n'
+    )
+
+
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """
@@ -3268,7 +3386,9 @@ def FilterEntities(
     attribute_value: str = "",
     operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
     entity_ids: list[str] | None = None,
-    limit: int = 50
+    limit: int = 50,
+    or_conditions: list[dict] | None = None,
+    transitive_concept: bool = False,
 ) -> SearchResponse:
     """
     Filter entities by concept type and/or attribute value conditions.
@@ -3281,6 +3401,8 @@ def FilterEntities(
     - "How many cities in Germany have population > 1M?" → FilterEntities(concept="city", attribute_name="population", attribute_value="1000000", operator=">")
     - "Which humans are members of Duran Duran?" → First get member IDs via GetRelationDetails, then FilterEntities(entity_ids=[...], concept="human")
     - "Find all films with duration > 120" → FilterEntities(concept="film", attribute_name="duration", attribute_value="120", operator=">")
+    - "Pennsylvania counties with population > 7800 OR < 40M" → FilterEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name": "population", "attribute_value": "40000000", "operator": "<"}])
+    - "All mammals" (subclass-aware) → FilterEntities(concept="mammal", transitive_concept=True)
 
     **Chaining:** Pass entity_ids from a previous tool call to further filter results.
 
@@ -3291,6 +3413,12 @@ def FilterEntities(
         operator: Comparison operator. Use "contains" for substring matching on strings.
         entity_ids: Optional list of entity IDs to restrict the search to (for chaining with other tools).
         limit: Maximum number of results to return.
+        or_conditions: Optional list of additional attribute conditions to OR with the primary one.
+            Each item: {"attribute_name": str, "attribute_value": str, "operator": str}.
+            Use this for "X OR Y" filters (e.g., "population > 7800 or population < 40000000").
+        transitive_concept: If True, match entities whose type is the given concept OR any
+            descendant in the concept hierarchy (uses rdf:type/rdf:type*). Default False keeps
+            the current direct-type behavior.
 
     Returns:
         SearchResponse: List of matching entities.
@@ -3298,87 +3426,44 @@ def FilterEntities(
     app_context: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = app_context.sparql
 
-    if not concept and not attribute_name:
+    if not concept and not attribute_name and not or_conditions:
         return SearchResponse(matches=[], result_count=0)
 
-    logger.info(f"FilterEntities: concept={concept}, attr={attribute_name}, val={attribute_value}, op={operator}")
+    logger.info(
+        f"FilterEntities: concept={concept}, attr={attribute_name}, val={attribute_value}, "
+        f"op={operator}, or_n={len(or_conditions or [])}, transitive={transitive_concept}"
+    )
 
-    # Build WHERE clauses
-    where_clauses = []
-    filter_clauses = []
-
-    # Entity restriction via VALUES
-    values_clause = ""
+    # Pre-restriction blocks (always apply, never inside the OR)
+    pre_blocks: list[str] = []
     if entity_ids:
         entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
-        values_clause = f"VALUES ?entity {{ {entity_uris} }}"
+        pre_blocks.append(f"VALUES ?entity {{ {entity_uris} }}")
+    concept_block = _concept_clause(concept, transitive_concept)
+    if concept_block:
+        pre_blocks.append(concept_block.rstrip())
 
-    # Concept filtering
-    if concept:
-        sanitized_concept = concept.replace(" ", "_")
-        where_clauses.append(f"?entity rdf:type <{NS_ENTITY}{sanitized_concept}> .")
+    # Attribute condition(s)
+    attr_block = ""
+    if attribute_name or or_conditions:
+        branches: list[str] = []
+        if attribute_name:
+            branches.append(_attr_condition_sparql(attribute_name, attribute_value, operator, "0"))
+        for i, cond in enumerate(or_conditions or [], start=1):
+            branches.append(_attr_condition_sparql(
+                cond.get("attribute_name", ""),
+                cond.get("attribute_value", ""),
+                cond.get("operator", "="),
+                str(i),
+            ))
+        if len(branches) == 1:
+            attr_block = "{ " + branches[0] + " }"
+        elif len(branches) > 1:
+            attr_block = " UNION ".join("{ " + b + " }" for b in branches)
 
-    # Attribute filtering
-    if attribute_name and attribute_value:
-        sanitized_attr = attribute_name.replace(" ", "_")
-        attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr}>"
-        safe_value = attribute_value.replace('"', '\\"')
+    label_block = "OPTIONAL { ?entity rdfs:label ?entityName }"
 
-        # Auto-detect value type
-        import re
-        is_date = bool(re.match(r"^\d{4}-\d{2}-\d{2}$", attribute_value))
-        is_year = bool(re.match(r"^\d{4}$", attribute_value)) and not is_date
-        is_numeric = False
-        if not is_date and not is_year:
-            try:
-                float(attribute_value.replace(",", ""))
-                is_numeric = True
-            except ValueError:
-                pass
-
-        if operator == "contains":
-            # String substring match
-            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
-            filter_clauses.append(f'FILTER(CONTAINS(LCASE(STR(?attrVal)), LCASE("{safe_value}")))')
-        elif operator == "=" and not is_numeric and not is_date and not is_year:
-            # Exact string match
-            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
-            filter_clauses.append(f'FILTER(STR(?attrVal) = "{safe_value}")')
-        elif is_date:
-            # Date comparison - handle both direct values and blank nodes with qualifiers
-            sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}[operator]
-            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
-            filter_clauses.append(
-                f'FILTER(xsd:date(STR(?attrVal)) {sparql_op} "{safe_value}"^^xsd:date)'
-            )
-        elif is_year:
-            # Year comparison
-            sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}[operator]
-            where_clauses.append(f"?entity {attr_uri} ?attrVal .")
-            filter_clauses.append(f"FILTER(YEAR(xsd:date(STR(?attrVal))) {sparql_op} {safe_value})")
-        else:
-            # Numeric comparison - handle both direct values and blank nodes (rdf:value)
-            sparql_op = {"=": "=", "!=": "!=", "<": "<", ">": ">", "<=": "<=", ">=": ">="}[operator]
-            numeric_val = attribute_value.replace(",", "")
-            where_clauses.append(f"""
-                ?entity {attr_uri} ?attrRaw .
-                OPTIONAL {{ ?attrRaw rdf:value ?blankVal }}
-                BIND(COALESCE(?blankVal, ?attrRaw) AS ?attrVal)
-            """)
-            filter_clauses.append(
-                f"FILTER(xsd:decimal(STR(?attrVal)) {sparql_op} {numeric_val})"
-            )
-    elif attribute_name and not attribute_value:
-        # Just check that the attribute exists (no value condition)
-        sanitized_attr = attribute_name.replace(" ", "_")
-        attr_uri = f"<http://kqapro.org/attribute/{sanitized_attr}>"
-        where_clauses.append(f"?entity {attr_uri} ?attrVal .")
-
-    # Always get label
-    where_clauses.append("OPTIONAL { ?entity rdfs:label ?entityName }")
-
-    # Assemble query
-    where_body = "\n        ".join([values_clause] + where_clauses + filter_clauses)
+    where_body = "\n        ".join(filter(None, pre_blocks + [attr_block, label_block]))
     query = f"""
     {SPARQL_PREFIXES}
     SELECT DISTINCT ?entity ?entityName WHERE {{
@@ -3693,6 +3778,420 @@ def VerifyString(
             value1=value1,
             value2=value2,
             mode=mode
+        )
+
+
+class CountResponse(BaseModel):
+    """Response from a Count tool."""
+    count: int = Field(..., description="The exact count (no truncation).")
+    description: str = Field(..., description="Human-readable description of what was counted.")
+    status: str = Field(..., description="Status message.")
+
+
+class SelectExtremeResponse(BaseModel):
+    """Response from SelectExtreme (argmax/argmin)."""
+    mode: Literal["max", "min"] = Field(..., description="Which extreme was selected.")
+    attribute_name: str = Field(..., description="The attribute used for ranking.")
+    results: list[ComparisonResult] = Field(
+        default_factory=list,
+        description="Top-k entities ordered by extreme. Index 0 is the winner."
+    )
+    status: str = Field(..., description="Status message.")
+
+
+class VerifyFactResponse(BaseModel):
+    """Response from VerifyFact (boolean fact existence check)."""
+    verdict: Literal["TRUE", "FALSE", "ERROR"] = Field(..., description="Whether the fact exists in the KB.")
+    explanation: str = Field(..., description="Human-readable explanation.")
+    subject_id: str = Field(..., description="Subject queried.")
+    predicate: str = Field(..., description="Predicate (relation or attribute) checked.")
+    target: str = Field(..., description="Target entity ID or literal value checked.")
+    matched_as: Literal["relation", "attribute", "none", "error"] = Field(
+        ..., description="How the predicate was matched (or none if not found)."
+    )
+
+
+@mcp.tool
+@log_tool_duration
+def CountEntities(
+    context: Context,
+    concept: str = "",
+    attribute_name: str = "",
+    attribute_value: str = "",
+    operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
+    entity_ids: list[str] | None = None,
+    or_conditions: list[dict] | None = None,
+    transitive_concept: bool = False,
+) -> CountResponse:
+    """
+    Return the EXACT number of entities matching a concept and/or attribute condition(s).
+
+    🎯 Use this for ANY "How many X?" question. It returns a single integer with **no
+    truncation** — never use FilterEntities + len() to count, because FilterEntities is
+    capped at limit=50 and will silently lie about the true count above that.
+
+    **When to use:**
+    - "How many countries are in the EU?" → CountEntities(concept="country", or via member-of relation)
+    - "How many films did Nolan direct?" → first get film IDs via GetRelationDetails, then CountEntities(entity_ids=[...])
+    - "How many Pennsylvania counties have population > 7800 or < 40M?" → CountEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name": "population", "attribute_value": "40000000", "operator": "<"}])
+    - "How many mammal species are there?" → CountEntities(concept="mammal", transitive_concept=True)
+
+    Args:
+        concept: Entity type to count. Leave empty to skip type filtering.
+        attribute_name: Primary attribute condition (paired with attribute_value/operator).
+        attribute_value: Value to compare against (auto-detects date/year/numeric/string).
+        operator: Comparison operator for the primary condition.
+        entity_ids: Optional list of entity IDs to restrict the count to.
+        or_conditions: Additional attribute conditions OR'd with the primary. Same shape as
+            FilterEntities. Each item: {"attribute_name", "attribute_value", "operator"}.
+        transitive_concept: If True, count entities whose type is `concept` OR any descendant
+            (rdf:type/rdf:type*).
+
+    Returns:
+        CountResponse with the exact integer count.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
+
+    if not concept and not attribute_name and not entity_ids and not or_conditions:
+        return CountResponse(
+            count=0,
+            description="(no filter provided)",
+            status="No concept/attribute/entity_ids supplied — refusing to count the whole KB.",
+        )
+
+    pre_blocks: list[str] = []
+    if entity_ids:
+        entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
+        pre_blocks.append(f"VALUES ?entity {{ {entity_uris} }}")
+    concept_block = _concept_clause(concept, transitive_concept)
+    if concept_block:
+        pre_blocks.append(concept_block.rstrip())
+
+    attr_block = ""
+    if attribute_name or or_conditions:
+        branches: list[str] = []
+        if attribute_name:
+            branches.append(_attr_condition_sparql(attribute_name, attribute_value, operator, "0"))
+        for i, cond in enumerate(or_conditions or [], start=1):
+            branches.append(_attr_condition_sparql(
+                cond.get("attribute_name", ""),
+                cond.get("attribute_value", ""),
+                cond.get("operator", "="),
+                str(i),
+            ))
+        if len(branches) == 1:
+            attr_block = "{ " + branches[0] + " }"
+        elif len(branches) > 1:
+            attr_block = " UNION ".join("{ " + b + " }" for b in branches)
+
+    where_body = "\n        ".join(filter(None, pre_blocks + [attr_block]))
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT (COUNT(DISTINCT ?entity) AS ?c) WHERE {{
+        {where_body}
+    }}
+    """
+
+    # Build a human-readable description of what was counted
+    parts = []
+    if concept:
+        parts.append(f"type={'≤' if transitive_concept else ''}{concept}")
+    if attribute_name:
+        parts.append(f"{attribute_name}{operator}{attribute_value}")
+    for cond in or_conditions or []:
+        parts.append(
+            f"OR {cond.get('attribute_name','')}{cond.get('operator','=')}{cond.get('attribute_value','')}"
+        )
+    if entity_ids:
+        parts.append(f"in {len(entity_ids)} ids")
+    desc = ", ".join(parts) or "(unfiltered)"
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+        count = int(bindings[0]["c"]["value"]) if bindings else 0
+
+        session_journal.verified_facts.append({
+            "fact": f"Count[{desc}] = {count}",
+            "source": "CountEntities",
+        })
+        session_journal.add_completed_step(f"CountEntities({desc}) = {count}")
+        logger.info(f"CountEntities: {desc} = {count}")
+        return CountResponse(count=count, description=desc, status="ok")
+
+    except Exception as e:
+        logger.error(f"CountEntities failed: {e}")
+        logger.error("CountEntities: Failed query was:\n{}", query)
+        session_journal.add_failed_attempt(f"CountEntities({desc}): {str(e)[:120]}")
+        return CountResponse(count=0, description=desc, status=f"error: {str(e)[:200]}")
+
+
+@mcp.tool
+@log_tool_duration
+def SelectExtreme(
+    context: Context,
+    attribute_name: str,
+    mode: Literal["max", "min"],
+    entity_ids: list[str] | None = None,
+    concept: str = "",
+    transitive_concept: bool = False,
+    k: int = 1,
+    filter_attribute_name: str = "",
+    filter_attribute_value: str = "",
+    filter_operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
+) -> SelectExtremeResponse:
+    """
+    Return the entity (or top-k entities) with the maximum or minimum value of an attribute.
+
+    🎯 The deterministic answer to SelectAmong / SelectBetween questions. Use this instead
+    of CompareEntities-then-eyeball-the-table — it returns the actual winner via SPARQL
+    ORDER BY, so the LLM doesn't have to do arithmetic.
+
+    **When to use:**
+    - "Which European country has the lowest GDP?" → SelectExtreme(concept="country", attribute_name="gross domestic product", mode="min")
+    - "Which of these films is longest?" → SelectExtreme(entity_ids=[...], attribute_name="duration", mode="max")
+    - "Who is older, A or B?" → SelectExtreme(entity_ids=["A","B"], attribute_name="date of birth", mode="min") — earlier date = older
+    - "Top 5 most populous cities" → SelectExtreme(concept="city", attribute_name="population", mode="max", k=5)
+    - "Smallest French region with population != 97000" → SelectExtreme(concept="former French region", attribute_name="population", mode="min", filter_attribute_name="population", filter_attribute_value="97000", filter_operator="!=")
+
+    Args:
+        attribute_name: Attribute to rank by (e.g., "population", "date of birth", "duration").
+        mode: "max" for largest, "min" for smallest. For dates, "min" = earliest, "max" = latest.
+        entity_ids: Optional list of candidate entity IDs.
+        concept: Optional concept restriction (alternative to entity_ids).
+        transitive_concept: If True, include subclasses of `concept`.
+        k: How many top entities to return. Default 1 (the winner).
+        filter_attribute_name / filter_attribute_value / filter_operator: Optional pre-filter
+            applied before ranking (lets you express "smallest X where Y != Z" in one call).
+
+    Returns:
+        SelectExtremeResponse with up to k results sorted from extreme to less-extreme.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
+
+    if not entity_ids and not concept:
+        return SelectExtremeResponse(
+            mode=mode, attribute_name=attribute_name, results=[],
+            status="error: provide either entity_ids or concept",
+        )
+
+    pre_blocks: list[str] = []
+    if entity_ids:
+        entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
+        pre_blocks.append(f"VALUES ?entity {{ {entity_uris} }}")
+    concept_block = _concept_clause(concept, transitive_concept)
+    if concept_block:
+        pre_blocks.append(concept_block.rstrip())
+
+    # Pre-filter (optional) — applied with AND
+    if filter_attribute_name and filter_attribute_value:
+        pre_blocks.append("{ " + _attr_condition_sparql(
+            filter_attribute_name, filter_attribute_value, filter_operator, "f"
+        ) + " }")
+
+    # Ranking attribute — quantity bnodes get unwrapped via OPTIONAL+COALESCE
+    sanitized_rank = attribute_name.replace(" ", "_")
+    rank_uri = f"<http://kqapro.org/attribute/{sanitized_rank}>"
+    pre_blocks.append(
+        f"?entity {rank_uri} ?rankRaw .\n"
+        f"OPTIONAL {{ ?rankRaw rdf:value ?rankBlank }}\n"
+        f"BIND(COALESCE(?rankBlank, ?rankRaw) AS ?rankVal)"
+    )
+
+    # Subquery: pick the per-entity best value (MAX or MIN across multiple statements
+    # per entity — KQAPro often has several historical values for the same attribute).
+    # MAX/MIN are type-aware in SPARQL: numeric for xsd:decimal, lex for xsd:date /
+    # xsd:gYear / plain strings — and lex equals chronological for ISO-formatted dates.
+    agg = "MAX" if mode == "max" else "MIN"
+    inner_where = "\n        ".join(filter(None, pre_blocks))
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT ?entity ?entityName ?bestVal WHERE {{
+        {{
+            SELECT ?entity ({agg}(?rankVal) AS ?bestVal) WHERE {{
+                {inner_where}
+            }}
+            GROUP BY ?entity
+        }}
+        OPTIONAL {{ ?entity rdfs:label ?entityName }}
+    }}
+    ORDER BY {"DESC" if mode == "max" else "ASC"}(?bestVal)
+    LIMIT {max(1, k)}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        out: list[ComparisonResult] = []
+        for b in bindings:
+            uri = b.get("entity", {}).get("value", "")
+            eid = uri.split("/entity/")[-1] if "/entity/" in uri else uri
+            name = b.get("entityName", {}).get("value", "Unknown")
+            raw = b.get("bestVal", {}).get("value", "")
+            normalized = None
+            try:
+                normalized = float(raw)
+            except (TypeError, ValueError):
+                pass
+            out.append(ComparisonResult(
+                entity_id=eid, entity_name=name, value=raw, normalized_value=normalized,
+            ))
+
+        for r in out:
+            session_journal.visited_nodes[r.entity_id] = r.entity_name
+        if out:
+            winner = out[0]
+            session_journal.verified_facts.append({
+                "fact": f"{mode}({attribute_name}) = {winner.entity_name} ({winner.value})",
+                "source": "SelectExtreme",
+            })
+            session_journal.add_completed_step(
+                f"SelectExtreme({mode}, {attribute_name}, k={k}): {winner.entity_name}"
+            )
+        else:
+            session_journal.add_failed_attempt(
+                f"SelectExtreme({mode}, {attribute_name}): no results"
+            )
+
+        return SelectExtremeResponse(
+            mode=mode, attribute_name=attribute_name, results=out,
+            status="ok" if out else "no results",
+        )
+
+    except Exception as e:
+        logger.error(f"SelectExtreme failed: {e}")
+        logger.error("SelectExtreme: Failed query was:\n{}", query)
+        session_journal.add_failed_attempt(
+            f"SelectExtreme({mode}, {attribute_name}): {str(e)[:120]}"
+        )
+        return SelectExtremeResponse(
+            mode=mode, attribute_name=attribute_name, results=[],
+            status=f"error: {str(e)[:200]}",
+        )
+
+
+@mcp.tool
+@log_tool_duration
+def VerifyFact(
+    context: Context,
+    subject_id: str,
+    predicate: str,
+    target: str,
+    predicate_type: Literal["relation", "attribute", "auto"] = "auto",
+) -> VerifyFactResponse:
+    """
+    Return TRUE / FALSE for "does the fact (subject, predicate, target) exist in the KB".
+
+    🎯 Use this for any Verify question ("Is X a Y?", "Did X win Y?", "Is the population
+    of X equal to N?"). It is a deterministic SPARQL ASK — the LLM does not have to
+    interpret an empty GetAttributeDetails response as "no".
+
+    **When to use:**
+    - "Is 129586 the exploitation visa number of Bridget Jones's Diary?" → VerifyFact("Q220678", "exploitation visa number", "129586", predicate_type="attribute")
+    - "Is Einstein an instance of human?" → VerifyFact("Q937", "instance of", "Q5") — note: instance-of in KQAPro is rdf:type, see VerifyType for that pattern
+    - "Did Nolan direct Inception?" → VerifyFact("Q25191", "director", "Q26956", predicate_type="relation")
+    - Mode "auto" tries attribute first, then relation — useful when you're not sure.
+
+    Args:
+        subject_id: Entity ID of the subject (e.g., "Q42").
+        predicate: Predicate name (relation or attribute, with spaces or underscores).
+        target: For relations, the object entity ID (e.g., "Q5"). For attributes, the literal
+            value to check ("129586", "1979-01-01", "physicist"). Auto-detected by predicate_type.
+        predicate_type: "attribute" → checks Subject attr:predicate "target". "relation" → checks
+            Subject prop:predicate <Target>. "auto" → tries attribute, then relation.
+
+    Returns:
+        VerifyFactResponse with verdict TRUE/FALSE/ERROR and matched_as=relation|attribute|none.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql_client: SPARQLWrapper = app_context.sparql
+
+    subj_uri = format_entity_uri(subject_id)
+    sanitized_pred = predicate.replace(" ", "_")
+    safe_target = target.replace('"', '\\"')
+
+    def ask(query: str) -> bool:
+        sparql_client.setQuery(query)
+        res = sparql_client.query().convert()
+        return bool(res.get("boolean", False))
+
+    def attr_query() -> str:
+        # Handle quantity/bnode + literal-typed attribute values uniformly
+        # by checking for a triple whose stringified value equals the target,
+        # or whose rdf:value (under a bnode) equals the target.
+        return f"""
+        {SPARQL_PREFIXES}
+        ASK {{
+            {{
+                {subj_uri} <http://kqapro.org/attribute/{sanitized_pred}> ?v .
+                FILTER(STR(?v) = "{safe_target}")
+            }} UNION {{
+                {subj_uri} <http://kqapro.org/attribute/{sanitized_pred}> ?bn .
+                ?bn rdf:value ?bv .
+                FILTER(STR(?bv) = "{safe_target}")
+            }}
+        }}
+        """
+
+    def rel_query() -> str:
+        target_uri = format_entity_uri(target)
+        return f"""
+        {SPARQL_PREFIXES}
+        ASK {{
+            {{ {subj_uri} <http://kqapro.org/property/{sanitized_pred}> {target_uri} . }}
+            UNION
+            {{ {target_uri} <http://kqapro.org/property/{sanitized_pred}> {subj_uri} . }}
+        }}
+        """
+
+    matched_as = "none"
+    verdict = "FALSE"
+    explanation = ""
+    try:
+        if predicate_type in ("attribute", "auto"):
+            try:
+                if ask(attr_query()):
+                    matched_as = "attribute"
+                    verdict = "TRUE"
+                    explanation = f"{subject_id} has attribute '{predicate}' with value '{target}'"
+            except Exception as ex_a:
+                if predicate_type == "attribute":
+                    raise
+                logger.debug(f"VerifyFact attr branch failed: {ex_a}")
+        if verdict == "FALSE" and predicate_type in ("relation", "auto"):
+            if ask(rel_query()):
+                matched_as = "relation"
+                verdict = "TRUE"
+                explanation = f"({subject_id}) -[{predicate}]-> ({target}) exists"
+        if verdict == "FALSE":
+            explanation = f"No '{predicate}' fact found between {subject_id} and {target}"
+            matched_as = "none"
+
+        session_journal.verified_facts.append({
+            "fact": f"VerifyFact({subject_id}, {predicate}, {target}) = {verdict}",
+            "source": "VerifyFact",
+        })
+        session_journal.add_completed_step(explanation)
+        return VerifyFactResponse(
+            verdict=verdict, explanation=explanation,
+            subject_id=subject_id, predicate=predicate, target=target,
+            matched_as=matched_as,
+        )
+    except Exception as e:
+        logger.error(f"VerifyFact failed: {e}")
+        session_journal.add_failed_attempt(
+            f"VerifyFact({subject_id}, {predicate}, {target}): {str(e)[:120]}"
+        )
+        return VerifyFactResponse(
+            verdict="ERROR",
+            explanation=f"Could not verify: {str(e)[:200]}",
+            subject_id=subject_id, predicate=predicate, target=target,
+            matched_as="error",
         )
 
 
