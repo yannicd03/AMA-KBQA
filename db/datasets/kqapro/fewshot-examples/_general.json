@@ -20,8 +20,18 @@
     "applies_to": ["QueryAttr", "QueryName"]
   },
   {
-    "title": "Use SPARQL for complex conditions",
-    "guidance": "For OR conditions (UNION), multi-hop joins (>2 hops), or large set operations, use RunSPARQL directly. Individual tool calls are slower and may miss results. Always use COUNT(DISTINCT ...) with UNION to avoid double-counting.",
-    "applies_to": ["Count", "SelectAmong"]
+    "title": "Prefer CountEntities for any 'How many?' question",
+    "guidance": "CountEntities returns the EXACT integer count via SPARQL COUNT(DISTINCT) and is the FIRST tool to reach for. Never use FilterEntities + len(matches) -- it silently truncates at limit=50 and returns the wrong number. For OR conditions ('X has Y>A or Y<B'), pass the second branch through or_conditions=[{...}] instead of writing UNION SPARQL by hand. For 'all mammals' or any concept with subtypes, use transitive_concept=True. Hand-written COUNT SPARQL via RunSPARQL is the LAST resort, only for 3+ relation-hop joins.",
+    "applies_to": ["Count"]
+  },
+  {
+    "title": "Prefer SelectExtreme for SelectAmong / SelectBetween",
+    "guidance": "SelectExtreme returns the actual winner via SPARQL ORDER BY -- do NOT make the LLM eyeball values from CompareEntities. For SelectAmong over a typed group: pass concept + attribute_name + mode='max'|'min'. For SelectBetween over two known entities: pass entity_ids=[id_A, id_B] + attribute_name + mode. For dates, mode='min' = earliest = older. CompareEntities is fine for diagnostic display but SelectExtreme is the answer-producing call.",
+    "applies_to": ["SelectAmong", "SelectBetween"]
+  },
+  {
+    "title": "Prefer VerifyFact for fact-existence checks",
+    "guidance": "VerifyFact(subject_id, predicate, target) does a single SPARQL ASK and returns a clean TRUE/FALSE. Use it instead of GetAttributeDetails-then-interpret-empty-as-no. predicate_type='auto' tries attribute first, then relation. For numeric or date COMPARISONS still use GetAttributeDetails -> VerifyNumericCondition.",
+    "applies_to": ["Verify"]
   }
 ]

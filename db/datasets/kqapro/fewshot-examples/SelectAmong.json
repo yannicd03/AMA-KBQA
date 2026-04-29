@@ -1,1 +1,35 @@
-[]
+[
+  {
+    "question": "Which former French region has the smallest population and a population that is not equal to 97000?",
+    "answer": "Champagne-Ardenne",
+    "qtype": "SelectAmong",
+    "trace": [
+      {"tool": "SelectExtreme", "args": "{'concept': 'former French region', 'attribute_name': 'population', 'mode': 'min', 'filter_attribute_name': 'population', 'filter_attribute_value': '97000', 'filter_operator': '!='}", "result": "{\"mode\": \"min\", \"attribute_name\": \"population\", \"results\": [{\"entity_id\": \"Q14103\", \"entity_name\": \"Champagne-Ardenne\", \"value\": \"1339008\"}]}"}
+    ],
+    "lesson": "SelectExtreme one-shots SelectAmong: pass concept, ranking attribute, mode='min'|'max', plus optional filter_attribute_* for pre-filtering ('not equal to 97000'). Don't enumerate via FilterEntities + CompareEntities + manual pick -- the LLM gets the comparison wrong on large sets.",
+    "tool_count": 1,
+    "collected_at": "2026-04-29T14:00:00"
+  },
+  {
+    "question": "Which film has the longest duration?",
+    "answer": "War and Peace",
+    "qtype": "SelectAmong",
+    "trace": [
+      {"tool": "SelectExtreme", "args": "{'concept': 'film', 'attribute_name': 'duration', 'mode': 'max', 'k': 1}", "result": "{\"mode\": \"max\", \"attribute_name\": \"duration\", \"results\": [{\"entity_id\": \"Q845176\", \"entity_name\": \"War and Peace\", \"value\": \"432\"}]}"}
+    ],
+    "lesson": "Open-ended superlative: SelectExtreme with concept + attribute + mode. k=1 returns the winner; k=N returns top-N for tie checking.",
+    "tool_count": 1,
+    "collected_at": "2026-04-29T14:00:00"
+  },
+  {
+    "question": "Which newscast whose number of seasons is less than 25 has the lowest episode count?",
+    "answer": "The Colbert Report",
+    "qtype": "SelectAmong",
+    "trace": [
+      {"tool": "SelectExtreme", "args": "{'concept': 'newscast', 'attribute_name': 'number of episodes', 'mode': 'min', 'filter_attribute_name': 'number of seasons', 'filter_attribute_value': '25', 'filter_operator': '<'}", "result": "{\"mode\": \"min\", \"results\": [{\"entity_id\": \"Q...\", \"entity_name\": \"The Colbert Report\", ...}]}"}
+    ],
+    "lesson": "Filter + rank in one tool call. filter_attribute_* applies BEFORE the ORDER BY, so 'whose seasons < 25' is part of the filter, 'lowest episode count' is the ranking attribute with mode='min'.",
+    "tool_count": 1,
+    "collected_at": "2026-04-29T14:00:00"
+  }
+]

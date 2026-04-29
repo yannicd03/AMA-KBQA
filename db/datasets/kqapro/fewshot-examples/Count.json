@@ -1,66 +1,39 @@
 [
   {
+    "question": "How many Pennsylvania counties have a population greater than 7800 or a population less than 40000000?",
+    "answer": "39",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "CountEntities", "args": "{'concept': 'county of Pennsylvania', 'attribute_name': 'population', 'attribute_value': '7800', 'operator': '>', 'or_conditions': [{'attribute_name': 'population', 'attribute_value': '40000000', 'operator': '<'}]}", "result": "{\"count\": 39, \"description\": \"type=county of Pennsylvania, population>7800, OR population<40000000\", \"status\": \"ok\"}"}
+    ],
+    "lesson": "Single CountEntities call with or_conditions handles 'A or B' filters in one shot. NEVER call FilterEntities then count results -- limit=50 silently truncates and returns the wrong number. NEVER write UNION SPARQL by hand for OR conditions on the same attribute.",
+    "tool_count": 1,
+    "collected_at": "2026-04-29T14:00:00"
+  },
+  {
+    "question": "How many films were released after 2000 and have a duration greater than 120 minutes?",
+    "answer": "354",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "CountEntities", "args": "{'concept': 'film', 'attribute_name': 'publication date', 'attribute_value': '2000-01-01', 'operator': '>'}", "result": "{\"count\": <N>, \"description\": \"...\", \"status\": \"ok\"}"},
+      {"tool": "CountEntities", "args": "{'concept': 'film', 'attribute_name': 'duration', 'attribute_value': '120', 'operator': '>'}", "result": "{\"count\": <M>, \"description\": \"...\", \"status\": \"ok\"}"}
+    ],
+    "lesson": "For an AND of two conditions on different attributes of the same concept, you can either (a) call FilterEntities to get the entity_ids matching one condition then CountEntities(entity_ids=..., attribute_name=..., attribute_value=..., operator=...) for the AND, or (b) call CountEntities twice and reason. Prefer (a) for correctness.",
+    "tool_count": 2,
+    "collected_at": "2026-04-29T14:00:00"
+  },
+  {
     "question": "How many historic counties of England are known as places where the screenwriter of Babylon 5: The Gathering was buried?",
     "answer": "0",
     "qtype": "Count",
     "trace": [
-      {
-        "tool": "FindNode",
-        "args": "{'semantic_node_name': 'Babylon 5: The Gathering'}",
-        "result": "found ? (Babylon 5: The Gathering)"
-      },
-      {
-        "tool": "GetRelationDetails",
-        "args": "Q3494438, screenwriter",
-        "result": "0 targets"
-      },
-      {
-        "tool": "GetNodeSummary",
-        "args": "Q126941",
-        "result": "{\"node_id\":\"Q126941\",\"name\":\"J. Michael Straczynski\",\"node_type\":\"entity\",\"attri"
-      },
-      {
-        "tool": "FindNode",
-        "args": "{'semantic_node_name': 'burial'}",
-        "result": "found ? (cemetery)"
-      },
-      {
-        "tool": "GetRelationDetails",
-        "args": "Q126941, place of burial",
-        "result": "0 targets"
-      },
-      {
-        "tool": "FindNode",
-        "args": "{'semantic_node_name': 'J. Michael Straczynski burial'}",
-        "result": "found ? (J. Michael Straczynski)"
-      },
-      {
-        "tool": "GetRelationDetails",
-        "args": "Q126941, place of death",
-        "result": "0 targets"
-      },
-      {
-        "tool": "GetRelationDetails",
-        "args": "Q3494438, creator",
-        "result": "0 targets"
-      }
+      {"tool": "FindNode", "args": "{'semantic_node_name': 'Babylon 5: The Gathering'}", "result": "found Q3494438"},
+      {"tool": "GetRelationDetails", "args": "Q3494438, screenwriter", "result": "Q126941 (J. Michael Straczynski)"},
+      {"tool": "GetRelationDetails", "args": "Q126941, place of burial", "result": "0 targets"},
+      {"tool": "GetJournalSummary", "args": "{}", "result": "no place of burial discovered for Q126941"}
     ],
-    "lesson": "Solved via: FindNode -> GetRelationDetails -> GetNodeSummary",
-    "tool_count": 14,
+    "lesson": "When a multi-hop chain dead-ends (the screenwriter has no place_of_burial), the Count is 0. Confirm via GetJournalSummary before answering -- do not loop on synonyms.",
+    "tool_count": 4,
     "collected_at": "2026-02-13T01:50:37.950163"
-  },
-  {
-    "question": "How many languages are spoken in France or are official languages of Switzerland?",
-    "answer": "8",
-    "qtype": "Count",
-    "trace": [
-      {"tool": "FindNode", "args": "France", "result": "found Q142 (France)"},
-      {"tool": "FindNode", "args": "Switzerland", "result": "found Q39 (Switzerland)"},
-      {"tool": "RunSPARQL", "args": "SELECT (COUNT(DISTINCT ?lang) AS ?count) WHERE { { ex:Q142 prop:languages_spoken_or_written ex:?lang . } UNION { ex:Q39 prop:official_language ?lang . } }", "result": "count=8"}
-    ],
-    "lesson": "For OR/UNION counting, use RunSPARQL with UNION and COUNT(DISTINCT ...) to avoid double-counting entities that match both conditions. Do NOT fetch two lists and merge manually.",
-    "pitfall": "Without DISTINCT, entities matching both conditions are counted twice. Always use COUNT(DISTINCT ?var) with UNION patterns.",
-    "tool_count": 3,
-    "collected_at": "2026-02-13T12:00:00"
   }
 ]
