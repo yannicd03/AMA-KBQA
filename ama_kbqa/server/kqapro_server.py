@@ -14,6 +14,7 @@ from ama_kbqa.config import (
     get_score_threshold,
 )
 import os
+import re
 import sys
 import time
 import json
@@ -3821,7 +3822,7 @@ def CountEntities(
     operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
     entity_ids: list[str] | None = None,
     or_conditions: list[dict] | None = None,
-    transitive_concept: bool = False,
+    transitive_concept: bool = True,
 ) -> CountResponse:
     """
     Return the EXACT number of entities matching a concept and/or attribute condition(s).
@@ -3844,8 +3845,10 @@ def CountEntities(
         entity_ids: Optional list of entity IDs to restrict the count to.
         or_conditions: Additional attribute conditions OR'd with the primary. Same shape as
             FilterEntities. Each item: {"attribute_name", "attribute_value", "operator"}.
-        transitive_concept: If True, count entities whose type is `concept` OR any descendant
-            (rdf:type/rdf:type*).
+        transitive_concept: If True (default), count entities whose type is `concept` OR any
+            descendant (rdf:type/rdf:type*). Set False only when you specifically want to
+            exclude subclasses (rare — most "how many X" questions intend the transitive set,
+            e.g., "woodwind instruments" includes saxophones).
 
     Returns:
         CountResponse with the exact integer count.
@@ -3936,7 +3939,7 @@ def SelectExtreme(
     mode: Literal["max", "min"],
     entity_ids: list[str] | None = None,
     concept: str = "",
-    transitive_concept: bool = False,
+    transitive_concept: bool = True,
     k: int = 1,
     filter_attribute_name: str = "",
     filter_attribute_value: str = "",
@@ -3961,7 +3964,8 @@ def SelectExtreme(
         mode: "max" for largest, "min" for smallest. For dates, "min" = earliest, "max" = latest.
         entity_ids: Optional list of candidate entity IDs.
         concept: Optional concept restriction (alternative to entity_ids).
-        transitive_concept: If True, include subclasses of `concept`.
+        transitive_concept: If True (default), include subclasses of `concept` (rdf:type*).
+            Set False only when subclass entities should be excluded.
         k: How many top entities to return. Default 1 (the winner).
         filter_attribute_name / filter_attribute_value / filter_operator: Optional pre-filter
             applied before ranking (lets you express "smallest X where Y != Z" in one call).
@@ -4138,8 +4142,34 @@ def VerifyFact(
         }}
         """
 
-    def rel_query() -> str:
-        target_uri = format_entity_uri(target)
+    def resolve_target_to_qid(label: str) -> Optional[str]:
+        """Resolve a free-text label to a Q-id when the agent passes 'Netherlands'
+        instead of 'Q55'. Case-insensitive exact-label match; returns the first
+        matching Q-id or None. Avoids the silent-FALSE bug where
+        format_entity_uri('Netherlands') becomes a non-existent IRI."""
+        safe_label = label.replace('"', '\\"')
+        q = f"""
+        {SPARQL_PREFIXES}
+        SELECT ?s WHERE {{
+            ?s rdfs:label ?l .
+            FILTER(LCASE(STR(?l)) = LCASE("{safe_label}"))
+            FILTER(STRSTARTS(STR(?s), "{NS_ENTITY}"))
+        }} LIMIT 1
+        """
+        try:
+            sparql_client.setQuery(q)
+            res = sparql_client.query().convert()
+            bindings = res.get("results", {}).get("bindings", [])
+            if not bindings:
+                return None
+            uri = bindings[0]["s"]["value"]
+            return uri.split("/entity/")[-1]
+        except Exception as ex:
+            logger.debug(f"VerifyFact label resolution failed: {ex}")
+            return None
+
+    def rel_query(resolved_target: str) -> str:
+        target_uri = format_entity_uri(resolved_target)
         return f"""
         {SPARQL_PREFIXES}
         ASK {{
@@ -4164,10 +4194,21 @@ def VerifyFact(
                     raise
                 logger.debug(f"VerifyFact attr branch failed: {ex_a}")
         if verdict == "FALSE" and predicate_type in ("relation", "auto"):
-            if ask(rel_query()):
+            # Auto-resolve label → Q-id when target isn't already an entity ID.
+            # Without this, VerifyFact(Q772, country, "Netherlands") silently
+            # returns FALSE because <ex:Netherlands> doesn't exist.
+            rel_target = target
+            if not re.match(r"^Q\d+$", target):
+                resolved = resolve_target_to_qid(target)
+                if resolved:
+                    rel_target = resolved
+                    logger.info(f"VerifyFact: resolved relation target '{target}' → {resolved}")
+            if ask(rel_query(rel_target)):
                 matched_as = "relation"
                 verdict = "TRUE"
-                explanation = f"({subject_id}) -[{predicate}]-> ({target}) exists"
+                explanation = f"({subject_id}) -[{predicate}]-> ({rel_target}) exists"
+                if rel_target != target:
+                    explanation += f" [resolved '{target}' → {rel_target}]"
         if verdict == "FALSE":
             explanation = f"No '{predicate}' fact found between {subject_id} and {target}"
             matched_as = "none"
