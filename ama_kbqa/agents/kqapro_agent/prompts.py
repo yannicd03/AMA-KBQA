@@ -258,8 +258,8 @@ TOOL_LOOP_GUIDANCE = {
     "ExploreNeighborhood": "DEPRECATED. Use GetNodeSummary instead.",
     "GetAttributeWithQualifiers": "No qualifiers. Try GetAttributeDetails or TemporalAttributeQuery.",
     "TemporalAttributeQuery": "Date not found. Increase tolerance_days or use GetAttributeWithQualifiers.",
-    "CountEntities": "Count was 0 / unexpected. transitive_concept defaults to True now; if you set it False, retry with True. Check the concept label via FindNode (you may have an exact-string mismatch), or drop the attribute filter to count by concept alone first.",
-    "SelectExtreme": "No winner returned. Verify the attribute_name via FindNode, drop the filter_attribute pre-filter, or fall back to CompareEntities on a smaller candidate set. transitive_concept defaults to True now.",
+    "CountEntities": "Count was 0 / unexpected. If 0 AND your concept has subclasses (e.g. 'woodwind instrument' has saxophone, trumpet etc.), retry with transitive_concept=True. Otherwise check the concept label via FindNode (exact-string mismatch is common), or drop the attribute filter to count by concept alone first. Do NOT use transitive_concept=True on flat concepts like 'country' or 'province' — it can over-count by pulling in unrelated subclasses.",
+    "SelectExtreme": "No winner returned. Verify the attribute_name via FindNode, drop the filter_attribute pre-filter, or fall back to CompareEntities on a smaller candidate set. If your concept is a genuine hierarchy (e.g. 'instrument' covering all subspecies), retry with transitive_concept=True; do NOT enable it for flat concepts.",
     "VerifyFact": "Returned FALSE / not found. (Note: VerifyFact now auto-resolves a label target like 'Netherlands' to its Q-id for relations, so label/Q-id mismatch is no longer a silent FALSE source.) Try predicate_type='auto' if you specified one, check the predicate spelling via FindNode's available_predicates, or use GetAttributeDetails to inspect the actual stored value.",
 }
 
