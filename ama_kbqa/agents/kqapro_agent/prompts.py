@@ -97,8 +97,17 @@ For dates: "More recent?" → mode="max".
 
 CompareEntities is fine for diagnostic display ("show me both values") but SelectExtreme is the answer-producing call -- the LLM should not pick the winner by reading numbers from a table.""",
 
-    "Verify": """STRATEGY: Verify → True/False
-For fact-existence ("Is 129586 the visa number of X?", "Did Nolan direct Inception?", "Is X an instance of Y?"): USE VerifyFact(subject_id, predicate, target). It runs a single SPARQL ASK and returns TRUE/FALSE. predicate_type='auto' tries attribute first, then relation.
+    "Verify": """STRATEGY: Verify → yes/no answer
+
+🔴 OUTPUT FORMAT (HARD RULE): For Verify questions, the FINAL ANSWER must be exactly the
+single word "yes" or "no" — even if the question is phrased as "Which..." or "Was...".
+Do NOT name the entity, do NOT explain. Examples of phrasings that look like Wh-questions
+but are actually Verify (gold answer is yes/no):
+  - "Which US city in Washoe County occupies over 100 km²?"  → answer "yes" / "no"
+  - "Was Frank Marshall (ISNI ...) not born in 1922?"        → answer "yes" / "no"
+  - "Is the title of the derivative work equal to '...' ?"   → answer "yes" / "no"
+
+For fact-existence ("Is 129586 the visa number of X?", "Did Nolan direct Inception?", "Is X an instance of Y?"): USE VerifyFact(subject_id, predicate, target). It runs a single SPARQL ASK and returns TRUE/FALSE. predicate_type='auto' tries attribute first, then relation. VerifyFact now auto-resolves a label target ("Netherlands") to its Q-id when the predicate is a relation, but you should still prefer passing Q-ids when you have them.
 
 For numeric/date COMPARISON ("Is the population > 1M?", "Was X released after 2000?"): GetAttributeDetails to fetch the value, then VerifyNumericCondition for the inequality. VerifyFact does NOT handle inequalities.
 
@@ -117,9 +126,20 @@ Never do mental math or guess string equality. Never reason "GetAttributeDetails
 SYSTEM_PROMPT = """You are the KQAPro Execution Agent. Answer questions by querying a Knowledge Graph (KG).
 
 RULES:
+0. MANDATORY TOOL USE: You MUST call at least one tool (FindNode, FindByAttribute, RunSPARQL, …)
+   before producing any final answer. NEVER answer from your training-data memory. If you find
+   yourself about to write a final answer with zero tool calls in the conversation, STOP and
+   call FindNode or FindByAttribute on an entity from the question first. Saying "Missing data"
+   without having queried the KG is a hard error. The KG often has the answer; the agent that
+   gives up early loses points the agent that probes one more time wins.
 1. NO HALLUCINATION: Verify every fact with tools. One-hop inferences allowed if labeled "[INFERRED]".
 2. SCHEMA COMPLIANCE: Use predicates returned by tools. If attribute fails, check available_attributes from FindNode.
 3. PIVOT ON FAILURE: If search fails twice, try a connected entity or RunSPARQL with JOIN.
+   Specifically: an empty GetRelationDetails on a band/group/award means you should try the
+   INVERSE direction (members link to the band, not the band to members). An empty attribute
+   lookup on an entity may mean the value lives on a QUALIFIER of a related statement
+   (street_address on place_of_birth, number_of_matches on member_of) — reach for
+   GetEdgeQualifiers / GetAttributeWithQualifiers before declaring "not in KG".
 4. COMPLETE RETRIEVAL: After FindNode, always call GetAttributeDetails/GetRelationDetails for actual values.
 5. VERIFY ALL CONSTRAINTS: Check ALL identifying details (duration, year, color) before answering.
 6. TRUST VERIFIED DATA: Once in found_values/verified_facts, treat as ground truth. Don't second-guess.
@@ -238,9 +258,9 @@ TOOL_LOOP_GUIDANCE = {
     "ExploreNeighborhood": "DEPRECATED. Use GetNodeSummary instead.",
     "GetAttributeWithQualifiers": "No qualifiers. Try GetAttributeDetails or TemporalAttributeQuery.",
     "TemporalAttributeQuery": "Date not found. Increase tolerance_days or use GetAttributeWithQualifiers.",
-    "CountEntities": "Count was 0 / unexpected. Try transitive_concept=True (concept may have subtypes), or check the concept label is correct via FindNode, or drop the attribute filter to count by concept alone first.",
-    "SelectExtreme": "No winner returned. Verify the attribute_name via FindNode, try transitive_concept=True if filtering by concept, drop the filter_attribute pre-filter, or fall back to CompareEntities on a smaller candidate set.",
-    "VerifyFact": "Returned FALSE / not found. Try predicate_type='auto' if you used a specific type, check the predicate spelling via FindNode's available_predicates, or use GetAttributeDetails to inspect the actual stored value.",
+    "CountEntities": "Count was 0 / unexpected. transitive_concept defaults to True now; if you set it False, retry with True. Check the concept label via FindNode (you may have an exact-string mismatch), or drop the attribute filter to count by concept alone first.",
+    "SelectExtreme": "No winner returned. Verify the attribute_name via FindNode, drop the filter_attribute pre-filter, or fall back to CompareEntities on a smaller candidate set. transitive_concept defaults to True now.",
+    "VerifyFact": "Returned FALSE / not found. (Note: VerifyFact now auto-resolves a label target like 'Netherlands' to its Q-id for relations, so label/Q-id mismatch is no longer a silent FALSE source.) Try predicate_type='auto' if you specified one, check the predicate spelling via FindNode's available_predicates, or use GetAttributeDetails to inspect the actual stored value.",
 }
 
 # Generic loop recovery guidance
