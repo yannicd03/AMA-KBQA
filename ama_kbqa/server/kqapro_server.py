@@ -3822,7 +3822,7 @@ def CountEntities(
     operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
     entity_ids: list[str] | None = None,
     or_conditions: list[dict] | None = None,
-    transitive_concept: bool = True,
+    transitive_concept: bool = False,
 ) -> CountResponse:
     """
     Return the EXACT number of entities matching a concept and/or attribute condition(s).
@@ -3845,10 +3845,12 @@ def CountEntities(
         entity_ids: Optional list of entity IDs to restrict the count to.
         or_conditions: Additional attribute conditions OR'd with the primary. Same shape as
             FilterEntities. Each item: {"attribute_name", "attribute_value", "operator"}.
-        transitive_concept: If True (default), count entities whose type is `concept` OR any
-            descendant (rdf:type/rdf:type*). Set False only when you specifically want to
-            exclude subclasses (rare — most "how many X" questions intend the transitive set,
-            e.g., "woodwind instruments" includes saxophones).
+        transitive_concept: If True, count entities whose type is `concept` OR any descendant
+            (rdf:type/rdf:type*). Default False (most "how many X" questions are flat counts
+            over a single class — `country`, `province`, `film`). Set True ONLY for genuine
+            class hierarchies that the question relies on, e.g. "How many woodwind instruments?"
+            (saxophones are a subclass of woodwind instrument). On a 0-result, retrying with
+            transitive_concept=True is a cheap pivot.
 
     Returns:
         CountResponse with the exact integer count.
@@ -3939,7 +3941,7 @@ def SelectExtreme(
     mode: Literal["max", "min"],
     entity_ids: list[str] | None = None,
     concept: str = "",
-    transitive_concept: bool = True,
+    transitive_concept: bool = False,
     k: int = 1,
     filter_attribute_name: str = "",
     filter_attribute_value: str = "",
@@ -3964,8 +3966,10 @@ def SelectExtreme(
         mode: "max" for largest, "min" for smallest. For dates, "min" = earliest, "max" = latest.
         entity_ids: Optional list of candidate entity IDs.
         concept: Optional concept restriction (alternative to entity_ids).
-        transitive_concept: If True (default), include subclasses of `concept` (rdf:type*).
-            Set False only when subclass entities should be excluded.
+        transitive_concept: If True, include subclasses of `concept` (rdf:type*). Default
+            False — most Select questions over a flat concept ("country", "film") shouldn't
+            expand. Set True only when the concept is a genuine hierarchy whose subclasses
+            you want considered.
         k: How many top entities to return. Default 1 (the winner).
         filter_attribute_name / filter_attribute_value / filter_operator: Optional pre-filter
             applied before ranking (lets you express "smallest X where Y != Z" in one call).
