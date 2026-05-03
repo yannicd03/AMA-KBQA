@@ -30,6 +30,17 @@
 
 ---
 
+## Decisions
+
+| Document | Description |
+|----------|-------------|
+| [Decisions/kqapro-tool-surface-expansion.md](Decisions/kqapro-tool-surface-expansion.md) | Why CountEntities, SelectExtreme, VerifyFact were added + FilterEntities extensions (closes 42% coverage gap) |
+| [Decisions/text-mode-tool-calls.md](Decisions/text-mode-tool-calls.md) | Why and how a client-side `<tool_call>` parser was built for models that can't emit native function calls (minimax-m2.7) |
+| [Decisions/llm-judge-concept-extraction-rubric.md](Decisions/llm-judge-concept-extraction-rubric.md) | LLM judge rubric rewrite: concept-extraction first, per-type rules, hard-negatives for tool-call fragments and max-iteration errors (+~2 pp, removes verbose-answer bias) |
+| [Decisions/transitive-concept-default-false.md](Decisions/transitive-concept-default-false.md) | Why `transitive_concept` default stays False: n=100 benchmark showed -28 pp Count regression on flat concepts; retry-on-empty guidance keeps hierarchy cases recoverable |
+
+---
+
 ## Tasks
 
 | Document | Status | Description |
@@ -47,7 +58,7 @@
 |----------|-------------|
 | [README.md](../README.md) | Setup instructions, environment variables, database bootstrap |
 | [AGENT_ARCHITECTURE.md](../AGENT_ARCHITECTURE.md) | Detailed agent architecture reference (1000+ lines) |
-| [TOOLS_REFERENCE.md](../TOOLS_REFERENCE.md) | Complete KQAPro MCP tool reference (22 tools) |
+| [TOOLS_REFERENCE.md](../TOOLS_REFERENCE.md) | Complete KQAPro MCP tool reference (25 tools) |
 | [CLAUDE.md](../CLAUDE.md) | AI assistant instructions and codebase context |
 | [docs/datasets/kqapro.md](../docs/datasets/kqapro.md) | KQAPro dataset structure (~94K Q&A, 1.6M RDF triples) |
 | [docs/datasets/sciqa.md](../docs/datasets/sciqa.md) | SciQA/ORKG dataset structure (468 Q&A, 1.1M triples) |
