@@ -522,9 +522,57 @@ Agent's Reasoning Process:
 
 Evaluate the following:
 
-1. **Correctness**: Does the predicted answer match the gold answer? Consider semantic equivalence, not just exact string matching. For example, "yes" and "Yes, it is true" should both be considered correct if the gold answer is "yes".
+1. **Correctness — concept-level match, not phrasing match**:
+   First, extract the GOLD CONCEPT from the gold answer (it's usually a single relation
+   label, attribute value, entity name, count, date, or yes/no). Then ask: is that gold
+   concept STATED IN the predicted answer? If yes, mark CORRECT — even if the predicted
+   answer wraps it in a sentence, names additional supporting facts, or restates it in
+   a different surface form. The agent's job is to convey the gold concept; tersely-or-
+   verbosely is a style choice, not a correctness one.
 
-2. **Correctness Reasoning**: Explain in detail why you judged the answer as correct or incorrect.
+   Specifically:
+   - **QueryRelation** (gold is a relation label like "cast member", "country", "instrument",
+     "official color", "producer", "genre"): if the predicted answer contains the gold relation
+     phrase OR a sentence that asserts that exact relation between the two named entities,
+     that is CORRECT. Examples that ARE correct:
+       gold "cast member"      ← pred "X is a cast member of Y"          ✓
+       gold "country"          ← pred "X is connected to Y as its country" ✓
+       gold "official color"   ← pred "X has Y as one of its official colors" ✓
+       gold "instrument"       ← pred "X plays Y" (where Y is an instrument) ✓
+   - **Count** (gold is an integer): if the predicted answer states the same integer as a
+     count, it is CORRECT — regardless of whether the agent also identifies WHICH entities
+     they are. ("Only one type … is geology" matches gold "1" if gold is the count.)
+   - **Verify** (gold is "yes" or "no"): the predicted answer must explicitly say yes/no
+     (or a sentence that resolves to yes/no, e.g. "Yes, X is …"). If the question is
+     phrased as a Wh-question ("Which X has Y?") but the gold answer is yes/no, the agent
+     MUST answer yes/no, not name an entity. An entity-name answer is INCORRECT here.
+   - **QueryAttr / dates / values**: equivalent formats of the same value are correct
+     (e.g. "1982-06-12" ≡ "12th June 1982"; "10.08634 sq km" ≡ "10.08634 square kilometre").
+   - **Semantic equivalence**: "yes" ≡ "Yes, it is true"; "Brazil national football team" ≡
+     "Brazil national football team" (soccer/football synonyms ok).
+
+   Conversely, mark INCORRECT when:
+   - The predicted answer is a TOOL-CALL FRAGMENT (e.g. `<tool_call>{{...}}</tool_call>`)
+     or `<think>...</think>` block with no final answer extracted. Lack of a final answer
+     is wrong, even if the gold value happens to appear inside the agent's thoughts.
+   - The predicted answer is "Error: Agent reached maximum iteration limit" or any
+     similar failure message. This is NEVER correct, even if the gold answer is "0" or
+     "no" — coincidental alignment with a default/empty answer is not a real answer.
+   - The predicted answer asserts "data not in KG" / "missing data" / "no record found"
+     while the gold answer provides a specific value. Treat this as INCORRECT — the agent
+     gave up. (This is true regardless of whether the data really IS in the KG; the agent
+     failed to retrieve it.)
+   - The predicted answer names a different entity, value, or relation than the gold.
+     "rock music" ≠ "comedy rock" (broader vs. specific genre); "Sardinia" ≠
+     "masculine singular" (entity vs. grammatical form); "infectious disease" ≠
+     "exact match" (rdf:type vs. ontology mapping relation type).
+
+2. **Correctness Reasoning**: Explain in detail why you judged the answer as correct
+   or incorrect. **CRITICAL: your `is_correct` field must agree with this reasoning.**
+   If your reasoning says "the predicted answer matches the gold answer", set
+   `is_correct: true`. If it says "the predicted answer does not match", set
+   `is_correct: false`. Do not write reasoning that argues for one verdict and emit the
+   opposite verdict.
 
 3. **Argumentation Quality**: Analyze the agent's reasoning process.
 
