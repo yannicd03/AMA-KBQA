@@ -38,7 +38,7 @@ All agents communicate with their MCP servers via **stdio protocol**.
         ▼                     ▼
 ┌─────────────────┐  ┌─────────────────┐
 │ kqapro_server   │  │ sciqa_server    │
-│ (22 tools)      │  │ (18 tools)      │
+│ (25 tools)      │  │ (18 tools)      │
 └─────────────────┘  └─────────────────┘
 ```
 
@@ -52,11 +52,12 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 
 | File | Contents | Line Count |
 |------|----------|------------|
-| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap) | ~600 |
+| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap); text-tool-call init + loop hooks | ~600 |
 | `mcp_client.py` | Shared MCPClient class | ~120 |
 | `types.py` | Response types (EntityMatch, NodeDetails, etc.) | ~280 |
 | `config.py` | Configuration dataclasses | ~220 |
 | `state.py` | JournalState (Pydantic BaseModel, single source of truth) and JournalManager — caps, helpers, `to_str()`/`to_summary_str()` | ~340 |
+| `text_tool_calls.py` | Text-mode tool-call shim: `needs_text_tool_calls`, `build_text_mode_tool_catalog`, `parse_text_tool_calls`, `TEXT_TOOL_CALL_INSTRUCTION` | ~150 |
 | `adapters/base_adapter.py` | BaseKGAdapter ABC | ~200 |
 | `adapters/kqapro_adapter.py` | KQAPro-specific config | ~150 |
 | `adapters/sciqa_adapter.py` | SciQA-specific config (includes sparql_cap: 10) | ~180 |
@@ -65,6 +66,18 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 - Abstract methods: `get_config()`, `get_mcp_server_path()`
 - Template methods: `_get_system_prompt()`, `_classify_question()`, `_extract_entities()`
 - Concrete methods: `ask()`, `_run_tool_loop()`, `_detect_loops()`, `reset()`, `soft_reset()`, `close()`
+
+### Text-Tool-Call Mode
+
+Some models (e.g., `minimax-m2.7`) cannot emit OpenAI-structured `tool_calls` — they output prose or `<tool_call>` XML instead. The framework handles this transparently:
+
+1. **Detection:** `text_tool_calls.needs_text_tool_calls(model_name)` — substring match; currently covers `minimax-m2.7`.
+2. **System prompt injection (init):** Two extra messages prepended: `TEXT_TOOL_CALL_INSTRUCTION` (mandates `<tool_call>{"name":..., "arguments":...}</tool_call>` format) + a plain-text tool catalog from `build_text_mode_tool_catalog`.
+3. **API call:** `tools=None` — no native function-call schema is sent to the endpoint.
+4. **Response parsing (loop hook):** If `message.tool_calls` is empty but content contains `<tool_call>` blocks, `parse_text_tool_calls` constructs synthetic OpenAI-shaped tool_calls; the agent loop continues unchanged.
+5. **Tool results:** Appended as `role=user` prose wrapped in `<tool_result name="X">...</tool_result>` (not `role=tool`, which these models were not trained on).
+
+See `Decisions/text-mode-tool-calls.md` for the failure-mode analysis and rationale.
 
 ---
 

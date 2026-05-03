@@ -227,3 +227,4 @@ claude.md
 **.log
 /benchmark_results
 /batch_results
+/graphify-out/
