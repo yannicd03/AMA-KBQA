@@ -25,6 +25,8 @@ from ama_kbqa.config import (
     get_chat_max_tokens,
     get_provider_preferences,
     get_auto_inject_journal,
+    get_zero_tool_call_retry,
+    get_zero_tool_call_retry_max,
     get_synthesis_client,
     get_synthesis_enabled,
     get_synthesis_model_name,
@@ -764,6 +766,9 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         iteration_count = 0
         final_agent_content: Optional[str] = None
+        total_tool_calls_made = 0
+        zero_tool_call_retries = 0
+        zero_tool_call_retry_max = get_zero_tool_call_retry_max() if get_zero_tool_call_retry() else 0
 
         while True:
             iteration_count += 1
@@ -830,11 +835,42 @@ Change strategy or acknowledge the data doesn't exist."""
 
             # No tool calls - break for synthesis
             if not message.tool_calls:
+                # RULE 0 enforcement: if the agent is about to emit a final
+                # answer without ever having queried the KG, re-prompt it
+                # once. Pure-prompt RULE 0 / RULE 0a do not bind reliably for
+                # gemma; observed ~7% zero-tool-call hallucinations in the
+                # 2026-05-03 fixbundle audit.
+                if (
+                    total_tool_calls_made == 0
+                    and zero_tool_call_retries < zero_tool_call_retry_max
+                ):
+                    zero_tool_call_retries += 1
+                    self._trace(
+                        f"Zero-tool-call answer detected — re-prompting "
+                        f"(retry {zero_tool_call_retries}/{zero_tool_call_retry_max})",
+                        COLOR_RED,
+                    )
+                    self._messages.append({
+                        "role": "user",
+                        "content": (
+                            "STOP. You produced a final answer without calling any tools, "
+                            "which violates RULE 0 (MANDATORY TOOL USE). The knowledge graph "
+                            "almost certainly has the answer; you have not yet looked. "
+                            "Discard your previous response. "
+                            "Now: pick one entity from the question and call FindNode "
+                            "(semantic name) or FindByAttribute (exact code/URL/ID/ISNI). "
+                            "Then proceed with normal lookup. Do NOT answer in prose until "
+                            "you have queried the KG."
+                        ),
+                    })
+                    continue
                 self._trace("No more tool calls - breaking to synthesis", COLOR_GREEN)
                 if message.content:
                     self._messages.append({"role": "assistant", "content": message.content})
                 final_agent_content = message.content
                 break
+
+            total_tool_calls_made += len(message.tool_calls)
 
             # Add assistant message to history. For text-mode we keep the
             # original content (with `<tool_call>` blocks) and DON'T attach the
