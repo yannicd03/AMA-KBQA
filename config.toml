@@ -58,7 +58,7 @@ level = "INFO"
 
 [postprocessing]
 judge_provider = "openrouter"
-judge_model = "deepseek/deepseek-v3.2"
+judge_model = "deepseek/deepseek-v4-pro"
 chat_model_provider = ""
 judge_temperature = 0.7
 generate_fewshot = false
