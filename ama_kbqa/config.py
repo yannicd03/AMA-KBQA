@@ -452,6 +452,33 @@ def get_auto_inject_journal() -> bool:
     return bool(config.get("agent", {}).get("auto_inject_journal", True))
 
 
+def get_zero_tool_call_retry() -> bool:
+    """Whether to re-prompt the agent when it emits a final answer with zero tool calls.
+
+    Some models (notably gemma-4-31b on the KIT endpoint) occasionally bypass
+    RULE 0 (MANDATORY TOOL USE) and answer from prior knowledge. When this
+    setting is True (default), the tool loop detects a zero-tool-call answer,
+    injects a corrective user message, and continues so the agent can recover.
+
+    Returns:
+        bool: True to enable retry (default), False to disable.
+    """
+    config = load_config()
+    return bool(config.get("agent", {}).get("zero_tool_call_retry", True))
+
+
+def get_zero_tool_call_retry_max() -> int:
+    """Maximum number of zero-tool-call retries per question.
+
+    Returns:
+        int: max retries (default 1). 1 is enough to recover the gemma cases
+        observed in the 2026-05-03 fixbundle audit; raising it costs LLM calls
+        on the cases that genuinely cannot be answered.
+    """
+    config = load_config()
+    return int(config.get("agent", {}).get("zero_tool_call_retry_max", 1))
+
+
 def get_synthesis_enabled() -> bool:
     """Whether to run the dedicated synthesis LLM step after the tool loop.
 
