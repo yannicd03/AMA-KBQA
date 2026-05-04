@@ -38,6 +38,7 @@
 | [Decisions/text-mode-tool-calls.md](Decisions/text-mode-tool-calls.md) | Why and how a client-side `<tool_call>` parser was built for models that can't emit native function calls (minimax-m2.7) |
 | [Decisions/llm-judge-concept-extraction-rubric.md](Decisions/llm-judge-concept-extraction-rubric.md) | LLM judge rubric rewrite: concept-extraction first, per-type rules, hard-negatives for tool-call fragments and max-iteration errors (+~2 pp, removes verbose-answer bias) |
 | [Decisions/transitive-concept-default-false.md](Decisions/transitive-concept-default-false.md) | Why `transitive_concept` default stays False: n=100 benchmark showed -28 pp Count regression on flat concepts; retry-on-empty guidance keeps hierarchy cases recoverable |
+| [Decisions/qualifier-and-format-prompt-hardening.md](Decisions/qualifier-and-format-prompt-hardening.md) | 5-prompt-fix bundle + iter-cap 25→40 targeting n=100 → 0.86–0.90: GetNodeSummary gate, QueryAttr attribute-first fallback, QueryAttrQualifier direction rule + QualifierFilter, QueryRelation format + passive-voice trap |
 
 ---
 

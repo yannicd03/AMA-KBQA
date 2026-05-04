@@ -6,6 +6,7 @@ Newest first. One line per doc-affecting change.
 
 | Date | Change |
 |------|--------|
+| 2026-05-03 | Created `Decisions/qualifier-and-format-prompt-hardening.md` — ADR for 5-prompt-fix bundle + iter-cap 25→40, targeting n=100 → 0.86–0.90: SYSTEM_PROMPT RULE 0a (GetNodeSummary gate), QueryAttr fallback order, QueryAttrQualifier direction rule + QualifierFilter elevation, QueryRelation output-format gate + passive-voice trap; rationale for not yet adding `ExploreAttributes` or `GetQualifierValue` |
 | 2026-05-03 | Created `Decisions/transitive-concept-default-false.md` — ADR: `transitive_concept` default reverted to False after n=100 benchmark regression (-28 pp Count for minimax); retry-on-empty guidance added to `TOOL_LOOP_GUIDANCE` (commits `1383a1d`, `5a5090f`) |
 | 2026-05-03 | Created `Decisions/llm-judge-concept-extraction-rubric.md` — ADR: LLM judge rubric rewritten from one-liner to structured concept-extraction rubric; fixes ~3 pp verbose-answer bias; adds hard-negative rules for tool-call fragments, max-iteration errors, and KG-miss answers (commit `9822bda`) |
 | 2026-04-29 | Appended to `Decisions/kqapro-tool-surface-expansion.md` — "Follow-up: Prompt Hardening to Drive Adoption" section: root cause of 0 CountEntities calls in n=20 benchmark; changes to `prompts.py` FORBIDDEN clauses and six fewshot JSON files (commits `08cadeb`, `d0978c9`) |

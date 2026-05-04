@@ -24,16 +24,44 @@ Trust the integer CountEntities returns. Don't downgrade after verification.""",
     "QueryAttr": """STRATEGY: QueryAttr → attribute lookup
 Standard: FindNode → GetAttributeDetails (literals) or GetRelationDetails (linked entities).
 Reverse: unique ID/code/URL → FindByAttribute (faster, exact).
-If attribute fails: check available_attributes from FindNode for semantic matches.
-"X in Y": find Y first, then X related to Y. Return X's attribute.
-Fallback: SELECT ?v WHERE { ex:ID prop:PRED ?v . }""",
+
+EMPTY-RESULT FALLBACK ORDER (do NOT skip steps):
+ 1. Re-check available_attributes from the FindNode result for a near-match name
+    (e.g., question says "subscribers" → attribute may be "number of subscribers").
+ 2. Call GetNodeSummary(node_id) — returns EVERY attribute and predicate on the node in
+    one call. This is the canonical "what does this node have?" probe. Subscriber counts,
+    follower counts, ISBNs, ISNI numbers, durations, populations, codes are stored as
+    ATTRIBUTES, not relations. ExploreNeighborhood searches RELATION embeddings and will
+    NEVER surface them — do not reach for it before GetNodeSummary has confirmed no
+    matching attribute exists.
+ 3. Only if GetNodeSummary shows no candidate attribute, fall back to ExploreNeighborhood
+    (in case the question's noun is actually a related entity, not an attribute).
+ 4. Last resort: RunSPARQL with `SELECT ?p ?v WHERE { ex:ID ?p ?v . }` to dump everything.
+
+"X in Y": find Y first, then X related to Y. Return X's attribute.""",
 
     "QueryAttrQualifier": """STRATEGY: QueryAttrQualifier → contextual fact (time/place on a fact)
 Key distinction: "movie's language"=NodeAttr vs "language of website dated 1998-04-09"=EdgeQualifier.
 Steps: 1) Find base fact via GetAttributeDetails/GetRelationDetails
 2) GetEdgeQualifiers(subject_id, predicate, target_value)
 3) Match question word to qualifier: When→point_in_time, Where→location
-Filtering by qualifier: Use QualifierFilter(entity_ids, predicate, qualifier_name, value) to narrow entities by qualifier conditions.
+
+DIRECTION RULE (critical for backward edges): When GetRelationDetails returns
+`direction: "backward"` for a triple, the canonical statement is
+`<related_id> prop:<relation> <base_id>` — the RELATED entity is the subject, the BASE
+entity is the object. To pull qualifiers off that statement, call GetEdgeQualifiers /
+GetQualifiersByPredicate with `subject = related_id` and `target = base_id`, NOT the
+other way around. Calling with the directions swapped silently returns 0 qualifiers and
+makes you think the data is missing.
+
+FILTERING-BY-QUALIFIER (PREFER THIS over per-entity loops): When the question is "find
+the X among {entities} where qualifier_K = V" (e.g., "the member of Cardiff City whose
+start_time is 1991"), DO NOT iterate GetEdgeQualifiers per entity — call
+QualifierFilter(entity_ids=[Q1,Q2,...], relation="member of sports team",
+qualifier_name="start_time", value="1991") in ONE call. It runs the SPARQL filter
+server-side and returns just the matching entities. Per-entity loops burn iterations
+and frequently trip the loop detector.
+
 Pattern: SELECT ?qv WHERE { ?f pred:fact_h ex:ID; pred:fact_r prop:P; pred:fact_t "VAL". ?f qual:Q ?qv. }""",
 
     "QueryName": """STRATEGY: QueryName → identify entity from description
@@ -44,8 +72,31 @@ Multiple conditions: RunSPARQL with multiple WHERE clauses (avoid manual interse
 Pattern: SELECT ?label WHERE { ?s prop:P1 ex:O1. ?s prop:P2 ex:O2. ?s rdfs:label ?label. }""",
 
     "QueryRelation": """STRATEGY: QueryRelation → find predicate between two entities
+
+🔴 OUTPUT FORMAT (HARD RULE): The FINAL ANSWER must be the BARE predicate label exactly
+as it appears in available_predicates — e.g., "occupation", "cast member", "director",
+"spouse". NOT a sentence, NOT "X has the relation Y to Z", NOT "X is the spouse of Y".
+Just the label. The judge measures the bare label; narrative answers fail even when
+they semantically contain the right relation.
+
 GetRelationDetails on A, check if B appears. If A→B fails, try B→A (bidirectional).
-Fallback: SELECT DISTINCT ?p ?label WHERE { { ex:A ?p ex:B } UNION { ex:B ?p ex:A } ?p rdfs:label ?label. }""",
+Fallback: SELECT DISTINCT ?p ?label WHERE { { ex:A ?p ex:B } UNION { ex:B ?p ex:A } ?p rdfs:label ?label. }
+
+PASSIVE-VOICE GRAMMAR TRAP (symmetric temporal relations: followed_by, preceded_by,
+replaced_by, succeeded_by, follows): Passive voice INVERTS direction.
+  - "X was followed by Y"  → X is BEFORE Y, edge is `X --followed_by--> Y` (forward from X)
+  - "X follows Y"          → X is AFTER Y,  edge is `Y --followed_by--> X` (forward from Y)
+  - "What were followed by Y?"  → answer is the PREDECESSOR(s) of Y, i.e., entities X
+                                  with `X --followed_by--> Y` (Y is the forward target).
+  - "What followed Y?"          → answer is the SUCCESSOR(s) of Y, i.e., entities X
+                                  with `Y --followed_by--> X` (X is the forward target).
+GetRelationDetails returns BOTH directions when the relation is bidirectional. Parse the
+grammar of the wh-clause to pick the right one. Worked example:
+  Q: "What Olympic Games were followed by the 1980 Olympics?"
+  → grammar: "X were followed by 1980" → X is before 1980 → answer is the predecessor
+  → look for the result on Q8450 (1980) where direction is "backward" (i.e., the OTHER
+     entity is the source of `followed_by` pointing at 1980) → 1976 Olympics, NOT 1984.
+This rule applies to any temporally-symmetric Wikidata predicate, not just Olympics.""",
 
     "QueryRelationQualifier": """STRATEGY: QueryRelationQualifier → context of a relation
 THE ANSWER IS A QUALIFIER VALUE, NOT A NEW ENTITY. The relation itself is already known;
@@ -132,6 +183,16 @@ RULES:
    call FindNode or FindByAttribute on an entity from the question first. Saying "Missing data"
    without having queried the KG is a hard error. The KG often has the answer; the agent that
    gives up early loses points the agent that probes one more time wins.
+0a. NO PREMATURE "DATA NOT IN KG" (HARD RULE): Before finalizing any answer that contains
+    phrases like "not available", "not in the knowledge graph", "could not be determined",
+    "no record found", or "data is missing", you MUST have called GetNodeSummary on the
+    target entity at least once in this conversation. GetNodeSummary returns EVERY attribute
+    and EVERY predicate on the node in one call — if the data exists, it will appear in that
+    output. A single failed GetAttributeDetails / GetRelationDetails / ExploreNeighborhood
+    is NOT enough evidence that the data is absent: the wrong attribute name, the wrong
+    relation direction, or a relation-vs-attribute mismatch can each produce empty results
+    while the data sits one call away. Concluding "missing" without GetNodeSummary is a
+    hard error that costs guaranteed points.
 1. NO HALLUCINATION: Verify every fact with tools. One-hop inferences allowed if labeled "[INFERRED]".
 2. SCHEMA COMPLIANCE: Use predicates returned by tools. If attribute fails, check available_attributes from FindNode.
 3. PIVOT ON FAILURE: If search fails twice, try a connected entity or RunSPARQL with JOIN.
