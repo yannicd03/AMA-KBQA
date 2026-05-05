@@ -1197,6 +1197,204 @@ async def GetQualifiersByPredicate(
         return json.dumps({"error": error_msg}, indent=2)
 
 
+# ============================================================================
+# TOOL 6: GetQualifierValue
+# ============================================================================
+
+@mcp.tool()
+async def GetQualifierValue(
+    app_context: Context,
+    subject_id: str,
+    predicate: str,
+    target: str,
+    qualifier_name: str,
+    predicate_type: Literal["auto", "relation", "attribute"] = "auto"
+) -> str:
+    """
+    Project a SINGLE qualifier value from a specific (subject, predicate, target) statement.
+
+    Use this for QueryAttrQualifier / QueryRelationQualifier when you already know which
+    qualifier you want (e.g., "start time", "point in time", "location", "for work").
+    Returns ONLY the requested qualifier value(s), not the full qualifier dict — fewer
+    distractors than GetEdgeQualifiers / GetQualifiersByPredicate.
+
+    **When to prefer this over GetEdgeQualifiers:**
+    - "When did Mel Brooks marry Anne Bancroft?" → known statement, want only `start_time`
+    - "Where was Sucker Punch released on 2011-03-31?" → known fact, want only `place_of_publication`
+    - "For which film did X win award Y?" → known relation, want only `for_work`
+
+    **Direction handling:** Tries forward (subject -predicate-> target) first; if no statement
+    is found, automatically retries backward (target -predicate-> subject). The returned
+    `direction` field tells you which matched.
+
+    Args:
+        subject_id: Source entity ID (e.g., "Q100").
+        predicate: Predicate name — relation or attribute (e.g., "spouse", "publication date").
+        target: Target — entity ID for a relation (e.g., "Q200"), or literal value for an
+            attribute (e.g., "2011-03-31"). Auto-detected by default.
+        qualifier_name: Specific qualifier to project (e.g., "start time", "point in time").
+        predicate_type: Force "relation" or "attribute"; default "auto" tries relation first
+            for entity-shaped targets, attribute first for literal-shaped targets.
+
+    Returns:
+        JSON: {subject_id, predicate, target, qualifier_name, values: [...], direction, status}
+        where values is a list of {value, type, entity_id?, entity_label?} entries.
+    """
+    try:
+        pred_normalized = predicate.replace(" ", "_")
+        qual_normalized = qualifier_name.replace(" ", "_")
+
+        # Detect target shape: Q-id ⇒ entity (likely relation); otherwise literal (likely attribute).
+        target_is_qid = bool(re.match(r"^Q\d+$", target.strip()))
+
+        # Determine which predicate type(s) to try, and in which order.
+        if predicate_type == "relation":
+            modes_to_try = ["relation"]
+        elif predicate_type == "attribute":
+            modes_to_try = ["attribute"]
+        else:  # "auto"
+            modes_to_try = ["relation", "attribute"] if target_is_qid else ["attribute", "relation"]
+
+        sparql_app_context = app_context.request_context.lifespan_context
+
+        def run_query(mode: str, direction: str) -> list:
+            """Build and run a single SPARQL projection. direction in {"forward","backward"}."""
+            if mode == "relation":
+                if direction == "forward":
+                    subj_uri, obj_uri = f"ex:{subject_id}", f"ex:{target}"
+                else:
+                    subj_uri, obj_uri = f"ex:{target}", f"ex:{subject_id}"
+                stmt_pattern = f"""
+                    {subj_uri} prop:{pred_normalized} {obj_uri} .
+                    ?stmt rdf:subject {subj_uri} ;
+                          rdf:predicate prop:{pred_normalized} ;
+                          rdf:object {obj_uri} .
+                """
+            else:  # attribute — direction is always forward (attributes don't reify backward)
+                if direction == "backward":
+                    return []
+                safe_target = target.replace('"', '\\"')
+                stmt_pattern = f"""
+                    ex:{subject_id} attr:{pred_normalized} ?bnode .
+                    ?bnode rdf:value ?targetValue .
+                    FILTER(STR(?targetValue) = "{safe_target}")
+                    ?stmt rdf:subject ex:{subject_id} ;
+                          rdf:predicate attr:{pred_normalized} ;
+                          rdf:object ?bnode .
+                """
+
+            query = f"""
+            {SPARQL_PREFIXES}
+            SELECT DISTINCT ?qval ?qlabel WHERE {{
+                {stmt_pattern}
+                ?stmt qual:{qual_normalized} ?qval .
+                OPTIONAL {{ ?qval rdfs:label ?qlabel . }}
+            }}
+            LIMIT 50
+            """
+            sparql_app_context.sparql.setQuery(query)
+            sparql_app_context.sparql.setReturnFormat(JSON)
+            results = sparql_app_context.sparql.query().convert()
+            return results.get("results", {}).get("bindings", [])
+
+        # Try each mode × direction until we get bindings.
+        bindings: list = []
+        matched_mode = None
+        matched_direction = None
+        for mode in modes_to_try:
+            for direction in ("forward", "backward"):
+                bindings = run_query(mode, direction)
+                if bindings:
+                    matched_mode = mode
+                    matched_direction = direction
+                    break
+            if bindings:
+                break
+
+        if not bindings:
+            response = {
+                "subject_id": subject_id,
+                "predicate": predicate,
+                "target": target,
+                "qualifier_name": qualifier_name,
+                "values": [],
+                "direction": None,
+                "status": (
+                    f"No '{qualifier_name}' qualifier found on any "
+                    f"({subject_id}, {predicate}, {target}) statement (tried "
+                    f"{', '.join(modes_to_try)}, both directions). The statement may "
+                    f"not exist, or the qualifier name may differ — try "
+                    f"GetEdgeQualifiers/GetQualifiersByPredicate to list available qualifiers."
+                ),
+            }
+            session_journal.add_failed_attempt(
+                f"GetQualifierValue({subject_id}, {predicate}, {target}, {qualifier_name}): no match"
+            )
+            return json.dumps(response, indent=2)
+
+        # Parse bindings into typed values; collect entity IDs for batch label resolution.
+        values: list = []
+        entity_ids_to_resolve: list = []
+        for binding in bindings:
+            qval_node = binding.get("qval", {})
+            qval_uri = qval_node.get("value", "")
+            qval_type = qval_node.get("type", "literal")
+            qlabel = binding.get("qlabel", {}).get("value")
+
+            if qval_type == "uri":
+                entity_id = qval_uri.split("/")[-1]
+                entry = {"value": qval_uri, "type": "entity", "entity_id": entity_id}
+                if qlabel:
+                    entry["entity_label"] = qlabel
+                else:
+                    entity_ids_to_resolve.append(entity_id)
+                values.append(entry)
+            else:
+                values.append({"value": qval_uri, "type": "literal"})
+
+        if entity_ids_to_resolve:
+            batch_result = await BatchGetNodeLabels(app_context, entity_ids_to_resolve)
+            resolved = json.loads(batch_result).get("resolved", {})
+            for entry in values:
+                if entry.get("type") == "entity" and "entity_label" not in entry:
+                    eid = entry["entity_id"]
+                    if eid in resolved:
+                        entry["entity_label"] = resolved[eid]
+
+        session_journal.verified_facts.append({
+            "type": "qualifier_value",
+            "subject": subject_id,
+            "predicate": predicate,
+            "target": target,
+            "qualifier": qualifier_name,
+            "value_count": len(values),
+            "matched_as": matched_mode,
+            "direction": matched_direction,
+        })
+
+        response = {
+            "subject_id": subject_id,
+            "predicate": predicate,
+            "target": target,
+            "qualifier_name": qualifier_name,
+            "values": values,
+            "direction": matched_direction,
+            "matched_as": matched_mode,
+            "status": f"Found {len(values)} value(s) for qualifier '{qualifier_name}'",
+        }
+        logger.info(
+            f"GetQualifierValue: {subject_id}.{predicate}({target}).{qualifier_name} "
+            f"-> {len(values)} value(s) [{matched_mode}/{matched_direction}]"
+        )
+        return json.dumps(response, indent=2)
+
+    except Exception as e:
+        error_msg = f"Error projecting qualifier value: {str(e)}"
+        logger.error(error_msg)
+        session_journal.add_failed_attempt(f"GetQualifierValue: {str(e)}")
+        return json.dumps({"error": error_msg}, indent=2)
+
+
 
 @mcp.tool
 @log_tool_duration
