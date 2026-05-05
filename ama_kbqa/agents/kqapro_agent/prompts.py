@@ -46,6 +46,14 @@ Steps: 1) Find base fact via GetAttributeDetails/GetRelationDetails
 2) GetEdgeQualifiers(subject_id, predicate, target_value)
 3) Match question word to qualifier: When→point_in_time, Where→location
 
+PREFER GetQualifierValue WHEN YOU KNOW THE QUALIFIER NAME: Once you've identified the
+target statement (subject, predicate, target) AND you know which qualifier you want
+(e.g., "start time", "point in time", "location"), call
+GetQualifierValue(subject_id, predicate, target, qualifier_name). It projects ONLY that
+qualifier — no full-dict scan, fewer distractors, smaller payload, auto-handles backward
+direction. Use GetEdgeQualifiers / GetQualifiersByPredicate ONLY when you need to discover
+which qualifiers exist on the statement.
+
 DIRECTION RULE (critical for backward edges): When GetRelationDetails returns
 `direction: "backward"` for a triple, the canonical statement is
 `<related_id> prop:<relation> <base_id>` — the RELATED entity is the subject, the BASE
@@ -104,7 +112,10 @@ the question asks *when/where/at-what-event/in-what-role* it held. Do not collap
 person, film, or award — return the qualifier (a ceremony, date, place, or role label).
 
 1) Confirm connection via GetRelationDetails.
-2) GetEdgeQualifiers on that connection.
+2) PREFERRED: GetQualifierValue(subject_id, predicate, target, qualifier_name) — direct
+   projection of one qualifier (e.g., "for work", "point in time", "ceremony"). Use this
+   when you know which qualifier the wh-word targets. Fallback to GetEdgeQualifiers only
+   to discover which qualifiers exist.
 3) Match qualifier:
      When → point_in_time (date) OR ceremony/edition (event) — pick event if the
         question frames it as an occasion ("at which ceremony", "during which").
