@@ -129,6 +129,25 @@ def parse_text_tool_calls(content: Optional[str]) -> List[SimpleNamespace]:
     return out
 
 
+def has_truncated_tool_call(content: Optional[str]) -> bool:
+    """Return True if `content` looks like the model started emitting a
+    `<tool_call>...` block but never closed it (or emitted invalid JSON inside
+    it), meaning the parser yielded zero calls. Observed on minimax-m2.7-kit:
+    the model occasionally stops mid-JSON, leaving e.g. `<tool_call>{"name":
+    "FindNode` with no `</tool_call>` and no real prose final answer.
+
+    We use this to decide whether a "no tool calls" outcome is a deliberate
+    final answer or an emission that should be re-prompted.
+    """
+    if not content:
+        return False
+    # If at least one well-formed block parses, there's nothing to recover.
+    if parse_text_tool_calls(content):
+        return False
+    # Otherwise, any leftover `<tool_call>` opener implies a truncated emission.
+    return "<tool_call>" in content
+
+
 def strip_tool_call_blocks(content: Optional[str]) -> str:
     """Remove `<tool_call>{...}</tool_call>` blocks from content so the
     remaining prose can be stored as the assistant's "thought" without leaking

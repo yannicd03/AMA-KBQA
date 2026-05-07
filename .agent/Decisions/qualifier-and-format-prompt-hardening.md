@@ -128,3 +128,24 @@ Fix 1 / Fix 2 / Fix 3 did not measurably move their target categories.
 ## Detection Note for Future Audits
 
 `tool_trace` field is only populated for **native function-call models**. Text-mode models (minimax-m2.7-kit, anything using `text_tool_calls.py`) will show `tool_trace = []` even when 900+ tools were called — the actual call count lives in `tool_breakdown`. Any "zero tool calls" audit must filter on model family or check both fields, or you will misdiagnose the entire text-mode model class as RULE 0 violators (as I briefly did).
+
+---
+
+## Post-merge Results — judge swap + Fix 1 (2026-05-05)
+
+Bench: `benchmark_results/minimax-v4judge-2026-05-04-2042/` and `gemma-v4judge-2026-05-04-2245/` (hetzner). n=100, seed=42, KIT endpoint, `deepseek/deepseek-v4-pro` judge (commit `182237c`), code-level zero-tool-call retry (commit `d9ae8de`).
+
+| Model | Acc | vs. pre-hardening baseline |
+|---|---|---|
+| `minimax-m2.7-kit` | **0.810** | +2 pp vs 0.79 |
+| `gemma-4-31b-kit` | **0.790** | -2 pp vs 0.81 — within noise; **0 timeouts** (was 36/100 with v3.2 + iter40) |
+
+Per-type breakdown (selected):
+
+| Type | gemma | minimax |
+|---|---|---|
+| Verify | **1.00** | 0.85 |
+| QueryRelation | **1.00** | 0.93 |
+| Count | — | 0.73 |
+
+**Interpretation:** The predicted recovery from the "Recoverable upper bound" note is confirmed. Judge swap (v4-pro) fixed the residual verbose-answer mis-marking; code-level RULE 0 retry closed the zero-tool-call gap. Fix 4 (QueryRelation format gate) and Fix 5 (passive-voice trap) continue to bind cleanly — both models hit 1.00 or 0.93 on QueryRelation. Qualifier extraction (QueryAttrQualifier / QueryRelationQualifier) remains the dominant unsolved band; `GetQualifierValue` (commit `ff027d1`) is the next lever. See [Decisions/get-qualifier-value-tool.md](./get-qualifier-value-tool.md).

@@ -52,8 +52,8 @@ ama-kbqa/
 │   │   └── orchestrator_agent/ # Multi-agent router
 │   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
-│   │   ├── kqapro_server.py    # KQAPro tools (22 tools)
-│   │   ├── sciqa_server.py     # SciQA/ORKG tools (18 tools: 4 discovery, 6 retrieval, 6 domain, 1 SPARQL, 1 verification) ✅ Active
+│   │   ├── kqapro_server.py    # KQAPro tools (26 tools)
+│   │   ├── sciqa_server.py     # SciQA/ORKG tools (20 tools: 4 discovery, 6 retrieval, 8 domain, 1 SPARQL, 1 verification) ✅ Active
 │   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
@@ -213,7 +213,7 @@ All prompts are centralized in a separate module for easier maintenance:
 The SciQA agent for Open Research Knowledge Graph (ORKG) scientific QA, inheriting from `BaseKBQAAgent`:
 
 1. **Pre-Agent Hook** - Classifies question type (8 types), extracts entities, loads type-specific strategy
-2. **Iterative Tool Loop** - Calls SciQA MCP tools (18 tools) to gather research information
+2. **Iterative Tool Loop** - Calls SciQA MCP tools (20 tools) to gather research information
 3. **Post-Agent Hook** - Synthesizes final answer from journal
 
 **Key Features (inherited from BaseKBQAAgent):**
@@ -240,11 +240,11 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 | `ENTITY_EXTRACTION_PROMPT` | Extract papers, authors, contributions, fields |
 | `FEWSHOT_EXAMPLES` | 8 type-specific few-shot example sets loaded alongside strategies (enhanced with author search, negation queries, aggregation scoping, energy domain distinctions, boolean comparison-embedded values) |
 | `SYNTHESIS_PROMPT_TEMPLATE` | Final answer synthesis |
-| `TOOL_LOOP_GUIDANCE` | 9 tool-specific loop recovery entries (covers all 18 tools, includes RunORKGSPARQL 10-call cap warning) |
+| `TOOL_LOOP_GUIDANCE` | 9 tool-specific loop recovery entries (covers all 20 tools, includes RunORKGSPARQL 10-call cap warning) |
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
-Provides 22 tools for knowledge graph interaction, organized by tier:
+Provides 26 tools for knowledge graph interaction, organized by tier:
 
 **T1 Discovery:**
 - `FindNode` - Semantic entity search (deduplicates via `visited_nodes` cache)
@@ -260,8 +260,9 @@ Provides 22 tools for knowledge graph interaction, organized by tier:
 - `GetRelationDetails` - Connected entities via relation. Writes to **both** `verified_facts` (provenance) and `found_values` (answer visibility to synthesis). Before April 2026 it only wrote to `verified_facts`, making relation-based answers invisible to the synthesis step.
 
 **T3 Qualifiers:**
-- `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern)
-- `GetQualifiersByPredicate` - Relation statement qualifiers
+- `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern); returns full qualifier dict — use for discovery
+- `GetQualifiersByPredicate` - Relation statement qualifiers; returns full qualifier dict — use for discovery
+- `GetQualifierValue` - Direct projection of a single qualifier value (`subject_id`, `predicate`, `target`, `qualifier_name`). Auto-detects relation vs attribute from target shape (Q-id → relation; literal → attribute); auto-retries backward direction. Logs to `verified_facts` as `type="qualifier_value"`. **Preferred over full-dict tools once qualifier name is known.** ✨ NEW
 - `GetAttributeWithQualifiers` - Attribute values with all context (dual-method SPARQL: blank-node pattern + RDF reification pattern)
 - `TemporalAttributeQuery` - Date-specific attribute lookup
 
@@ -300,7 +301,7 @@ Provides 22 tools for knowledge graph interaction, organized by tier:
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
-Provides 18 tools for ORKG knowledge graph interaction, organized into 5 tiers:
+Provides 20 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource` - Semantic vector search for papers, authors, contributions
@@ -316,13 +317,15 @@ Provides 18 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 - `BatchGetResourceLabels` - Batch label resolution
 - `CompareResources` - Compare a predicate across multiple resources (returns sorted)
 
-**Tier 3 - Domain-Specific (6 tools):**
+**Tier 3 - Domain-Specific (8 tools):**
 - `GetPaperContributions` - Get contributions for a paper (P31)
 - `GetPaperAuthors` - Get authors (P6/P27)
 - `GetContributionMethods` - Get methods used (P2)
 - `GetResearchFieldPapers` - List papers in field (P30)
 - `GetComparisonContributions` - Navigate Comparison -> Contribution pattern with predicate discovery mode, now **stores values in journal's found_values** ✨ UPDATED
 - `FollowRelationPath` - Multi-hop relation navigation in one SPARQL call
+- `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, and `value_via_group` 2-hop switch for grouped energy-domain patterns (Contribution → group_pred → GroupNode → value_pred → scalar). Closes 9/20 SciQA aggregation questions. ✨ NEW
+- `FindCoAuthors` - Finds co-authors of papers by a seed author (case-insensitive partial match; handles both resource-URI and literal-string author predicates P6/P27); returns co-authors sorted by shared-paper count. Closes Q2 co-author pattern. ✨ NEW
 
 **Tier 4 - Raw SPARQL (1 tool):**
 - `RunORKGSPARQL` - Raw SPARQL queries (prefixes auto-injected, **capped at 10 calls per question** to prevent runaway SPARQL spirals) ✨ UPDATED

@@ -5,9 +5,14 @@
     "guidance": "Do NOT assume X is Y. Find Y first, then search for sub-entities of type X related to Y (e.g., RunSPARQL: SELECT ?x WHERE { ?x prop:located_in ex:Y . ?x prop:instance_of ex:town . })."
   },
   {
+    "tool_name": "GetQualifierValue",
+    "problem_pattern": "Question asks for a single qualifier on an attribute or relation statement (When / Where / What role / What ceremony / Since when / In what gender)",
+    "guidance": "ALWAYS prefer over GetEdgeQualifiers / GetQualifiersByPredicate / GetAttributeWithQualifiers when you can name the qualifier from the wh-word. GetQualifierValue(subject, predicate, target, qualifier_name) projects ONLY that qualifier — auto-detects relation vs attribute, auto-handles forward/backward direction, returns one clean value with no full-dict scan and no chance of selecting the wrong key. Wh-word -> qualifier name map: 'When' -> point_in_time, 'Since when / from when' -> start_time, 'Until when' -> end_time, 'Where' -> location, 'What role / In what role' -> object_has_role, 'What ceremony / At which event' -> ceremony, 'For what work / For which film' -> for_work, 'What language' -> language, 'What part / Which form / Masc/fem' -> applies_to_part, 'What case' -> criterion_used / grammatical_case."
+  },
+  {
     "tool_name": "GetEdgeQualifiers",
-    "problem_pattern": "Multiple qualifiers returned for a relation",
-    "guidance": "Parse the question word to select the correct qualifier: 'When' -> point_in_time/start_time, 'Where' -> location, 'What role' -> object_has_role, 'What ceremony' -> ceremony, 'For what' -> AMBIGUOUS: check both for_work (creative work) and ceremony/statement_is_subject_of (event). Pick the one matching the expected answer type."
+    "problem_pattern": "DISCOVERY ONLY: you do not yet know which qualifier names exist on a statement",
+    "guidance": "Use this ONLY when the wh-word does not pin a single qualifier (e.g., 'For what' is ambiguous between for_work and ceremony) AND you genuinely need the full qualifier dict to choose. The moment you know the qualifier name, switch to GetQualifierValue. Calling GetEdgeQualifiers and visually scanning the dict is the most common qualifier-extraction failure mode — the LLM tends to pick the most prominent key, not the correct one."
   },
   {
     "tool_name": "GetAttributeWithQualifiers",

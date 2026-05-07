@@ -835,6 +835,43 @@ Change strategy or acknowledge the data doesn't exist."""
 
             # No tool calls - break for synthesis
             if not message.tool_calls:
+                # Truncated text-mode tool call: minimax-m2.7-kit occasionally
+                # stops generation mid-`<tool_call>{...}` (no closing tag, JSON
+                # not parseable). The synthetic-parse step above returned
+                # zero, so we'd fall through to "final answer" — except the
+                # "answer" is a partial JSON fragment. Re-prompt once so the
+                # model retries the call cleanly. Counts against the same
+                # retry budget as zero-tool-call.
+                if (
+                    self._text_tool_call_mode
+                    and zero_tool_call_retries < zero_tool_call_retry_max
+                ):
+                    from ama_kbqa.framework.text_tool_calls import has_truncated_tool_call
+                    if has_truncated_tool_call(message.content):
+                        zero_tool_call_retries += 1
+                        self._trace(
+                            f"Truncated tool-call detected — re-prompting "
+                            f"(retry {zero_tool_call_retries}/{zero_tool_call_retry_max})",
+                            COLOR_RED,
+                        )
+                        # Persist the broken assistant turn so the model sees
+                        # what it produced and can correct, then prompt it.
+                        self._messages.append({
+                            "role": "assistant",
+                            "content": message.content or "",
+                        })
+                        self._messages.append({
+                            "role": "user",
+                            "content": (
+                                "Your previous response contained an unclosed or unparseable "
+                                "<tool_call> block. Re-emit the tool call you intended as ONE "
+                                "complete block on a single line, with valid JSON: "
+                                "<tool_call>{\"name\": \"ToolName\", \"arguments\": {...}}</tool_call>. "
+                                "Do not include partial JSON or unclosed brackets. After the "
+                                "tool result returns, continue the investigation."
+                            ),
+                        })
+                        continue
                 # RULE 0 enforcement: if the agent is about to emit a final
                 # answer without ever having queried the KG, re-prompt it
                 # once. Pure-prompt RULE 0 / RULE 0a do not bind reliably for

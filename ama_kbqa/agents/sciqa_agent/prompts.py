@@ -487,9 +487,21 @@ TIER 3 - DOMAIN-SPECIFIC:
   Navigate Comparison -> compareContribution -> Contribution -> domain predicate values.
   Without domain_predicate: schema discovery (see available predicates).
   With domain_predicate: get values for that predicate across all contributions.
+- AggregateComparisonValues(comparison_id, value_predicate, agg, group_by_predicate?,
+                            filter_predicate?, filter_value?, filter_match?, top_n?):
+  Compute AVG / SUM / MIN / MAX / COUNT / COUNT_DISTINCT / MODE_TOP / ALL_VALUES over
+  a Comparison's contributions. Auto-handles the HAS_VALUE indirection on numeric
+  measurements. Use this whenever the question asks for "mean / total / minimum /
+  maximum / count / most common X for the studies" or per-group extremes.
+  PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
+- FindCoAuthors(author_name, top_n?):
+  Find co-authors of an author across all their papers in ONE call. Use this
+  for "who has X co-written with?" / "collaborators of X" instead of chaining
+  FindAuthorPapers + GetPaperAuthors per paper.
 
 TIER 4 - RAW SPARQL:
-- RunORKGSPARQL(query): Execute SPARQL (prefixes auto-injected)
+- RunORKGSPARQL(query): Execute SPARQL (prefixes auto-injected) — last-resort
+  escape hatch for patterns the dedicated tools don't cover.
 
 TIER 5 - VERIFICATION:
 - VerifyNumericCondition(value1, operator, value2, unit): Deterministic math comparison
@@ -725,12 +737,22 @@ FEWSHOT_EXAMPLES = {
 """,
 
     "Count": """
-**Example: "How many contributions use solar energy in the energy comparison?"**
-1. FindResource("energy comparison") -> R44073 (Comparison)
-2. GetComparisonContributions("R44073", "P43135", filter_value="solar") -> 3 contributions
-3. Answer: "3"
+**Example: "How many studies use Chloride as a major anion?"** (count-with-filter pattern)
+1. FindResource("anions comparison" or anchor from question) -> R110597 (Comparison)
+2. AggregateComparisonValues(comparison_id="R110597", value_predicate="P37458",
+                              agg="count", filter_predicate="P37458",
+                              filter_value="Chloride", filter_match="contains")
+   -> {result: 2, n_contributions: 2}
+3. Answer: "2"
 
-**Example: "How many papers are in the NLP research field?"**
+**Example: "Which energy sector is the most frequent for the studies?"** (mode_top pattern)
+1. FindResource("energy sector studies" or named comparison) -> R150337 (Comparison)
+2. AggregateComparisonValues(comparison_id="R150337", value_predicate="P37668",
+                              agg="mode_top", top_n=1)
+   -> {result: [{value: 'Heat sector', count: 8}], ...}
+3. Answer: "Heat sector (8)"
+
+**Example: "How many papers are in the NLP research field?"** (cross-graph count, no Comparison anchor)
 1. RunORKGSPARQL:
    SELECT (COUNT(DISTINCT ?paper) AS ?count) WHERE {
        ?paper orkgp:P30 ?field .
@@ -738,30 +760,42 @@ FEWSHOT_EXAMPLES = {
        FILTER(CONTAINS(LCASE(?label), "natural language processing"))
    }
 2. Answer: the count value
+
+PREFER AggregateComparisonValues whenever the question is scoped to a named Comparison
+(phrases like "the studies", "the comparison", "in <Comparison Title>"). Only fall back
+to RunORKGSPARQL when the count spans the entire graph (no Comparison context).
 """,
 
     "Superlative": """
-**Example: "What is the highest installed capacity in the energy comparison?"**
-1. FindResource("installed capacity comparison") -> R44073 (Comparison)
-2. GetComparisonContributions("R44073") -> discovers P43133 (installed capacity)
-3. RunORKGSPARQL:
-   SELECT ?contrib ?contribLabel ?value WHERE {
-       orkgr:R44073 orkgp:compareContribution ?contrib .
-       ?contrib orkgp:P43133 ?value .
-       OPTIONAL { ?contrib rdfs:label ?contribLabel }
-   }
-   ORDER BY DESC(xsd:decimal(?value))
-   LIMIT 1
-4. Answer: the highest value with its contribution label
+**Example: "What is the highest installed capacity in the energy comparison?"** (max pattern)
+1. FindResource("installed capacity comparison" / question anchor) -> R44073 (Comparison)
+2. AggregateComparisonValues(comparison_id="R44073", value_predicate="P43133", agg="max")
+   -> {result: <max numeric value>, n_contributions: N}
+3. Answer: the max value (with the contribution label if needed; rerun with
+   agg="all_values" to inspect rows when the label is required)
 
-**Example: "What are the boundaries of efficiency values?"**
-1. FindResource("efficiency comparison") -> R55555 (Comparison)
-2. RunORKGSPARQL:
-   SELECT (MIN(xsd:decimal(?value)) AS ?minVal) (MAX(xsd:decimal(?value)) AS ?maxVal) WHERE {
-       orkgr:R55555 orkgp:compareContribution ?contrib .
-       ?contrib orkgp:P43156 ?value .
-   }
-3. Answer: "The efficiency ranges from [min] to [max]"
+**Example: "What are the boundaries of efficiency values for the studies?"** (min/max pattern)
+1. FindResource("efficiency comparison" or named anchor) -> R55555 (Comparison)
+2. AggregateComparisonValues(comparison_id="R55555", value_predicate="P43156", agg="min")
+   AggregateComparisonValues(comparison_id="R55555", value_predicate="P43156", agg="max")
+3. Answer: "The efficiency ranges from <min> to <max>"
+
+**Example: "What are extreme values of installed capacity grouped by energy source?"**
+   (per-group min/max — value lives one hop deeper than the group)
+1. FindResource("Germany energy supply 2050" / question's named comparison) -> R153801
+2. AggregateComparisonValues(comparison_id="R153801", value_predicate="P43133",
+                              agg="min", group_by_predicate="P43135",
+                              value_via_group=True)
+   AggregateComparisonValues(comparison_id="R153801", value_predicate="P43133",
+                              agg="max", group_by_predicate="P43135",
+                              value_via_group=True)
+   -> [{group: 'hydropower', value: 0.0, n: 25}, {group: 'onshore wind power', value: 28.3, n: 25}, ...]
+3. Answer: per-source pairs (hydropower 0.0/20.4, onshore wind power 28.3/231.0, ...)
+
+USE value_via_group=True whenever the GROUP node carries the measurement
+(pattern: "extreme/total/avg of <quantity> grouped by <category>"). Without
+value_via_group the SPARQL pattern places value_predicate on the contribution
+itself, which is the wrong shape for these questions.
 """,
 
     "List": """
@@ -822,34 +856,64 @@ If the question asks about sectors (Heat, Electricity, Gas, Liquid fuels), use G
 """,
 
     "Aggregation": """
-**Example: "What is the total installed capacity across all contributions?"**
-1. FindResource("installed capacity") -> R44073 (Comparison)
-2. RunORKGSPARQL:
-   SELECT (SUM(xsd:decimal(?value)) AS ?total) WHERE {
-       orkgr:R44073 orkgp:compareContribution ?contrib .
-       ?contrib orkgp:P43133 ?value .
-   }
-3. Answer: the total value
-IMPORTANT: Always scope to ONE Comparison (orkgr:RXXX orkgp:compareContribution). Never aggregate across the entire graph.
+**Example: "How many patients participate in the studies?"** (sum pattern, scoped to a named Comparison)
+1. FindResource("patient demographics studies" or the question's named anchor) -> R33008
+   (Comparison). When the question says "the studies" it is anchored to a SPECIFIC
+   Comparison, NOT the whole graph. Pick the Comparison whose label/topic matches
+   the question's domain (patient demographics here, energy / nanocarriers / etc.
+   for other questions).
+2. AggregateComparisonValues(comparison_id="R33008", value_predicate="P15585", agg="sum")
+   -> {result: 6452.0, n_contributions: 18}
+3. Answer: "6452"
 
-**Example: "What is the average efficiency?"**
-1. FindResource("efficiency comparison") -> R55555
-2. RunORKGSPARQL:
-   SELECT (AVG(xsd:decimal(?value)) AS ?avg) WHERE {
-       orkgr:R55555 orkgp:compareContribution ?contrib .
-       ?contrib orkgp:P43156 ?value .
-   }
-3. Answer: the average value
+**Example: "What is the mean efficiency obtained for the studies?"** (avg with label-fallback)
+1. FindResource("efficiency studies" / question's named comparison) -> R155266
+2. AggregateComparisonValues(comparison_id="R155266", value_predicate="P43156", agg="avg")
+   -> {result: 93.3125, n_contributions: 8}
+   (the tool auto-tries direct value, ?node rdfs:label, and ?node HAS_VALUE
+   indirection — no need to hand-write BIND(xsd:float(?lbl) AS ?v))
+3. Answer: "93.3125"
+
+**Example: "What is the total installed capacity across all contributions?"** (sum pattern)
+1. FindResource("installed capacity comparison") -> R44073
+2. AggregateComparisonValues(comparison_id="R44073", value_predicate="P43133", agg="sum")
+3. Answer: the total value
+
+**Example: "List of sectors which are considered as energy sectors with corresponding frequencies"**
+   (per-group count = frequency table; mode_top with top_n=large works as a frequency table)
+1. FindResource(question's named comparison) -> RXXXXX
+2. AggregateComparisonValues(comparison_id="RXXXXX", value_predicate="P_sector",
+                              agg="mode_top", top_n=10)
+   -> [{value: 'Heat sector', count: 10}, {value: 'Liquid fuels sector', count: 5}, ...]
+3. Answer: the frequency table
 
 **Example: "Which studies do NOT have a certain property?"**
 1. FindResource("relevant comparison") -> RXXXX
-2. RunORKGSPARQL with FILTER NOT EXISTS:
+2. RunORKGSPARQL with FILTER NOT EXISTS (this is one of the cases where
+   AggregateComparisonValues does not apply — set-difference, not aggregation):
    SELECT ?item ?itemLabel WHERE {
        orkgr:RXXXX orkgp:compareContribution ?item .
        OPTIONAL { ?item rdfs:label ?itemLabel }
        FILTER NOT EXISTS { ?item orkgp:PYYY ?val }
    }
 3. Answer: list of contributions without that property
+
+CRITICAL ENTITY-SELECTION HINT: AggregateComparisonValues fails silently if you
+pass it the WRONG comparison_id. When the question says "the studies" / "the
+comparison", it is referring to a SINGLE specific Comparison resource — usually
+the one whose title matches the topic (patients -> patient-demographics comparison;
+efficiency -> efficiency comparison; energy -> the Germany-energy-2050 comparison).
+Do NOT default to the first FindResource hit. If the result count or numeric
+total looks implausible (e.g. 217918 patients vs an expected ~6000), you have
+the wrong Comparison — search again with a more specific FindResource query
+or list candidate Comparisons via FindByPredicateValue first.
+
+ALWAYS prefer AggregateComparisonValues over RunORKGSPARQL for AVG/SUM/MIN/MAX/
+COUNT/COUNT_DISTINCT/MODE_TOP within a Comparison — the tool handles HAS_VALUE
+indirection, label fallback, and value_via_group two-hop paths automatically.
+Reach for RunORKGSPARQL only for set-difference (FILTER NOT EXISTS), three-hop
+paths the tool can't express (e.g. contrib -> P_a -> ?x -> P_b -> ?y -> P_c -> ?val),
+or graph-wide aggregations not anchored to a Comparison.
 """,
 }
 

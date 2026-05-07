@@ -1,52 +1,46 @@
 [
   {
-    "question": "What language is the official webiste of the county of Florida (whose ISNI is 0000 0004 0631 7316, and official website is http://www.pascocountyfl.net)?",
+    "question": "What language is the official website of the county of Florida (whose ISNI is 0000 0004 0631 7316, and official website is http://www.pascocountyfl.net)?",
     "answer": "English",
     "qtype": "QueryAttrQualifier",
     "trace": [
-      {
-        "tool": "FindByAttribute",
-        "args": "ISNI, 0000 0004 0631 7316",
-        "result": "{\"matches\":[],\"result_count\":0}"
-      },
-      {
-        "tool": "FindByAttribute",
-        "args": "official website, http://www.pascocountyfl.net",
-        "result": "{\"matches\":[{\"original_id\":\"Q500992\",\"name\":\"Pasco County\",\"node_type\":\"entity\","
-      },
-      {
-        "tool": "GetEdgeQualifiers",
-        "args": "{'attribute_name': 'official website', 'base_node_id': 'Q500",
-        "result": "{   \"base_node\": \"Q500992\",   \"attribute\": \"official website\",   \"value\": null, "
-      },
-      {
-        "tool": "GetNodeSummary",
-        "args": "Q500992",
-        "result": "{\"node_id\":\"Q500992\",\"name\":\"Pasco County\",\"node_type\":\"entity\",\"attributes\":{\"p"
-      },
-      {
-        "tool": "GetRelationDetails",
-        "args": "Q500992, country",
-        "result": "0 targets"
-      },
-      {
-        "tool": "GetNodeLabel",
-        "args": "{'node_id': 'Q30'}",
-        "result": "{   \"node_id\": \"Q30\",   \"label\": \"United States of America\",   \"node_type\": \"ent"
-      },
-      {
-        "tool": "GetAttributeDetails",
-        "args": "Q500992, language",
-        "result": "not found"
-      },
-      {
-        "tool": "GetNodeLabel",
-        "args": "{'node_id': 'Q812'}",
-        "result": "{   \"node_id\": \"Q812\",   \"label\": \"Florida\",   \"node_type\": \"entity\",   \"status\""
-      }
+      {"tool": "FindByAttribute", "args": "official website=http://www.pascocountyfl.net", "result": "found Q500992 (Pasco County)"},
+      {"tool": "GetQualifierValue", "args": "Q500992, official_website, http://www.pascocountyfl.net, qualifier_name=language", "result": "{value: 'English', source: 'attribute_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: English (language qualifier on official_website attribute)", "result": "updated"}
     ],
-    "lesson": "Solved via: FindByAttribute -> GetEdgeQualifiers -> GetNodeSummary -> GetRelationDetails -> GetNodeLabel -> GetAttributeDetails",
-    "tool_count": 8,
-    "collected_at": "2026-02-13T01:50:37.950163"
+    "lesson": "QueryAttrQualifier: the answer is a qualifier hanging off an ATTRIBUTE statement, not a relation. After locating the entity (FindByAttribute on the ID/URL), call GetQualifierValue with the attribute name as `predicate` and the attribute value as `target` — it auto-detects attribute vs relation context.",
+    "pitfall": "Do NOT call GetEdgeQualifiers and then visually inspect the dict. The QueryAttrQualifier 'wh-word -> qualifier name' map is the same as for relations: 'What language' -> language, 'When' -> point_in_time, 'Where applicable' -> applies_to_jurisdiction.",
+    "tool_count": 3,
+    "collected_at": "2026-05-05T20:30:00"
+  },
+  {
+    "question": "What is the criterion used for the calendar month that follows December, its name была января?",
+    "answer": "genitive case",
+    "qtype": "QueryAttrQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "January", "result": "found Q108 (January)"},
+      {"tool": "GetAttributeWithQualifiers", "args": "Q108, native_label, query='января'", "result": "found native_label='января' with qualifier criterion=genitive case"},
+      {"tool": "GetQualifierValue", "args": "Q108, native_label, 'января', qualifier_name=criterion_used", "result": "{value: 'genitive case', source: 'attribute_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: genitive case (criterion qualifier on the native_label='января')", "result": "updated"}
+    ],
+    "lesson": "When the question asks 'What criterion' / 'What case' / 'What grammatical form' for a non-English NAME, the answer is a qualifier (criterion_used / grammatical_case / applies_to_part) on the native_label or alternative_name attribute. GetQualifierValue projects it directly. Do not return the entity name itself.",
+    "pitfall": "Do NOT answer with the month name or the language. The question targets a META property of the name (its grammatical case), which lives as a qualifier on the attribute statement.",
+    "tool_count": 4,
+    "collected_at": "2026-05-05T20:30:00"
+  },
+  {
+    "question": "What part of the province of Canada having the capital of Winnipeg has the demonym of Manitobain?",
+    "answer": "masculine",
+    "qtype": "QueryAttrQualifier",
+    "trace": [
+      {"tool": "FindByAttribute", "args": "capital=Winnipeg", "result": "found Q1948 (Manitoba)"},
+      {"tool": "GetAttributeWithQualifiers", "args": "Q1948, demonym, query='Manitobain'", "result": "found demonym='Manitobain' with qualifier applies_to_part=masculine"},
+      {"tool": "GetQualifierValue", "args": "Q1948, demonym, 'Manitobain', qualifier_name=applies_to_part", "result": "{value: 'masculine', source: 'attribute_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: masculine (applies_to_part qualifier on demonym='Manitobain')", "result": "updated"}
+    ],
+    "lesson": "'What part' / 'Which form' / 'What grammatical gender' on a multilingual demonym/name attribute -> applies_to_part qualifier (values like masculine/feminine/plural/singular). After locating the entity by capital/anchor, call GetQualifierValue on the demonym attribute with the specific demonym value as `target` and applies_to_part as the qualifier name.",
+    "pitfall": "Do NOT answer 'Manitoba' (the entity) or 'Manitobain' (the demonym itself). The answer is the qualifier saying which grammatical FORM the demonym applies to. If you find yourself in a SPARQL loop, stop and call GetQualifierValue directly.",
+    "tool_count": 4,
+    "collected_at": "2026-05-05T20:30:00"
   }
 ]
