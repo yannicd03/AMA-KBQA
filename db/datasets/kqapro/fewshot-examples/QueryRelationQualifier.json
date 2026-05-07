@@ -7,13 +7,13 @@
       {"tool": "FindNode", "args": "Albert Einstein", "result": "found Q937 (Albert Einstein)"},
       {"tool": "FindNode", "args": "Nobel Prize in Physics", "result": "found Q38104 (Nobel Prize in Physics)"},
       {"tool": "GetRelationDetails", "args": "Q937, award received", "result": "3 targets including Nobel Prize in Physics (Q38104)"},
-      {"tool": "GetEdgeQualifiers", "args": "Q937, award_received, Q38104", "result": "qualifiers: {point_in_time: 1921, for_work: photoelectric effect}"},
-      {"tool": "ManageJournal", "args": "set_partial_answer: The question asks WHEN, so return point_in_time=1921, not for_work", "result": "updated"}
+      {"tool": "GetQualifierValue", "args": "Q937, award_received, Q38104, qualifier_name=point_in_time", "result": "{value: '1921', source: 'relation_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: 1921 (the point_in_time qualifier projected directly)", "result": "updated"}
     ],
-    "lesson": "When multiple qualifiers exist on a relation (e.g., point_in_time AND for_work), parse the question word (When/Where/What role) to select the correct qualifier. 'When' maps to point_in_time, not for_work.",
-    "pitfall": "Do NOT return the first qualifier blindly. 'When did X receive Y?' asks for the TIME qualifier, not the 'for work' qualifier.",
+    "lesson": "WHEN-questions on a relation map to the point_in_time qualifier. As soon as you can name the qualifier ('When' -> point_in_time), call GetQualifierValue(subject, predicate, target, qualifier_name) for a one-shot direct projection. Skip GetEdgeQualifiers — that's only for discovering qualifier names you don't yet know.",
+    "pitfall": "Do NOT call GetEdgeQualifiers and then visually scan the dict — that wastes tokens and risks the LLM picking the wrong key (e.g., for_work='photoelectric effect' instead of point_in_time=1921). GetQualifierValue projects only the qualifier you ask for.",
     "tool_count": 5,
-    "collected_at": "2026-02-13T12:00:00"
+    "collected_at": "2026-05-05T20:30:00"
   },
   {
     "question": "In what role did Marie Curie work at the University of Paris?",
@@ -23,13 +23,13 @@
       {"tool": "FindNode", "args": "Marie Curie", "result": "found Q7186 (Marie Curie)"},
       {"tool": "FindNode", "args": "University of Paris", "result": "found Q209842 (University of Paris)"},
       {"tool": "GetRelationDetails", "args": "Q7186, employer", "result": "targets include University of Paris (Q209842)"},
-      {"tool": "GetEdgeQualifiers", "args": "Q7186, employer, Q209842", "result": "qualifiers: {object_has_role: professor, start_time: 1906}"},
-      {"tool": "ManageJournal", "args": "set_partial_answer: 'In what role' asks for the role qualifier = professor", "result": "updated"}
+      {"tool": "GetQualifierValue", "args": "Q7186, employer, Q209842, qualifier_name=object_has_role", "result": "{value: 'professor', source: 'relation_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: professor (object_has_role qualifier projected directly)", "result": "updated"}
     ],
-    "lesson": "Use GetEdgeQualifiers to retrieve all qualifiers on a relation, then match the question's intent: 'In what role' -> object_has_role, 'When' -> point_in_time/start_time, 'Where' -> location.",
-    "pitfall": "Do NOT confuse the relation itself (employer) with its qualifiers (role, start_time). The question asks about a DETAIL of the relation, not the relation itself.",
+    "lesson": "'In what role' -> object_has_role qualifier. Once the wh-word tells you the qualifier name, GetQualifierValue(subject, predicate, target, qualifier_name) returns ONLY that value — no full-dict scan, no distractors, no chance of returning the wrong key.",
+    "pitfall": "Do NOT confuse the relation (employer) with its qualifiers (role, start_time). 'In what role' asks for object_has_role, not employer's target.",
     "tool_count": 5,
-    "collected_at": "2026-02-13T12:00:00"
+    "collected_at": "2026-05-05T20:30:00"
   },
   {
     "question": "What was the ceremony for the Academy Award received by Steven Spielberg for Schindler's List?",
@@ -39,12 +39,28 @@
       {"tool": "FindNode", "args": "Steven Spielberg", "result": "found Q8877 (Steven Spielberg)"},
       {"tool": "FindNode", "args": "Academy Award for Best Director", "result": "found Q103360 (Academy Award for Best Director)"},
       {"tool": "GetRelationDetails", "args": "Q8877, award received", "result": "multiple awards including Academy Award for Best Director (Q103360)"},
-      {"tool": "GetEdgeQualifiers", "args": "Q8877, award_received, Q103360", "result": "qualifiers: {for_work: Schindler's List, ceremony: 66th Academy Awards, point_in_time: 1994}"},
-      {"tool": "ManageJournal", "args": "set_partial_answer: 'What was the ceremony' -> ceremony qualifier = 66th Academy Awards. NOT for_work and NOT point_in_time.", "result": "updated"}
+      {"tool": "GetQualifierValue", "args": "Q8877, award_received, Q103360, qualifier_name=ceremony", "result": "{value: '66th Academy Awards', source: 'relation_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: 66th Academy Awards (ceremony qualifier projected directly)", "result": "updated"}
     ],
-    "lesson": "When the question asks 'What ceremony' or 'At which event', return the ceremony qualifier. When it says 'for what work', return for_work. Always read the question carefully to pick the right qualifier from GetEdgeQualifiers results.",
-    "pitfall": "Multiple qualifiers will be present (ceremony, for_work, point_in_time). Do NOT default to the most prominent one — match the question word exactly.",
+    "lesson": "'What ceremony' / 'At which event' -> ceremony qualifier. Map the wh-word to the qualifier name, then call GetQualifierValue with that exact name. There is no need to retrieve all qualifiers and then pick.",
+    "pitfall": "Awards typically carry ceremony, for_work, AND point_in_time. If you grab them all with GetEdgeQualifiers, the LLM may default to the most prominent one. GetQualifierValue forces an explicit, named projection.",
     "tool_count": 5,
-    "collected_at": "2026-02-13T12:00:00"
+    "collected_at": "2026-05-05T20:30:00"
+  },
+  {
+    "question": "Since when has Canberra been the capital of Australia?",
+    "answer": "1927",
+    "qtype": "QueryRelationQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "Canberra", "result": "found Q3114 (Canberra)"},
+      {"tool": "FindNode", "args": "Australia", "result": "found Q408 (Australia)"},
+      {"tool": "GetRelationDetails", "args": "Q3114, capital_of", "result": "1 target: Australia (Q408)"},
+      {"tool": "GetQualifierValue", "args": "Q3114, capital_of, Q408, qualifier_name=start_time", "result": "{value: '1927', source: 'relation_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: 1927 (start_time qualifier on capital_of)", "result": "updated"}
+    ],
+    "lesson": "'Since when' -> start_time qualifier (NOT point_in_time, which is for instantaneous events). Capital-of, member-of, employer relations all use start_time / end_time. Map 'since/from when' -> start_time, 'until when' -> end_time.",
+    "pitfall": "Do NOT conclude the qualifier 'is not recorded' after exploring with SPARQL or GetEdgeQualifiers. If you reach a SPARQL loop on capital qualifiers, stop and call GetQualifierValue with start_time directly — it auto-handles forward/backward direction and label resolution.",
+    "tool_count": 5,
+    "collected_at": "2026-05-05T20:30:00"
   }
 ]

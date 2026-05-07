@@ -38,7 +38,7 @@ All agents communicate with their MCP servers via **stdio protocol**.
         ▼                     ▼
 ┌─────────────────┐  ┌─────────────────┐
 │ kqapro_server   │  │ sciqa_server    │
-│ (25 tools)      │  │ (18 tools)      │
+│ (26 tools)      │  │ (20 tools)      │
 └─────────────────┘  └─────────────────┘
 ```
 
@@ -76,8 +76,9 @@ Some models (e.g., `minimax-m2.7`) cannot emit OpenAI-structured `tool_calls` �
 3. **API call:** `tools=None` — no native function-call schema is sent to the endpoint.
 4. **Response parsing (loop hook):** If `message.tool_calls` is empty but content contains `<tool_call>` blocks, `parse_text_tool_calls` constructs synthetic OpenAI-shaped tool_calls; the agent loop continues unchanged.
 5. **Tool results:** Appended as `role=user` prose wrapped in `<tool_result name="X">...</tool_result>` (not `role=tool`, which these models were not trained on).
+6. **Truncated-block retry:** `has_truncated_tool_call(content)` detects a `<tool_call>` opener with no parseable closing block (model stopped mid-emission). On hit: the broken assistant turn is persisted, a corrective user message is injected ("re-emit as one complete block"), and the loop continues. Reuses the `zero_tool_call_retry_max` budget. Trigger conditions for the "no tool calls" retry branch: (a) zero tool calls, no opener → zero-tool-call (RULE 0) retry; (b) zero tool calls, opener present but unparseable → truncated-block retry.
 
-See `Decisions/text-mode-tool-calls.md` for the failure-mode analysis and rationale.
+See `Decisions/text-mode-tool-calls.md` for the failure-mode analysis and rationale. See `Decisions/truncated-tool-call-retry.md` for the truncated-block retry ADR.
 
 ---
 
@@ -180,9 +181,9 @@ The agent classifies questions into 10 types, each with a specific strategy:
 | **SelectBetween** | Compare 2 entities | Use CompareEntities, verify constraints | ✅ Both entity values retrieved + comparison made + answer identified |
 | **SelectAmong** | Superlative (most, least) | Use RunSPARQL with ORDER BY LIMIT 1 | - |
 | **QueryAttr** | Direct attribute lookup | Use GetAttributeDetails (note: prepositional phrase disambiguation applies) | - |
-| **QueryAttrQualifier** | Attribute with context | Use GetEdgeQualifiers; use QualifierFilter to narrow entities by qualifier conditions (step 4: question-word-to-qualifier mapping: When→point_in_time, Where→location) | - |
+| **QueryAttrQualifier** | Attribute with context | Use `GetQualifierValue` once qualifier name is known (preferred); `GetEdgeQualifiers` for discovery; `QualifierFilter` to narrow entities by qualifier condition (When→point_in_time, Where→location) | - |
 | **QueryRelation** | Relationship identification | Use GetRelationDetails | - |
-| **QueryRelationQualifier** | Relation with context | Use GetQualifiersByPredicate; use QualifierFilter to narrow entities by qualifier conditions (step 3: question-word-to-qualifier mapping: When→point_in_time/start_time, Where→location, What role→object_has_role, What ceremony→ceremony, For what→AMBIGUOUS: check both for_work and ceremony) | - |
+| **QueryRelationQualifier** | Relation with context | Use `GetQualifierValue` once qualifier name is known (preferred); `GetQualifiersByPredicate` for discovery; `QualifierFilter` to narrow entities by qualifier condition (When→point_in_time/start_time, Where→location, What role→object_has_role, ceremony, For what→AMBIGUOUS: check both for_work and ceremony) | - |
 | **QueryName** | Reverse lookup | Use FindByAttribute, FilterEntities for type+attribute conditions, or RunSPARQL | - |
 | **Query** | General query | Multi-step reasoning (step 2b: prepositional phrase cross-reference to Rule #7) | - |
 
@@ -393,7 +394,7 @@ Follows the same 4-phase pattern as KQAProAgent:
 
 1. **Initialization** - Load LLM clients, connect to sciqa_server.py
 2. **Pre-Agent Hook** - Classify question (8 types), extract entities, load type-specific strategy
-3. **Main Agent Loop** - Call ORKG tools (18 tools), track progress
+3. **Main Agent Loop** - Call ORKG tools (20 tools), track progress
 4. **Post-Agent Hook** - Synthesize answer from journal
 
 ### Prompt Architecture (Type-Specific Strategy Loading)
@@ -455,7 +456,7 @@ SciQA classifies questions into 8 types:
 
 ### SciQA MCP Tools
 
-The sciqa_server.py provides 18 tools organized by tier:
+The sciqa_server.py provides 20 tools organized by tier:
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource(semantic_query)` - Vector search for ORKG resources
@@ -471,13 +472,15 @@ The sciqa_server.py provides 18 tools organized by tier:
 - `BatchGetResourceLabels(resource_ids)` - Batch resolution
 - `CompareResources(resource_ids, predicate_id)` - Compare predicate across resources (sorted)
 
-**Tier 3 - Domain-Specific (6 tools):**
+**Tier 3 - Domain-Specific (8 tools):**
 - `GetPaperContributions(paper_id)` - Paper contributions via P31
 - `GetPaperAuthors(paper_id)` - Authors via P6/P27
 - `GetContributionMethods(contribution_id)` - Methods via P2
 - `GetResearchFieldPapers(field_name)` - Papers in field via P30
 - `GetComparisonContributions(comparison_id, domain_predicate, filter_value, filter_type)` - Navigate Comparison -> Contribution pattern with predicate discovery mode. Now includes **automatic 4-hop value resolution**: query includes `OPTIONAL { ?value orkgp:HAS_VALUE ?nestedValue }` and response includes `nested_value` field when present (Comparison → Contribution → intermediate_resource → HAS_VALUE → actual_value). Stores values in journal's found_values.
 - `FollowRelationPath(start_resource_id, relation_path)` - Multi-hop navigation in one SPARQL call
+- `AggregateComparisonValues(comparison_id, value_predicate, agg, group_by_predicate?, filter_predicate?, filter_value?, filter_match?, top_n?, value_via_group?)` - SPARQL + Python aggregation over a Comparison's contributions. Handles HAS_VALUE/label indirection. `agg` options: `avg|sum|min|max|count|count_distinct|mode_top|all_values`. `value_via_group=True` adds a 2-hop: `?contrib group_pred ?group . ?group value_pred ?scalar` (needed for grouped energy-domain questions). Smoke-tested against gold answers for Q3/Q11/Q13/Q16/Q18. ✨ NEW
+- `FindCoAuthors(author_name, top_n?)` - Finds co-authors of papers by a seed author (partial case-insensitive match; handles resource-URI authors via P27/P6 + rdfs:label and literal-string authors via isLiteral() filter); returns co-authors sorted by shared-paper count descending. Smoke-tested against Q2 gold. ✨ NEW
 
 **Tier 4 - Raw SPARQL (1 tool):**
 - `RunORKGSPARQL(query)` - Raw SPARQL (prefixes auto-injected, **capped at 10 calls per question** to prevent runaway SPARQL spirals) ✨ UPDATED
