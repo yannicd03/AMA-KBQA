@@ -227,12 +227,20 @@ def _create_client(
     # Get API key from environment or config
     api_key = _get_api_key(provider, provider_config)
 
-    # Create OpenAI client with provider-specific settings
+    # Create OpenAI client with provider-specific settings.
+    # We pass a structured httpx.Timeout so socket-level hangs trip the
+    # connect/read/write/pool budgets individually rather than waiting on the
+    # single bulk `timeout=60.0` value, which we observed not firing on the
+    # KIT endpoint (2026-05-08 gemma seed=44 first attempt: 24h hang at
+    # iteration 17 of question 4, sleeping at 0% CPU). Tight connect/pool
+    # budgets ensure we surface a TimeoutError rather than block the event
+    # loop indefinitely; read=60 keeps existing behaviour for healthy calls.
+    import httpx  # local import to avoid front-loading the dep at module import
     client_kwargs = {
         "base_url": base_url,
         "api_key": api_key,
-        "timeout": 60.0,
-        "max_retries": 3
+        "timeout": httpx.Timeout(connect=20.0, read=60.0, write=10.0, pool=5.0),
+        "max_retries": 3,
     }
 
     # Add OpenRouter-specific headers for rankings

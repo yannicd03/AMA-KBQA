@@ -11,6 +11,29 @@
     "collected_at": "2026-04-29T14:00:00"
   },
   {
+    "question": "How many television series were not started in 2005?",
+    "answer": "305",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "CountEntities", "args": "{'concept': 'television series', 'not_conditions': [{'attribute_name': 'start_time', 'attribute_value': '2005', 'operator': '='}]}", "result": "{\"count\": 305, \"description\": \"type=television series, NOT start_time=2005\", \"status\": \"ok\"}"}
+    ],
+    "lesson": "For 'NOT X' / 'not started/born/published in YYYY' / 'except those with attribute=value', use CountEntities's not_conditions parameter. Each entry is the same shape as or_conditions ({attribute_name, attribute_value, operator}) and emits a FILTER NOT EXISTS clause server-side. Do NOT hand-write FILTER NOT EXISTS via RunSPARQL — the namespace/prefix/quantity-bnode handling is fragile.",
+    "pitfall": "Negation semantics: not_conditions excludes entities for which the named attribute matches the condition. Entities that LACK the attribute entirely are KEPT (which is usually what natural-language 'not' means). If you really need 'must have attribute AND value != X', use the primary attribute_name with operator='!='.",
+    "tool_count": 1,
+    "collected_at": "2026-05-08T12:00:00"
+  },
+  {
+    "question": "How many neighborhoods are at zip code 10026 or have the subreddit venice?",
+    "answer": "2",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "CountEntities", "args": "{'concept': 'neighborhood', 'attribute_name': 'postal_code', 'attribute_value': '10026', 'operator': '=', 'or_conditions': [{'attribute_name': 'subreddit', 'attribute_value': 'venice', 'operator': '='}]}", "result": "{\"count\": 2, \"description\": \"type=neighborhood, postal_code=10026, OR subreddit=venice\", \"status\": \"ok\"}"}
+    ],
+    "lesson": "OR across DIFFERENT attributes works the same way as OR across one attribute — pass each branch as an or_conditions entry. The tool emits a UNION of attribute conditions internally. Don't split into two CountEntities calls and add — that double-counts entities matching both branches.",
+    "tool_count": 1,
+    "collected_at": "2026-05-08T12:00:00"
+  },
+  {
     "question": "How many films were released after 2000 and have a duration greater than 120 minutes?",
     "answer": "354",
     "qtype": "Count",

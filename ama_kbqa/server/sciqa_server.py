@@ -392,7 +392,8 @@ mcp = FastMCP("SciQA-ORKG-Server", lifespan=server_lifespan)
 async def FindResource(
     app_context: Context,
     semantic_query: str,
-    top_n: int = 5
+    top_n: int = 5,
+    node_type_filter: str = "",
 ) -> str:
     """
     Search for ORKG resources (papers, authors, contributions, etc.) by semantic similarity.
@@ -402,6 +403,14 @@ async def FindResource(
     Args:
         semantic_query: Natural language description (e.g., "machine learning paper", "NLP contribution")
         top_n: Number of results to return (default: 5)
+        node_type_filter: Optional ORKG class name (e.g. "Comparison", "Paper",
+            "Contribution", "Author", "Dataset", "Model", "Metric"). When set,
+            only results with `rdf:type orkgc:<class>` are returned. Use this
+            for SciQA aggregation questions where you specifically need a
+            Comparison (set to "Comparison") rather than the highest-scored
+            semantic hit, which is often a Paper or Contribution. The vector
+            search runs with a larger candidate pool (4×top_n), then filters
+            to the requested class via a single SPARQL ASK-batch.
 
     Returns:
         JSON with matching resources and their available predicates
@@ -411,12 +420,50 @@ async def FindResource(
     try:
         query_vector = get_embedding(app.embedding_client, semantic_query)
 
+        # When filtering by class, over-fetch and prune so we still return
+        # roughly top_n hits of the desired type.
+        candidate_limit = max(top_n * 4, 20) if node_type_filter else top_n
         search_results = app.qdrant.query_points(
             collection_name=COLLECTION_ENTITIES,
             query=query_vector,
-            limit=top_n,
+            limit=candidate_limit,
             score_threshold=ENTITY_THRESHOLD
         ).points
+
+        # If a node_type_filter is supplied, batch-check rdf:type via SPARQL
+        # and keep only candidates matching the requested ORKG class.
+        if node_type_filter and search_results:
+            wanted_class = node_type_filter.strip()
+            if wanted_class.startswith("orkgc:"):
+                wanted_class = wanted_class[6:]
+            candidate_ids = [
+                (hit.payload or {}).get("uri", "").split("/")[-1]
+                for hit in search_results
+            ]
+            candidate_ids = [cid for cid in candidate_ids if cid]
+            if candidate_ids:
+                values = " ".join(f"orkgr:{cid}" for cid in candidate_ids)
+                type_query = f"""
+                SELECT ?resource WHERE {{
+                    GRAPH <{SCIQA_GRAPH}> {{
+                        VALUES ?resource {{ {values} }}
+                        ?resource rdf:type orkgc:{wanted_class} .
+                    }}
+                }}
+                """
+                full = SPARQL_PREFIXES + type_query
+                app.sparql.setQuery(full)
+                tres = app.sparql.query().convert()
+                matched_ids = {
+                    b["resource"]["value"].split("/")[-1]
+                    for b in tres.get("results", {}).get("bindings", [])
+                }
+                search_results = [
+                    hit for hit in search_results
+                    if (hit.payload or {}).get("uri", "").split("/")[-1] in matched_ids
+                ][:top_n]
+            else:
+                search_results = []
 
         matches = []
         for hit in search_results:
