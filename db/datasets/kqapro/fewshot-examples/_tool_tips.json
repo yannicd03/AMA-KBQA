@@ -31,8 +31,8 @@
   },
   {
     "tool_name": "CountEntities",
-    "problem_pattern": "ANY 'How many?' question",
-    "guidance": "ALWAYS prefer over FilterEntities + len() (which truncates at limit=50) and over hand-written RunSPARQL COUNT (error-prone with KQAPro namespaces). Returns the EXACT count. For OR conditions, pass or_conditions=[{...}]. For concept hierarchies (e.g. 'all mammals' covering subspecies), set transitive_concept=True."
+    "problem_pattern": "ANY 'How many?' question, including OR / NOT / negation patterns",
+    "guidance": "ALWAYS prefer over FilterEntities + len() (truncates at limit=50) and over hand-written RunSPARQL COUNT (fragile with KQAPro namespaces and quantity-bnode storage). Returns the EXACT count. For OR conditions on the same OR different attributes, pass or_conditions=[{...}]. For NOT / negation ('how many X NOT Y', 'not started in YYYY', 'except those with Z'), pass not_conditions=[{...}] — each entry has the same shape as or_conditions and emits a FILTER NOT EXISTS clause. Negation semantics: entities matching ANY value of the named attribute that satisfies the condition are excluded; entities lacking the attribute entirely are KEPT. For concept hierarchies (e.g. 'all mammals' covering subspecies), set transitive_concept=True."
   },
   {
     "tool_name": "SelectExtreme",

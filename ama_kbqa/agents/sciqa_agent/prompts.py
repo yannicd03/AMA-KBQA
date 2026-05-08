@@ -857,14 +857,21 @@ If the question asks about sectors (Heat, Electricity, Gas, Liquid fuels), use G
 
     "Aggregation": """
 **Example: "How many patients participate in the studies?"** (sum pattern, scoped to a named Comparison)
-1. FindResource("patient demographics studies" or the question's named anchor) -> R33008
-   (Comparison). When the question says "the studies" it is anchored to a SPECIFIC
-   Comparison, NOT the whole graph. Pick the Comparison whose label/topic matches
-   the question's domain (patient demographics here, energy / nanocarriers / etc.
-   for other questions).
+1. FindResource("patient demographics studies", node_type_filter="Comparison")
+   -> [R33008 (Comparison: "Patient demographics across pneumonia studies"), …]
+   ALWAYS pass node_type_filter="Comparison" when the question says "the studies"
+   / "the comparison" / "the analysis". Without it, the highest-scored vector hit
+   is often a Paper or Contribution, not the Comparison that anchors the
+   aggregation, and AggregateComparisonValues silently returns the wrong number
+   on the wrong scope.
 2. AggregateComparisonValues(comparison_id="R33008", value_predicate="P15585", agg="sum")
    -> {result: 6452.0, n_contributions: 18}
 3. Answer: "6452"
+
+If the result looks implausible (e.g., 217918 patients vs an expected ~6000),
+the comparison_id is wrong. Re-run FindResource with a more specific topic
+phrase or list more candidate Comparisons (top_n=10, node_type_filter="Comparison")
+and pick the one whose label matches the question's domain.
 
 **Example: "What is the mean efficiency obtained for the studies?"** (avg with label-fallback)
 1. FindResource("efficiency studies" / question's named comparison) -> R155266

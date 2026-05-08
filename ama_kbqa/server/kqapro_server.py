@@ -4020,6 +4020,7 @@ def CountEntities(
     operator: Literal["=", "!=", "<", ">", "<=", ">=", "contains"] = "=",
     entity_ids: list[str] | None = None,
     or_conditions: list[dict] | None = None,
+    not_conditions: list[dict] | None = None,
     transitive_concept: bool = False,
 ) -> CountResponse:
     """
@@ -4034,6 +4035,7 @@ def CountEntities(
     - "How many films did Nolan direct?" → first get film IDs via GetRelationDetails, then CountEntities(entity_ids=[...])
     - "How many Pennsylvania counties have population > 7800 or < 40M?" → CountEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name": "population", "attribute_value": "40000000", "operator": "<"}])
     - "How many mammal species are there?" → CountEntities(concept="mammal", transitive_concept=True)
+    - "How many TV series were NOT started in 2005?" → CountEntities(concept="TV series", not_conditions=[{"attribute_name": "start_time", "attribute_value": "2005", "operator": "="}])
 
     Args:
         concept: Entity type to count. Leave empty to skip type filtering.
@@ -4043,6 +4045,12 @@ def CountEntities(
         entity_ids: Optional list of entity IDs to restrict the count to.
         or_conditions: Additional attribute conditions OR'd with the primary. Same shape as
             FilterEntities. Each item: {"attribute_name", "attribute_value", "operator"}.
+        not_conditions: Conditions to EXCLUDE — entities matching any of these are subtracted
+            from the count, expressed as `FILTER NOT EXISTS { ... }` per condition. Same item
+            shape as `or_conditions`. Use for "how many X NOT Y" / "how many X that are not Z"
+            questions instead of writing FILTER NOT EXISTS by hand in RunSPARQL. The semantics
+            are "the entity does not have ANY value of attribute_name matching the condition";
+            entities that lack the attribute entirely are KEPT (i.e., not excluded).
         transitive_concept: If True, count entities whose type is `concept` OR any descendant
             (rdf:type/rdf:type*). Default False (most "how many X" questions are flat counts
             over a single class — `country`, `province`, `film`). Set True ONLY for genuine
@@ -4056,7 +4064,7 @@ def CountEntities(
     app_context: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = app_context.sparql
 
-    if not concept and not attribute_name and not entity_ids and not or_conditions:
+    if not concept and not attribute_name and not entity_ids and not or_conditions and not not_conditions:
         return CountResponse(
             count=0,
             description="(no filter provided)",
@@ -4088,7 +4096,18 @@ def CountEntities(
         elif len(branches) > 1:
             attr_block = " UNION ".join("{ " + b + " }" for b in branches)
 
-    where_body = "\n        ".join(filter(None, pre_blocks + [attr_block]))
+    # FILTER NOT EXISTS blocks for each excluded condition
+    not_blocks: list[str] = []
+    for j, cond in enumerate(not_conditions or [], start=0):
+        cond_sparql = _attr_condition_sparql(
+            cond.get("attribute_name", ""),
+            cond.get("attribute_value", ""),
+            cond.get("operator", "="),
+            f"n{j}",
+        )
+        not_blocks.append("FILTER NOT EXISTS { " + cond_sparql.rstrip() + " }")
+
+    where_body = "\n        ".join(filter(None, pre_blocks + [attr_block] + not_blocks))
     query = f"""
     {SPARQL_PREFIXES}
     SELECT (COUNT(DISTINCT ?entity) AS ?c) WHERE {{
@@ -4105,6 +4124,10 @@ def CountEntities(
     for cond in or_conditions or []:
         parts.append(
             f"OR {cond.get('attribute_name','')}{cond.get('operator','=')}{cond.get('attribute_value','')}"
+        )
+    for cond in not_conditions or []:
+        parts.append(
+            f"NOT {cond.get('attribute_name','')}{cond.get('operator','=')}{cond.get('attribute_value','')}"
         )
     if entity_ids:
         parts.append(f"in {len(entity_ids)} ids")

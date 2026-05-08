@@ -1277,6 +1277,29 @@ async def run_benchmark_for_model_agent(
             "agent": agent_name,
         }
 
+    # Consecutive-infrastructure-failure cutoff. An LLM endpoint that's down
+    # (KIT bursts 404s for ~10 min, or hangs at the socket level) will emit
+    # the same error class on every question it touches. We've seen a 24-row
+    # KIT outage corrupt seed=43 (2026-05-06) and a single hang lock up
+    # gemma seed=44 (2026-05-08). Aborting after N consecutive infra
+    # failures preserves the partial run and surfaces a clear cause instead
+    # of writing dozens of fake "INCORRECT" rows.
+    INFRA_ERROR_PATTERNS = (
+        "NotFoundError", "404",  # KIT bursty 404s
+        "NoneType' object has no attribute 'choices'",  # response None / litellm wrapper failure
+        "litellm.NotFoundError", "Hosted_vllmException",
+        "ConnectError", "ReadTimeout", "WriteTimeout", "PoolTimeout",
+        "ConnectTimeout", "RemoteProtocolError",
+    )
+    INFRA_FAILURE_ABORT_THRESHOLD = 5
+    consecutive_infra_failures = 0
+    aborted_for_infra = False
+
+    def _is_infra_error(err: Optional[str]) -> bool:
+        if not err:
+            return False
+        return any(p in err for p in INFRA_ERROR_PATTERNS)
+
     try:
         pbar = tqdm(questions, desc=f"{model.name}/{agent_name}", unit="q")
 
@@ -1309,6 +1332,28 @@ async def run_benchmark_for_model_agent(
                 is_complete=False,
                 postprocessing_mode=postprocessing_mode,
             )
+
+            # Track consecutive infrastructure failures and abort if the
+            # endpoint is clearly unhealthy.
+            if _is_infra_error(result.error):
+                consecutive_infra_failures += 1
+                log_print(
+                    f"  [infra-watchdog] consecutive infra failures: "
+                    f"{consecutive_infra_failures}/{INFRA_FAILURE_ABORT_THRESHOLD}"
+                )
+                if consecutive_infra_failures >= INFRA_FAILURE_ABORT_THRESHOLD:
+                    log_print(
+                        f"\n[FATAL] Endpoint unhealthy: "
+                        f"{consecutive_infra_failures} consecutive infrastructure errors "
+                        f"(model={model.name}, agent={agent_name}). "
+                        f"Last error: {result.error[:120]}\n"
+                        f"Aborting run after {len(results)} questions to avoid logging "
+                        f"a wall of fake INCORRECT rows. Re-run when the endpoint is back."
+                    )
+                    aborted_for_infra = True
+                    break
+            else:
+                consecutive_infra_failures = 0
 
         pbar.close()
 
