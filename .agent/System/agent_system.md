@@ -52,7 +52,7 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 
 | File | Contents | Line Count |
 |------|----------|------------|
-| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap); text-tool-call init + loop hooks | ~600 |
+| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap); text-tool-call init + loop hooks; `_extract_json_object` static helper | ~600 |
 | `mcp_client.py` | Shared MCPClient class | ~120 |
 | `types.py` | Response types (EntityMatch, NodeDetails, etc.) | ~280 |
 | `config.py` | Configuration dataclasses | ~220 |
@@ -66,6 +66,19 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 - Abstract methods: `get_config()`, `get_mcp_server_path()`
 - Template methods: `_get_system_prompt()`, `_classify_question()`, `_extract_entities()`
 - Concrete methods: `ask()`, `_run_tool_loop()`, `_detect_loops()`, `reset()`, `soft_reset()`, `close()`
+
+### Classification JSON Parsing (`_extract_json_object`)
+
+`BaseKBQAAgent._extract_json_object(content: str) -> Optional[Dict]` is a static helper used by both `_classify_question` and SciQAAgent's equivalent. It handles LLM responses that include reasoning prefixes or markdown fences around the JSON payload:
+
+1. Strip `<think>...</think>` blocks via `re.sub(..., flags=re.DOTALL)` — minimax-m2.7 emits these even with `response_format=json_object`.
+2. Strip markdown code fences.
+3. `json.loads()` on the cleaned string (fast path).
+4. Brace-balanced fallback: scan from the first `{`, count depth, extract the balanced block, parse.
+
+The classifier `max_tokens` was also bumped from 300 → 1500 to give models with think-prefix room to complete both the reasoning block and the JSON output.
+
+See `Decisions/classifier-think-prefix-fix.md` for the full analysis and empirical context.
 
 ### Text-Tool-Call Mode
 
@@ -908,16 +921,17 @@ After benchmark runs with llm_judge evaluation, the system can optionally genera
    - Correct answers with `argumentation_score >= 4`
    - Any incorrect answer (to learn from mistakes)
 
-2. **LLM Analysis** - Uses `deepseek/deepseek-v3.2-speciale` to analyze:
-   - Full conversation messages (truncated to last 20 messages, tool results to 500 chars)
+2. **LLM Analysis** - Model and parameters from `[fewshot_generator]` in `config.toml` (defaults: `deepseek/deepseek-v4-pro`, temp 1.0, max_tokens 16000). Analyzes:
+   - Full conversation trace (`include_full_conversation=true` by default — no truncation)
+   - Agent's live tool catalog (`include_tool_descriptions=true` by default — spawns MCP server to fetch `list_tools`, formatted via `build_text_mode_tool_catalog`)
    - Tool trace overview
    - Judge verdict (correctness reasoning, argumentation quality, score)
    - Question metadata (type, gold answer, predicted answer)
 
 3. **Output Generation** - Produces up to 3 optional outputs per question:
-   - **QType Example** - Reusable strategy pattern for this question type
+   - **QType Example** - Reusable strategy pattern for this question type. Even for correct answers, the generator checks path optimality against the available tools.
    - **General Example** - Cross-type insight applicable to multiple types
-   - **Tool Tip** - Tool-specific gotcha or usage pattern
+   - **Tool Tip** - Tool-specific gotcha or usage pattern (generated when a more direct tool existed than the one the agent used)
 
 4. **Deduplication & Storage**:
    - Per-qtype examples: deduplicated by question text, saved to `<QType>.json` (max 5)
@@ -925,6 +939,8 @@ After benchmark runs with llm_judge evaluation, the system can optionally genera
    - Tool tips: deduplicated by tool_name+problem_pattern, saved to `_tool_tips.json` (max 20)
 
 5. **Audit Logging** - All generated examples (pre-dedup) saved to `generated_fewshot.json`
+
+6. **Post-Hoc Replay** - `ama_kbqa/run_fewshot_generator.py` replays the generator over a saved benchmark dir without re-running the agent. Always writes to a shadow directory; refuses to write to the live `fewshot-examples/` dir. See `Decisions/fewshot-generator-enrichment.md` for rationale.
 
 ### Agent Integration
 
