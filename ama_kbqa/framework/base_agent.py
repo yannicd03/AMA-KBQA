@@ -37,6 +37,11 @@ from ama_kbqa.config import (
 )
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
+from ama_kbqa.framework.trace import (
+    JOURNAL_MUTATING_TOOLS,
+    TraceRecorder,
+    _current_span_id,
+)
 
 # Configure stdout to handle Unicode on Windows
 if sys.platform == 'win32':
@@ -73,7 +78,14 @@ class BaseKBQAAgent(ABC):
     - Token and tool tracking
     """
 
-    def __init__(self, name: str = "kbqa_agent", session_id: str = "default", use_fewshot: bool = True):
+    def __init__(
+        self,
+        name: str = "kbqa_agent",
+        session_id: str = "default",
+        use_fewshot: bool = True,
+        parent_recorder: Optional[TraceRecorder] = None,
+        parent_span_id: Optional[str] = None,
+    ):
         """
         Initialize the base KBQA agent.
 
@@ -81,11 +93,26 @@ class BaseKBQAAgent(ABC):
             name: Agent name for tracing
             session_id: Session identifier
             use_fewshot: Whether to inject few-shot examples during classification
+            parent_recorder: If supplied (e.g. by an Orchestrator delegating to
+                this sub-agent), append all events to that recorder instead of
+                creating an independent one. Produces a single nested trace.
+            parent_span_id: Span id under which this agent's root span should
+                nest. Only honoured when `parent_recorder` is also supplied.
         """
         self.use_fewshot = use_fewshot
         self.name = name
         self.session_id = session_id
         self.mcp: Optional[MCPClient] = None
+
+        # Trace recorder — owns this run's events. Sub-agents share their
+        # parent's recorder when `parent_recorder` is supplied.
+        self.recorder: TraceRecorder = parent_recorder or TraceRecorder()
+        self._parent_span_id_override: Optional[str] = parent_span_id
+
+        # Live graph snapshots — populated as the agent investigates.
+        # Each entry: {"ts": float, "iteration": int, "trigger": str, "state": dict}
+        self.journal_snapshots: List[Dict[str, Any]] = []
+        self._last_journal_summary_hash: Optional[str] = None
 
         # Initialize LLM clients
         try:
@@ -420,48 +447,67 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         prompt = self._get_classification_prompt(question)
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "system", "content": prompt}],
-                temperature=get_chat_temperature(),
-                response_format={"type": "json_object"},
-                # Bumped from 300 to 1500: minimax-m2.7 emits a `<think>...</think>`
-                # reasoning prefix before the JSON object even with
-                # response_format=json_object. With max_tokens=300 the response
-                # routinely truncates inside the thinking block, leaving no JSON
-                # to parse and silently defaulting question_type to "Query" for
-                # every question (verified empirically — minimax-kqapro audits
-                # showed 100/100 questions classified as "Query"). 1500 tokens
-                # leaves headroom for the think block plus the actual JSON.
-                max_tokens=1500,
-                timeout=30.0
-            )
-
-            if response.usage:
-                self._track_token_usage(response.usage)
-
-            json_content = response.choices[0].message.content
-            # Use the brace-balanced extractor to handle <think>...</think>
-            # prefixes and markdown fences. json.loads alone fails on those.
-            result = self._extract_json_object(json_content)
-            if result is None:
-                self._trace(
-                    f"Classification: no parseable JSON in response "
-                    f"({len(json_content) if json_content else 0} chars), "
-                    f"defaulting to Query",
-                    COLOR_YELLOW,
+        with self.recorder.span_sync(
+            "classify",
+            self.model,
+            attributes={"model": self.model},
+            payload={"prompt": prompt, "question": question},
+        ) as _cls_span:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "system", "content": prompt}],
+                    temperature=get_chat_temperature(),
+                    response_format={"type": "json_object"},
+                    # Bumped from 300 to 1500: minimax-m2.7 emits a
+                    # `<think>...</think>` reasoning prefix before the JSON
+                    # object even with response_format=json_object. With
+                    # max_tokens=300 the response routinely truncates inside
+                    # the thinking block, leaving no JSON to parse and
+                    # silently defaulting question_type to "Query" for every
+                    # question. 1500 tokens leaves headroom for the think
+                    # block plus the actual JSON.
+                    max_tokens=1500,
+                    timeout=30.0,
                 )
-                return {"question_type": "Query", "entities": [], "relations": []}
-            return {
-                "question_type": result.get("question_type", "Query"),
-                "entities": result.get("entities", []),
-                "relations": result.get("relations", [])
-            }
 
-        except Exception as e:
-            self._trace(f"Classification+extraction failed: {e}", COLOR_YELLOW)
-            return {"question_type": "Query", "entities": [], "relations": []}
+                if response.usage:
+                    self._track_token_usage(response.usage)
+                    _cls_span.update_attributes({
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                    })
+
+                json_content = response.choices[0].message.content
+                _cls_span.set_payload("response_content", json_content)
+                # Use the brace-balanced extractor to handle <think>...</think>
+                # prefixes and markdown fences. json.loads alone fails on those.
+                result = self._extract_json_object(json_content)
+                if result is None:
+                    self._trace(
+                        f"Classification: no parseable JSON in response "
+                        f"({len(json_content) if json_content else 0} chars), "
+                        f"defaulting to Query",
+                        COLOR_YELLOW,
+                    )
+                    _cls_span.set_attribute("parse_failed", True)
+                    return {"question_type": "Query", "entities": [], "relations": []}
+                out = {
+                    "question_type": result.get("question_type", "Query"),
+                    "entities": result.get("entities", []),
+                    "relations": result.get("relations", []),
+                }
+                _cls_span.update_attributes({
+                    "question_type": out["question_type"],
+                    "n_entities": len(out["entities"]),
+                    "n_relations": len(out["relations"]),
+                })
+                return out
+
+            except Exception as e:
+                self._trace(f"Classification+extraction failed: {e}", COLOR_YELLOW)
+                _cls_span.set_attribute("error", str(e))
+                return {"question_type": "Query", "entities": [], "relations": []}
 
     def _classify_question(self, question: str) -> Dict[str, Any]:
         """
@@ -632,6 +678,30 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         self._trace(f"Incoming query: '{query}'", COLOR_GREEN)
 
+        # Root span: wraps the entire run. If a parent_span_id was supplied
+        # (orchestrator delegation), set it as the current parent so this
+        # span nests correctly under the parent's "delegate" span.
+        _parent_token = None
+        if self._parent_span_id_override is not None:
+            _parent_token = _current_span_id.set(self._parent_span_id_override)
+
+        try:
+            async with self.recorder.span(
+                "agent_run",
+                self.name,
+                attributes={
+                    "agent": self.name,
+                    "model": self.model,
+                    "query": query[:500],
+                },
+                payload={"query": query},
+            ) as _root_span:
+                return await self._ask_impl(query, _root_span)
+        finally:
+            if _parent_token is not None:
+                _current_span_id.reset(_parent_token)
+
+    async def _ask_impl(self, query: str, _root_span) -> str:
         try:
             # Initialize MCP connection
             await self._init_mcp()
@@ -699,7 +769,17 @@ Change strategy or acknowledge the data doesn't exist."""
                     and len(relations) <= 1
                     and config.domain_settings.get("enable_fast_path", True)):
                 self._trace(f"FAST PATH: Simple {qtype} with 1 entity", COLOR_GREEN)
-                fast_answer = await self._try_fast_path(query, qtype, entities, relations)
+                async with self.recorder.span(
+                    "fast_path",
+                    qtype,
+                    attributes={
+                        "qtype": qtype,
+                        "entity": entities[0] if entities else None,
+                        "relation": relations[0] if relations else None,
+                    },
+                ) as _fp_span:
+                    fast_answer = await self._try_fast_path(query, qtype, entities, relations)
+                    _fp_span.set_attribute("succeeded", fast_answer is not None)
                 if fast_answer is not None:
                     self._trace(f"Fast path succeeded ({len(fast_answer)} chars)", COLOR_GREEN)
                     return fast_answer
@@ -841,7 +921,26 @@ Change strategy or acknowledge the data doesn't exist."""
             # Safety check
             if iteration_count > max_iterations:
                 self._trace(f"WARNING: Reached max iterations ({max_iterations})", COLOR_RED)
+                self.recorder.event(
+                    "intervention",
+                    "max_iterations_reached",
+                    attributes={"iteration_count": iteration_count, "max": max_iterations},
+                )
                 return "Error: Agent reached maximum iteration limit."
+
+            # Per-iteration point-in-time event. We don't wrap the iteration
+            # in an interval span because the loop has many `continue`/`break`
+            # paths that would make exit-handling fragile. The LLM-call and
+            # tool-call spans inside this iteration give us the structure;
+            # this event just marks the iteration boundary in the timeline.
+            self.recorder.event(
+                "tool_loop_iter",
+                f"iter:{iteration_count}",
+                attributes={
+                    "iteration": iteration_count,
+                    "n_messages": len(self._messages),
+                },
+            )
 
             # Manage context window before LLM call
             self._manage_context_window()
@@ -913,6 +1012,14 @@ Change strategy or acknowledge the data doesn't exist."""
                     from ama_kbqa.framework.text_tool_calls import has_truncated_tool_call
                     if has_truncated_tool_call(message.content):
                         zero_tool_call_retries += 1
+                        self.recorder.event(
+                            "intervention",
+                            "truncated_tool_call_retry",
+                            attributes={
+                                "retry": zero_tool_call_retries,
+                                "max": zero_tool_call_retry_max,
+                            },
+                        )
                         self._trace(
                             f"Truncated tool-call detected — re-prompting "
                             f"(retry {zero_tool_call_retries}/{zero_tool_call_retry_max})",
@@ -946,6 +1053,14 @@ Change strategy or acknowledge the data doesn't exist."""
                     and zero_tool_call_retries < zero_tool_call_retry_max
                 ):
                     zero_tool_call_retries += 1
+                    self.recorder.event(
+                        "intervention",
+                        "zero_tool_call_retry",
+                        attributes={
+                            "retry": zero_tool_call_retries,
+                            "max": zero_tool_call_retry_max,
+                        },
+                    )
                     self._trace(
                         f"Zero-tool-call answer detected — re-prompting "
                         f"(retry {zero_tool_call_retries}/{zero_tool_call_retry_max})",
@@ -1125,42 +1240,99 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         tool_start_time = time.time()
 
+        async with self.recorder.span(
+            "tool_call",
+            func_name,
+            attributes={
+                "tool_name": func_name,
+                "args_keys": sorted(list(func_args.keys()))[:8],
+            },
+            payload={"arguments": func_args},
+        ) as _span:
+            try:
+                tool_result = await self.mcp.call_tool(func_name, func_args)
+                tool_duration = time.time() - tool_start_time
+
+                # Track success
+                self.tool_call_counts[func_name] = self.tool_call_counts.get(func_name, 0) + 1
+                self.tool_call_durations.append({
+                    "tool_name": func_name,
+                    "duration_seconds": round(tool_duration, 3),
+                    "success": True,
+                    "timestamp": datetime.now().isoformat()
+                })
+
+                _span.update_attributes({
+                    "duration_seconds": round(tool_duration, 3),
+                    "success": True,
+                    "result_chars": len(tool_result) if tool_result else 0,
+                })
+                _span.set_payload("result", tool_result)
+
+                # Log result
+                log_result = tool_result
+                if len(log_result) > 500:
+                    log_result = log_result[:500] + "... [truncated]"
+                self._trace(f"Result ({func_name}) [{tool_duration:.3f}s]: {log_result}", COLOR_CYAN)
+
+                # Snapshot the journal if this tool mutates it. Cheap: one
+                # extra MCP call only for known-mutating tools, not every
+                # iteration.
+                if func_name in JOURNAL_MUTATING_TOOLS:
+                    await self._snapshot_journal(trigger=f"after:{func_name}")
+
+                return tool_result
+
+            except Exception as tool_error:
+                tool_duration = time.time() - tool_start_time
+
+                # Track failure
+                self.tool_call_counts[func_name] = self.tool_call_counts.get(func_name, 0) + 1
+                self.tool_call_durations.append({
+                    "tool_name": func_name,
+                    "duration_seconds": round(tool_duration, 3),
+                    "success": False,
+                    "error": str(tool_error),
+                    "timestamp": datetime.now().isoformat()
+                })
+
+                _span.update_attributes({
+                    "duration_seconds": round(tool_duration, 3),
+                    "success": False,
+                    "error": str(tool_error),
+                })
+
+                self._trace(f"Tool {func_name} failed: {tool_error}", COLOR_RED)
+                return f"Error executing {func_name}: {tool_error}. Try a different approach."
+
+    async def _snapshot_journal(self, trigger: str) -> None:
+        """Fetch the current server-side journal as a structured dict.
+
+        Cheap when called only at journal-mutating boundaries. Silently no-op
+        on failure (e.g. server doesn't have the GetJournalStateJSON tool yet
+        — fall back to nothing rather than break the agent loop).
+        """
+        if not self.mcp:
+            return
         try:
-            tool_result = await self.mcp.call_tool(func_name, func_args)
-            tool_duration = time.time() - tool_start_time
-
-            # Track success
-            self.tool_call_counts[func_name] = self.tool_call_counts.get(func_name, 0) + 1
-            self.tool_call_durations.append({
-                "tool_name": func_name,
-                "duration_seconds": round(tool_duration, 3),
-                "success": True,
-                "timestamp": datetime.now().isoformat()
-            })
-
-            # Log result
-            log_result = tool_result
-            if len(log_result) > 500:
-                log_result = log_result[:500] + "... [truncated]"
-            self._trace(f"Result ({func_name}) [{tool_duration:.3f}s]: {log_result}", COLOR_CYAN)
-
-            return tool_result
-
-        except Exception as tool_error:
-            tool_duration = time.time() - tool_start_time
-
-            # Track failure
-            self.tool_call_counts[func_name] = self.tool_call_counts.get(func_name, 0) + 1
-            self.tool_call_durations.append({
-                "tool_name": func_name,
-                "duration_seconds": round(tool_duration, 3),
-                "success": False,
-                "error": str(tool_error),
-                "timestamp": datetime.now().isoformat()
-            })
-
-            self._trace(f"Tool {func_name} failed: {tool_error}", COLOR_RED)
-            return f"Error executing {func_name}: {tool_error}. Try a different approach."
+            raw = await self.mcp.call_tool("GetJournalStateJSON", {})
+        except Exception:
+            return
+        if not raw:
+            return
+        try:
+            state = json.loads(raw)
+        except Exception:
+            return
+        # Skip duplicates: cheaper than a hash; just compare object identity
+        # via the last snapshot's state dict.
+        if self.journal_snapshots and self.journal_snapshots[-1].get("state") == state:
+            return
+        self.journal_snapshots.append({
+            "ts": time.time(),
+            "trigger": trigger,
+            "state": state,
+        })
 
     async def _handle_loop_detected(self, func_name: str, loop_reason: str) -> str:
         """
@@ -1173,6 +1345,11 @@ Change strategy or acknowledge the data doesn't exist."""
         Returns:
             Intervention message string
         """
+        self.recorder.event(
+            "loop_detected",
+            func_name,
+            attributes={"tool_name": func_name, "reason": loop_reason},
+        )
         self._trace(f"LOOP DETECTED: {loop_reason}", COLOR_RED)
 
         # Get journal state
@@ -1217,12 +1394,30 @@ Change strategy or acknowledge the data doesn't exist."""
             journal_refresh = await self.mcp.call_tool("GetJournalSummary", {})
 
             # Check for progress
-            if (self.last_journal_state is not None and
-                journal_refresh == self.last_journal_state):
+            no_progress = (
+                self.last_journal_state is not None
+                and journal_refresh == self.last_journal_state
+            )
+            if no_progress:
                 self._trace("WARNING: No progress in last 5 iterations!", COLOR_YELLOW)
                 template = self._get_no_progress_template()
             else:
                 template = self._get_journal_refresh_template()
+
+            self.recorder.event(
+                "journal_refresh",
+                f"iter:{iteration_count}",
+                attributes={
+                    "iteration": iteration_count,
+                    "no_progress": no_progress,
+                    "summary_chars": len(journal_refresh) if journal_refresh else 0,
+                },
+            )
+
+            # Also snapshot structured journal state on refresh — only if it
+            # has actually changed since the last snapshot.
+            if not no_progress:
+                await self._snapshot_journal(trigger=f"refresh:iter{iteration_count}")
 
             # Remove all previous journal refresh messages (replace-not-append)
             self._messages = [
@@ -1305,6 +1500,16 @@ Change strategy or acknowledge the data doesn't exist."""
 
         if trimmed_count > 0:
             self._trace(f"Trimmed {trimmed_count} messages to {truncate_len} chars", COLOR_YELLOW)
+            self.recorder.event(
+                "context_trim",
+                f"trimmed_{trimmed_count}",
+                attributes={
+                    "trimmed_count": trimmed_count,
+                    "truncate_len": truncate_len,
+                    "estimated_tokens": int(estimated_tokens),
+                    "context_limit": context_limit,
+                },
+            )
 
     async def _run_synthesis(self, query: str) -> str:
         """
@@ -1319,11 +1524,24 @@ Change strategy or acknowledge the data doesn't exist."""
         Returns:
             Final answer string
         """
+        async with self.recorder.span(
+            "synthesis",
+            self.synthesis_model,
+            attributes={"model": self.synthesis_model},
+            payload={"query": query},
+        ) as _syn_span:
+            return await self._run_synthesis_impl(query, _syn_span)
+
+    async def _run_synthesis_impl(self, query: str, _syn_span) -> str:
         self._trace("Starting synthesis step", COLOR_CYAN)
 
         # Get journal summary
         journal_summary = await self.mcp.call_tool("GetJournalSummary", {})
         self._trace(f"Journal fetched ({len(journal_summary)} chars)", COLOR_GREEN)
+        _syn_span.set_attribute("journal_chars", len(journal_summary) if journal_summary else 0)
+        _syn_span.set_payload("journal_summary", journal_summary)
+        # Take a final structured snapshot for the graph view.
+        await self._snapshot_journal(trigger="synthesis")
 
         # Build synthesis prompt
         synthesis_prompt = self._get_synthesis_prompt_template().format(
@@ -1449,13 +1667,67 @@ Change strategy or acknowledge the data doesn't exist."""
 
         self._trace(f"Calling {self.model} (timeout: {self.request_timeout}s)", COLOR_CYAN)
 
-        try:
-            response = self.client.chat.completions.create(**call_params)
-            self._trace("LLM call completed", COLOR_GREEN)
-            return response
-        except Exception as e:
-            self._trace(f"LLM call failed: {e}", COLOR_RED)
-            raise
+        with self.recorder.span_sync(
+            "llm_call",
+            self.model,
+            attributes={
+                "model": self.model,
+                "n_messages": len(self._messages),
+                "n_tools": len(tools) if tools else 0,
+                "tool_choice": tool_choice,
+            },
+            payload={"messages": self._messages_for_payload()},
+        ) as _llm_span:
+            try:
+                response = self.client.chat.completions.create(**call_params)
+                self._trace("LLM call completed", COLOR_GREEN)
+                if response.usage:
+                    _llm_span.update_attributes({
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                        "total_tokens": response.usage.total_tokens,
+                    })
+                if response.choices:
+                    _llm_span.set_attribute(
+                        "finish_reason", response.choices[0].finish_reason
+                    )
+                    msg = response.choices[0].message
+                    _llm_span.set_payload(
+                        "assistant_content",
+                        (msg.content or "")[:4000],
+                    )
+                    if getattr(msg, "tool_calls", None):
+                        _llm_span.set_payload(
+                            "tool_calls",
+                            [
+                                {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments,
+                                }
+                                for tc in msg.tool_calls
+                            ],
+                        )
+                return response
+            except Exception as e:
+                self._trace(f"LLM call failed: {e}", COLOR_RED)
+                raise
+
+    def _messages_for_payload(self) -> List[Dict[str, Any]]:
+        """Snapshot self._messages for trace payload, truncating long content."""
+        snap: List[Dict[str, Any]] = []
+        for m in self._messages:
+            content = m.get("content")
+            if isinstance(content, str) and len(content) > 4000:
+                content = content[:4000] + "...[truncated]"
+            entry = {"role": m.get("role"), "content": content}
+            if "tool_calls" in m:
+                entry["tool_calls"] = m["tool_calls"]
+            if "tool_call_id" in m:
+                entry["tool_call_id"] = m["tool_call_id"]
+            if "name" in m:
+                entry["name"] = m["name"]
+            snap.append(entry)
+        return snap
 
     def _llm_call_text_only(self) -> str:
         """Execute LLM call without tools."""
@@ -1471,22 +1743,35 @@ Change strategy or acknowledge the data doesn't exist."""
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
 
-        try:
-            response = self.client.chat.completions.create(**call_params)
+        with self.recorder.span_sync(
+            "llm_call",
+            f"{self.model} (text-only)",
+            attributes={"model": self.model, "n_messages": len(self._messages), "mode": "text_only"},
+            payload={"messages": self._messages_for_payload()},
+        ) as _span:
+            try:
+                response = self.client.chat.completions.create(**call_params)
 
-            if response.usage:
-                self._track_token_usage(response.usage)
+                if response.usage:
+                    self._track_token_usage(response.usage)
+                    _span.update_attributes({
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                    })
 
-            return response.choices[0].message.content
-        except Exception as e:
-            self._trace(f"LLM text-only call failed: {e}", COLOR_RED)
-            raise
+                content = response.choices[0].message.content
+                _span.set_payload("assistant_content", (content or "")[:4000])
+                return content
+            except Exception as e:
+                self._trace(f"LLM text-only call failed: {e}", COLOR_RED)
+                raise
 
     def _llm_call_synthesis(self, messages_override: Optional[List[Dict[str, Any]]] = None) -> str:
         """Execute synthesis LLM call with optional minimal message set."""
+        msgs = messages_override if messages_override is not None else self._messages
         call_params = {
             "model": self.synthesis_model,
-            "messages": messages_override if messages_override is not None else self._messages,
+            "messages": msgs,
             "timeout": self.request_timeout,
             "temperature": get_synthesis_temperature(),
             "max_tokens": get_synthesis_max_tokens(),
@@ -1498,17 +1783,36 @@ Change strategy or acknowledge the data doesn't exist."""
 
         self._trace(f"Calling {self.synthesis_model} for synthesis", COLOR_CYAN)
 
-        try:
-            response = self.synthesis_client.chat.completions.create(**call_params)
-            self._trace("Synthesis LLM call completed", COLOR_GREEN)
+        with self.recorder.span_sync(
+            "llm_call",
+            f"{self.synthesis_model} (synthesis)",
+            attributes={
+                "model": self.synthesis_model,
+                "n_messages": len(msgs),
+                "mode": "synthesis",
+            },
+            payload={"messages": [
+                {"role": m.get("role"), "content": (m.get("content") or "")[:4000]}
+                for m in msgs
+            ]},
+        ) as _span:
+            try:
+                response = self.synthesis_client.chat.completions.create(**call_params)
+                self._trace("Synthesis LLM call completed", COLOR_GREEN)
 
-            if response.usage:
-                self._track_token_usage(response.usage)
+                if response.usage:
+                    self._track_token_usage(response.usage)
+                    _span.update_attributes({
+                        "prompt_tokens": response.usage.prompt_tokens,
+                        "completion_tokens": response.usage.completion_tokens,
+                    })
 
-            return response.choices[0].message.content
-        except Exception as e:
-            self._trace(f"Synthesis LLM call failed: {e}", COLOR_RED)
-            raise
+                content = response.choices[0].message.content
+                _span.set_payload("assistant_content", (content or "")[:4000])
+                return content
+            except Exception as e:
+                self._trace(f"Synthesis LLM call failed: {e}", COLOR_RED)
+                raise
 
     # =========================================================================
     # MCP MANAGEMENT
@@ -1545,6 +1849,13 @@ Change strategy or acknowledge the data doesn't exist."""
         self.tool_sequence = []
         self.empty_result_count = 0
         self.last_journal_state = None
+        # Reset trace + snapshots so a reused agent starts a clean trace.
+        # When this agent shares a parent recorder, only clear our snapshots
+        # and let the parent keep its events.
+        if self._parent_span_id_override is None:
+            self.recorder = TraceRecorder()
+        self.journal_snapshots = []
+        self._last_journal_summary_hash = None
 
         if not keep_mcp_open and self.mcp:
             await self.mcp.close()

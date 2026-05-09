@@ -71,6 +71,88 @@ SHARED_CSS = """
         gap: 4px;
         opacity: 0.8;
     }
+
+    /* === Trace Inspector ====================================================
+       Langfuse-style hierarchical span tree. Each row carries a kind-coloured
+       pill + name + duration + token badge. Selected row highlights via
+       data-attr applied by the renderer.
+    */
+    .trace-tree {
+        background-color: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 0.75rem 0.5rem;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-size: 0.78rem;
+        max-height: 70vh;
+        overflow-y: auto;
+        line-height: 1.5;
+    }
+    .span-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.18rem 0.3rem;
+        border-radius: 4px;
+        white-space: nowrap;
+        color: #c9d1d9;
+    }
+    .span-row:hover { background: #161b22; }
+    .span-row.selected { background: #1f2933; outline: 1px solid #58a6ff; }
+    .span-pill {
+        display: inline-block;
+        font-size: 0.65rem;
+        font-weight: 600;
+        padding: 1px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        flex-shrink: 0;
+    }
+    .kind-agent_run    { background: #4c1d95; color: #ddd6fe; }
+    .kind-classify     { background: #1e3a8a; color: #bfdbfe; }
+    .kind-fast_path    { background: #064e3b; color: #a7f3d0; }
+    .kind-tool_loop_iter { background: #374151; color: #d1d5db; }
+    .kind-llm_call     { background: #831843; color: #fbcfe8; }
+    .kind-tool_call    { background: #14532d; color: #bbf7d0; }
+    .kind-synthesis    { background: #7c2d12; color: #fed7aa; }
+    .kind-journal_refresh { background: #1e40af; color: #bfdbfe; }
+    .kind-loop_detected   { background: #7f1d1d; color: #fecaca; }
+    .kind-context_trim    { background: #78350f; color: #fde68a; }
+    .kind-intervention    { background: #9f1239; color: #fecdd3; }
+    .kind-delegate        { background: #4c1d95; color: #ddd6fe; }
+
+    .span-name { font-weight: 600; color: #e6edf3; }
+    .span-duration {
+        font-size: 0.7rem;
+        color: #8b949e;
+        margin-left: auto;
+        padding-left: 0.5rem;
+    }
+    .span-tokens {
+        font-size: 0.65rem;
+        color: #8b949e;
+        background: #161b22;
+        padding: 0 5px;
+        border-radius: 3px;
+    }
+    .span-status-error { color: #f85149; }
+    .span-status-ok    { color: #3fb950; }
+    .span-event-marker {
+        opacity: 0.55;
+        font-style: italic;
+    }
+    .trace-summary {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 0.6rem 1rem;
+        margin-bottom: 0.75rem;
+        font-size: 0.85rem;
+        color: #c9d1d9;
+    }
+    .trace-summary-stat { color: #8b949e; }
+    .trace-summary-stat strong { color: #e6edf3; margin-right: 1.2rem; }
 </style>
 """
 

@@ -2712,6 +2712,27 @@ async def GetJournalSummary(
 
 
 # ==============================================================================
+# TOOL 20: GetJournalStateJSON
+# ==============================================================================
+
+@mcp.tool()
+async def GetJournalStateJSON(
+    app_context: Context
+) -> str:
+    """
+    Return the structured journal state as a JSON string.
+
+    Used by the frontend's live graph view to render the discovered
+    subgraph (visited_nodes, verified_facts, found_values). Machine-readable
+    counterpart to `GetJournalSummary`.
+
+    Returns:
+        JSON-encoded dict mirroring the JournalState pydantic model.
+    """
+    return json.dumps(session_journal.model_dump(), default=str, ensure_ascii=False)
+
+
+# ==============================================================================
 # Main
 # ==============================================================================
 

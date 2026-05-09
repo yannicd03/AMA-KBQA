@@ -2,6 +2,7 @@
 
 import time
 from contextlib import redirect_stdout
+from datetime import datetime
 
 import streamlit as st
 from htbuilder import div, styles
@@ -120,6 +121,30 @@ for message in st.session_state.messages:
                 unsafe_allow_html=True,
             )
 
+        # Per-message links to the Trace Inspector / Graph View, scoped to
+        # this message's trace. Streamlit's page links navigate the
+        # multi-page app and our session_state["pinned_trace_id"] is read
+        # by both pages on load.
+        msg_trace_id = message.get("trace_id")
+        if msg_trace_id:
+            link_cols = st.columns([0.2, 0.2, 0.6])
+            with link_cols[0]:
+                if st.button(
+                    "🔍 Trace",
+                    key=f"open_trace_{msg_trace_id}",
+                    help="Open this run in the Trace Inspector",
+                ):
+                    st.session_state["pinned_trace_id"] = msg_trace_id
+                    st.switch_page("pages/5_Trace_Inspector.py")
+            with link_cols[1]:
+                if st.button(
+                    "🕸️ Graph",
+                    key=f"open_graph_{msg_trace_id}",
+                    help="Open the discovered subgraph",
+                ):
+                    st.session_state["pinned_trace_id"] = msg_trace_id
+                    st.switch_page("pages/6_Graph_View.py")
+
 # ── Handle new interaction ───────────────────────────────────────────────────
 if user_message:
     with st.chat_message("user", avatar=USER_AVATAR):
@@ -171,13 +196,56 @@ if user_message:
                 unsafe_allow_html=True,
             )
 
+            # Capture structured trace + journal snapshots for the new
+            # Trace Inspector and Graph View pages.
+            trace_events = []
+            journal_snapshots = []
+            trace_id = None
+            try:
+                trace_events = agent.recorder.to_dicts()
+                trace_id = agent.recorder.trace_id
+                journal_snapshots = list(agent.journal_snapshots)
+            except AttributeError:
+                # Older agent without the recorder (defensive — should not
+                # happen now that BaseKBQAAgent always creates one).
+                pass
+
             st.session_state.messages.append({
                 "role": "assistant",
                 "content": result_text,
                 "trace": ansi_to_html(capture_io.raw_buffer),
                 "duration": duration,
                 "tokens": tokens_dict,
+                "trace_events": trace_events,
+                "journal_snapshots": journal_snapshots,
+                "trace_id": trace_id,
             })
+
+            # Mirror into a session-wide trace registry keyed by trace_id so
+            # the Trace Inspector and Graph View pages can pick any trace
+            # from this session.
+            if trace_id:
+                traces_registry = st.session_state.setdefault("traces", {})
+                traces_registry[trace_id] = {
+                    "trace_id": trace_id,
+                    "agent": selected_agent,
+                    "query": user_message,
+                    "timestamp": datetime.now().isoformat(timespec="seconds"),
+                    "duration_s": duration,
+                    "tokens": tokens_dict,
+                    "events": trace_events,
+                    "journal_snapshots": journal_snapshots,
+                    "answer": result_text,
+                }
+                # Bound registry size so a long chat doesn't bloat session_state.
+                MAX_TRACES = 30
+                if len(traces_registry) > MAX_TRACES:
+                    oldest = sorted(
+                        traces_registry.items(), key=lambda kv: kv[1]["timestamp"]
+                    )[: len(traces_registry) - MAX_TRACES]
+                    for k, _ in oldest:
+                        traces_registry.pop(k, None)
+                st.session_state["latest_trace_id"] = trace_id
 
         except Exception as e:
             status.update(label="Error!", state="error")
