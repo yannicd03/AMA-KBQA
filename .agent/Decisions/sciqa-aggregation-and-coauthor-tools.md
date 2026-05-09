@@ -136,6 +136,8 @@ End-to-end smoke tests against live Hetzner Virtuoso confirmed gold-answer repro
 
 As of 2026-05-05, the tools exist locally but have **not yet been deployed** to `hetzner:~/AMAKBQA-main/`. The sciqa benchmark runs queued for 2026-05-05 (`benchmark_results/sciqa-{minimax,gemma}-2026-05-05`, waiting on PID 3195923) will run against the existing 18-tool surface as a clean baseline. A separate post-deployment run is needed to measure impact.
 
+**2026-05-09 update:** `AggregateComparisonValues` gained a new `comparison_ids` parameter (multi-Comparison union mode) and `FindFrequentValues` was added as a new tool for cross-resource aggregation. See `Decisions/sciqa-cross-resource-aggregation.md` for the full ADR on these changes.
+
 ---
 
 ## Trade-offs

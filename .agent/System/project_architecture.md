@@ -39,6 +39,8 @@ ama-kbqa/
 │   │   ├── state.py            # JournalState and JournalManager
 │   │   ├── mcp_client.py       # Shared MCPClient class
 │   │   ├── base_agent.py       # BaseKBQAAgent ABC (~600 lines)
+│   │   ├── text_tool_calls.py  # Text-mode tool-call shim (minimax-m2.7 compat)
+│   │   ├── trace.py            # TraceEvent + TraceRecorder (OTel-shaped, ContextVar nesting)
 │   │   └── adapters/           # KG-specific adapters
 │   │       ├── base_adapter.py # BaseKGAdapter ABC
 │   │       ├── kqapro_adapter.py # KQAPro configuration
@@ -54,21 +56,25 @@ ama-kbqa/
 │   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
 │   │   ├── kqapro_server.py    # KQAPro tools (26 tools)
-│   │   ├── sciqa_server.py     # SciQA/ORKG tools (20 tools: 4 discovery, 6 retrieval, 8 domain, 1 SPARQL, 1 verification) ✅ Active
+│   │   ├── sciqa_server.py     # SciQA/ORKG tools (21 tools: 4 discovery, 6 retrieval, 9 domain, 1 SPARQL, 1 verification) ✅ Active
 │   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
 │   │   ├── pages/              # Streamlit pages
-│   │   │   ├── 1_Chat.py       # Interactive Q&A with agent selector
+│   │   │   ├── 1_Chat.py       # Interactive Q&A with agent selector; Trace/Graph buttons
 │   │   │   ├── 2_Batch_Processing.py # Batch runner: live progress, tqdm parsing, console auto-scroll
 │   │   │   ├── 3_Evaluation.py # Results dashboard (charts, metrics, per-question details)
-│   │   │   └── 4_Settings.py   # config.toml editor
+│   │   │   ├── 4_Settings.py   # config.toml editor
+│   │   │   ├── 5_Trace_Inspector.py  # Span tree + per-span detail tabs + JSONL export ✅ NEW
+│   │   │   └── 6_Graph_View.py       # vis-network KG subgraph + snapshot scrubber ✅ NEW
 │   │   └── utils/              # Shared utilities
-│   │       ├── styling.py      # CSS, ansi_to_html, avatars
+│   │       ├── styling.py      # CSS, ansi_to_html, avatars, kind-coloured span pills
 │   │       ├── async_helpers.py # run_async() wrapper
 │   │       ├── agent_factory.py # Agent creation + metadata
 │   │       ├── batch_results_loader.py # Load benchmark result files from benchmark_results/
-│   │       └── config_editor.py # config.toml loading/saving
+│   │       ├── config_editor.py # config.toml loading/saving
+│   │       ├── trace_render.py  # Pure-Python trace helpers: build_tree, summarise, render_tree_html ✅ NEW
+│   │       └── graph_html.py    # journal_to_graph, build_graph_html (vis-network HTML template) ✅ NEW
 │   ├── config.py               # Configuration loader
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
 │   ├── postprocessing.py       # Postprocessing modes (choice, sparql, llm_judge, simple)
@@ -76,11 +82,13 @@ ama-kbqa/
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
 ├── tests/                      # Test suite
-│   └── framework/              # ✅ Framework unit tests (97 tests)
+│   └── framework/              # ✅ Framework unit tests (122 tests)
 │       ├── test_types.py       # Response type tests
 │       ├── test_config.py      # Configuration tests
 │       ├── test_state.py       # State management tests
-│       └── test_adapters.py    # Adapter tests
+│       ├── test_adapters.py    # Adapter tests
+│       ├── test_trace.py       # TraceRecorder: nesting, contextvar isolation, sync/async parity, JSONL roundtrip ✅ NEW
+│       └── test_trace_render.py # trace_render helpers: tree-building, HTML, journal→graph ✅ NEW
 ├── db/                         # Database utilities
 │   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
 │   ├── populate_vector_db.py   # KQAPro Qdrant initialization
@@ -156,7 +164,9 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 | `config.py` | Configuration classes (NamespaceConfig, KnowledgeGraphConfig) | ~220 |
 | `state.py` | JournalState (Pydantic BaseModel, single source of truth with caps/helpers) and JournalManager | ~340 |
 | `mcp_client.py` | Shared MCPClient for MCP server communication | ~120 |
-| `base_agent.py` | BaseKBQAAgent ABC with full tool-calling loop | ~600 |
+| `base_agent.py` | BaseKBQAAgent ABC with full tool-calling loop + span instrumentation | ~600 |
+| `text_tool_calls.py` | Text-mode shim for models that can't emit native function calls | ~150 |
+| `trace.py` | `TraceEvent` (OTel-shaped dataclass) + `TraceRecorder` (ContextVar nesting, async/sync spans, point-in-time events, JSONL export) | ~200 |
 | `adapters/base_adapter.py` | BaseKGAdapter ABC for KG configuration | ~200 |
 | `adapters/kqapro_adapter.py` | KQAPro-specific adapter | ~150 |
 | `adapters/sciqa_adapter.py` | SciQA/ORKG-specific adapter | ~180 |
@@ -172,6 +182,9 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 - Post-agent synthesis
 - Token and tool call tracking
 - `soft_reset()` for batch processing
+- `self.recorder: TraceRecorder` — OTel-shaped span instrumentation (spans: `agent_run`, `classify`, `fast_path`, `llm_call`, `tool_call`, `synthesis`, `delegate`; events: `tool_loop_iter`, `journal_refresh`, `loop_detected`, `context_trim`, `intervention`)
+- `self.journal_snapshots: list` — structured KG snapshots captured after journal-mutating tool calls (bounds extra MCP RPCs to ~mutation count, not per-iteration)
+- `parent_recorder` + `parent_span_id` kwargs for sub-agent nesting under Orchestrator
 
 ### 1. KQAProAgent (`ama_kbqa/agents/kqapro_agent/agent.py`)
 
@@ -214,7 +227,7 @@ All prompts are centralized in a separate module for easier maintenance:
 The SciQA agent for Open Research Knowledge Graph (ORKG) scientific QA, inheriting from `BaseKBQAAgent`:
 
 1. **Pre-Agent Hook** - Classifies question type (8 types), extracts entities, loads type-specific strategy
-2. **Iterative Tool Loop** - Calls SciQA MCP tools (20 tools) to gather research information
+2. **Iterative Tool Loop** - Calls SciQA MCP tools (21 tools) to gather research information
 3. **Post-Agent Hook** - Synthesizes final answer from journal
 
 **Key Features (inherited from BaseKBQAAgent):**
@@ -241,7 +254,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 | `ENTITY_EXTRACTION_PROMPT` | Extract papers, authors, contributions, fields |
 | `FEWSHOT_EXAMPLES` | 8 type-specific few-shot example sets loaded alongside strategies (enhanced with author search, negation queries, aggregation scoping, energy domain distinctions, boolean comparison-embedded values) |
 | `SYNTHESIS_PROMPT_TEMPLATE` | Final answer synthesis |
-| `TOOL_LOOP_GUIDANCE` | 9 tool-specific loop recovery entries (covers all 20 tools, includes RunORKGSPARQL 10-call cap warning) |
+| `TOOL_LOOP_GUIDANCE` | 9 tool-specific loop recovery entries (covers all 21 tools, includes RunORKGSPARQL 10-call cap warning) |
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
@@ -290,6 +303,9 @@ Provides 26 tools for knowledge graph interaction, organized by tier:
 **CORE_TOOLS (always available regardless of qtype):**
 `FindNode`, `FindByAttribute`, `GetAttributeDetails`, `GetRelationDetails`, `GetNodeSummary`, `RunSPARQL`, `GetNodeLabel`, `BatchGetNodeLabels`, `ManageJournal`, `GetJournalSummary`, `FilterEntities`
 
+**LLM-hidden internal tools (filtered from the tool list sent to the LLM):**
+- `GetJournalStateJSON()` — returns `session_journal.model_dump()` as a JSON string. Called only by the agent's snapshot path (after journal-mutating tool calls) to capture structured journal state for the Graph View. Not exposed to the LLM. ✅ NEW
+
 **Key implementation details:**
 - `JournalState` imported from `ama_kbqa.framework.state` (not defined locally)
 - `FindNode` deduplicates via `visited_nodes`: skips Qdrant search if label already cached (case-insensitive)
@@ -302,7 +318,7 @@ Provides 26 tools for knowledge graph interaction, organized by tier:
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
-Provides 20 tools for ORKG knowledge graph interaction, organized into 5 tiers:
+Provides 21 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource` - Semantic vector search for papers, authors, contributions
@@ -318,15 +334,16 @@ Provides 20 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 - `BatchGetResourceLabels` - Batch label resolution
 - `CompareResources` - Compare a predicate across multiple resources (returns sorted)
 
-**Tier 3 - Domain-Specific (8 tools):**
+**Tier 3 - Domain-Specific (9 tools):**
 - `GetPaperContributions` - Get contributions for a paper (P31)
 - `GetPaperAuthors` - Get authors (P6/P27)
 - `GetContributionMethods` - Get methods used (P2)
 - `GetResearchFieldPapers` - List papers in field (P30)
 - `GetComparisonContributions` - Navigate Comparison -> Contribution pattern with predicate discovery mode, now **stores values in journal's found_values** ✨ UPDATED
 - `FollowRelationPath` - Multi-hop relation navigation in one SPARQL call
-- `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, and `value_via_group` 2-hop switch for grouped energy-domain patterns (Contribution → group_pred → GroupNode → value_pred → scalar). Closes 9/20 SciQA aggregation questions. ✨ NEW
-- `FindCoAuthors` - Finds co-authors of papers by a seed author (case-insensitive partial match; handles both resource-URI and literal-string author predicates P6/P27); returns co-authors sorted by shared-paper count. Closes Q2 co-author pattern. ✨ NEW
+- `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, `value_via_group` 2-hop switch for grouped energy-domain patterns, and `comparison_ids` CSV for multi-Comparison union mode (VALUES clause, backwards-compatible). Closes 9/20 SciQA aggregation questions. ✨ UPDATED
+- `FindFrequentValues` - Cross-resource aggregation for global-scope questions ("most popular X", "largest Y across the papers"). No Comparison anchor required. Scope tiers: research_field_id → P30/P31; comparison_ids → VALUES union; default → all compareContribution subjects. Supports same agg modes as AggregateComparisonValues; hard cap `limit_subjects=5000`. ✨ NEW
+- `FindCoAuthors` - Finds co-authors of papers by a seed author (case-insensitive partial match; handles both resource-URI and literal-string author predicates P6/P27); returns co-authors sorted by shared-paper count. Closes Q2 co-author pattern.
 
 **Tier 4 - Raw SPARQL (1 tool):**
 - `RunORKGSPARQL` - Raw SPARQL queries (prefixes auto-injected, **capped at 10 calls per question** to prevent runaway SPARQL spirals) ✨ UPDATED
@@ -337,6 +354,9 @@ Provides 20 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 **State Management (2 tools):**
 - `ManageJournal` - Scratchpad management
 - `GetJournalSummary` - Summary of discoveries
+
+**LLM-hidden internal tools:**
+- `GetJournalStateJSON()` — structured journal snapshot for Graph View (not exposed to LLM). ✅ NEW
 
 ### 3. Configuration System (`ama_kbqa/config.py`)
 
@@ -514,6 +534,8 @@ Interactive question-answering interface with:
 - Token usage display
 - Reasoning trace viewer (collapsible)
 - Chat history with restart button
+- After each `ask()` returns: reads `agent.recorder.to_dicts()` and `agent.journal_snapshots`, mirrors them into `st.session_state["traces"]` (capped at 30 most recent)
+- 🔍 Trace and 🕸️ Graph buttons under each assistant message that `st.switch_page` to the Trace Inspector / Graph View with `pinned_trace_id` set
 
 **2. Batch Processing (`pages/2_Batch_Processing.py`)**
 
@@ -548,15 +570,36 @@ Configuration editor for `config.toml`:
   - **Session only** - Apply changes to current session without writing to disk
   - **Save to file** - Write to config.toml (creates .bak backup automatically)
 
+**5. Trace Inspector (`pages/5_Trace_Inspector.py`)** ✅ NEW
+
+Langfuse-style hierarchical span view for a completed agent run:
+- Trace selector (from `st.session_state["traces"]`) + summary header
+- Two-pane layout (`st.columns([0.45, 0.55])`): left = hierarchical tree HTML + radio for span selection; right = tabbed detail keyed off span kind (Messages / Args+Result / Attributes / Payload / Raw)
+- JSONL export for offline analysis
+- Populated after each Chat page `ask()` call via `agent.recorder.to_dicts()`
+
+**6. Graph View (`pages/6_Graph_View.py`)** ✅ NEW
+
+Interactive visualisation of the agent's discovered KG subgraph:
+- Trace selector + journal snapshot scrubber (one snapshot per journal-mutating tool call)
+- vis-network embedded via CDN through `st.components.v1.html` — no new Python deps
+- Wrapped in `@st.fragment` so unrelated Streamlit reruns don't remount the iframe
+- Viewport pan/zoom persisted in iframe `localStorage` keyed per `trace_id`
+- Toggle for literals + new-since-previous-snapshot highlighting
+- Stats row + JSON side panels
+- Populated from `agent.journal_snapshots` captured during `ask()`
+
 #### Shared Utilities (`frontend/utils/`)
 
 | Module | Purpose |
 |--------|---------|
-| `styling.py` | CSS injection, ANSI-to-HTML converter, avatar constants, HTML capture for stdout |
+| `styling.py` | CSS injection, ANSI-to-HTML converter, avatar constants, HTML capture for stdout, kind-coloured span pills |
 | `async_helpers.py` | `run_async()` wrapper for running async agent methods in Streamlit |
 | `agent_factory.py` | Agent metadata dict, suggestion prompts, `create_agent()` factory function |
 | `batch_results_loader.py` | Functions to list and load benchmark result JSON files from `benchmark_results/` |
 | `config_editor.py` | Load/save config.toml with backup creation, apply edits to session |
+| `trace_render.py` | Pure-Python helpers: `build_tree`, `summarise`, `render_tree_html`, `render_summary_html`, `format_duration` (unit-tested) ✅ NEW |
+| `graph_html.py` | `journal_to_graph(state)` and `build_graph_html(nodes, edges, ...)` returning a complete vis-network HTML doc ✅ NEW |
 
 **Key Features:**
 - All German labels translated to English
@@ -574,38 +617,51 @@ Configuration editor for `config.toml`:
 User Question
      │
      ▼
-┌────────────────────┐
-│ Orchestrator Agent │  ← Classifies and routes
-└─────────┬──────────┘
-          │
-          ▼
-┌────────────────────┐
-│   KQAPro Agent     │  ← Main KBQA logic
-│                    │
-│  ┌──────────────┐  │
-│  │ Pre-Hook     │  │  ← Question classification
-│  │ - Qtype      │  │  ← Entity extraction
-│  │ - Strategy   │  │  ← Few-shot examples
-│  └──────────────┘  │
-│         │          │
-│         ▼          │
-│  ┌──────────────┐  │
-│  │ Tool Loop    │◄─┼──── MCP Server (stdio)
-│  │ - FindNode   │  │          │
-│  │ - GetAttr    │  │          ├── Qdrant (vector)
-│  │ - RunSPARQL  │  │          │
-│  │ - Journal    │  │          └── Virtuoso (SPARQL)
-│  └──────────────┘  │
-│         │          │
-│         ▼          │
-│  ┌──────────────┐  │
-│  │ Post-Hook    │  │  ← Synthesis with journal data
-│  │ - Synthesis  │  │
-│  └──────────────┘  │
-└────────────────────┘
-          │
-          ▼
-    Final Answer
+┌─────────────────────────┐
+│   Orchestrator Agent    │  ← Classifies and routes
+│   (owns recorder +      │  ← opens "agent_run" root span
+│    journal_snapshots)   │
+└──────────┬──────────────┘
+           │  _delegate(agent_name, query)
+           │  shares recorder + parent_span_id
+           ▼
+┌────────────────────────────────────┐
+│  KQAPro Agent / SciQA Agent        │  ← Main KBQA logic
+│  (appends to shared recorder)      │
+│                                    │
+│  ┌──────────────────────────────┐  │
+│  │ Pre-Hook  [classify span]    │  │  ← Question classification
+│  │ - Qtype                      │  │  ← Entity extraction
+│  │ - Strategy / Few-shot        │  │
+│  └──────────────────────────────┘  │
+│                │                   │
+│                ▼                   │
+│  ┌──────────────────────────────┐  │
+│  │ Tool Loop                    │◄─┼──── MCP Server (stdio)
+│  │  [llm_call span per call]    │  │          │
+│  │  [tool_call span per tool]   │  │          ├── Qdrant (vector)
+│  │  [tool_loop_iter event]      │  │          │
+│  │  [journal_refresh event]     │  │          └── Virtuoso (SPARQL)
+│  │  After JOURNAL_MUTATING_TOOLS│  │
+│  │    → GetJournalStateJSON     │  │  ← snapshot captured (LLM-hidden)
+│  │    → journal_snapshots[]     │  │
+│  └──────────────────────────────┘  │
+│                │                   │
+│                ▼                   │
+│  ┌──────────────────────────────┐  │
+│  │ Post-Hook  [synthesis span]  │  │  ← Synthesis with journal data
+│  └──────────────────────────────┘  │
+└────────────────────────────────────┘
+           │
+           ▼
+     Final Answer
+           │
+           ▼  (Chat page reads after ask() returns)
+┌──────────────────────────────────────┐
+│  st.session_state["traces"]          │
+│  recorder.to_dicts()                 │  ← Trace Inspector (page 5)
+│  agent.journal_snapshots             │  ← Graph View (page 6)
+└──────────────────────────────────────┘
 ```
 
 ---

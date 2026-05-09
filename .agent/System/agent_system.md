@@ -38,7 +38,7 @@ All agents communicate with their MCP servers via **stdio protocol**.
         ▼                     ▼
 ┌─────────────────┐  ┌─────────────────┐
 │ kqapro_server   │  │ sciqa_server    │
-│ (26 tools)      │  │ (20 tools)      │
+│ (26 tools)      │  │ (21 tools)      │
 └─────────────────┘  └─────────────────┘
 ```
 
@@ -52,12 +52,13 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 
 | File | Contents | Line Count |
 |------|----------|------------|
-| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap); text-tool-call init + loop hooks; `_extract_json_object` static helper | ~600 |
+| `base_agent.py` | BaseKBQAAgent ABC with full agent lifecycle (includes Detection 5: RunORKGSPARQL cap); text-tool-call init + loop hooks; `_extract_json_object` static helper; span instrumentation | ~600 |
 | `mcp_client.py` | Shared MCPClient class | ~120 |
 | `types.py` | Response types (EntityMatch, NodeDetails, etc.) | ~280 |
 | `config.py` | Configuration dataclasses | ~220 |
 | `state.py` | JournalState (Pydantic BaseModel, single source of truth) and JournalManager — caps, helpers, `to_str()`/`to_summary_str()` | ~340 |
 | `text_tool_calls.py` | Text-mode tool-call shim: `needs_text_tool_calls`, `build_text_mode_tool_catalog`, `parse_text_tool_calls`, `TEXT_TOOL_CALL_INSTRUCTION` | ~150 |
+| `trace.py` | `TraceEvent` (OTel-shaped dataclass) + `TraceRecorder` (ContextVar nesting, async/sync span context managers, point-in-time events, `to_dicts`/`to_jsonl`) | ~200 |
 | `adapters/base_adapter.py` | BaseKGAdapter ABC | ~200 |
 | `adapters/kqapro_adapter.py` | KQAPro-specific config | ~150 |
 | `adapters/sciqa_adapter.py` | SciQA-specific config (includes sparql_cap: 10) | ~180 |
@@ -79,6 +80,60 @@ Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework pa
 The classifier `max_tokens` was also bumped from 300 → 1500 to give models with think-prefix room to complete both the reasoning block and the JSON output.
 
 See `Decisions/classifier-think-prefix-fix.md` for the full analysis and empirical context.
+
+### Trace Instrumentation (`trace.py`)
+
+**File:** `ama_kbqa/framework/trace.py`
+
+Every `BaseKBQAAgent` instance owns `self.recorder: TraceRecorder` and `self.journal_snapshots: list`. These are reset on each `ask()` call and populated as the agent runs. The Chat page reads them after `ask()` returns to populate the Trace Inspector and Graph View pages.
+
+#### TraceEvent
+
+OTel-compatible dataclass fields: `trace_id`, `span_id`, `parent_span_id`, `kind`, `name`, `start_time_unix_nano`, `end_time_unix_nano`, `duration_ms`, `status` ("ok"/"error"), `is_event` (bool — True for point-in-time events), `attributes` (small key/values), `payload` (large data, not shown by default), `error`.
+
+#### TraceRecorder
+
+| API | Usage |
+|-----|-------|
+| `async with recorder.span(kind, name, ...)` | Open an async span; nested spans auto-parent via `ContextVar` |
+| `with recorder.span_sync(kind, name, ...)` | Synchronous variant for sync code paths |
+| `recorder.event(kind, name, ...)` | Point-in-time event (no duration) |
+| `recorder.to_dicts()` | Serialise all events to list-of-dicts |
+| `recorder.to_jsonl()` | JSONL string for export/persistence |
+
+**ContextVar nesting:** `TraceRecorder` uses a `ContextVar[Optional[str]]` to track the current span id. Each `span()` context manager sets the contextvar on entry and restores the previous value on exit. This propagates correctly across `await` boundaries — no manual parent_id threading needed. See `Decisions/trace-inspector-frontend-architecture.md` §Decision 2 for rationale.
+
+#### Span placement in BaseKBQAAgent
+
+| Span/event kind | Location in code |
+|-----------------|-----------------|
+| `agent_run` (span) | Root span wrapping the full `ask()` call |
+| `classify` (span) | `_classify_and_extract` |
+| `fast_path` (span) | `_try_fast_path` |
+| `llm_call` (span) | All three `_llm_call*` variants |
+| `tool_call` (span) | `_execute_single_tool` — one span per tool |
+| `synthesis` (span) | `_run_synthesis` |
+| `tool_loop_iter` (event) | Top of each tool-loop iteration |
+| `journal_refresh` (event) | `_inject_journal_refresh` |
+| `loop_detected` (event) | Loop detection trigger |
+| `context_trim` (event) | Message history truncation |
+| `intervention` (event) | Zero-tool-call retry, truncated-tool-call retry, max-iterations |
+
+#### Span placement in Orchestrator
+
+| Span/event kind | Location |
+|-----------------|---------|
+| `agent_run` (span) | Root span in `ask()` |
+| `classify` (span) | `_route_autonomously` |
+| `delegate` (span) | `_delegate(agent_name, query)` — one per sub-agent call |
+
+The Orchestrator shares its `recorder` with sub-agents before calling them, so sub-agent spans nest as children of the `delegate` span.
+
+#### Journal Snapshots
+
+`self.journal_snapshots: list` contains structured `JournalState.model_dump()` dicts captured after calls to tools in `JOURNAL_MUTATING_TOOLS` (frozenset in `trace.py`). Only these tools actually write to `session_journal.*` in the MCP servers; snapshotting on other tool calls would waste MCP round-trips without capturing any change.
+
+`GetJournalStateJSON()` is a LLM-hidden MCP tool added to both `kqapro_server.py` and `sciqa_server.py` (filtered from `list_tools` response sent to the LLM). It returns `session_journal.model_dump()` as a JSON string. The agent calls it directly (not via the tool-call path) and dedupes snapshots by dict equality before appending.
 
 ### Text-Tool-Call Mode
 
@@ -137,11 +192,12 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 │    - Load synthesis LLM client from config.toml                │
 │    - Initialize MCP server connection                          │
 │    - Load system prompt with KBQA guidelines                   │
+│    - Reset recorder (new trace_id) + clear journal_snapshots   │
 └────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ 2. PRE-AGENT HOOK (Deterministic Classification)              │
+│ 2. PRE-AGENT HOOK  [classify span]                            │
 │    - Classify question type (9 types)                          │
 │    - Extract entities and relations                            │
 │    - Load question-type-specific strategy                      │
@@ -155,25 +211,29 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 ┌────────────────────────────────────────────────────────────────┐
 │ 3. MAIN AGENT LOOP (Scratchpad-Enforced)                      │
 │    REPEAT until answer found OR max iterations (50):           │
-│     - Call LLM with tools                                      │
+│     - Emit tool_loop_iter event                                │
+│     - Call LLM with tools  [llm_call span]                     │
 │     - Track token usage                                        │
-│     - Execute tool calls via MCP                               │
+│     - Execute tool calls via MCP  [tool_call span per tool]    │
+│       • If tool is in JOURNAL_MUTATING_TOOLS:                  │
+│         → call GetJournalStateJSON, append to journal_snapshots│
 │     - TRUNCATE tool responses (keep last 2 full, rest 2000ch)  │
 │     - FORCED REFLECTION after each non-journal tool:           │
 │       • Inject REFLECTION_PROMPT (text-only LLM call)          │
 │       • Extract LEARNED/PLAN/NEXT from response                │
 │       • Store reflection in journal via ManageJournal          │
 │     - LOOP DETECTION: Check for infinite patterns              │
-│     - If loop detected: Inject intervention message            │
+│     - If loop detected: Emit loop_detected event + intervene   │
 │     - Every 5 iterations: Inject journal refresh at index 1    │
 │       (REPLACE mode after first refresh for primacy bias)      │
+│       Emit journal_refresh event                               │
 │     - PROGRESS CHECK: Compare journal state                    │
 │     - If GetJournalSummary called: Force answer next turn      │
 └────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ 4. POST-AGENT HOOK (Deterministic Synthesis)                  │
+│ 4. POST-AGENT HOOK  [synthesis span]                          │
 │    - Fetch complete GetJournalSummary                          │
 │    - Inject synthesis prompt with all discovered data          │
 │    - Make final LLM call using SYNTHESIS client/model          │
@@ -237,7 +297,12 @@ The agent classifies questions into 10 types, each with a specific strategy:
 
 6. **No Progress** (Journal unchanged for 5 iterations)
    - Checked during periodic journal refresh
-   - Triggers strong intervention if journal state identical
+   - Triggers a 5-branch decision-tree intervention (`NO_PROGRESS_TEMPLATE`):
+     1. Global-scope question locked onto one Comparison → call `FindFrequentValues`
+     2. Retrying same SPARQL with empty results → use `FindPredicate` to find the correct predicate
+     3. Need resource IDs but have only labels → use `GetComparisonContributions` / `FindByPredicateValue`
+     4. FindResource returning wrong type → re-run with `node_type_filter`
+     5. **25+ tool calls without journal change → STOP; synthesize from current journal**
 
 ### Journal (Scratchpad) System
 
@@ -410,6 +475,17 @@ Follows the same 4-phase pattern as KQAProAgent:
 3. **Main Agent Loop** - Call ORKG tools (20 tools), track progress
 4. **Post-Agent Hook** - Synthesize answer from journal
 
+### Multi-Label Classifier-Output Tolerance
+
+`SciQAAgent._classify_question()` overrides the base class. After extracting `qtype` from the LLM response it uses a two-pass fewshot lookup:
+
+1. **Direct match:** `FEWSHOT_EXAMPLES.get(qtype, "")`. If non-empty, use it.
+2. **Split-and-merge:** If the direct match is empty, split `qtype` on `r"[\n,/+|;]+"` (handles compound labels like `"Factoid\nSuperlative"` that the classifier reproduces from gold annotations). Case-normalizes each candidate and concatenates fewshots from every matching label. `chosen_label` is set to the first match.
+
+This prevents silent empty-fewshot for compound classifier outputs. The agent receives Superlative fewshots with `FindFrequentValues` traces even when the LLM outputs `"Factoid\nSuperlative"` instead of `"Superlative"`.
+
+See `Decisions/multi-label-fewshot-tolerance.md` for full analysis.
+
 ### Prompt Architecture (Type-Specific Strategy Loading)
 
 The SciQA prompts follow the same pattern as KQAPro: a lean SYSTEM_PROMPT with type-specific strategies loaded after classification.
@@ -463,8 +539,8 @@ SciQA classifies questions into 8 types:
 | **List** | "Which papers..." | Comparison-based list pattern, GetComparisonContributions, multi-hop lists |
 | **Boolean** | "Is...", "Does..." | ASK SPARQL for comparison data, VerifyNumericCondition for numeric conditions |
 | **Comparison** | Compare entities | CompareResources for batch comparison, full comparison navigation with nested value pattern |
-| **Superlative** | "highest", "lowest", "boundaries" | SPARQL ORDER BY + LIMIT, comparison-based superlatives with HAS_VALUE nested pattern |
-| **Aggregation** | SUM, AVG, total | RunORKGSPARQL with aggregation functions, comparison-based aggregation with HAS_VALUE |
+| **Superlative** | "highest", "lowest", "most popular X overall" | Decide SCOPE first: (A) single-comparison → `AggregateComparisonValues`; (B) multi-comparison → `AggregateComparisonValues(comparison_ids=...)`; (C) global/cross-graph → `FindFrequentValues`. GLOBAL-SCOPE WARNING: locking onto a single Comparison for a global-scope question is the highest-leverage failure mode — use `FindFrequentValues` when the answer spans multiple papers/contributions. |
+| **Aggregation** | SUM, AVG, total, frequency | Decide SCOPE first: (A) single-comparison → `AggregateComparisonValues`; (B) multi-comparison → `AggregateComparisonValues(comparison_ids=...)`; (C) cross-graph / no Comparison anchor → `FindFrequentValues`. Prefer high-level tools over `RunORKGSPARQL` for AVG/SUM/MIN/MAX/COUNT/MODE_TOP; fall back to SPARQL only for FILTER NOT EXISTS or 3-hop patterns. |
 | **General** | Complex/other | GetResourceSummary for exploration, comparison mention as fallback, SPARQL domain data tip |
 
 ### SciQA MCP Tools
@@ -485,15 +561,16 @@ The sciqa_server.py provides 20 tools organized by tier:
 - `BatchGetResourceLabels(resource_ids)` - Batch resolution
 - `CompareResources(resource_ids, predicate_id)` - Compare predicate across resources (sorted)
 
-**Tier 3 - Domain-Specific (8 tools):**
+**Tier 3 - Domain-Specific (9 tools):**
 - `GetPaperContributions(paper_id)` - Paper contributions via P31
 - `GetPaperAuthors(paper_id)` - Authors via P6/P27
 - `GetContributionMethods(contribution_id)` - Methods via P2
 - `GetResearchFieldPapers(field_name)` - Papers in field via P30
 - `GetComparisonContributions(comparison_id, domain_predicate, filter_value, filter_type)` - Navigate Comparison -> Contribution pattern with predicate discovery mode. Now includes **automatic 4-hop value resolution**: query includes `OPTIONAL { ?value orkgp:HAS_VALUE ?nestedValue }` and response includes `nested_value` field when present (Comparison → Contribution → intermediate_resource → HAS_VALUE → actual_value). Stores values in journal's found_values.
 - `FollowRelationPath(start_resource_id, relation_path)` - Multi-hop navigation in one SPARQL call
-- `AggregateComparisonValues(comparison_id, value_predicate, agg, group_by_predicate?, filter_predicate?, filter_value?, filter_match?, top_n?, value_via_group?)` - SPARQL + Python aggregation over a Comparison's contributions. Handles HAS_VALUE/label indirection. `agg` options: `avg|sum|min|max|count|count_distinct|mode_top|all_values`. `value_via_group=True` adds a 2-hop: `?contrib group_pred ?group . ?group value_pred ?scalar` (needed for grouped energy-domain questions). Smoke-tested against gold answers for Q3/Q11/Q13/Q16/Q18. ✨ NEW
-- `FindCoAuthors(author_name, top_n?)` - Finds co-authors of papers by a seed author (partial case-insensitive match; handles resource-URI authors via P27/P6 + rdfs:label and literal-string authors via isLiteral() filter); returns co-authors sorted by shared-paper count descending. Smoke-tested against Q2 gold. ✨ NEW
+- `AggregateComparisonValues(comparison_id, value_predicate, agg, comparison_ids?, group_by_predicate?, filter_predicate?, filter_value?, filter_match?, top_n?, value_via_group?)` - SPARQL + Python aggregation over a Comparison's contributions. Handles HAS_VALUE/label indirection. `agg` options: `avg|sum|min|max|count|count_distinct|mode_top|all_values`. `comparison_ids` (new): comma-separated CSV that overrides `comparison_id` and unions rows from multiple Comparisons via VALUES clause. `value_via_group=True` adds a 2-hop: `?contrib group_pred ?group . ?group value_pred ?scalar` (needed for grouped energy-domain questions). Smoke-tested against gold answers for Q3/Q11/Q13/Q16/Q18.
+- `FindFrequentValues(value_predicate, agg?, research_field_id?, comparison_ids?, group_by_predicate?, filter_predicate?, filter_value?, filter_match?, top_n?, limit_subjects?)` - **Cross-resource aggregation** when no single Comparison anchors the question. Scope tiers: (1) `research_field_id` → contributions of papers in that field via P30/P31; (2) `comparison_ids` → VALUES-clause union across listed Comparisons; (3) default → all Contributions of any Comparison. Supports same `agg` modes as `AggregateComparisonValues`. Hard cap `limit_subjects=5000`. Use for global-scope superlative/aggregation ("most popular X", "largest Y across the papers"). ✨ NEW
+- `FindCoAuthors(author_name, top_n?)` - Finds co-authors of papers by a seed author (partial case-insensitive match; handles resource-URI authors via P27/P6 + rdfs:label and literal-string authors via isLiteral() filter); returns co-authors sorted by shared-paper count descending. Smoke-tested against Q2 gold.
 
 **Tier 4 - Raw SPARQL (1 tool):**
 - `RunORKGSPARQL(query)` - Raw SPARQL (prefixes auto-injected, **capped at 10 calls per question** to prevent runaway SPARQL spirals) ✨ UPDATED
@@ -833,6 +910,8 @@ await agent.reset()
 # - Tool call duration tracking
 # - Loop detection tracking
 # - MCP server connection (closed and reopened)
+# - recorder (new TraceRecorder with fresh trace_id)
+# - journal_snapshots (cleared)
 
 # What persists:
 # - LLM client configuration
@@ -891,6 +970,8 @@ finally:
 
 ## Tracing System
 
+### Console Tracing (debug output)
+
 Color-coded console output for debugging:
 
 | Color | Meaning |
@@ -906,6 +987,15 @@ def trace(agent_name: str, msg: str, color: str):
     timestamp = datetime.now().strftime("%H:%M:%S")
     print(f"[{timestamp}] [{agent_name}] -> {msg}")
 ```
+
+### Structured Trace Recording (`TraceRecorder`)
+
+In addition to console output, each `ask()` call accumulates a structured span tree in `self.recorder` (OTel-shaped). The Chat page reads this after `ask()` returns and stores up to 30 traces in `st.session_state["traces"]`. Two new frontend pages consume this data:
+
+- **Trace Inspector (`pages/5_Trace_Inspector.py`)** — hierarchical span tree + per-span detail tabs
+- **Graph View (`pages/6_Graph_View.py`)** — vis-network of discovered KG subgraph with snapshot scrubber
+
+See the "Trace Instrumentation" section above and `Decisions/trace-inspector-frontend-architecture.md` for full design rationale.
 
 ---
 
