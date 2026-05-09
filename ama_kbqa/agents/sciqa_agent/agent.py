@@ -8,6 +8,7 @@ the SciQA dataset to answer scientific research questions.
 from __future__ import annotations
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -168,11 +169,36 @@ class SciQAAgent(BaseKBQAAgent):
                 return {"question_type": "General", "fewshot_examples": ""}
             qtype = result.get("question_type", "General")
 
-            # Inject few-shot examples for the detected question type (unless disabled)
-            fewshot = FEWSHOT_EXAMPLES.get(qtype, "") if self.use_fewshot else ""
+            # Inject few-shot examples for the detected question type (unless disabled).
+            # Some classifier responses come back as multi-label strings like
+            # "Factoid\nSuperlative" or "Factoid, Count" — split on common separators
+            # and concatenate fewshots from EVERY matching label. The specific
+            # operation labels (Count, Superlative, Aggregation, ...) carry the
+            # high-leverage guidance, so they should always land even when the
+            # classifier emits them after a generic "Factoid"/"Non-factoid" prefix.
+            fewshot = ""
+            chosen_label = qtype
+            if self.use_fewshot:
+                direct = FEWSHOT_EXAMPLES.get(qtype, "")
+                if direct:
+                    fewshot = direct
+                elif qtype:
+                    candidates = [
+                        c.strip() for c in re.split(r"[\n,/+|;]+", qtype) if c.strip()
+                    ]
+                    seen = set()
+                    parts: List[str] = []
+                    for cand in candidates:
+                        cand_norm = cand[:1].upper() + cand[1:] if cand else cand
+                        if cand_norm in FEWSHOT_EXAMPLES and cand_norm not in seen:
+                            seen.add(cand_norm)
+                            parts.append(FEWSHOT_EXAMPLES[cand_norm])
+                            if chosen_label == qtype:
+                                chosen_label = cand_norm
+                    fewshot = "\n".join(parts)
 
             return {
-                "question_type": qtype,
+                "question_type": chosen_label,
                 "fewshot_examples": fewshot
             }
 

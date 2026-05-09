@@ -2215,9 +2215,10 @@ async def AggregateComparisonValues(
     filter_match: Literal["exact", "contains", "regex"] = "contains",
     top_n: int = 1,
     value_via_group: bool = False,
+    comparison_ids: str = "",
 ) -> str:
     """
-    Aggregate values across the contributions of a Comparison resource.
+    Aggregate values across the contributions of one or more Comparison resources.
 
     This is the right tool whenever a question asks for AVG/SUM/MIN/MAX/COUNT,
     "most common X", "frequency of X", or per-group min/max over the rows of a
@@ -2230,8 +2231,17 @@ async def AggregateComparisonValues(
     "for each contribution of a Comparison, take the value of <predicate>
     and aggregate it (optionally grouped by another predicate)".
 
+    For questions that span MULTIPLE related Comparisons (e.g. "across all
+    energy-supply studies", "in the patient cohort comparisons"), pass the
+    list via ``comparison_ids`` (comma-separated). The tool unions
+    contributions across all listed Comparisons before aggregating — which
+    is the correct shape when no single Comparison covers the question's
+    scope. For graph-wide aggregation that has no Comparison anchor at all,
+    use FindFrequentValues instead.
+
     Args:
-        comparison_id: Comparison resource ID (e.g., "R44930").
+        comparison_id: Comparison resource ID (e.g., "R44930"). Used when
+            ``comparison_ids`` is empty. Pass "" to use ``comparison_ids`` only.
         value_predicate: Predicate ID of the value to aggregate
             (e.g., "P23140", "P43133"). Numeric predicates often store their
             literal under HAS_VALUE; this tool tries direct, HAS_VALUE, and
@@ -2256,9 +2266,16 @@ async def AggregateComparisonValues(
             Use this for "extreme values of installed capacity grouped by
             energy source"-style questions where the measurement hangs off the
             grouping node.
+        comparison_ids: Optional comma-separated list of Comparison IDs
+            (e.g. "R153801,R155266,R44073"). When non-empty this OVERRIDES
+            ``comparison_id`` and the aggregate is computed over the UNION of
+            contributions from every listed Comparison. Use for cross-comparison
+            questions where the relevant studies are split across multiple
+            Featured Comparisons in the same domain.
 
     Returns:
-        JSON with `comparison_id`, `value_predicate`, `agg`, optional `group_by`,
+        JSON with `comparison_id` (or `comparison_ids` when multi-source),
+        `value_predicate`, `agg`, optional `group_by`,
         `result` (scalar or list of {group, value, count}), `n_contributions`,
         and `status`.
     """
@@ -2273,6 +2290,15 @@ async def AggregateComparisonValues(
         if p.startswith("http"):
             return f"<{p}>"
         return f"orkgp:{p}"
+
+    # Resolve scope: list of comparisons takes precedence
+    cmp_id_list = [c.strip() for c in (comparison_ids or "").split(",") if c.strip()]
+    multi_mode = bool(cmp_id_list)
+    if not multi_mode and not (comparison_id or "").strip():
+        return json.dumps(
+            {"error": "Either comparison_id or comparison_ids must be set"},
+            indent=2,
+        )
 
     try:
         value_pred = _norm_pred(value_predicate)
@@ -2330,10 +2356,20 @@ async def AggregateComparisonValues(
                 f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
                 f"        {group_clause}"
             )
+        if multi_mode:
+            cmp_values = " ".join(f"orkgr:{c}" for c in cmp_id_list)
+            scope_clause = (
+                f"VALUES ?cmp {{ {cmp_values} }}\n"
+                f"        ?cmp orkgp:compareContribution ?contrib .\n"
+            )
+        else:
+            scope_clause = (
+                f"orkgr:{comparison_id} orkgp:compareContribution ?contrib .\n"
+            )
         body_query = f"""
 SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE {{
     GRAPH <{SCIQA_GRAPH}> {{
-        orkgr:{comparison_id} orkgp:compareContribution ?contrib .
+        {scope_clause}
         {value_block}
         {filter_block}
     }}
@@ -2387,13 +2423,16 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
             })
 
         n_rows = len(rows)
+        scope_label = (
+            ",".join(cmp_id_list) if multi_mode else comparison_id
+        )
         if n_rows == 0:
             session_journal.failed_attempts.append(
-                f"AggregateComparisonValues({comparison_id}, {value_predicate}): "
+                f"AggregateComparisonValues({scope_label}, {value_predicate}): "
                 f"no contributions matched"
             )
             return json.dumps({
-                "comparison_id": comparison_id,
+                ("comparison_ids" if multi_mode else "comparison_id"): scope_label,
                 "value_predicate": value_predicate,
                 "agg": agg,
                 "group_by": group_by_predicate or None,
@@ -2454,19 +2493,24 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
         else:
             result_payload = _aggregate(rows)
 
-        # Journal
-        if comparison_id not in session_journal.found_values:
-            session_journal.found_values[comparison_id] = {}
+        # Journal — bucket per scope
+        journal_key = scope_label
+        if journal_key not in session_journal.found_values:
+            session_journal.found_values[journal_key] = {}
         key = f"{agg}({value_predicate})" + (f" by {group_by_predicate}" if group_by_predicate else "")
-        session_journal.found_values[comparison_id][key] = result_payload
+        session_journal.found_values[journal_key][key] = result_payload
         session_journal.completed_steps.append(
-            f"AggregateComparisonValues({comparison_id}, {value_predicate}, {agg}) "
+            f"AggregateComparisonValues({scope_label}, {value_predicate}, {agg}) "
             f"-> {n_rows} contributions"
         )
-        session_journal.visited_nodes.setdefault(comparison_id, "Comparison")
+        if multi_mode:
+            for cid in cmp_id_list:
+                session_journal.visited_nodes.setdefault(cid, "Comparison")
+        else:
+            session_journal.visited_nodes.setdefault(comparison_id, "Comparison")
 
         return json.dumps({
-            "comparison_id": comparison_id,
+            ("comparison_ids" if multi_mode else "comparison_id"): scope_label,
             "value_predicate": value_predicate,
             "agg": agg,
             "group_by": group_by_predicate or None,
@@ -2479,20 +2523,311 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
             "status": (
                 f"Aggregated {n_rows} contribution rows with {agg}"
                 + (f" grouped by {group_by_predicate}" if group_by_predicate else "")
+                + (f" across {len(cmp_id_list)} comparisons" if multi_mode else "")
             ),
         }, indent=2, default=str)
 
     except Exception as e:
         error_msg = f"Error in AggregateComparisonValues: {str(e)}"
         logger.error(error_msg)
+        scope_for_log = ",".join(cmp_id_list) if cmp_id_list else comparison_id
         session_journal.failed_attempts.append(
-            f"AggregateComparisonValues({comparison_id}, {value_predicate}): {str(e)}"
+            f"AggregateComparisonValues({scope_for_log}, "
+            f"{value_predicate}): {str(e)}"
         )
         return json.dumps({"error": error_msg}, indent=2)
 
 
 # ==============================================================================
-# TOOL 20: FindCoAuthors
+# TOOL 20: FindFrequentValues — cross-resource aggregation (no Comparison anchor)
+# ==============================================================================
+
+@mcp.tool()
+async def FindFrequentValues(
+    app_context: Context,
+    value_predicate: str,
+    agg: Literal["mode_top", "count", "count_distinct", "sum", "avg", "min", "max", "all_values"] = "mode_top",
+    research_field_id: str = "",
+    comparison_ids: str = "",
+    group_by_predicate: str = "",
+    filter_predicate: str = "",
+    filter_value: str = "",
+    filter_match: Literal["exact", "contains", "regex"] = "contains",
+    top_n: int = 5,
+    limit_subjects: int = 5000,
+) -> str:
+    """
+    Cross-resource aggregation: rank/count/sum values for a predicate across
+    contributions in MULTIPLE Comparisons or across an entire research field —
+    when no single Comparison anchors the question.
+
+    Use this for global-scope superlative/aggregation questions like:
+      - "Most popular X" / "most frequent Y" / "top N Z"  → agg="mode_top"
+      - "Largest sample size" / "highest score" / "lowest value" → agg="max" / "min"
+      - "Total / sum across studies"                       → agg="sum"
+      - "Number of studies that report X"                  → agg="count"
+    where the relevant data is spread across many papers/contributions and
+    AggregateComparisonValues with a single comparison_id cannot capture the
+    full scope.
+
+    Scope precedence:
+      1. ``research_field_id`` — restricts to contributions of papers in
+         that research field (orkgp:P30 → field).
+      2. ``comparison_ids`` — comma-separated list of Comparison resource IDs;
+         unions over all listed Comparisons.
+      3. (default, none set) — every Contribution that is part of any
+         Comparison (subject-of-orkgp:compareContribution). This is the
+         broadest reasonable scope without scanning every triple in the graph.
+
+    Args:
+        value_predicate: Predicate ID of the value to count/aggregate
+            (e.g., "P15585", "P43133"). HAS_VALUE/label fallbacks applied.
+        agg: One of mode_top (default — frequency table), count, count_distinct,
+            sum, avg, min, max, all_values.
+        research_field_id: Optional Research Field resource (e.g. "R132").
+            When set, only contributions whose paper has P30→<field> are scanned.
+        comparison_ids: Optional comma-separated list (e.g. "R153801,R155266").
+            Union of compareContribution rows across all listed Comparisons.
+        group_by_predicate: Optional grouping predicate. With agg="mode_top"
+            this gives per-group frequency tables; with numeric aggs it gives
+            per-group min/max/sum/avg.
+        filter_predicate / filter_value / filter_match: Optional pre-filter
+            on contributions (same shape as AggregateComparisonValues).
+        top_n: For mode_top, how many top values to return (default 5).
+        limit_subjects: Hard cap on contributions scanned (default 5000) to
+            keep the SPARQL bounded; raise if a research field is large.
+
+    Returns:
+        JSON with `scope`, `value_predicate`, `agg`, optional `group_by`,
+        `result` (scalar / list of {value,count} / list of {group,value,n}),
+        `n_contributions`, and `status`.
+    """
+    from collections import Counter, defaultdict
+
+    app = app_context.request_context.lifespan_context
+
+    def _norm_pred(p: str) -> str:
+        p = p.strip()
+        if not p:
+            return ""
+        if p.startswith("orkgp:"):
+            return p
+        if p.startswith("http"):
+            return f"<{p}>"
+        return f"orkgp:{p}"
+
+    try:
+        value_pred = _norm_pred(value_predicate)
+        if not value_pred:
+            return json.dumps({"error": "value_predicate is required"}, indent=2)
+        group_pred = _norm_pred(group_by_predicate) if group_by_predicate else ""
+        flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
+
+        # Build scope clause
+        if research_field_id and research_field_id.strip():
+            rf = research_field_id.strip()
+            scope_clause = (
+                f"?paper orkgp:P30 orkgr:{rf} .\n"
+                f"        ?paper orkgp:P31 ?contrib .\n"
+            )
+            scope_label = f"research_field:{rf}"
+        elif comparison_ids and comparison_ids.strip():
+            ids = [c.strip() for c in comparison_ids.split(",") if c.strip()]
+            if not ids:
+                return json.dumps({"error": "comparison_ids was non-empty but parsed to no IDs"}, indent=2)
+            cmp_values = " ".join(f"orkgr:{c}" for c in ids)
+            scope_clause = (
+                f"VALUES ?cmp {{ {cmp_values} }}\n"
+                f"        ?cmp orkgp:compareContribution ?contrib .\n"
+            )
+            scope_label = f"comparisons:{','.join(ids)}"
+        else:
+            scope_clause = "?cmp orkgp:compareContribution ?contrib .\n"
+            scope_label = "all_comparisons"
+
+        # Build optional filter clause
+        filter_block = ""
+        if flt_pred and filter_value:
+            safe = filter_value.replace('"', '\\"')
+            if filter_match == "exact":
+                filter_block = (
+                    f"?contrib {flt_pred} ?fobj .\n"
+                    f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
+                    f'        FILTER( STR(?fobj) = "{safe}" || STR(?flbl) = "{safe}" )\n'
+                )
+            elif filter_match == "regex":
+                filter_block = (
+                    f"?contrib {flt_pred} ?fobj .\n"
+                    f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
+                    f'        FILTER( REGEX(STR(?fobj), "{safe}", "i") || REGEX(STR(?flbl), "{safe}", "i") )\n'
+                )
+            else:
+                filter_block = (
+                    f"?contrib {flt_pred} ?fobj .\n"
+                    f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
+                    f'        FILTER( CONTAINS(LCASE(STR(?fobj)), LCASE("{safe}")) '
+                    f'|| CONTAINS(LCASE(STR(?flbl)), LCASE("{safe}")) )\n'
+                )
+
+        group_select = "?group ?groupLabel " if group_pred else ""
+        group_clause = (
+            f"?contrib {group_pred} ?group .\n"
+            f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
+            if group_pred else ""
+        )
+        body = f"""
+SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+        ?contrib {value_pred} ?valueObj .
+        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}
+        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}
+        {group_clause}
+        {filter_block}
+    }}
+}} LIMIT {limit_subjects}
+"""
+        full_query = SPARQL_PREFIXES + body
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        def _row_value(b):
+            for key in ("nestedValue", "valueLabel", "valueObj"):
+                v = b.get(key, {}).get("value")
+                if v is not None and v != "":
+                    if v.startswith("http://orkg.org/orkg/"):
+                        continue
+                    return v
+            v = b.get("valueObj", {}).get("value", "")
+            return v.split("/")[-1] if v.startswith("http") else v
+
+        def _row_group(b):
+            if not group_pred:
+                return None
+            v = b.get("groupLabel", {}).get("value") or b.get("group", {}).get("value", "")
+            if v.startswith("http://orkg.org/orkg/"):
+                v = v.split("/")[-1]
+            return v
+
+        def _to_float(s):
+            if s is None:
+                return None
+            t = str(s).strip().replace(",", "")
+            m = re.match(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?", t)
+            if not m:
+                return None
+            try:
+                return float(m.group(0))
+            except ValueError:
+                return None
+
+        rows = []
+        for b in bindings:
+            contrib = b.get("contrib", {}).get("value", "").split("/")[-1]
+            rows.append({
+                "contrib": contrib,
+                "group": _row_group(b),
+                "value": _row_value(b),
+            })
+
+        n_rows = len(rows)
+        if n_rows == 0:
+            session_journal.failed_attempts.append(
+                f"FindFrequentValues({scope_label}, {value_predicate}): no rows matched"
+            )
+            return json.dumps({
+                "scope": scope_label,
+                "value_predicate": value_predicate,
+                "agg": agg,
+                "group_by": group_by_predicate or None,
+                "result": None,
+                "n_contributions": 0,
+                "status": "No contributions matched the scope/filter.",
+            }, indent=2)
+
+        groups: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
+        for r in rows:
+            groups[r["group"]].append(r)
+
+        def _aggregate(items: List[Dict[str, Any]]):
+            vals = [it["value"] for it in items]
+            if agg == "all_values":
+                return vals
+            if agg == "count":
+                return len(items)
+            if agg == "count_distinct":
+                return len({v for v in vals if v is not None})
+            if agg == "mode_top":
+                counter = Counter(v for v in vals if v is not None)
+                top = counter.most_common(top_n)
+                return [{"value": v, "count": c} for v, c in top]
+            nums = [n for n in (_to_float(v) for v in vals) if n is not None]
+            if not nums:
+                return None
+            if agg == "avg":
+                return sum(nums) / len(nums)
+            if agg == "sum":
+                return sum(nums)
+            if agg == "min":
+                return min(nums)
+            if agg == "max":
+                return max(nums)
+            return None
+
+        if group_pred:
+            grouped_result = []
+            for g, items in groups.items():
+                grouped_result.append({
+                    "group": g,
+                    "value": _aggregate(items),
+                    "n": len(items),
+                })
+            if agg in ("avg", "sum", "min", "max"):
+                grouped_result.sort(
+                    key=lambda x: x["value"] if isinstance(x["value"], (int, float)) else float("-inf"),
+                    reverse=True,
+                )
+            elif agg in ("count", "count_distinct"):
+                grouped_result.sort(key=lambda x: x["value"] or 0, reverse=True)
+            result_payload: Any = grouped_result
+        else:
+            result_payload = _aggregate(rows)
+
+        session_journal.completed_steps.append(
+            f"FindFrequentValues({scope_label}, {value_predicate}, {agg}) -> {n_rows} rows"
+        )
+
+        return json.dumps({
+            "scope": scope_label,
+            "value_predicate": value_predicate,
+            "agg": agg,
+            "group_by": group_by_predicate or None,
+            "filter": (
+                {"predicate": filter_predicate, "value": filter_value, "match": filter_match}
+                if filter_predicate else None
+            ),
+            "result": result_payload,
+            "n_contributions": n_rows,
+            "limit_subjects": limit_subjects,
+            "status": (
+                f"Aggregated {n_rows} contribution rows with {agg}"
+                + (f" grouped by {group_by_predicate}" if group_by_predicate else "")
+                + f" across {scope_label}"
+            ),
+        }, indent=2, default=str)
+
+    except Exception as e:
+        error_msg = f"Error in FindFrequentValues: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(
+            f"FindFrequentValues({value_predicate}): {str(e)}"
+        )
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 21: FindCoAuthors
 # ==============================================================================
 
 @mcp.tool()
