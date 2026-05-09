@@ -13,12 +13,14 @@ benchmark result directory as ``generated_fewshot.json``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import toml
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
@@ -26,11 +28,57 @@ from ama_kbqa.postprocessing import load_judge_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FEWSHOT_DIR = PROJECT_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
+CONFIG_PATH = PROJECT_ROOT / "config.toml"
 
 # Limits
 MAX_PER_QTYPE = 5
 MAX_GENERAL = 10
 MAX_TOOL_TIPS = 20
+
+
+# ============================================================================
+# CONFIG
+# ============================================================================
+
+def load_generator_config() -> Dict[str, Any]:
+    """Load [fewshot_generator] settings from config.toml with sane defaults."""
+    defaults = {
+        "provider": "openrouter",
+        "model": "deepseek/deepseek-v4-pro",
+        "temperature": 1.0,
+        "max_tokens": 16000,
+        "include_tool_descriptions": True,
+        "include_full_conversation": True,
+        "max_messages": 20,
+        "max_result_chars": 500,
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_env": "OPENROUTER_API_KEY",
+    }
+    if not CONFIG_PATH.exists():
+        return defaults
+    try:
+        cfg = toml.load(CONFIG_PATH)
+        gen = cfg.get("fewshot_generator", {}) or {}
+        provider = gen.get("provider", defaults["provider"])
+        provider_cfg = cfg.get(provider, {}) or {}
+        return {
+            "provider": provider,
+            "model": gen.get("model", defaults["model"]),
+            "temperature": float(gen.get("temperature", defaults["temperature"])),
+            "max_tokens": int(gen.get("max_tokens", defaults["max_tokens"])),
+            "include_tool_descriptions": bool(gen.get("include_tool_descriptions", True)),
+            "include_full_conversation": bool(gen.get("include_full_conversation", True)),
+            "max_messages": int(gen.get("max_messages", defaults["max_messages"])),
+            "max_result_chars": int(gen.get("max_result_chars", defaults["max_result_chars"])),
+            "base_url": provider_cfg.get("base_url", defaults["base_url"]),
+            "api_key_env": (
+                "OPENROUTER_API_KEY" if provider == "openrouter"
+                else f"{provider.upper()}_API_KEY"
+            ),
+        }
+    except Exception as e:
+        print(f"[Fewshot Generator] Config load failed ({e}); using defaults")
+        return defaults
 
 
 # ============================================================================
@@ -101,8 +149,23 @@ def qualifies_for_generation(result: Dict[str, Any]) -> Optional[str]:
 # MESSAGE TRUNCATION
 # ============================================================================
 
-def _truncate_messages(messages: List[Dict], max_messages: int = 20, max_result_chars: int = 500) -> List[Dict]:
-    """Truncate conversation messages to fit token budget."""
+def _truncate_messages(
+    messages: List[Dict],
+    max_messages: int = 20,
+    max_result_chars: int = 500,
+    full: bool = False,
+) -> List[Dict]:
+    """Optionally truncate conversation messages.
+
+    When ``full=True`` returns the original message list unmodified — the
+    generator gets the entire trace (full tool results, every turn) so it can
+    judge whether the chosen path was the most direct one available.
+
+    When ``full=False`` the tail ``max_messages`` are returned with each tool
+    result clipped to ``max_result_chars`` characters.
+    """
+    if full:
+        return list(messages)
     recent = messages[-max_messages:] if len(messages) > max_messages else messages
     truncated = []
     for msg in recent:
@@ -113,6 +176,82 @@ def _truncate_messages(messages: List[Dict], max_messages: int = 20, max_result_
                 msg_copy["content"] = content[:max_result_chars] + "... [truncated]"
         truncated.append(msg_copy)
     return truncated
+
+
+# ============================================================================
+# TOOL CATALOG LOADER
+# ============================================================================
+
+_TOOL_CATALOG_CACHE: Dict[str, str] = {}
+
+
+def _resolve_mcp_server_path(agent_name: str) -> Optional[str]:
+    """Map agent name → absolute MCP server script path."""
+    server_dir = PROJECT_ROOT / "ama_kbqa" / "server"
+    candidates = {
+        "kqapro": server_dir / "kqapro_server.py",
+        "sciqa": server_dir / "sciqa_server.py",
+    }
+    p = candidates.get(agent_name)
+    return str(p) if p and p.exists() else None
+
+
+async def _fetch_tool_catalog_async(server_path: str, agent_name: str) -> str:
+    """Spawn the MCP server, list its tools, return a plain-text catalog."""
+    from ama_kbqa.framework.mcp_client import MCPClient
+    from ama_kbqa.framework.text_tool_calls import build_text_mode_tool_catalog
+
+    client = MCPClient(server_path, agent_name)
+    try:
+        await client.start()
+        mcp_tools = await client.list_tools()
+        openai_tools = client.convert_tools_to_openai_format(mcp_tools)
+        return build_text_mode_tool_catalog(openai_tools)
+    finally:
+        try:
+            await client.close()
+        except Exception:
+            pass
+
+
+def _extract_catalog_from_messages(messages: List[Dict]) -> Optional[str]:
+    """Some text-mode runs already inject the catalog as a system message."""
+    for m in messages or []:
+        if m.get("role") != "system":
+            continue
+        content = m.get("content", "")
+        if isinstance(content, str) and content.startswith("AVAILABLE TOOLS"):
+            return content
+    return None
+
+
+def load_tool_catalog(agent_name: str, sample_messages: Optional[List[Dict]] = None) -> str:
+    """Return the agent's tool catalog. Cached per agent.
+
+    Tries (1) the cache, (2) the MCP server, (3) extraction from a saved trace.
+    Returns "" if no source works — the generator just gets fewer hints.
+    """
+    if agent_name in _TOOL_CATALOG_CACHE:
+        return _TOOL_CATALOG_CACHE[agent_name]
+
+    server_path = _resolve_mcp_server_path(agent_name)
+    if server_path:
+        try:
+            catalog = asyncio.run(_fetch_tool_catalog_async(server_path, agent_name))
+            if catalog:
+                _TOOL_CATALOG_CACHE[agent_name] = catalog
+                return catalog
+        except Exception as e:
+            print(f"[Fewshot Generator] MCP catalog fetch failed for {agent_name}: {e}")
+
+    if sample_messages:
+        from_msgs = _extract_catalog_from_messages(sample_messages)
+        if from_msgs:
+            _TOOL_CATALOG_CACHE[agent_name] = from_msgs
+            return from_msgs
+
+    _TOOL_CATALOG_CACHE[agent_name] = ""
+    return ""
 
 
 # ============================================================================
@@ -161,8 +300,9 @@ You produce up to 3 optional outputs — ONLY if genuinely useful. Do not force 
 }
 
 ## Rules
-- For CORRECT answers: extract the successful strategy as a reusable pattern. Note inefficiencies that could be trimmed.
+- For CORRECT answers: extract the successful strategy as a reusable pattern. Critically assess path optimality — if the agent reached the right answer via a roundabout route, the lesson should describe the SHORTER path the agent should have taken, and the trace should reflect that shorter path (not the actual one). Note inefficiencies (redundant lookups, repeated FindNode calls, exploratory SPARQL that could have been skipped given the available tools).
 - For INCORRECT answers: diagnose what went wrong AND propose what the correct tool trace SHOULD have been. The trace field should contain your proposed corrected trace. Set was_correct=false.
+- Use the AVAILABLE TOOLS catalog (when provided) to judge whether a more direct tool existed than the one the agent picked. If it did, that belongs in the `pitfall` field of the qtype_example or as a `tool_tip`.
 - The "answer" field in qtype_example must ALWAYS be the gold answer.
 - Only produce an output if it provides genuine value. An empty optional field is better than a forced one.
 - Keep lessons and guidance concise and actionable.
@@ -178,6 +318,8 @@ def _build_user_prompt(
     messages: List[Dict],
     judgment: Dict,
     accuracy: bool,
+    tool_catalog: str = "",
+    full_conversation: bool = True,
 ) -> str:
     timestamp = datetime.now().isoformat()
 
@@ -195,19 +337,39 @@ def _build_user_prompt(
                 for tc in tool_calls:
                     name = tc.get("function", {}).get("name", tc.get("name", "?"))
                     args = tc.get("function", {}).get("arguments", tc.get("arguments", ""))
-                    if isinstance(args, str) and len(args) > 300:
+                    if isinstance(args, str) and not full_conversation and len(args) > 300:
                         args = args[:300] + "..."
                     msgs_str += f"[ASSISTANT tool_call] {name}({args})\n"
             if content:
-                msgs_str += f"[ASSISTANT] {content[:500]}\n"
+                rendered = content if full_conversation else content[:500]
+                msgs_str += f"[ASSISTANT] {rendered}\n"
         elif role == "tool":
-            content = msg.get("content", "")[:500]
+            content = msg.get("content", "")
+            if not full_conversation:
+                content = content[:500]
             msgs_str += f"[TOOL RESULT] {content}\n"
         elif role == "user":
             content = msg.get("content", "")
-            if len(content) > 200:
+            if not full_conversation and len(content) > 200:
                 content = content[:200] + "..."
             msgs_str += f"[USER] {content}\n"
+        elif role == "system":
+            content = msg.get("content", "")
+            if isinstance(content, str) and content.startswith("AVAILABLE TOOLS"):
+                # Skip — catalog rendered separately above.
+                continue
+            if full_conversation:
+                msgs_str += f"[SYSTEM] {content}\n"
+
+    catalog_block = ""
+    if tool_catalog:
+        catalog_block = f"## Available Tools (the agent had access to all of these)\n{tool_catalog}\n\n"
+
+    convo_header = (
+        "## Full Conversation (entire trace)"
+        if full_conversation
+        else "## Full Conversation (last messages, truncated)"
+    )
 
     return f"""## Question Analysis Request
 Timestamp: {timestamp}
@@ -224,13 +386,13 @@ Accuracy: {"CORRECT" if accuracy else "INCORRECT"}
 - argumentation_score: {judgment.get('argumentation_score', 'N/A')}/5
 - suggested_improvement: {judgment.get('suggested_improvement', 'N/A')}
 
-## Tool Trace Overview (abbreviated)
+{catalog_block}## Tool Trace Overview
 {trace_overview}
 
-## Full Conversation (last messages, truncated)
+{convo_header}
 {msgs_str}
 
-Please analyze this trace and generate fewshot learning material. Return valid JSON only."""
+Please analyze this trace and generate fewshot learning material. Critically assess path optimality given the AVAILABLE TOOLS list. Return valid JSON only."""
 
 
 # ============================================================================
@@ -248,9 +410,21 @@ def generate_fewshot_from_result(
     accuracy: bool,
     client: OpenAI,
     model_name: str,
+    *,
+    temperature: float = 1.0,
+    max_tokens: int = 16000,
+    tool_catalog: str = "",
+    full_conversation: bool = True,
+    max_messages: int = 20,
+    max_result_chars: int = 500,
 ) -> Optional[FewshotGeneratorOutput]:
     """Generate fewshot examples from a single benchmark result."""
-    truncated_msgs = _truncate_messages(full_messages)
+    msgs = _truncate_messages(
+        full_messages,
+        max_messages=max_messages,
+        max_result_chars=max_result_chars,
+        full=full_conversation,
+    )
 
     user_prompt = _build_user_prompt(
         question=question,
@@ -258,9 +432,11 @@ def generate_fewshot_from_result(
         predicted_answer=predicted_answer,
         q_type=q_type,
         tool_trace=tool_trace,
-        messages=truncated_msgs,
+        messages=msgs,
         judgment=judgment,
         accuracy=accuracy,
+        tool_catalog=tool_catalog,
+        full_conversation=full_conversation,
     )
 
     try:
@@ -270,8 +446,8 @@ def generate_fewshot_from_result(
                 {"role": "system", "content": GENERATOR_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.3,
-            max_tokens=4000,
+            temperature=temperature,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content.strip()
@@ -383,15 +559,39 @@ def generate_and_save_fewshot_examples(
     Returns:
         Dict with counts of generated examples by type
     """
-    # Set up LLM client using judge config
-    judge_config = load_judge_config()
-    api_key = os.getenv(judge_config["api_key_env"], "")
+    # Load generator settings from config.toml ([fewshot_generator] section).
+    gen_cfg = load_generator_config()
+    api_key = os.getenv(gen_cfg["api_key_env"], "")
+    if not api_key:
+        # Fall back to the judge's API key — same provider in most setups.
+        judge_config = load_judge_config()
+        api_key = os.getenv(judge_config["api_key_env"], "")
     if not api_key:
         print("[Fewshot Generator] No API key available, skipping generation")
         return {}
 
-    client = OpenAI(api_key=api_key, base_url=judge_config["base_url"])
-    model_name = "deepseek/deepseek-v3.2-speciale"
+    client = OpenAI(api_key=api_key, base_url=gen_cfg["base_url"])
+    model_name = gen_cfg["model"]
+    print(
+        f"[Fewshot Generator] model={model_name} temp={gen_cfg['temperature']} "
+        f"max_tokens={gen_cfg['max_tokens']} "
+        f"tool_descriptions={gen_cfg['include_tool_descriptions']} "
+        f"full_conversation={gen_cfg['include_full_conversation']}"
+    )
+
+    # Load tool catalog once for this agent (kqapro/sciqa) — shared across results.
+    tool_catalog = ""
+    if gen_cfg["include_tool_descriptions"]:
+        sample_msgs = next(
+            (r.full_messages for r in full_results
+             if hasattr(r, "full_messages") and r.full_messages),
+            None,
+        )
+        tool_catalog = load_tool_catalog(agent_name, sample_messages=sample_msgs)
+        if tool_catalog:
+            print(f"[Fewshot Generator] Loaded tool catalog ({len(tool_catalog)} chars)")
+        else:
+            print(f"[Fewshot Generator] No tool catalog available for {agent_name}")
 
     # Build mapping from question text to full_messages
     messages_by_question: Dict[str, List[Dict]] = {}
@@ -434,6 +634,12 @@ def generate_and_save_fewshot_examples(
             accuracy=rd.get("accuracy", False),
             client=client,
             model_name=model_name,
+            temperature=gen_cfg["temperature"],
+            max_tokens=gen_cfg["max_tokens"],
+            tool_catalog=tool_catalog,
+            full_conversation=gen_cfg["include_full_conversation"],
+            max_messages=gen_cfg["max_messages"],
+            max_result_chars=gen_cfg["max_result_chars"],
         )
 
         if not output:
