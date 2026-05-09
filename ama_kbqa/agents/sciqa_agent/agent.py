@@ -140,6 +140,15 @@ class SciQAAgent(BaseKBQAAgent):
                 messages=[{"role": "system", "content": prompt}],
                 temperature=get_chat_temperature(),
                 response_format={"type": "json_object"},
+                # Bumped from default to leave headroom for minimax-m2.7's
+                # `<think>...</think>` reasoning prefix that precedes JSON.
+                # Without this, the response truncates inside the think block
+                # and qtype silently defaults to "General" — which means
+                # FEWSHOT_EXAMPLES.get("General", "") returns "" and the
+                # SciQA agent flies blind on aggregation/comparison/count
+                # questions. Verified empirically (KQAPro side: 100/100
+                # questions classified as "Query" before this fix).
+                max_tokens=1500,
                 timeout=30.0
             )
 
@@ -147,7 +156,16 @@ class SciQAAgent(BaseKBQAAgent):
                 self._track_token_usage(response.usage)
 
             json_content = response.choices[0].message.content
-            result = json.loads(json_content)
+            # Use the brace-balanced extractor on the base class to handle
+            # `<think>...</think>` prefixes and markdown fences.
+            result = self._extract_json_object(json_content)
+            if result is None:
+                self._trace(
+                    f"SciQA classification: no parseable JSON in response, "
+                    f"defaulting to General",
+                    "\033[93m",
+                )
+                return {"question_type": "General", "fewshot_examples": ""}
             qtype = result.get("question_type", "General")
 
             # Inject few-shot examples for the detected question type (unless disabled)
