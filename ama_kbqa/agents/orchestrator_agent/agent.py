@@ -128,6 +128,14 @@ class Orchestrator:
         self.mcp: Optional[MCPClient] = None
         self._agents = {}
 
+        # Frontend reads these — Orchestrator mirrors the BaseKBQAAgent
+        # surface so the Chat page can capture trace events + journal
+        # snapshots regardless of which agent answered.
+        from ama_kbqa.framework.trace import TraceRecorder
+        self.recorder: TraceRecorder = TraceRecorder()
+        self.journal_snapshots: list = []
+        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
         self._agent_config = {
             "kqapro_agent": {
                 "module": "ama_kbqa.agents.kqapro_agent.agent",
@@ -290,40 +298,93 @@ class Orchestrator:
         """Main method: Route the request and get the answer."""
         self._trace(f"USER: {query}", COLOR_GREEN)
 
-        try:
-            await self._init_mcp()
-            selected_agent_name = await self._route_autonomously(query)
-            answer = ""
+        async with self.recorder.span(
+            "agent_run",
+            self.name,
+            attributes={"agent": self.name, "model": self.model, "query": query[:500]},
+            payload={"query": query},
+        ):
+            try:
+                await self._init_mcp()
 
-            print("-" * 50)
+                async with self.recorder.span(
+                    "classify",
+                    "route",
+                    attributes={"model": self.model},
+                ) as _route_span:
+                    selected_agent_name = await self._route_autonomously(query)
+                    _route_span.set_attribute("selected_agent", selected_agent_name or "<none>")
 
-            if selected_agent_name:
-                self._trace(f"Routing successful -> {selected_agent_name}", COLOR_GREEN)
-                agent = self._load_agent(selected_agent_name)
+                answer = ""
+                print("-" * 50)
 
-                if agent:
-                    try:
-                        if inspect.iscoroutinefunction(agent.ask):
-                            answer = await agent.ask(query)
-                        else:
-                            answer = agent.ask(query)
-                    except Exception as e:
-                        self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
-                        self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
-                        answer = await self._fallback_kqapro(query)
+                if selected_agent_name:
+                    self._trace(f"Routing successful -> {selected_agent_name}", COLOR_GREEN)
+                    answer = await self._delegate(selected_agent_name, query)
                 else:
-                    self._trace("Agent could not be loaded. Fallback to KQAPro.", COLOR_YELLOW)
+                    self._trace("Routing failed. Fallback to KQAPro agent.", COLOR_YELLOW)
                     answer = await self._fallback_kqapro(query)
-            else:
-                self._trace("Routing failed. Fallback to KQAPro agent.", COLOR_YELLOW)
-                answer = await self._fallback_kqapro(query)
+
+                return answer
+            finally:
+                if self.mcp:
+                    await self.mcp.close()
+                    self._trace("Orchestrator MCP server cleanly terminated")
+
+    async def _delegate(self, agent_name: str, query: str) -> str:
+        """Run a sub-agent under a `delegate` span so its trace nests cleanly.
+
+        We hand the sub-agent our recorder + the current span id; its
+        `agent_run` root span will then parent under our delegate span
+        instead of starting a new trace.
+        """
+        async with self.recorder.span(
+            "delegate",
+            agent_name,
+            attributes={"sub_agent": agent_name},
+        ) as _delegate_span:
+            current_span_id = self.recorder.current_span_id()
+            agent = self._load_agent(agent_name)
+            if not agent:
+                self._trace(
+                    "Agent could not be loaded. Fallback to KQAPro.", COLOR_YELLOW
+                )
+                _delegate_span.set_attribute("loaded", False)
+                return await self._fallback_kqapro(query)
+
+            # Re-target the sub-agent's recorder at ours for this call. Sub-
+            # agent instances are cached, so we reset these on every call.
+            try:
+                agent.recorder = self.recorder
+                agent._parent_span_id_override = current_span_id
+            except AttributeError:
+                pass
+
+            try:
+                if inspect.iscoroutinefunction(agent.ask):
+                    answer = await agent.ask(query)
+                else:
+                    answer = agent.ask(query)
+            except Exception as e:
+                self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
+                self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
+                _delegate_span.set_attribute("error", str(e))
+                return await self._fallback_kqapro(query)
+
+            # Hoist the sub-agent's journal snapshots up so the Graph View on
+            # the orchestrator's trace shows what the delegate discovered.
+            try:
+                self.journal_snapshots.extend(agent.journal_snapshots)
+            except AttributeError:
+                pass
+            try:
+                tu = agent.token_usage
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    self.token_usage[k] = self.token_usage.get(k, 0) + tu.get(k, 0)
+            except AttributeError:
+                pass
 
             return answer
-
-        finally:
-            if self.mcp:
-                await self.mcp.close()
-                self._trace("Orchestrator MCP server cleanly terminated")
 
     async def _fallback_kqapro(self, query: str) -> str:
         """Fallback to KQAPro agent for knowledge base queries."""

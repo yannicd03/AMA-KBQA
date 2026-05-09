@@ -1463,6 +1463,25 @@ def ManageJournal(
 
 
 @mcp.tool
+def GetJournalStateJSON(context: Context) -> str:
+    """
+    Return the structured journal state as a JSON string.
+
+    Used by the frontend's live graph view to render the discovered
+    subgraph (visited_nodes, verified_facts, found_values). Mirrors the
+    contents of `GetJournalSummary` but as machine-readable JSON instead
+    of a human-readable summary.
+
+    Returns:
+        JSON-encoded dict with keys: question_text, question_type,
+        target_entities, visited_nodes, found_values, verified_facts,
+        failed_attempts, current_plan, completed_steps, partial_answer,
+        kg_name, created_at, updated_at.
+    """
+    return json.dumps(session_journal.model_dump(), default=str, ensure_ascii=False)
+
+
+@mcp.tool
 @log_tool_duration
 def GetJournalSummary(context: Context) -> str:
     """
