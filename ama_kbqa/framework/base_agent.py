@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 import os
 import sys
 import json
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
@@ -361,6 +362,51 @@ Change strategy or acknowledge the data doesn't exist."""
     # PRE-AGENT HOOKS
     # =========================================================================
 
+    @staticmethod
+    def _extract_json_object(content: str) -> Optional[Dict[str, Any]]:
+        """
+        Pull a JSON object out of an LLM response that may include surrounding
+        prose, `<think>...</think>` blocks (minimax-m2.7 emits these even with
+        `response_format=json_object`), or markdown code fences.
+
+        Returns the parsed dict, or None if no valid JSON object is found.
+        """
+        if not content:
+            return None
+        # Strip <think>...</think> blocks (minimax/reasoning-style prefixes).
+        # We use re.DOTALL so embedded newlines don't break the match.
+        cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        # Strip markdown code fences.
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned.strip(), flags=re.MULTILINE)
+        cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE)
+        cleaned = cleaned.strip()
+        # Try direct parse first (cheap path for well-behaved models).
+        try:
+            obj = json.loads(cleaned)
+            if isinstance(obj, dict):
+                return obj
+        except json.JSONDecodeError:
+            pass
+        # Fallback: find the first balanced {...} block via brace counting.
+        start = cleaned.find("{")
+        if start == -1:
+            return None
+        depth = 0
+        for i, ch in enumerate(cleaned[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start:i + 1]
+                    try:
+                        obj = json.loads(candidate)
+                        if isinstance(obj, dict):
+                            return obj
+                    except json.JSONDecodeError:
+                        return None
+        return None
+
     def _classify_and_extract(self, question: str) -> Dict[str, Any]:
         """
         Combined classification + entity extraction in a single LLM call.
@@ -380,7 +426,15 @@ Change strategy or acknowledge the data doesn't exist."""
                 messages=[{"role": "system", "content": prompt}],
                 temperature=get_chat_temperature(),
                 response_format={"type": "json_object"},
-                max_tokens=300,
+                # Bumped from 300 to 1500: minimax-m2.7 emits a `<think>...</think>`
+                # reasoning prefix before the JSON object even with
+                # response_format=json_object. With max_tokens=300 the response
+                # routinely truncates inside the thinking block, leaving no JSON
+                # to parse and silently defaulting question_type to "Query" for
+                # every question (verified empirically — minimax-kqapro audits
+                # showed 100/100 questions classified as "Query"). 1500 tokens
+                # leaves headroom for the think block plus the actual JSON.
+                max_tokens=1500,
                 timeout=30.0
             )
 
@@ -388,7 +442,17 @@ Change strategy or acknowledge the data doesn't exist."""
                 self._track_token_usage(response.usage)
 
             json_content = response.choices[0].message.content
-            result = json.loads(json_content)
+            # Use the brace-balanced extractor to handle <think>...</think>
+            # prefixes and markdown fences. json.loads alone fails on those.
+            result = self._extract_json_object(json_content)
+            if result is None:
+                self._trace(
+                    f"Classification: no parseable JSON in response "
+                    f"({len(json_content) if json_content else 0} chars), "
+                    f"defaulting to Query",
+                    COLOR_YELLOW,
+                )
+                return {"question_type": "Query", "entities": [], "relations": []}
             return {
                 "question_type": result.get("question_type", "Query"),
                 "entities": result.get("entities", []),
