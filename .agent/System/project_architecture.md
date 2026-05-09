@@ -27,7 +27,8 @@ ama-kbqa/
 │   ├── cli.py                  # CLI entrypoint (ama-kbqa command)
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
 │   ├── postprocessing.py       # PostProcessor class (choice/sparql/llm_judge/simple)
-│   ├── fewshot_generator.py    # LLM-based fewshot example generator (~480 lines)
+│   ├── fewshot_generator.py    # LLM-based fewshot example generator — config-driven, tool-catalog-aware
+│   ├── run_fewshot_generator.py # Post-hoc generator runner: replays over saved benchmark dir, shadow output only
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
@@ -432,7 +433,10 @@ LLM-based generator that analyzes benchmark results to produce fewshot learning 
 3. **Tool tips** - Tool-specific gotchas saved to `_tool_tips.json` (max 20 entries)
 
 **Generator Features:**
-- Uses `deepseek/deepseek-v3.2-speciale` (judge LLM config) for analysis
+- Model, temperature, max_tokens, and context flags driven by `[fewshot_generator]` in `config.toml` (defaults: `deepseek/deepseek-v4-pro`, temp 1.0, max_tokens 16000). Old hardcoded constants removed.
+- `include_tool_descriptions` (default `true`): spawns the agent's MCP server, calls `list_tools`, formats via `build_text_mode_tool_catalog`, and injects as `## Available Tools` in the generator prompt. Cached per agent. Falls back to trace extraction then empty string.
+- `include_full_conversation` (default `true`): passes the complete untruncated conversation trace. Generator can judge path optimality against the full tool catalog.
+- `GENERATOR_SYSTEM_PROMPT` instructs: even on correct answers, check whether a more direct tool existed; surface as `pitfall` or `tool_tip`.
 - Analyzes both correct (argumentation_score >= 4) and incorrect answers
 - For correct answers: extracts successful patterns and notes inefficiencies
 - For incorrect answers: diagnoses mistakes and proposes corrected tool traces
@@ -440,6 +444,33 @@ LLM-based generator that analyzes benchmark results to produce fewshot learning 
 - Audit log written to `benchmark_results/<YYYY-MM-DD-N>/<agent>/<model>/generated_fewshot.json`
 - Enabled via `--generate-fewshot` CLI flag (defaults to `false` in config.toml)
 - Runs after llm_judge evaluation completes
+
+**`[fewshot_generator]` config section:**
+
+```toml
+[fewshot_generator]
+provider = "openrouter"
+model = "deepseek/deepseek-v4-pro"
+temperature = 1.0
+max_tokens = 16000
+include_tool_descriptions = true
+include_full_conversation = true
+max_messages = 20         # used when include_full_conversation = false
+max_result_chars = 500    # used when include_full_conversation = false
+```
+
+**Post-Hoc Runner (`ama_kbqa/run_fewshot_generator.py`):**
+
+Standalone script that replays the generator over a saved benchmark result directory without re-running the agent. Loads `results.json` + `tool_traces/question_NNN.json`, constructs `ReplayResult` shims, and monkey-patches `fewshot_generator.FEWSHOT_DIR` to a shadow directory before calling `generate_and_save_fewshot_examples`.
+
+```bash
+uv run python -m ama_kbqa.run_fewshot_generator \
+    --result-dir benchmark_results/<run-name> \
+    --agent kqapro \
+    --output-dir db/datasets/kqapro/fewshot-examples.generated-YYYY-MM-DD
+```
+
+Hard safety guard: aborts if `--output-dir` resolves to the live `FEWSHOT_DIR`. All generator output must be reviewed before promotion to the live fewshot corpus.
 
 **Pydantic Models:**
 - `FewshotQTypeExample` - Per-qtype tool-trace examples with lessons/pitfalls
@@ -451,6 +482,16 @@ LLM-based generator that analyzes benchmark results to produce fewshot learning 
 - Agent loads general guidance via `_load_general_guidance()` (top 5 entries)
 - Agent loads tool tips via `_load_tool_tips()` (top 10 entries)
 - Injected into analysis context via `GENERAL_GUIDANCE_TEMPLATE` and `TOOL_TIPS_TEMPLATE`
+
+**Evaluation pipeline layers (as of 2026-05-09):**
+
+```
+benchmark run → llm_judge evaluation → fewshot generator (inline or post-hoc)
+                                              ↓
+                                     shadow output dir
+                                              ↓
+                               human review → promote to live fewshot-examples/
+```
 
 ### 7. Frontend (Streamlit Multi-Page App)
 
