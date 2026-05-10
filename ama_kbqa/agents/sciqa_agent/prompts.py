@@ -233,29 +233,24 @@ QTYPE_STRATEGIES = {
     STRATEGY: Superlative / Ranking Query
     Topology: [Set of Items] -> [Order by Attribute] -> [Top/Bottom N]
 
-    **APPROACH (decide SCOPE first):**
-    A. Single-comparison superlative ("highest in <named comparison>")
-       -> AggregateComparisonValues(comparison_id, value_predicate, agg="max"|"min")
-    B. Multi-comparison superlative ("largest sample size across the studies",
-       "most popular drug in the contributions") — the relevant data is split
-       across MANY Comparisons or all papers in a research field
-       -> FindFrequentValues(value_predicate, agg=...) with optional
-          research_field_id or comparison_ids scope
-       -> If you can identify 2-5 candidate Comparisons that together cover the
-          domain, prefer AggregateComparisonValues with comparison_ids="R1,R2,R3"
-    C. Top-N within one comparison -> AggregateComparisonValues with agg="mode_top"
-       (for categorical ranking) or "all_values" + manual sort (for numeric Top-N)
+    **APPROACH:**
+    1. Identify the set of items (e.g., contributions in a comparison)
+    2. Identify the ranking attribute (e.g., efficiency, capacity)
+    3. Use SPARQL with ORDER BY + LIMIT to get the top/bottom result
 
-    **GLOBAL-SCOPE WARNING (highest-leverage failure mode in v1):**
-    If the question scope is global ("across the papers", "in the studies",
-    "of all the comparisons", "most popular X overall"), do NOT silently
-    aggregate over a single Comparison and report the answer. That gives wrong
-    results when the gold spans multiple Comparisons. Either:
-      (a) reach for FindFrequentValues with no comparison_id (default scope =
-          all Contributions of any Comparison), or
-      (b) gather a list of relevant Comparisons via FindByPredicateValue /
-          FindResource(top_n=10, node_type_filter="Comparison") and pass them
-          all via AggregateComparisonValues(comparison_ids=...).
+    **CRITICAL: Comparison-based Superlatives (~55% of questions):**
+    Most superlative questions ("highest efficiency", "largest capacity") involve:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. GetComparisonContributions(comparison_id, domain_predicate) to get values
+    4. Use SPARQL ORDER BY for numeric ranking
+
+    **TIP: For "across the studies" / "globally most popular X" questions where
+    no single Comparison anchors the scope, FindFrequentValues handles cross-
+    resource aggregation directly (mode_top / max / sum) without hand-written
+    SPARQL. AggregateComparisonValues also accepts comparison_ids="R1,R2,R3"
+    for unioned multi-Comparison aggregation.**
 
     **COMPARISON VERIFICATION:** After finding a Comparison resource with FindResource,
     ALWAYS call GetComparisonContributions(comparison_id) in schema discovery mode first.
@@ -316,25 +311,24 @@ QTYPE_STRATEGIES = {
     STRATEGY: Aggregation (SUM, AVG, frequency tables)
     Topology: [Set of Items] -> [Aggregate Function] -> Result
 
-    **APPROACH (decide SCOPE first, then pick the tool):**
-    A. Single-comparison aggregate ("the studies", "the comparison", "the analysis")
-       -> AggregateComparisonValues(comparison_id, value_predicate, agg=...)
-    B. Multi-comparison aggregate (the question references several related
-       comparisons, or the gold answer can only be reached by unioning rows
-       from multiple Featured Comparisons in the same domain)
-       -> AggregateComparisonValues(comparison_id="", comparison_ids="R1,R2,R3", ...)
-    C. Cross-graph aggregate / global frequency (no Comparison anchor —
-       "most popular substrate", "largest sample size across the papers",
-       "frequency of energy sectors across the studies", "top 5 drugs in
-       contributions")
-       -> FindFrequentValues(value_predicate, agg=..., top_n=...)
-          Optionally narrow with research_field_id or comparison_ids.
+    **APPROACH:**
+    1. Identify the items and the aggregation needed
+    2. Use RunORKGSPARQL with appropriate aggregation function
+    3. For comparison-based data, navigate via compareContribution first
 
-    **PREFER the high-level aggregation tools over RunORKGSPARQL** for
-    AVG/SUM/MIN/MAX/COUNT/MODE_TOP. They handle HAS_VALUE indirection,
-    label fallbacks, and value_via_group two-hop paths automatically. Only
-    fall back to RunORKGSPARQL for set-difference (FILTER NOT EXISTS) or
-    three-hop paths the tools cannot express.
+    **COMPARISON-BASED AGGREGATION (~55% of questions):**
+    Most aggregation questions involve Comparison resources:
+      Comparison --compareContribution--> Contribution --domainPred--> Value
+    1. FindResource to locate the Comparison resource
+    2. GetComparisonContributions(comparison_id) to discover available predicates
+    3. Use AggregateComparisonValues for AVG/SUM/MIN/MAX/COUNT/MODE_TOP
+       (handles HAS_VALUE indirection automatically — prefer over hand-written SPARQL)
+
+    **TIP: For aggregations that span multiple Comparisons or the whole graph
+    (e.g. "most popular X across the studies", "largest Y in the papers"),
+    FindFrequentValues works without a single Comparison anchor and
+    AggregateComparisonValues accepts comparison_ids="R1,R2,R3" for
+    unioned multi-Comparison aggregates.**
 
     **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
       Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
@@ -997,32 +991,13 @@ Your journal has NOT changed in the last 5 iterations.
 Current journal state:
 {journal_refresh}
 
-**ESCALATION DECISION TREE — pick exactly one and act on it now:**
+**IMMEDIATE ACTIONS REQUIRED:**
+1. If FindResource isn't working, try RunORKGSPARQL instead
+2. If you can't find a paper, search for the author or research field instead
+3. If predicates don't exist, try GetResourceDetails to see available relations
+4. If data doesn't exist, acknowledge this and provide your best answer
 
-1. If the question is global-scope ("most popular X", "largest Y", "frequency of Z
-   across the studies/papers") and you have been narrowing into one Comparison:
-   → STOP. Call FindFrequentValues(value_predicate, agg="mode_top"|"max"|"sum")
-     with NO comparison_id (or with research_field_id) — the answer needs
-     cross-resource aggregation, not a single Comparison's data.
-
-2. If you have been retrying RunORKGSPARQL with variants of the same query and
-   getting empty results: the predicate ID is probably wrong. Run
-   FindPredicate(semantic_query="<words from question>") OR
-   GetComparisonContributions(<id>) to read the actual predicate IDs in scope.
-
-3. If the question expects RESOURCE IDs (a list of papers / contributions)
-   and you have only labels: switch to GetComparisonContributions(<id>) without
-   a domain_predicate, OR FindByPredicateValue, which returns IDs directly.
-
-4. If FindResource keeps returning the wrong type (e.g. a Paper when you need
-   a Comparison): re-run with node_type_filter="Comparison" and top_n=10.
-
-5. **If you have already used 25+ tool calls without journal change**: STOP
-   exploring. Synthesize the best answer you can from what is already in the
-   journal. Further tool calls are likely just thrashing.
-
-You MUST change your approach NOW — do NOT repeat the previous tool with a
-slightly different argument."""
+You MUST change your approach NOW."""
 
 # ==============================================================================
 # Synthesis Prompt
