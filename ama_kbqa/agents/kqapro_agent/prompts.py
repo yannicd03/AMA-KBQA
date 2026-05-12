@@ -15,6 +15,10 @@ USE CountEntities. It is the only tool you should reach for. It returns the EXAC
   - "How many counties pop > 7800 OR < 40M?" → CountEntities(concept="county of Pennsylvania", attribute_name="population", attribute_value="7800", operator=">", or_conditions=[{"attribute_name":"population","attribute_value":"40000000","operator":"<"}])
   - "How many mammals?" → CountEntities(concept="mammal", transitive_concept=True)
   - "How many films directed by Nolan?" → GetRelationDetails(Q25191, director, inverse) → entity_ids; then CountEntities(entity_ids=...).
+  - "How many X have attribute A OR are used by Y?" → use CountUnion with one branch
+    for the global concept/attribute filter and one branch for the explicit IDs from
+    Y's relation. Do NOT put those entity_ids on CountEntities globally; that
+    intersects the branches instead of unioning them.
 
 FORBIDDEN: FilterEntities + len(matches) [caps at limit=50, returns wrong number].
 FORBIDDEN as default: hand-written RunSPARQL COUNT [error-prone with KQAPro's namespaces]. Reach for it ONLY for genuinely 3+ hop joins where CountEntities can't express the join.
@@ -24,6 +28,12 @@ Trust the integer CountEntities returns. Don't downgrade after verification.""",
     "QueryAttr": """STRATEGY: QueryAttr → attribute lookup
 Standard: FindNode → GetAttributeDetails (literals) or GetRelationDetails (linked entities).
 Reverse: unique ID/code/URL → FindByAttribute (faster, exact).
+
+AWARD/NOMINATION QUALIFIER TRAP: If the question asks "What film/work was PERSON
+nominated for AWARD?" or "for which work did PERSON receive AWARD?", it is a
+relation qualifier question even if classification says QueryAttr. Verify the
+PERSON -> award relation, then call GetQualifierValue(person_id, "nominated for"
+or "award received", award_id, "for_work", predicate_type="relation").
 
 EMPTY-RESULT FALLBACK ORDER (do NOT skip steps):
  1. Re-check available_attributes from the FindNode result for a near-match name
@@ -43,16 +53,24 @@ EMPTY-RESULT FALLBACK ORDER (do NOT skip steps):
     "QueryAttrQualifier": """STRATEGY: QueryAttrQualifier → contextual fact (time/place on a fact)
 Key distinction: "movie's language"=NodeAttr vs "language of website dated 1998-04-09"=EdgeQualifier.
 Steps: 1) Find base fact via GetAttributeDetails/GetRelationDetails
-2) GetEdgeQualifiers(subject_id, predicate, target_value)
+2) GetQualifierValue(subject_id, predicate, target_value, qualifier_name) when the
+   qualifier is known; use GetEdgeQualifiers only to discover unknown qualifier keys.
 3) Match question word to qualifier: When→point_in_time, Where→location
 
-PREFER GetQualifierValue WHEN YOU KNOW THE QUALIFIER NAME: Once you've identified the
+MANDATORY GetQualifierValue WHEN YOU KNOW THE QUALIFIER NAME: Once you've identified the
 target statement (subject, predicate, target) AND you know which qualifier you want
 (e.g., "start time", "point in time", "location"), call
 GetQualifierValue(subject_id, predicate, target, qualifier_name). It projects ONLY that
 qualifier — no full-dict scan, fewer distractors, smaller payload, auto-handles backward
 direction. Use GetEdgeQualifiers / GetQualifiersByPredicate ONLY when you need to discover
 which qualifiers exist on the statement.
+
+QUALIFIER ALIASES:
+  - matches played / appearances for sports-team membership → number_of_matches
+  - mapped relation type / maps to / relation type for an external identifier → relation_type
+  - applies to which part / grammatical form / demonym form → applies_to_part
+  - known under / recorded in database / mentioned as work contributor → inspect identifier/name
+    qualifiers before returning the plain title/name attribute.
 
 DIRECTION RULE (critical for backward edges): When GetRelationDetails returns
 `direction: "backward"` for a triple, the canonical statement is
@@ -77,6 +95,12 @@ Unique ID/code → FindByAttribute immediately.
 Single condition: FindNode + GetRelationDetails.
 Type+attribute conditions: FilterEntities(concept=..., attribute_name=..., attribute_value=...) for combined filtering.
 Multiple conditions: RunSPARQL with multiple WHERE clauses (avoid manual intersection).
+
+AWARD/NOMINATION QUALIFIER TRAP: "What film/work was PERSON nominated for AWARD?"
+means the requested entity is the `for_work` qualifier on PERSON --nominated_for-->
+AWARD. Use GetQualifierValue(person_id, "nominated for", award_id, "for_work",
+predicate_type="relation") before raw SPARQL or generic QueryName search.
+
 Pattern: SELECT ?label WHERE { ?s prop:P1 ex:O1. ?s prop:P2 ex:O2. ?s rdfs:label ?label. }""",
 
     "QueryRelation": """STRATEGY: QueryRelation → find predicate between two entities
@@ -87,7 +111,20 @@ as it appears in available_predicates — e.g., "occupation", "cast member", "di
 Just the label. The judge measures the bare label; narrative answers fail even when
 they semantically contain the right relation.
 
-GetRelationDetails on A, check if B appears. If A→B fails, try B→A (bidirectional).
+Preferred: FindNode A and B, then call GetRelationBetween(A_id, B_id). It returns
+subject_to_object and object_to_subject separately; for "How is A related to B?" answer
+with the predicate in subject_to_object. Do NOT answer with the inverse predicate from B
+to A unless no direct A→B predicate exists and the question wording supports inverse-only.
+
+AWARD/NOMINATION QUALIFIER TRAP: If the question asks "What film/work was PERSON
+nominated for AWARD?" or "for which work did PERSON receive AWARD?", this is NOT
+asking for the bare relation `nominated for` / `award received`. First verify the
+PERSON -> award relation, then call:
+GetQualifierValue(person_id, "nominated for" or "award received", award_id,
+                  "for_work", predicate_type="relation")
+Answer the returned film/work label.
+
+Fallback: GetRelationDetails on A, check if B appears. If A→B fails, try B→A (bidirectional).
 Fallback: SELECT DISTINCT ?p ?label WHERE { { ex:A ?p ex:B } UNION { ex:B ?p ex:A } ?p rdfs:label ?label. }
 
 PASSIVE-VOICE GRAMMAR TRAP (symmetric temporal relations: followed_by, preceded_by,
@@ -112,7 +149,7 @@ the question asks *when/where/at-what-event/in-what-role* it held. Do not collap
 person, film, or award — return the qualifier (a ceremony, date, place, or role label).
 
 1) Confirm connection via GetRelationDetails.
-2) PREFERRED: GetQualifierValue(subject_id, predicate, target, qualifier_name) — direct
+2) MANDATORY when qualifier name is known: GetQualifierValue(subject_id, predicate, target, qualifier_name) — direct
    projection of one qualifier (e.g., "for work", "point in time", "ceremony"). Use this
    when you know which qualifier the wh-word targets. Fallback to GetEdgeQualifiers only
    to discover which qualifiers exist.
@@ -122,6 +159,9 @@ person, film, or award — return the qualifier (a ceremony, date, place, or rol
      Where → location
      Role → object_has_role
      Ceremony → ceremony
+     Matches played / appearances → number_of_matches
+     Relation type / maps to → relation_type
+     Applies to which part / demonym form → applies_to_part
 4) If multiple qualifiers, pick the one whose type matches the question's wh-word.
 
 COMMON TRAP: "Who was the winning individual WHEN [film] was the recipient for [award]?"
@@ -142,6 +182,13 @@ USE SelectExtreme. It runs SPARQL ORDER BY on the server and returns the actual 
 
 FORBIDDEN as default: GetRelationDetails-fetch-everything-then-compare [timeout risk on large concepts].
 FORBIDDEN as default: RunSPARQL with hand-written ORDER BY [you'll get the namespaces or the bnode-unwrap wrong].
+FORBIDDEN: comparing only a sampled subset of relation-derived candidates. If the candidate
+set comes from a relation (e.g., all release regions of a film), enumerate ALL relation
+targets, filter the set, then call SelectExtreme(entity_ids=all_filtered_candidates, ...).
+
+EVIDENCE CHECK before final answer: your trace must show (a) where the candidate set
+came from, (b) which filter removed/kept candidates, and (c) the SelectExtreme result
+over the complete filtered set. If any of those are missing, do not finalize yet.
 
 EMPTY RESULT FALLBACK (do NOT give up):
  1. Verify attribute name with FindNode on one example instance → inspect available_attributes.
@@ -178,8 +225,9 @@ For text equality ("Is the capital named Y?"): VerifyString.
 Never do mental math or guess string equality. Never reason "GetAttributeDetails returned nothing therefore the answer is no" — use VerifyFact for a definitive answer instead.""",
 
     "Query": """STRATEGY: General Query
-1) Extract all constraints. 2) Locate: ID→FindByAttribute, Name→FindNode.
-3) Verify constraints with GetAttributeDetails. 4) Single-hop→GetAttributeDetails, multi-hop→RunSPARQL.
+1) Extract all constraints. 2) Locate: exact attribute/value→FindByAttribute, Name→FindNode.
+3) Verify exact constraints with GetAttributeDetails/GetNodeSummary before trusting a same-name entity.
+4) Single-hop→GetAttributeDetails/GetRelationDetails, multi-hop→RunSPARQL.
 5) Time/place context→GetEdgeQualifiers. 6) One-hop inference OK if labeled [INFERRED].
 7) GetJournalSummary before answering."""
 }
@@ -205,6 +253,11 @@ RULES:
     while the data sits one call away. Concluding "missing" without GetNodeSummary is a
     hard error that costs guaranteed points.
 1. NO HALLUCINATION: Verify every fact with tools. One-hop inferences allowed if labeled "[INFERRED]".
+1a. EXACT CONSTRAINTS: If the question states an exact attribute/value condition
+    (official name, ID/code, date of birth, URL, ISNI, UMLS CUI, ICD, ISWC, etc.),
+    use FindByAttribute or explicitly verify that condition. Do not semantic-search
+    the whole phrase as if it were an entity name, and do not answer from a same-name
+    entity that does not satisfy the exact constraints.
 2. SCHEMA COMPLIANCE: Use predicates returned by tools. If attribute fails, check available_attributes from FindNode.
 3. PIVOT ON FAILURE: If search fails twice, try a connected entity or RunSPARQL with JOIN.
    Specifically: an empty GetRelationDetails on a band/group/award means you should try the
@@ -223,12 +276,12 @@ TOOL TIERS:
 T1 Discovery: FindNode (semantic search) | FindByAttribute (exact ID/code/URL lookup - prefer this for unique IDs)
 T1.5 Filtering: FilterEntities (by concept type and/or attribute value, supports or_conditions and transitive_concept) | QualifierFilter (by qualifier on statements)
 T2 Retrieval: GetAttributeDetails | GetRelationDetails | GetNodeSummary (all data in ONE call)
-T3 Qualifiers: GetEdgeQualifiers (facts about facts - use when question has time/place context)
+T3 Qualifiers: GetQualifierValue (preferred single qualifier projection) | GetEdgeQualifiers/GetQualifiersByPredicate (qualifier discovery)
 T4 Verify: VerifyFact (deterministic ASK for "does this fact exist") | VerifyNumericCondition (never do mental math) | VerifyString (never guess string equality)
-T5 Aggregate: CountEntities (exact, no truncation, supports OR/transitive) | SelectExtreme (argmax/argmin via SPARQL ORDER BY)
-Complex: RunSPARQL (multi-hop >2, unusual joins) | CompareEntities | FindEntitiesByRelationPath
+T5 Aggregate: CountEntities (exact, no truncation, supports OR/transitive) | CountUnion (heterogeneous OR branches) | SelectExtreme (argmax/argmin via SPARQL ORDER BY)
+Complex: GetRelationBetween (exact direct/inverse predicate labels) | RunSPARQL (multi-hop >2, unusual joins) | CompareEntities | FindEntitiesByRelationPath
 
-QUALIFIER DECISION: Question specifies TIME/PLACE for a fact? → GetEdgeQualifiers. General property? → GetAttributeDetails.
+QUALIFIER DECISION: Question specifies a known qualifier value target? → GetQualifierValue. Need to discover qualifier keys first? → GetEdgeQualifiers/GetQualifiersByPredicate. General property? → GetAttributeDetails.
 PREPOSITIONAL: "X in Y" → find Y first, then find X related to Y. Return X's attribute, not Y's.
 NESTED QUESTIONS: Work inside-out. Resolve innermost clause first, then apply outer constraints.
 
@@ -290,7 +343,11 @@ Continue. Don't revisit completed work."""
 # No progress detected template - COMPACT
 NO_PROGRESS_TEMPLATE = """NO PROGRESS (iter {iteration_count}). Journal unchanged for 5 iterations.
 {journal_refresh}
-REQUIRED: 1) Try RunSPARQL 2) Search connected entity 3) Check available_attributes 4) Or answer with current data."""
+REQUIRED: change the failure mode, not just the wording:
+1) If exact attributes/IDs/codes/names/dates are stated, use FindByAttribute or verify them.
+2) If a name is ambiguous, disambiguate by explicit constraints before answering.
+3) If doing Count/Select, prove the candidate set is complete before aggregating/selecting.
+4) Use RunSPARQL only when high-level tools cannot express the graph shape."""
 
 # Synthesis prompt template (for final answer generation) - COMPACT (benchmark)
 SYNTHESIS_PROMPT_TEMPLATE = """DISCOVERED DATA:

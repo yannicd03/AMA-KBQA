@@ -96,6 +96,7 @@ PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
                 "find_resource_cap": 8,
                 "sparql_cap": 10,
                 "context_limit": 100000,
+                "max_tool_calls": 25,
             },
         )
 

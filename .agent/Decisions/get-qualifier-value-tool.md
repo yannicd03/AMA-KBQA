@@ -85,3 +85,29 @@ GetQualifierValue(
 ## In-flight Status
 
 Sequential benchmark launched on hetzner (PID 3195921): minimax first, then gemma. Results pending.
+
+---
+
+## 2026-05-11 Follow-up: Qualifier Adoption and Synthesis Visibility
+
+The latest KQAPro trace audit found that `GetQualifierValue` was highly reliable when used (`5/5` correct in the audited Gemma run), but the agent still fell back to qualifier-dict inspection too often and synthesis sometimes lost projected qualifier values after message trimming.
+
+Implemented follow-up changes:
+
+- `GetQualifierValue` now writes projected answers to `session_journal.found_values[subject_id][predicate.qualifier_name]` in addition to `verified_facts`.
+- QueryAttrQualifier and QueryRelationQualifier prompts now use stronger alias mapping for high-risk phrases:
+  - `matches played` / `appearances` -> `number_of_matches`
+  - `relation type` / `maps to` -> `relation_type`
+  - `applies to which part`, `grammatical form`, and demonym-form questions -> `applies_to_part`
+- Added few-shot traces for UMLS CUI `relation_type`, demonym `applies_to_part`, and football `number_of_matches`.
+- `GetEdgeQualifiers` now accepts `predicate`/`target` aliases and routes relation-shaped calls toward `GetQualifiersByPredicate` or a targeted hint, reducing failures caused by choosing the wrong qualifier discovery tool.
+
+## 2026-05-11 Live Validation Follow-up
+
+Focused Hetzner v5/v6 traces exposed two additional qualifier implementation details:
+
+- Fast-path summary answers are unsafe for award/work qualifier questions like "What film was Rachel Weisz nominated for Goya Award for Best Actress?" because the answer is not the award node but the `for_work` qualifier on the nomination statement. `BaseKBQAAgent._should_skip_fast_path()` now blocks award/work qualifier wording so the full tool loop can call `GetQualifierValue`.
+- FastMCP decorated public tool names are `FunctionTool` objects at runtime, so server tools must not call one another by public decorated name. `GetEdgeQualifiers` now delegates relation-style qualifier calls through `_get_qualifiers_by_predicate_impl`, and label resolution uses `_batch_get_node_labels_impl`.
+- KQAPro stores some qualifier predicates as slash-path URIs, e.g. `http://kqapro.org/qualifier/number_of_matches_played/races/starts`, with values wrapped in blank nodes. `GetQualifierValue` now supports full/relative qualifier URIs, aliases `number_of_matches`, `matches_played`, and `appearances`, and unwraps qualifier bnodes via `rdf:value`.
+
+Focused validation: KQAPro v6 on Hetzner judged both Rachel Weisz/Goya (`Agora`) and David Cross/Bolton (`23`) correct after these changes.

@@ -26,6 +26,7 @@ Tools provided:
 - FindAuthorPapers: Find papers by author name (SPARQL-based, better than vector for names)
 - AggregateComparisonValues: AVG/SUM/MIN/MAX/COUNT/MODE_TOP over a Comparison's
   contributions, with optional GROUP BY and prefilter (handles HAS_VALUE indirection)
+- FindFrequentValues: Cross-resource aggregation without a single Comparison anchor
 - FindCoAuthors: Find co-authors of an author across all their papers in one call
 - ManageJournal: Scratchpad for state management
 - GetJournalSummary: Format journal state for synthesis
@@ -2216,6 +2217,9 @@ async def AggregateComparisonValues(
     top_n: int = 1,
     value_via_group: bool = False,
     comparison_ids: str = "",
+    value_parser: str = "leading_number",
+    return_predicate: str = "",
+    intermediate_predicate: str = "",
 ) -> str:
     """
     Aggregate values across the contributions of one or more Comparison resources.
@@ -2266,12 +2270,23 @@ async def AggregateComparisonValues(
             Use this for "extreme values of installed capacity grouped by
             energy source"-style questions where the measurement hangs off the
             grouping node.
+        intermediate_predicate: Optional predicate for nested values that should
+            be aggregated overall rather than returned per group. The value path
+            becomes ``?contrib intermediate_pred ?intermediate .
+            ?intermediate value_pred ?valueObj``. Use this for questions like
+            "average energy generation of all energy sources", where energy
+            sources are rows below each contribution.
         comparison_ids: Optional comma-separated list of Comparison IDs
             (e.g. "R153801,R155266,R44073"). When non-empty this OVERRIDES
             ``comparison_id`` and the aggregate is computed over the UNION of
             contributions from every listed Comparison. Use for cross-comparison
             questions where the relevant studies are split across multiple
             Featured Comparisons in the same domain.
+        value_parser: Numeric parsing mode for numeric aggregations. Use
+            ``embedded_number`` for values like ``n=54`` or ``86 %`` where the
+            number does not necessarily start at character 0.
+        return_predicate: Optional companion predicate to return for min/max rows
+            (e.g. metric = geographic scale, return = studied location).
 
     Returns:
         JSON with `comparison_id` (or `comparison_ids` when multi-source),
@@ -2306,6 +2321,10 @@ async def AggregateComparisonValues(
             return json.dumps({"error": "value_predicate is required"}, indent=2)
         group_pred = _norm_pred(group_by_predicate) if group_by_predicate else ""
         flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
+        return_pred = _norm_pred(return_predicate) if return_predicate else ""
+        intermediate_pred = _norm_pred(intermediate_predicate) if intermediate_predicate else ""
+        if value_parser not in {"leading_number", "embedded_number", "auto"}:
+            value_parser = "auto" if value_parser in {"string", "text", "literal"} else "leading_number"
 
         # Build optional filter clause
         filter_block = ""
@@ -2335,6 +2354,16 @@ async def AggregateComparisonValues(
         # Body retrieving raw rows: contribution, group, raw value (with
         # HAS_VALUE/label indirection lifted to ?val).
         group_select = "?group ?groupLabel " if group_pred else ""
+        intermediate_select = "?intermediate ?intermediateLabel " if intermediate_pred else ""
+        return_select = "?returnObj ?returnLabel ?returnNested " if return_pred else ""
+        return_block = (
+            f"OPTIONAL {{\n"
+            f"          ?contrib {return_pred} ?returnObj .\n"
+            f"          OPTIONAL {{ ?returnObj rdfs:label ?returnLabel }}\n"
+            f"          OPTIONAL {{ ?returnObj orkgp:HAS_VALUE ?returnNested }}\n"
+            f"        }}\n"
+            if return_pred else ""
+        )
         if group_pred and value_via_group:
             # contrib -- group_pred --> ?group -- value_pred --> ?valueObj
             value_block = (
@@ -2343,6 +2372,20 @@ async def AggregateComparisonValues(
                 f"        ?group {value_pred} ?valueObj .\n"
                 f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
                 f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
+            )
+        elif intermediate_pred:
+            group_clause = (
+                f"?contrib {group_pred} ?group .\n"
+                f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
+                if group_pred else ""
+            )
+            value_block = (
+                f"?contrib {intermediate_pred} ?intermediate .\n"
+                f"        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}\n"
+                f"        ?intermediate {value_pred} ?valueObj .\n"
+                f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
+                f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
+                f"        {group_clause}"
             )
         else:
             group_clause = (
@@ -2367,10 +2410,11 @@ async def AggregateComparisonValues(
                 f"orkgr:{comparison_id} orkgp:compareContribution ?contrib .\n"
             )
         body_query = f"""
-SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE {{
+SELECT DISTINCT ?contrib {intermediate_select}{group_select}?valueObj ?valueLabel ?nestedValue {return_select}WHERE {{
     GRAPH <{SCIQA_GRAPH}> {{
         {scope_clause}
         {value_block}
+        {return_block}
         {filter_block}
     }}
 }}
@@ -2400,12 +2444,37 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
                 v = v.split("/")[-1]
             return v
 
+        def _row_return(b):
+            if not return_pred:
+                return None
+            for key in ("returnNested", "returnLabel", "returnObj"):
+                v = b.get(key, {}).get("value")
+                if v is not None and v != "":
+                    if v.startswith("http://orkg.org/orkg/"):
+                        continue
+                    return v
+            v = b.get("returnObj", {}).get("value", "")
+            return v.split("/")[-1] if v.startswith("http") else (v or None)
+
+        def _row_intermediate(b):
+            if not intermediate_pred:
+                return None
+            v = b.get("intermediateLabel", {}).get("value") or b.get("intermediate", {}).get("value", "")
+            if v.startswith("http://orkg.org/orkg/"):
+                v = v.split("/")[-1]
+            return v or None
+
         def _to_float(s):
             if s is None:
                 return None
             t = str(s).strip().replace(",", "")
-            # strip trailing non-numeric characters (e.g. "%", units)
-            m = re.match(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?", t)
+            pattern = r"[+-]?\d+(\.\d+)?([eE][+-]?\d+)?"
+            if value_parser == "embedded_number":
+                m = re.search(pattern, t)
+            elif value_parser == "auto":
+                m = re.match(pattern, t) or re.search(pattern, t)
+            else:
+                m = re.match(pattern, t)
             if not m:
                 return None
             try:
@@ -2418,8 +2487,10 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
             contrib = b.get("contrib", {}).get("value", "").split("/")[-1]
             rows.append({
                 "contrib": contrib,
+                "intermediate": _row_intermediate(b),
                 "group": _row_group(b),
                 "value": _row_value(b),
+                "return_value": _row_return(b),
             })
 
         n_rows = len(rows)
@@ -2493,11 +2564,37 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
         else:
             result_payload = _aggregate(rows)
 
+        if return_pred and agg in ("min", "max"):
+            scored_rows = [(r, _to_float(r["value"])) for r in rows]
+            scored_rows = [(r, n) for r, n in scored_rows if n is not None]
+            if scored_rows:
+                extreme_value = (
+                    max(n for _, n in scored_rows)
+                    if agg == "max"
+                    else min(n for _, n in scored_rows)
+                )
+                extreme_rows = [r for r, n in scored_rows if n == extreme_value]
+                return_values = []
+                for r in extreme_rows:
+                    rv = r.get("return_value")
+                    if rv is not None and rv not in return_values:
+                        return_values.append(rv)
+                result_payload = {
+                    "extreme_value": extreme_value,
+                    "return_predicate": return_predicate,
+                    "return_values": return_values,
+                    "rows": extreme_rows[:50],
+                }
+
         # Journal — bucket per scope
         journal_key = scope_label
         if journal_key not in session_journal.found_values:
             session_journal.found_values[journal_key] = {}
         key = f"{agg}({value_predicate})" + (f" by {group_by_predicate}" if group_by_predicate else "")
+        if intermediate_predicate:
+            key += f" via {intermediate_predicate}"
+        if return_predicate:
+            key += f" return {return_predicate}"
         session_journal.found_values[journal_key][key] = result_payload
         session_journal.completed_steps.append(
             f"AggregateComparisonValues({scope_label}, {value_predicate}, {agg}) "
@@ -2514,6 +2611,9 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
             "value_predicate": value_predicate,
             "agg": agg,
             "group_by": group_by_predicate or None,
+            "intermediate_predicate": intermediate_predicate or None,
+            "value_parser": value_parser,
+            "return_predicate": return_predicate or None,
             "filter": (
                 {"predicate": filter_predicate, "value": filter_value, "match": filter_match}
                 if filter_predicate else None
@@ -2555,6 +2655,10 @@ async def FindFrequentValues(
     filter_match: Literal["exact", "contains", "regex"] = "contains",
     top_n: int = 5,
     limit_subjects: int = 5000,
+    value_parser: str = "leading_number",
+    return_predicate: str = "",
+    scope: Literal["comparisons", "papers"] = "comparisons",
+    split_values: bool = False,
 ) -> str:
     """
     Cross-resource aggregation: rank/count/sum values for a predicate across
@@ -2578,6 +2682,9 @@ async def FindFrequentValues(
       3. (default, none set) — every Contribution that is part of any
          Comparison (subject-of-orkgp:compareContribution). This is the
          broadest reasonable scope without scanning every triple in the graph.
+      4. ``scope="papers"`` — every paper contribution (`?paper P31 ?contrib`),
+         for questions phrased as "throughout/across the papers" rather than
+         "across featured comparisons".
 
     Args:
         value_predicate: Predicate ID of the value to count/aggregate
@@ -2596,6 +2703,14 @@ async def FindFrequentValues(
         top_n: For mode_top, how many top values to return (default 5).
         limit_subjects: Hard cap on contributions scanned (default 5000) to
             keep the SPARQL bounded; raise if a research field is large.
+        value_parser: Numeric parsing mode. Use ``embedded_number`` for values
+            like ``n=54`` or ``86 %`` where the number may not be at the start.
+        return_predicate: Optional companion predicate to return for min/max rows.
+        scope: Default global scope when no research_field_id or comparison_ids
+            is supplied: ``comparisons`` (backwards-compatible) or ``papers``.
+        split_values: If true, split semicolon/pipe-delimited categorical values
+            before counting/mode aggregation. Use for packed values such as
+            ``Plants;Insects`` in species/category predicates.
 
     Returns:
         JSON with `scope`, `value_predicate`, `agg`, optional `group_by`,
@@ -2622,6 +2737,9 @@ async def FindFrequentValues(
             return json.dumps({"error": "value_predicate is required"}, indent=2)
         group_pred = _norm_pred(group_by_predicate) if group_by_predicate else ""
         flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
+        return_pred = _norm_pred(return_predicate) if return_predicate else ""
+        if value_parser not in {"leading_number", "embedded_number", "auto"}:
+            value_parser = "auto" if value_parser in {"string", "text", "literal"} else "leading_number"
 
         # Build scope clause
         if research_field_id and research_field_id.strip():
@@ -2642,8 +2760,12 @@ async def FindFrequentValues(
             )
             scope_label = f"comparisons:{','.join(ids)}"
         else:
-            scope_clause = "?cmp orkgp:compareContribution ?contrib .\n"
-            scope_label = "all_comparisons"
+            if scope == "papers":
+                scope_clause = "?paper orkgp:P31 ?contrib .\n"
+                scope_label = "all_paper_contributions"
+            else:
+                scope_clause = "?cmp orkgp:compareContribution ?contrib .\n"
+                scope_label = "all_comparisons"
 
         # Build optional filter clause
         filter_block = ""
@@ -2670,19 +2792,29 @@ async def FindFrequentValues(
                 )
 
         group_select = "?group ?groupLabel " if group_pred else ""
+        return_select = "?returnObj ?returnLabel ?returnNested " if return_pred else ""
         group_clause = (
             f"?contrib {group_pred} ?group .\n"
             f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
             if group_pred else ""
         )
+        return_block = (
+            f"OPTIONAL {{\n"
+            f"          ?contrib {return_pred} ?returnObj .\n"
+            f"          OPTIONAL {{ ?returnObj rdfs:label ?returnLabel }}\n"
+            f"          OPTIONAL {{ ?returnObj orkgp:HAS_VALUE ?returnNested }}\n"
+            f"        }}\n"
+            if return_pred else ""
+        )
         body = f"""
-SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE {{
+SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue {return_select}WHERE {{
     GRAPH <{SCIQA_GRAPH}> {{
         {scope_clause}
         ?contrib {value_pred} ?valueObj .
         OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}
         OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}
         {group_clause}
+        {return_block}
         {filter_block}
     }}
 }} LIMIT {limit_subjects}
@@ -2710,11 +2842,29 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
                 v = v.split("/")[-1]
             return v
 
+        def _row_return(b):
+            if not return_pred:
+                return None
+            for key in ("returnNested", "returnLabel", "returnObj"):
+                v = b.get(key, {}).get("value")
+                if v is not None and v != "":
+                    if v.startswith("http://orkg.org/orkg/"):
+                        continue
+                    return v
+            v = b.get("returnObj", {}).get("value", "")
+            return v.split("/")[-1] if v.startswith("http") else (v or None)
+
         def _to_float(s):
             if s is None:
                 return None
             t = str(s).strip().replace(",", "")
-            m = re.match(r"^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?", t)
+            pattern = r"[+-]?\d+(\.\d+)?([eE][+-]?\d+)?"
+            if value_parser == "embedded_number":
+                m = re.search(pattern, t)
+            elif value_parser == "auto":
+                m = re.match(pattern, t) or re.search(pattern, t)
+            else:
+                m = re.match(pattern, t)
             if not m:
                 return None
             try:
@@ -2729,7 +2879,25 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
                 "contrib": contrib,
                 "group": _row_group(b),
                 "value": _row_value(b),
+                "return_value": _row_return(b),
             })
+
+        if split_values and agg in {"count", "count_distinct", "mode_top", "all_values"}:
+            expanded_rows: list[dict[str, Any]] = []
+            for row in rows:
+                value = row.get("value")
+                if isinstance(value, str):
+                    parts = [p.strip() for p in re.split(r"\s*[;|]\s*", value) if p.strip()]
+                else:
+                    parts = []
+                if len(parts) > 1:
+                    for part in parts:
+                        expanded = dict(row)
+                        expanded["value"] = part
+                        expanded_rows.append(expanded)
+                else:
+                    expanded_rows.append(row)
+            rows = expanded_rows
 
         n_rows = len(rows)
         if n_rows == 0:
@@ -2794,6 +2962,35 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
         else:
             result_payload = _aggregate(rows)
 
+        if return_pred and agg in ("min", "max"):
+            scored_rows = [(r, _to_float(r["value"])) for r in rows]
+            scored_rows = [(r, n) for r, n in scored_rows if n is not None]
+            if scored_rows:
+                extreme_value = (
+                    max(n for _, n in scored_rows)
+                    if agg == "max"
+                    else min(n for _, n in scored_rows)
+                )
+                extreme_rows = [r for r, n in scored_rows if n == extreme_value]
+                return_values = []
+                for r in extreme_rows:
+                    rv = r.get("return_value")
+                    if rv is not None and rv not in return_values:
+                        return_values.append(rv)
+                result_payload = {
+                    "extreme_value": extreme_value,
+                    "return_predicate": return_predicate,
+                    "return_values": return_values,
+                    "rows": extreme_rows[:50],
+                }
+
+        journal_key = scope_label
+        if journal_key not in session_journal.found_values:
+            session_journal.found_values[journal_key] = {}
+        key = f"{agg}({value_predicate})" + (f" by {group_by_predicate}" if group_by_predicate else "")
+        if return_predicate:
+            key += f" return {return_predicate}"
+        session_journal.found_values[journal_key][key] = result_payload
         session_journal.completed_steps.append(
             f"FindFrequentValues({scope_label}, {value_predicate}, {agg}) -> {n_rows} rows"
         )
@@ -2803,6 +3000,10 @@ SELECT DISTINCT ?contrib {group_select}?valueObj ?valueLabel ?nestedValue WHERE 
             "value_predicate": value_predicate,
             "agg": agg,
             "group_by": group_by_predicate or None,
+            "value_parser": value_parser,
+            "return_predicate": return_predicate or None,
+            "scope_mode": scope,
+            "split_values": split_values,
             "filter": (
                 {"predicate": filter_predicate, "value": filter_value, "match": filter_match}
                 if filter_predicate else None

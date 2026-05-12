@@ -70,6 +70,7 @@ SCORE_THRESHHOLD = get_score_threshold()
 
 NS_ENTITY = "http://kqapro.org/entity/"
 NS_PROPERTY = "http://kqapro.org/property/"
+NS_QUALIFIER = "http://kqapro.org/qualifier/"
 
 # We inject these prefixes into every SPARQL query for convenience/safety
 SPARQL_PREFIXES = """
@@ -90,6 +91,14 @@ class AppContext(BaseModel):
     chat_client: OpenAI  # Client for chat/reasoning tasks
     embedding_client: OpenAI  # Client for embedding tasks
     sparql: Any  # SPARQLWrapper is not easily Pydantic-serializable, usually fine as Any
+
+
+def _resolve_app_context(context: Any) -> AppContext:
+    """Accept either a FastMCP Context or the already-unwrapped lifespan context."""
+    request_context = getattr(context, "request_context", None)
+    if request_context is not None:
+        return request_context.lifespan_context
+    return context
 
 
 class NodeMatch(BaseModel):
@@ -603,6 +612,71 @@ async def GetNodeLabel(
 # TOOL 2: BatchGetNodeLabels
 # ============================================================================
 
+async def _batch_get_node_labels_impl(app_context: Any, node_ids: list[str]) -> str:
+    app = _resolve_app_context(app_context)
+
+    try:
+        if not node_ids:
+            return json.dumps({"status": "No IDs"}, indent=2)
+
+        unique_ids = list(set(node_ids))
+        values_clause = " ".join([f"ex:{nid}" for nid in unique_ids])
+
+        query = f"""
+        SELECT ?entity ?label WHERE {{
+            VALUES ?entity {{ {values_clause} }}
+            OPTIONAL {{ ?entity rdfs:label ?label . }}
+        }}
+        """
+
+        full_query = SPARQL_PREFIXES + query
+
+        app.sparql.setQuery(full_query)
+        app.sparql.setReturnFormat(JSON)
+
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        resolved = {}
+        found_ids = set()
+
+        for binding in bindings:
+            entity_uri = binding.get("entity", {}).get("value", "")
+            label = binding.get("label", {}).get("value", None)
+
+            entity_id = entity_uri.split("/")[-1]
+
+            if label:
+                resolved[entity_id] = label
+                found_ids.add(entity_id)
+                session_journal.visited_nodes[entity_id] = label
+                for _attrs in session_journal.found_values.values():
+                    for _attr_data in _attrs.values():
+                        if isinstance(_attr_data, list):
+                            for _item in _attr_data:
+                                if isinstance(_item, dict) and _item.get("related_id") == entity_id:
+                                    _item["value"] = label
+
+        not_found = [nid for nid in unique_ids if nid not in found_ids]
+
+        for nid in not_found:
+            session_journal.add_failed_attempt(f"BatchGetNodeLabels: {nid} not found")
+
+        response = {
+            "resolved": resolved,
+            "not_found": not_found,
+            "status": f"Resolved {len(resolved)}/{len(unique_ids)} entities"
+        }
+
+        logger.info(f"BatchGetNodeLabels: Resolved {len(resolved)}/{len(unique_ids)} IDs")
+        return json.dumps(response, indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in batch label resolution: {str(e)}"
+        logger.error(error_msg)
+        return json.dumps({"error": error_msg}, indent=2)
+
+
 @mcp.tool()
 async def BatchGetNodeLabels(
     app_context: Context,
@@ -610,85 +684,18 @@ async def BatchGetNodeLabels(
 ) -> str:
     """
     Efficiently resolve MULTIPLE entity IDs to labels in a single SPARQL call.
-    
+
     **Performance Optimization:**
     - Use this instead of calling GetNodeLabel multiple times
     - Single SPARQL query resolves all IDs at once
-    
+
     Args:
         node_ids: List of entity IDs to resolve (e.g., ["Q1860", "Q217008", "Q699224"])
-    
+
     Returns:
         JSON with resolved labels and not_found list
     """
-    app = app_context.request_context.lifespan_context
-
-    try:
-        if not node_ids:
-            return json.dumps({"status": "No IDs"}, indent=2)
-        
-        unique_ids = list(set(node_ids))
-        values_clause = " ".join([f"ex:{nid}" for nid in unique_ids])
-        
-        query = f"""
-        SELECT ?entity ?label WHERE {{
-            VALUES ?entity {{ {values_clause} }}
-            OPTIONAL {{ ?entity rdfs:label ?label . }}
-        }}
-        """
-        
-        full_query = SPARQL_PREFIXES + query
-        
-        # FIX: sparql vom app context
-        app.sparql.setQuery(full_query)
-        app.sparql.setReturnFormat(JSON)
-        
-        results = app.sparql.query().convert()
-        bindings = results.get("results", {}).get("bindings", [])
-        
-        resolved = {}
-        found_ids = set()
-        
-        for binding in bindings:
-            entity_uri = binding.get("entity", {}).get("value", "")
-            label = binding.get("label", {}).get("value", None)
-            
-            # Extract entity ID from URI
-            entity_id = entity_uri.split("/")[-1]
-            
-            if label:
-                resolved[entity_id] = label
-                found_ids.add(entity_id)
-                # Update journal
-                session_journal.visited_nodes[entity_id] = label
-                # Backfill any previously-stored relation targets that refer
-                # to this ID so the journal summary shows the human label.
-                for _attrs in session_journal.found_values.values():
-                    for _attr_data in _attrs.values():
-                        if isinstance(_attr_data, list):
-                            for _item in _attr_data:
-                                if isinstance(_item, dict) and _item.get("related_id") == entity_id:
-                                    _item["value"] = label
-        
-        not_found = [nid for nid in unique_ids if nid not in found_ids]
-        
-        # Log failed resolutions
-        for nid in not_found:
-            session_journal.add_failed_attempt(f"BatchGetNodeLabels: {nid} not found")
-        
-        response = {
-            "resolved": resolved,
-            "not_found": not_found,
-            "status": f"Resolved {len(resolved)}/{len(unique_ids)} entities"
-        }
-        
-        logger.info(f"BatchGetNodeLabels: Resolved {len(resolved)}/{len(unique_ids)} IDs")
-        return json.dumps(response, indent=2)
-        
-    except Exception as e:
-        error_msg = f"Error in batch label resolution: {str(e)}"
-        logger.error(error_msg)
-        return json.dumps({"error": error_msg}, indent=2)
+    return await _batch_get_node_labels_impl(app_context, node_ids)
 
 
 # ============================================================================
@@ -725,7 +732,7 @@ async def GetSchemaForAttribute(
         """
         
         full_query = SPARQL_PREFIXES + query
-        app_context = app_context.request_context.lifespan_context
+        app_context = _resolve_app_context(app_context)
         app_context.sparql.setQuery(full_query)         # ✅ CORRECT!
         app_context.sparql.setReturnFormat(JSON)        # ✅ CORRECT!
     
@@ -849,8 +856,11 @@ async def GetSchemaForAttribute(
 async def GetEdgeQualifiers(
     app_context: Context,
     base_node_id: str,
-    attribute_name: str,
-    attribute_value: Optional[str] = None
+    attribute_name: str = "",
+    attribute_value: Optional[str] = None,
+    predicate: Optional[str] = None,
+    target: Optional[str] = None,
+    target_node_id: Optional[str] = None,
 ) -> str:
     """
     Extract ALL qualifiers from a specific attribute statement.
@@ -869,6 +879,42 @@ async def GetEdgeQualifiers(
         JSON with base_node, attribute, value, qualifiers, and status
     """
     try:
+        if predicate and not attribute_name:
+            normalized_target = target_node_id or target
+            if normalized_target and re.match(r"^Q\d+$", normalized_target.strip()):
+                return await _get_qualifiers_by_predicate_impl(
+                    app_context,
+                    base_node_id=base_node_id,
+                    relation_name=predicate,
+                    target_node_id=normalized_target.strip(),
+                )
+            response = {
+                "base_node": base_node_id,
+                "attribute": attribute_name,
+                "relation_hint": predicate,
+                "target": normalized_target,
+                "qualifiers": {},
+                "status": (
+                    "GetEdgeQualifiers received relation-style arguments. "
+                    "For relation qualifiers, call GetQualifiersByPredicate or "
+                    "GetQualifierValue(subject_id, predicate, target_qid, qualifier_name, "
+                    "predicate_type='relation')."
+                ),
+            }
+            session_journal.add_failed_attempt(
+                f"GetEdgeQualifiers({base_node_id}, {predicate}): relation-style call needs target Q-id"
+            )
+            return json.dumps(response, indent=2)
+
+        if not attribute_name:
+            return json.dumps({
+                "error": (
+                    "attribute_name is required for attribute qualifiers. "
+                    "For relation qualifiers, pass predicate plus target Q-id, or use "
+                    "GetQualifiersByPredicate/GetQualifierValue."
+                )
+            }, indent=2)
+
         # Normalize attribute name
         attr_normalized = attribute_name.replace(" ", "_")
         
@@ -903,7 +949,7 @@ async def GetEdgeQualifiers(
         """
         
         full_query = SPARQL_PREFIXES + query
-        app_context = app_context.request_context.lifespan_context
+        app_context = _resolve_app_context(app_context)
         app_context.sparql.setQuery(full_query)             # ✅ CORRECT!
         app_context.sparql.setReturnFormat(JSON)            # ✅ CORRECT!
 
@@ -997,7 +1043,7 @@ async def GetEdgeQualifiers(
         
         # Batch resolve entity IDs
         if entity_ids_to_resolve:
-            batch_result = await BatchGetNodeLabels(app_context, entity_ids_to_resolve)
+            batch_result = await _batch_get_node_labels_impl(app_context, entity_ids_to_resolve)
             batch_data = json.loads(batch_result)
             resolved = batch_data.get("resolved", {})
             
@@ -1039,9 +1085,8 @@ async def GetEdgeQualifiers(
 # TOOL 5: GetQualifiersByPredicate
 # ============================================================================
 
-@mcp.tool()
-async def GetQualifiersByPredicate(
-    app_context: Context,
+async def _get_qualifiers_by_predicate_impl(
+    app_context: Any,
     base_node_id: str,
     relation_name: str,
     target_node_id: Optional[str] = None
@@ -1158,7 +1203,7 @@ async def GetQualifiersByPredicate(
         
         # Batch resolve entity IDs
         if entity_ids_to_resolve:
-            batch_result = await BatchGetNodeLabels(app_context, entity_ids_to_resolve)
+            batch_result = await _batch_get_node_labels_impl(app_context, entity_ids_to_resolve)
             batch_data = json.loads(batch_result)
             resolved = batch_data.get("resolved", {})
             
@@ -1195,6 +1240,27 @@ async def GetQualifiersByPredicate(
         logger.error(error_msg)
         session_journal.add_failed_attempt(f"GetQualifiersByPredicate: {str(e)}")
         return json.dumps({"error": error_msg}, indent=2)
+
+
+@mcp.tool()
+async def GetQualifiersByPredicate(
+    app_context: Context,
+    base_node_id: str,
+    relation_name: str,
+    target_node_id: Optional[str] = None
+) -> str:
+    """
+    Find ALL qualifiers for a specific RELATION statement (not attribute).
+
+    Use this for relationship metadata, for example award `for_work`, sports-team
+    `number_of_matches`, or spouse `start_time` qualifiers.
+    """
+    return await _get_qualifiers_by_predicate_impl(
+        app_context,
+        base_node_id=base_node_id,
+        relation_name=relation_name,
+        target_node_id=target_node_id,
+    )
 
 
 # ============================================================================
@@ -1243,6 +1309,22 @@ async def GetQualifierValue(
     try:
         pred_normalized = predicate.replace(" ", "_")
         qual_normalized = qualifier_name.replace(" ", "_")
+        qualifier_aliases = {
+            "number_of_matches": ["number_of_matches_played/races/starts"],
+            "matches_played": ["number_of_matches_played/races/starts"],
+            "appearances": ["number_of_matches_played/races/starts"],
+        }
+        qualifier_variants = [qual_normalized]
+        for alias in qualifier_aliases.get(qual_normalized, []):
+            if alias not in qualifier_variants:
+                qualifier_variants.append(alias)
+
+        def _qualifier_term(name: str) -> str:
+            if name.startswith("http"):
+                return f"<{name}>"
+            if "/" in name:
+                return f"<{NS_QUALIFIER}{name}>"
+            return f"qual:{name}"
 
         # Detect target shape: Q-id ⇒ entity (likely relation); otherwise literal (likely attribute).
         target_is_qid = bool(re.match(r"^Q\d+$", target.strip()))
@@ -1257,7 +1339,7 @@ async def GetQualifierValue(
 
         sparql_app_context = app_context.request_context.lifespan_context
 
-        def run_query(mode: str, direction: str) -> list:
+        def run_query(mode: str, direction: str, qualifier_variant: str) -> list:
             """Build and run a single SPARQL projection. direction in {"forward","backward"}."""
             if mode == "relation":
                 if direction == "forward":
@@ -1287,7 +1369,9 @@ async def GetQualifierValue(
             {SPARQL_PREFIXES}
             SELECT DISTINCT ?qval ?qlabel WHERE {{
                 {stmt_pattern}
-                ?stmt qual:{qual_normalized} ?qval .
+                ?stmt {_qualifier_term(qualifier_variant)} ?qraw .
+                OPTIONAL {{ ?qraw rdf:value ?qrawValue . }}
+                BIND(COALESCE(?qrawValue, ?qraw) AS ?qval)
                 OPTIONAL {{ ?qval rdfs:label ?qlabel . }}
             }}
             LIMIT 50
@@ -1301,12 +1385,17 @@ async def GetQualifierValue(
         bindings: list = []
         matched_mode = None
         matched_direction = None
+        matched_qualifier = qual_normalized
         for mode in modes_to_try:
             for direction in ("forward", "backward"):
-                bindings = run_query(mode, direction)
+                for qualifier_variant in qualifier_variants:
+                    bindings = run_query(mode, direction, qualifier_variant)
+                    if bindings:
+                        matched_mode = mode
+                        matched_direction = direction
+                        matched_qualifier = qualifier_variant
+                        break
                 if bindings:
-                    matched_mode = mode
-                    matched_direction = direction
                     break
             if bindings:
                 break
@@ -1317,6 +1406,7 @@ async def GetQualifierValue(
                 "predicate": predicate,
                 "target": target,
                 "qualifier_name": qualifier_name,
+                "tried_qualifier_names": qualifier_variants,
                 "values": [],
                 "direction": None,
                 "status": (
@@ -1353,7 +1443,7 @@ async def GetQualifierValue(
                 values.append({"value": qval_uri, "type": "literal"})
 
         if entity_ids_to_resolve:
-            batch_result = await BatchGetNodeLabels(app_context, entity_ids_to_resolve)
+            batch_result = await _batch_get_node_labels_impl(app_context, entity_ids_to_resolve)
             resolved = json.loads(batch_result).get("resolved", {})
             for entry in values:
                 if entry.get("type") == "entity" and "entity_label" not in entry:
@@ -1361,12 +1451,29 @@ async def GetQualifierValue(
                     if eid in resolved:
                         entry["entity_label"] = resolved[eid]
 
+        if subject_id not in session_journal.found_values:
+            session_journal.found_values[subject_id] = {}
+        found_key = f"{predicate}.{qualifier_name}"
+        session_journal.found_values[subject_id][found_key] = [
+            {
+                "value": entry.get("entity_label") or entry.get("value"),
+                "related_id": entry.get("entity_id"),
+                "type": entry.get("type"),
+                "target": target,
+                "direction": matched_direction,
+                "matched_as": matched_mode,
+                "matched_qualifier": matched_qualifier,
+            }
+            for entry in values
+        ]
+
         session_journal.verified_facts.append({
             "type": "qualifier_value",
             "subject": subject_id,
             "predicate": predicate,
             "target": target,
             "qualifier": qualifier_name,
+            "matched_qualifier": matched_qualifier,
             "value_count": len(values),
             "matched_as": matched_mode,
             "direction": matched_direction,
@@ -4029,6 +4136,16 @@ class VerifyFactResponse(BaseModel):
     )
 
 
+class RelationBetweenResponse(BaseModel):
+    """Response from GetRelationBetween."""
+    subject_id: str = Field(..., description="Question-order subject entity.")
+    object_id: str = Field(..., description="Question-order object entity.")
+    subject_to_object: list[str] = Field(default_factory=list, description="Predicate labels from subject to object.")
+    object_to_subject: list[str] = Field(default_factory=list, description="Predicate labels from object to subject.")
+    preferred_answer: str = Field(default="", description="Best predicate label for the question order.")
+    status: str = Field(..., description="Status message.")
+
+
 @mcp.tool
 @log_tool_duration
 def CountEntities(
@@ -4171,6 +4288,229 @@ def CountEntities(
         logger.error("CountEntities: Failed query was:\n{}", query)
         session_journal.add_failed_attempt(f"CountEntities({desc}): {str(e)[:120]}")
         return CountResponse(count=0, description=desc, status=f"error: {str(e)[:200]}")
+
+
+@mcp.tool
+@log_tool_duration
+def CountUnion(
+    branches: list[dict],
+    context: Context,
+) -> CountResponse:
+    """
+    Count the DISTINCT union of heterogeneous entity branches.
+
+    Use this for "How many X satisfy A OR are in explicit/relation-derived set B?"
+    questions where applying `entity_ids` globally would incorrectly intersect all
+    branches. Each branch may contain `concept`, `attribute_name`, `attribute_value`,
+    `operator`, `entity_ids`, `or_conditions`, `not_conditions`, and
+    `transitive_concept`.
+
+    Example:
+      CountUnion(branches=[
+        {"concept": "woodwind instrument", "attribute_name": "Hornbostel-Sachs classification",
+         "attribute_value": "421.221.12", "transitive_concept": true},
+        {"entity_ids": ["Q1414932", "Q1463985"]}
+      ])
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
+
+    if not branches:
+        return CountResponse(count=0, description="(no branches)", status="No branches supplied.")
+
+    branch_blocks: list[str] = []
+    desc_parts: list[str] = []
+
+    for i, branch in enumerate(branches):
+        if not isinstance(branch, dict):
+            continue
+
+        pre_blocks: list[str] = []
+        entity_ids = branch.get("entity_ids") or []
+        if entity_ids:
+            entity_uris = " ".join(format_entity_uri(eid) for eid in entity_ids)
+            pre_blocks.append(f"VALUES ?entity {{ {entity_uris} }}")
+
+        concept = branch.get("concept", "")
+        transitive = bool(branch.get("transitive_concept", False))
+        concept_block = _concept_clause(concept, transitive)
+        if concept_block:
+            pre_blocks.append(concept_block.rstrip())
+
+        attr_blocks: list[str] = []
+        attribute_name = branch.get("attribute_name", "")
+        if attribute_name:
+            attr_blocks.append(_attr_condition_sparql(
+                attribute_name,
+                str(branch.get("attribute_value", "")),
+                branch.get("operator", "="),
+                f"u{i}_0",
+            ))
+        for j, cond in enumerate(branch.get("or_conditions") or [], start=1):
+            attr_blocks.append(_attr_condition_sparql(
+                cond.get("attribute_name", ""),
+                str(cond.get("attribute_value", "")),
+                cond.get("operator", "="),
+                f"u{i}_{j}",
+            ))
+
+        attr_block = ""
+        if len(attr_blocks) == 1:
+            attr_block = attr_blocks[0]
+        elif len(attr_blocks) > 1:
+            attr_block = " UNION ".join("{ " + block + " }" for block in attr_blocks)
+
+        not_blocks: list[str] = []
+        for j, cond in enumerate(branch.get("not_conditions") or [], start=0):
+            cond_sparql = _attr_condition_sparql(
+                cond.get("attribute_name", ""),
+                str(cond.get("attribute_value", "")),
+                cond.get("operator", "="),
+                f"un{i}_{j}",
+            )
+            not_blocks.append("FILTER NOT EXISTS { " + cond_sparql.rstrip() + " }")
+
+        body = "\n        ".join(filter(None, pre_blocks + [attr_block] + not_blocks))
+        if not body.strip():
+            continue
+        branch_blocks.append("{\n        " + body + "\n      }")
+
+        bits = []
+        if concept:
+            bits.append(f"type={'≤' if transitive else ''}{concept}")
+        if attribute_name:
+            bits.append(f"{attribute_name}{branch.get('operator', '=')}{branch.get('attribute_value', '')}")
+        if entity_ids:
+            bits.append(f"{len(entity_ids)} explicit ids")
+        desc_parts.append(" + ".join(bits) or f"branch {i + 1}")
+
+    if not branch_blocks:
+        return CountResponse(count=0, description="(empty branches)", status="No usable branch filters supplied.")
+
+    union_body = "\n      UNION\n      ".join(branch_blocks)
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT (COUNT(DISTINCT ?entity) AS ?c) WHERE {{
+      {union_body}
+    }}
+    """
+    desc = " OR ".join(desc_parts)
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+        count = int(bindings[0]["c"]["value"]) if bindings else 0
+
+        key = "count_union"
+        session_journal.found_values.setdefault(key, {})[desc] = count
+        session_journal.verified_facts.append({
+            "fact": f"CountUnion[{desc}] = {count}",
+            "source": "CountUnion",
+        })
+        session_journal.add_completed_step(f"CountUnion({desc}) = {count}")
+        return CountResponse(count=count, description=desc, status="ok")
+
+    except Exception as e:
+        logger.error(f"CountUnion failed: {e}")
+        logger.error("CountUnion: Failed query was:\n{}", query)
+        session_journal.add_failed_attempt(f"CountUnion({desc}): {str(e)[:120]}")
+        return CountResponse(count=0, description=desc, status=f"error: {str(e)[:200]}")
+
+
+@mcp.tool
+@log_tool_duration
+def GetRelationBetween(
+    subject_id: str,
+    object_id: str,
+    context: Context,
+) -> RelationBetweenResponse:
+    """
+    Return exact predicate labels between two entities in both directions.
+
+    Use this for QueryRelation questions such as "How is A related to B?". The
+    preferred answer is the predicate from `subject_id` to `object_id` when it
+    exists; inverse predicates are returned separately to prevent direction swaps.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    sparql: SPARQLWrapper = app_context.sparql
+
+    def _label_from_uri(uri: str) -> str:
+        local = uri.rstrip("/").split("/")[-1]
+        return local.replace("_", " ")
+
+    query = f"""
+    {SPARQL_PREFIXES}
+    SELECT ?direction ?p WHERE {{
+      {{
+        ex:{subject_id} ?p ex:{object_id} .
+        BIND("subject_to_object" AS ?direction)
+      }} UNION {{
+        ex:{object_id} ?p ex:{subject_id} .
+        BIND("object_to_subject" AS ?direction)
+      }}
+      FILTER(STRSTARTS(STR(?p), "http://kqapro.org/property/"))
+    }}
+    """
+
+    try:
+        sparql.setQuery(query)
+        results = sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        direct: list[str] = []
+        inverse: list[str] = []
+        for binding in bindings:
+            label = _label_from_uri(binding.get("p", {}).get("value", ""))
+            direction = binding.get("direction", {}).get("value", "")
+            if direction == "subject_to_object" and label not in direct:
+                direct.append(label)
+            elif direction == "object_to_subject" and label not in inverse:
+                inverse.append(label)
+
+        preferred = direct[0] if direct else (inverse[0] if inverse else "")
+        status = "ok" if preferred else "No relation found between the two entities."
+
+        if preferred:
+            key = f"relation_to_{object_id}"
+            session_journal.found_values.setdefault(subject_id, {})[key] = preferred
+            session_journal.verified_facts.append({
+                "subject": subject_id,
+                "relation": preferred,
+                "related_id": object_id,
+                "direction": "forward" if direct else "inverse_only",
+                "source": "GetRelationBetween",
+            })
+            session_journal.add_completed_step(
+                f"GetRelationBetween({subject_id}, {object_id}) -> {preferred}"
+            )
+        else:
+            session_journal.add_failed_attempt(
+                f"GetRelationBetween({subject_id}, {object_id}): no relation"
+            )
+
+        return RelationBetweenResponse(
+            subject_id=subject_id,
+            object_id=object_id,
+            subject_to_object=direct,
+            object_to_subject=inverse,
+            preferred_answer=preferred,
+            status=status,
+        )
+
+    except Exception as e:
+        logger.error(f"GetRelationBetween failed: {e}")
+        session_journal.add_failed_attempt(
+            f"GetRelationBetween({subject_id}, {object_id}): {str(e)[:120]}"
+        )
+        return RelationBetweenResponse(
+            subject_id=subject_id,
+            object_id=object_id,
+            subject_to_object=[],
+            object_to_subject=[],
+            preferred_answer="",
+            status=f"error: {str(e)[:200]}",
+        )
 
 
 @mcp.tool

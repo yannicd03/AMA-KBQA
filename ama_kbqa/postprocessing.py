@@ -696,6 +696,75 @@ def evaluate_accuracy_simple(predicted: Optional[str], gold: str, q_type: str = 
     return False
 
 
+def _iter_message_texts(agent_messages: List[Any]) -> List[str]:
+    """Return string content from dict or SDK-style chat messages."""
+    texts: List[str] = []
+    for msg in agent_messages or []:
+        if isinstance(msg, dict):
+            content = msg.get("content")
+        else:
+            content = getattr(msg, "content", None)
+        if isinstance(content, str) and content.strip():
+            texts.append(content)
+    return texts
+
+
+def _json_objects_from_text(text: str) -> List[Dict[str, Any]]:
+    """Extract JSON objects from raw tool output or text-mode wrappers."""
+    candidates = [text]
+    candidates.extend(re.findall(r"<tool_result[^>]*>(.*?)</tool_result>", text, flags=re.DOTALL))
+
+    objects: List[Dict[str, Any]] = []
+    for candidate in candidates:
+        s = candidate.strip()
+        if not s:
+            continue
+        try:
+            obj = json.loads(s)
+            if isinstance(obj, dict):
+                objects.append(obj)
+                continue
+        except Exception:
+            pass
+
+        start = s.find("{")
+        end = s.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                obj = json.loads(s[start:end + 1])
+                if isinstance(obj, dict):
+                    objects.append(obj)
+            except Exception:
+                pass
+    return objects
+
+
+def normalize_verify_answer_from_trace(
+    predicted: Optional[str],
+    agent_messages: List[Any],
+) -> Optional[str]:
+    """Return 'yes'/'no' for KQAPro Verify rows when a deterministic verdict exists."""
+    verdict: Optional[str] = None
+    for text in _iter_message_texts(agent_messages):
+        if not (
+            "VerifyFact" in text
+            or "VerifyNumericCondition" in text
+            or "VerifyString" in text
+            or '"verdict"' in text
+        ):
+            continue
+        for obj in _json_objects_from_text(text):
+            raw = str(obj.get("verdict", "")).upper()
+            if raw in {"TRUE", "FALSE"}:
+                verdict = raw
+
+    if verdict == "TRUE":
+        return "yes"
+    if verdict == "FALSE":
+        return "no"
+    return None
+
+
 # ============================================================================
 # POSTPROCESSOR CLASS
 # ============================================================================
@@ -786,6 +855,13 @@ class PostProcessor:
         """
         result = PostProcessingResult()
         result.intermediate_thinking = extract_intermediate_thinking(agent_messages)
+
+        if self.agent_name == "kqapro" and q_type == "Verify":
+            normalized = normalize_verify_answer_from_trace(predicted, agent_messages)
+            if normalized:
+                result.selected_answer = normalized
+                result.accuracy = normalized.lower().strip() == gold.lower().strip()
+                return result
 
         if self.mode == "choice":
             result = self._evaluate_choice(question, predicted, gold, choices, agent_messages)

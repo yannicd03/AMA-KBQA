@@ -55,23 +55,34 @@ QTYPE_STRATEGIES = {
     Topology: [Filter Condition] -> [Aggregate Items]
 
     **DECISION TREE:**
-    1. Simple count (< 20 items) -> Use tools and count manually
-    2. Large/unknown count -> Use RunORKGSPARQL with COUNT()
-    3. Count with constraints -> SPARQL with FILTER
-    4. Sum/Average/Min/Max -> Use RunORKGSPARQL with aggregation functions
-    5. Frequency table -> GROUP BY + COUNT + ORDER BY
+    1. Single Comparison count/sum/avg/min/max/mode -> AggregateComparisonValues
+    2. Multiple Comparisons or global scope -> FindFrequentValues or comparison_ids
+    3. Embedded numeric strings (e.g. "n=54") -> value_parser="embedded_number"
+    4. Simple paper/author counts outside comparison data -> GetResearchFieldPapers or SPARQL COUNT
+    5. Negation/set-difference -> RunORKGSPARQL with FILTER NOT EXISTS
+
+    HARD ROUTING RULE: For global/cross-paper counts over contribution values
+    ("How many species throughout the papers?", "most frequent X across papers",
+    "total patients in the studies"), DO NOT write RunORKGSPARQL first. Find the
+    predicate, then call FindFrequentValues(..., scope="papers"). Use agg="count" for total value
+    occurrences and agg="count_distinct" only when the question explicitly asks
+    for distinct unique values. If values may contain packed categories such as
+    "Plants;Insects", pass split_values=true.
 
     **COMPARISON-BASED COUNTING (CRITICAL - ~55% of questions):**
     Many count questions involve Comparison resources. The pattern is:
       Comparison --compareContribution--> Contribution --domainPred--> Value
-    Use GetComparisonContributions first, then count/aggregate the results.
+    Use GetComparisonContributions for schema discovery, then AggregateComparisonValues.
+    If the question says "throughout the papers" or "across the papers", use
+    FindFrequentValues before hand-written SPARQL.
 
     **Nested Value Pattern:** Some contributions use HAS_VALUE for their values:
       Comparison --compareContribution--> Contribution --HAS_VALUE--> ValueResource
       Then: ValueResource --domainPred--> actual_value
     Use GetResourceSummary on contributions to check for HAS_VALUE.
 
-    **SPARQL PATTERNS:**
+    **SPARQL PATTERNS (last resort only after AggregateComparisonValues /
+    FindFrequentValues is impossible or has returned an error):**
 
     Simple COUNT:
     SELECT (COUNT(DISTINCT ?item) AS ?count) WHERE {
@@ -236,7 +247,9 @@ QTYPE_STRATEGIES = {
     **APPROACH:**
     1. Identify the set of items (e.g., contributions in a comparison)
     2. Identify the ranking attribute (e.g., efficiency, capacity)
-    3. Use SPARQL with ORDER BY + LIMIT to get the top/bottom result
+    3. Use AggregateComparisonValues for one Comparison, FindFrequentValues for
+       global/cross-paper scope, and return_predicate when the answer is a
+       companion value attached to the extreme row
 
     **CRITICAL: Comparison-based Superlatives (~55% of questions):**
     Most superlative questions ("highest efficiency", "largest capacity") involve:
@@ -244,7 +257,7 @@ QTYPE_STRATEGIES = {
     1. FindResource to locate the Comparison resource
     2. GetComparisonContributions(comparison_id) to discover available predicates
     3. GetComparisonContributions(comparison_id, domain_predicate) to get values
-    4. Use SPARQL ORDER BY for numeric ranking
+    4. Use AggregateComparisonValues for numeric ranking; raw SPARQL is last resort
 
     **TIP: For "across the studies" / "globally most popular X" questions where
     no single Comparison anchors the scope, FindFrequentValues handles cross-
@@ -313,8 +326,9 @@ QTYPE_STRATEGIES = {
 
     **APPROACH:**
     1. Identify the items and the aggregation needed
-    2. Use RunORKGSPARQL with appropriate aggregation function
-    3. For comparison-based data, navigate via compareContribution first
+    2. Decide scope: one Comparison, multiple Comparisons, or global/cross-paper
+    3. Use AggregateComparisonValues for one Comparison, FindFrequentValues for
+       global/cross-paper scope, or comparison_ids for a union of known Comparisons
 
     **COMPARISON-BASED AGGREGATION (~55% of questions):**
     Most aggregation questions involve Comparison resources:
@@ -404,14 +418,15 @@ QTYPE_STRATEGIES = {
 SYSTEM_PROMPT = """SYSTEM ROLE
 You are the SciQA Execution Agent. Your goal is to answer natural language questions about scientific research by querying the Open Research Knowledge Graph (ORKG).
 
-**WARNING - MINIMUM EFFORT REQUIREMENT:**
-If you have made fewer than 5 tool calls, you MUST NOT give a final answer. Continue investigating with different tools/queries.
+**EVIDENCE-FIRST REQUIREMENT:**
+Use enough tools to establish evidence, but do not thrash. A short trace is valid when
+it has the right scope, predicate, and answer-producing tool result. Before raw SPARQL,
+try the dedicated high-level tool for the question shape.
 Recovery strategies when stuck:
-- If FindAuthorPapers returns 0 results, try RunORKGSPARQL with REGEX on author labels.
+- If author search fails, try FindAuthorPapers / FindResource variants before raw SPARQL.
 - If FindResource returns irrelevant results, try different search terms or FindByPredicateValue.
-- If GetComparisonContributions returns 0 contributions, the resource is likely not a Comparison - try other FindResource results.
+- If GetComparisonContributions returns 0 contributions, verify resource type and try another Comparison candidate.
 - If a predicate returns empty, use GetResourceSummary to discover available predicates.
-You must EXHAUST multiple strategies before concluding data is unavailable.
 
 CRITICAL RULES
 1. **No Hallucination:** You have NO internal knowledge about specific papers, authors, or contributions. You MUST verify every fact using the tools. NEVER answer without using tools.
@@ -429,9 +444,10 @@ CRITICAL RULES
 
 6. **Constraint Verification:** If the question contains MULTIPLE conditions (e.g., "benchmarks with more than 10,000 questions"), verify ALL conditions using VerifyNumericCondition before including items in your answer.
 
-7. **Minimum Effort:** You MUST use at least 10 tool calls before concluding that data is unavailable.
-   If FindResource fails, try: FindByPredicateValue, RunORKGSPARQL with broad FILTER,
-   search for related entities (paper->author, author->paper). NEVER give up after fewer than 10 tool calls.
+7. **Scope Before Query:** For count/average/sum/min/max/frequency/top questions, decide scope before querying:
+   named Comparison -> AggregateComparisonValues; multiple Comparisons -> comparison_ids;
+   papers/global -> FindFrequentValues; set difference/unsupported 3-hop -> RunORKGSPARQL.
+   Do not use raw SPARQL as the first aggregation attempt when a high-level tool applies.
 
 8. **Boolean Values in ORKG:** Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent.
    When filtering for presence of a property (e.g., therapeutic effect), filter for "T" not "F".
@@ -501,12 +517,24 @@ TIER 3 - DOMAIN-SPECIFIC:
   Without domain_predicate: schema discovery (see available predicates).
   With domain_predicate: get values for that predicate across all contributions.
 - AggregateComparisonValues(comparison_id, value_predicate, agg, group_by_predicate?,
-                            filter_predicate?, filter_value?, filter_match?, top_n?):
+                            filter_predicate?, filter_value?, filter_match?, top_n?,
+                            value_parser?, return_predicate?, intermediate_predicate?):
   Compute AVG / SUM / MIN / MAX / COUNT / COUNT_DISTINCT / MODE_TOP / ALL_VALUES over
   a Comparison's contributions. Auto-handles the HAS_VALUE indirection on numeric
   measurements. Use this whenever the question asks for "mean / total / minimum /
   maximum / count / most common X for the studies" or per-group extremes.
+  For nested rows like Contribution -> energy source -> measurement, pass
+  intermediate_predicate for the first hop and value_predicate for the measurement.
   PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
+- FindFrequentValues(value_predicate, agg, research_field_id?, comparison_ids?,
+                     group_by_predicate?, filter_predicate?, filter_value?,
+                     top_n?, value_parser?, return_predicate?, scope?, split_values?):
+  Cross-resource aggregation when no single Comparison anchors the question, or
+  when several Comparisons must be unioned. Use this for global phrases such as
+  "throughout the papers", "across the papers", "most frequent overall", and
+  cross-comparison frequency/superlative questions. Use scope="papers" for
+  "throughout/across the papers"; omit it or use scope="comparisons" for featured
+  Comparison-only aggregation.
 - FindCoAuthors(author_name, top_n?):
   Find co-authors of an author across all their papers in ONE call. Use this
   for "who has X co-written with?" / "collaborators of X" instead of chaining
@@ -543,46 +571,30 @@ COMPARISON RESOURCE PATTERN (~55% of SciQA questions):
 Most questions involve data stored in Comparison resources. When you identify a Comparison resource:
 1. FIRST: Call GetComparisonContributions(comparison_id) WITHOUT domain_predicate to discover available predicates
 2. THEN: Call GetComparisonContributions(comparison_id, domain_predicate) to get values
-3. For aggregation (count, min/max, frequency): Use RunORKGSPARQL with the compareContribution pattern
+3. For aggregation (count, min/max, frequency): Use AggregateComparisonValues for
+   one Comparison, or FindFrequentValues / AggregateComparisonValues(comparison_ids=...)
+   when the scope spans several Comparisons.
 DO NOT repeatedly call FindResource if you already have a Comparison resource. Go directly to GetComparisonContributions.
 
-SPARQL AGGREGATION PATTERNS (for Count, Superlative, Ranking, Aggregation questions):
-
-**Count with GROUP BY:**
-SELECT ?category (COUNT(?contrib) AS ?count) WHERE {
-    orkgr:RXXX orkgp:compareContribution ?contrib .
-    ?contrib orkgp:PYYY ?category .
-}
-GROUP BY ?category
-ORDER BY DESC(?count)
-
-**MIN/MAX (Boundaries):**
-SELECT ?source (MIN(xsd:decimal(?val)) AS ?minVal) (MAX(xsd:decimal(?val)) AS ?maxVal) WHERE {
-    orkgr:RXXX orkgp:compareContribution ?contrib .
-    ?contrib orkgp:P43135 ?source .
-    ?contrib orkgp:P43133 ?val .
-}
-GROUP BY ?source
-
-**Frequency Table:**
-SELECT ?sector (COUNT(?contrib) AS ?freq) WHERE {
-    orkgr:RXXX orkgp:compareContribution ?contrib .
-    ?contrib orkgp:PYYY ?sector .
-}
-GROUP BY ?sector
-ORDER BY DESC(?freq)
-
-**SUM/AVG:**
-SELECT (SUM(xsd:decimal(?val)) AS ?total) (AVG(xsd:decimal(?val)) AS ?avg) WHERE {
-    orkgr:RXXX orkgp:compareContribution ?contrib .
-    ?contrib orkgp:PYYY ?val .
-}
-
-IMPORTANT: When a question asks for frequencies, counts per category, or "how many for each X",
-you MUST use COUNT + GROUP BY in a SPARQL query. Do NOT search for pre-computed frequency values.
-
-CRITICAL: Always scope aggregation queries to ONE Comparison resource. Never aggregate across the entire graph.
-For negation queries ("without", "not"), use FILTER NOT EXISTS in SPARQL.
+AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation questions):
+- Named single Comparison or clearly local "the comparison" scope:
+  use AggregateComparisonValues.
+- Several related Comparisons or cross-comparison distribution:
+  use FindFrequentValues(comparison_ids=...) or AggregateComparisonValues(comparison_ids=...).
+- Global scope ("throughout the papers", "across the papers", "most frequent overall",
+  "top five used research fields in papers"):
+  use FindFrequentValues before raw SPARQL.
+- Global contribution counts ("how many X are examined/used/participate throughout
+  the papers/studies"):
+  FindPredicate(X) -> FindFrequentValues(value_predicate=..., agg="count", scope="papers").
+  Do not replace this with COUNT(DISTINCT ?x) unless the question says distinct/unique.
+  For packed categorical values such as species lists, pass split_values=true.
+- Values like "n=54", "86 %", or "sample size: 1,234":
+  pass value_parser="embedded_number" for numeric aggregation.
+- Questions asking for the item attached to an extreme metric ("studied location with
+  largest geographic scale"):
+  use return_predicate with agg="max" or agg="min".
+- Negation/set-difference ("without", "not") remains a raw SPARQL FILTER NOT EXISTS case.
 
 ORKG PREDICATE REFERENCE
 
@@ -765,18 +777,25 @@ FEWSHOT_EXAMPLES = {
    -> {result: [{value: 'Heat sector', count: 8}], ...}
 3. Answer: "Heat sector (8)"
 
-**Example: "How many papers are in the NLP research field?"** (cross-graph count, no Comparison anchor)
-1. RunORKGSPARQL:
-   SELECT (COUNT(DISTINCT ?paper) AS ?count) WHERE {
-       ?paper orkgp:P30 ?field .
-       ?field rdfs:label ?label .
-       FILTER(CONTAINS(LCASE(?label), "natural language processing"))
-   }
-2. Answer: the count value
+**Example: "How many species are examined throughout the papers?"** (global contribution count)
+1. FindPredicate("investigated species") -> P31023
+2. FindFrequentValues(value_predicate="P31023", agg="count", scope="papers",
+                       split_values=true)
+   -> {scope: "all_paper_contributions", result: 3267, n_contributions: ...}
+3. Answer: "3267"
+   Use agg="count" here because the question asks how many species observations
+   are examined throughout the papers. Use agg="count_distinct" only if the
+   wording asks for unique/distinct species names. Species rows may contain
+   packed values like "Plants;Insects", so split_values=true is required.
+
+**Example: "How many papers are in the NLP research field?"** (paper count, no contribution predicate)
+1. GetResearchFieldPapers("natural language processing") or FindResource("NLP", node_type_filter="ResearchField")
+2. Count the returned papers, or use RunORKGSPARQL COUNT only for this paper/field
+   shape because it is not a contribution-value aggregation.
 
 PREFER AggregateComparisonValues whenever the question is scoped to a named Comparison
-(phrases like "the studies", "the comparison", "in <Comparison Title>"). Only fall back
-to RunORKGSPARQL when the count spans the entire graph (no Comparison context).
+(phrases like "the studies", "the comparison", "in <Comparison Title>"). For global
+contribution-value counts, prefer FindFrequentValues; raw RunORKGSPARQL is last resort.
 """,
 
     "Superlative": """
@@ -815,6 +834,15 @@ to RunORKGSPARQL when the count spans the entire graph (no Comparison context).
    Comparison would have returned 34658 — a value from a Comparison that does
    not match the question's scope. Always reach for FindFrequentValues when
    the gold scope is not a named single Comparison.)
+
+**Example: "What is the studied location with the largest geographic scale?"**
+   The metric is geographic scale, but the requested answer is the companion studied location.
+1. FindPredicate("geographic scale") -> P41568
+2. FindPredicate("studied location") -> PXXXXX
+3. FindFrequentValues(value_predicate="P41568", agg="max",
+                       return_predicate="PXXXXX", value_parser="embedded_number")
+   -> {result: {extreme_value: 50000000, return_values: ["United States of America", "Mexico", "Canada"]}}
+4. Answer the return_values, not the paper title and not the numeric scale alone.
 
 **Example: "Which drug appears most frequently in the contributions?"** (cross-graph mode)
 1. FindPredicate("drug") -> P75107 (or related)
@@ -894,7 +922,8 @@ If the question asks about sectors (Heat, Electricity, Gas, Liquid fuels), use G
    is often a Paper or Contribution, not the Comparison that anchors the
    aggregation, and AggregateComparisonValues silently returns the wrong number
    on the wrong scope.
-2. AggregateComparisonValues(comparison_id="R33008", value_predicate="P15585", agg="sum")
+2. AggregateComparisonValues(comparison_id="R33008", value_predicate="P15585",
+                              agg="sum", value_parser="embedded_number")
    -> {result: 6452.0, n_contributions: 18}
 3. Answer: "6452"
 
@@ -910,6 +939,15 @@ and pick the one whose label matches the question's domain.
    (the tool auto-tries direct value, ?node rdfs:label, and ?node HAS_VALUE
    indirection — no need to hand-write BIND(xsd:float(?lbl) AS ?v))
 3. Answer: "93.3125"
+
+**Example: "What is the average energy generation of all energy sources considered in X?"**
+   (nested row aggregation: contribution -> energy source -> generation -> HAS_VALUE)
+1. FindResource("X", node_type_filter="Comparison") -> R153799
+2. GetComparisonContributions("R153799") -> discover energy source P43135 and generation P43134
+3. AggregateComparisonValues(comparison_id="R153799", intermediate_predicate="P43135",
+                              value_predicate="P43134", agg="avg")
+   -> {result: 157.146390041493776, n_contributions: 241}
+4. Answer: the average value. Do not hand-write SPARQL for this pattern.
 
 **Example: "What is the total installed capacity across all contributions?"** (sum pattern)
 1. FindResource("installed capacity comparison") -> R44073
@@ -992,10 +1030,10 @@ Current journal state:
 {journal_refresh}
 
 **IMMEDIATE ACTIONS REQUIRED:**
-1. If FindResource isn't working, try RunORKGSPARQL instead
-2. If you can't find a paper, search for the author or research field instead
-3. If predicates don't exist, try GetResourceDetails to see available relations
-4. If data doesn't exist, acknowledge this and provide your best answer
+1. If this is aggregation/superlative/count, state the scope and use AggregateComparisonValues or FindFrequentValues before raw SPARQL.
+2. If FindResource is not working, change the anchor (paper, author, research field, Comparison) or use FindByPredicateValue.
+3. If predicates don't exist, use GetResourceSummary to discover available predicates.
+4. If data doesn't exist after a scoped high-level attempt plus schema discovery, acknowledge this and provide your best answer.
 
 You MUST change your approach NOW."""
 
@@ -1087,7 +1125,7 @@ TOOL_LOOP_GUIDANCE = {
         "   - Search for a related entity (paper instead of author)\n"
         "   - Try different search terms\n"
         "   - Use FindByPredicateValue for value-based lookup\n"
-        "   - Use RunORKGSPARQL with broader filters\n"
+        "   - If you already found a Comparison, use GetComparisonContributions / AggregateComparisonValues\n"
         "   - Use GetComparisonContributions if you already have a Comparison resource\n"
         "   - The entity might not exist in ORKG"
     ),
@@ -1103,7 +1141,7 @@ TOOL_LOOP_GUIDANCE = {
         "   Not finding expected data. Try GetResourceSummary instead.\n"
         "   - Verify the resource ID is correct\n"
         "   - Use FindResource to search again\n"
-        "   - Try RunORKGSPARQL for more complex queries"
+        "   - For aggregation, use AggregateComparisonValues / FindFrequentValues before raw SPARQL"
     ),
     "GetResourceSummary": (
         "**GetResourceSummary Loop Recovery:**\n"
@@ -1115,7 +1153,7 @@ TOOL_LOOP_GUIDANCE = {
         "**FindByPredicateValue Loop Recovery:**\n"
         "   Value-based search not working. Try alternatives:\n"
         "   - FindResource with semantic search instead\n"
-        "   - Use RunORKGSPARQL with different FILTER patterns\n"
+        "   - Use GetResourceSummary on a nearby resource to discover the actual predicate/value shape\n"
         "   - Try match_type 'contains' instead of 'exact'"
     ),
     "CompareResources": (
@@ -1135,7 +1173,7 @@ TOOL_LOOP_GUIDANCE = {
         "**FollowRelationPath Loop Recovery:**\n"
         "   Multi-hop navigation failed. Try alternatives:\n"
         "   - Break the path into individual steps using GetRelationTargets\n"
-        "   - Use RunORKGSPARQL directly for complex paths\n"
+        "   - Use raw SPARQL only after verifying each hop exists with simpler tools\n"
         "   - Verify intermediate resource IDs exist"
     ),
     "GetComparisonContributions": (
@@ -1143,7 +1181,7 @@ TOOL_LOOP_GUIDANCE = {
         "   Comparison navigation not working. Try alternatives:\n"
         "   - Verify the resource is actually a Comparison (use GetResourceSummary)\n"
         "   - Try without domain_predicate first to discover available predicates\n"
-        "   - Use RunORKGSPARQL with the compareContribution pattern directly\n"
+        "   - Use AggregateComparisonValues once the predicate is known\n"
         "   - The resource might not be a Comparison - try FollowRelationPath instead"
     ),
 }

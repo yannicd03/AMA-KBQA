@@ -532,7 +532,8 @@ Change strategy or acknowledge the data doesn't exist."""
         qtype: str,
         entities: List[str],
         relations: List[str],
-        fewshot_examples: str = ""
+        fewshot_examples: str = "",
+        query: str = "",
     ) -> str:
         """
         Build the analysis context message.
@@ -558,6 +559,20 @@ Change strategy or acknowledge the data doesn't exist."""
             formatted_relations=formatted_relations,
             qtype_strategy=qtype_strategy
         )
+
+        exact_constraints = self._extract_exact_attribute_constraints(query)
+        if exact_constraints:
+            formatted_constraints = "\n".join(
+                f"  - {c['attribute_name']} = {c['value']}"
+                for c in exact_constraints
+            )
+            context += (
+                "\n\nEXACT ATTRIBUTE CONSTRAINTS DETECTED:\n"
+                f"{formatted_constraints}\n"
+                "Use exact reverse lookup (`FindByAttribute`) or explicit verification "
+                "for these constraints before semantic entity search or final synthesis. "
+                "If several entities share a name, prefer the one satisfying all exact constraints."
+            )
 
         if fewshot_examples:
             context += f"\n\nFew-shot Examples for {qtype}:\n{fewshot_examples}"
@@ -735,6 +750,7 @@ Change strategy or acknowledge the data doesn't exist."""
             self._find_resource_cap = config.domain_settings.get("find_resource_cap", 8)
             self._sparql_cap = config.domain_settings.get("sparql_cap", 10)
             self._context_limit = config.domain_settings.get("context_limit", 100000)
+            self._max_tool_calls = config.domain_settings.get("max_tool_calls", 0)
 
             # Add query to messages
             self._messages.append({"role": "user", "content": query})
@@ -756,7 +772,7 @@ Change strategy or acknowledge the data doesn't exist."""
             )
 
             analysis_context = self._build_analysis_context(
-                qtype, entities, relations, fewshot_examples
+                qtype, entities, relations, fewshot_examples, query=query
             )
             self._messages.append({"role": "user", "content": analysis_context})
 
@@ -767,6 +783,7 @@ Change strategy or acknowledge the data doesn't exist."""
             if (qtype in fast_path_types
                     and len(entities) == 1
                     and len(relations) <= 1
+                    and not self._should_skip_fast_path(query, qtype, entities, relations)
                     and config.domain_settings.get("enable_fast_path", True)):
                 self._trace(f"FAST PATH: Simple {qtype} with 1 entity", COLOR_GREEN)
                 async with self.recorder.span(
@@ -812,6 +829,46 @@ Change strategy or acknowledge the data doesn't exist."""
         finally:
             await self._finalize_question()
 
+    def _should_skip_fast_path(
+        self,
+        query: str,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+    ) -> bool:
+        """Block fast path for deceptively one-hop-looking qualifier questions."""
+        q = query.lower()
+        award_work_question = (
+            ("nominated for" in q or "award" in q or "received" in q)
+            and any(phrase in q for phrase in (
+                "what film",
+                "which film",
+                "what movie",
+                "which movie",
+                "what work",
+                "which work",
+                "for which",
+            ))
+        )
+        if award_work_question:
+            self._trace("Skipping fast path: award/work qualifier pattern", COLOR_YELLOW)
+            return True
+        return False
+
+    def _extract_exact_attribute_constraints(self, query: str) -> List[Dict[str, str]]:
+        """
+        Return KG-specific exact attribute/value constraints mentioned in the query.
+
+        Subclasses override this with their schema vocabulary. The base agent only
+        consumes the generic contract: each item has `attribute_name` and `value`.
+        """
+        return []
+
+    def _extract_fast_path_attribute_lookup(self, query: str) -> Optional[Dict[str, str]]:
+        """Return the first exact attribute lookup suitable for fast-path search."""
+        constraints = self._extract_exact_attribute_constraints(query)
+        return constraints[0] if constraints else None
+
     async def _try_fast_path(
         self,
         query: str,
@@ -828,8 +885,20 @@ Change strategy or acknowledge the data doesn't exist."""
         entity_name = entities[0]
 
         try:
-            # Step 1: Find the entity
-            find_result = await self.mcp.call_tool("FindNode", {"semantic_node_name": entity_name})
+            # Step 1: Find the entity. Exact code/identifier questions should
+            # use reverse attribute lookup before semantic search.
+            exact_lookup = self._extract_fast_path_attribute_lookup(query)
+            if exact_lookup:
+                self._trace(
+                    "FAST PATH: exact attribute lookup "
+                    f"{exact_lookup['attribute_name']}={exact_lookup['value']}",
+                    COLOR_GREEN,
+                )
+                find_result = await self.mcp.call_tool("FindByAttribute", exact_lookup)
+                self.tool_call_counts["FindByAttribute"] = self.tool_call_counts.get("FindByAttribute", 0) + 1
+            else:
+                find_result = await self.mcp.call_tool("FindNode", {"semantic_node_name": entity_name})
+                self.tool_call_counts["FindNode"] = self.tool_call_counts.get("FindNode", 0) + 1
 
             # Parse the result to get node_id
             import re as _re
@@ -837,12 +906,13 @@ Change strategy or acknowledge the data doesn't exist."""
             if not id_match:
                 return None
             node_id = id_match.group(1)
+            name_match = _re.search(r'"name":\s*"([^"]+)"', find_result)
+            resolved_entity_name = name_match.group(1) if name_match else entity_name
 
             # Step 2: Get full node summary
             summary_result = await self.mcp.call_tool("GetNodeSummary", {"node_id": node_id})
 
             # Track tool calls
-            self.tool_call_counts["FindNode"] = self.tool_call_counts.get("FindNode", 0) + 1
             self.tool_call_counts["GetNodeSummary"] = self.tool_call_counts.get("GetNodeSummary", 0) + 1
 
             # Step 3: If relation-specific, also get relation details
@@ -858,7 +928,12 @@ Change strategy or acknowledge the data doesn't exist."""
                     pass
 
             # Step 4: Synthesize answer from gathered data
-            data_context = f"Entity: {entity_name} (ID: {node_id})\n"
+            data_context = f"Entity: {resolved_entity_name} (ID: {node_id})\n"
+            if exact_lookup:
+                data_context += (
+                    "Exact lookup: "
+                    f"{exact_lookup['attribute_name']} = {exact_lookup['value']}\n"
+                )
             data_context += f"Node Summary:\n{summary_result}\n"
             if relation_result:
                 data_context += f"Relation Details:\n{relation_result}\n"
@@ -1080,6 +1155,20 @@ Change strategy or acknowledge the data doesn't exist."""
                         ),
                     })
                     continue
+                if total_tool_calls_made == 0:
+                    self.recorder.event(
+                        "intervention",
+                        "zero_tool_call_hard_stop",
+                        attributes={
+                            "retry": zero_tool_call_retries,
+                            "max": zero_tool_call_retry_max,
+                        },
+                    )
+                    self._trace(
+                        "Zero-tool-call answer persisted after retry budget - hard stopping",
+                        COLOR_RED,
+                    )
+                    return "Error: Agent attempted final answer with zero tool calls."
                 self._trace("No more tool calls - breaking to synthesis", COLOR_GREEN)
                 if message.content:
                     self._messages.append({"role": "assistant", "content": message.content})
@@ -1121,6 +1210,22 @@ Change strategy or acknowledge the data doesn't exist."""
                     "role": "user",
                     "content": self._get_journal_summary_answer_prompt()
                 })
+
+            max_tool_calls = getattr(self, "_max_tool_calls", 0) or 0
+            if max_tool_calls and total_tool_calls_made >= max_tool_calls:
+                self.recorder.event(
+                    "intervention",
+                    "max_tool_calls_reached",
+                    attributes={
+                        "total_tool_calls": total_tool_calls_made,
+                        "max_tool_calls": max_tool_calls,
+                    },
+                )
+                self._trace(
+                    f"Reached max tool-call cap ({total_tool_calls_made}/{max_tool_calls}) - forcing synthesis",
+                    COLOR_RED,
+                )
+                return await self._run_synthesis(query)
 
             # Early exit: nudge agent to wrap up after iteration 15
             if iteration_count >= 15 and iteration_count % 5 == 0:
@@ -1482,7 +1587,13 @@ Change strategy or acknowledge the data doesn't exist."""
             content = msg.get("content", "") or ""
 
             # Trim tool results (largest messages)
-            if msg.get("role") == "tool" and len(content) > truncate_len + 50:
+            is_tool_result = msg.get("role") == "tool"
+            is_text_mode_tool_result = (
+                msg.get("role") == "user"
+                and isinstance(content, str)
+                and content.startswith("<tool_result")
+            )
+            if (is_tool_result or is_text_mode_tool_result) and len(content) > truncate_len + 50:
                 self._messages[i] = {
                     **msg,
                     "content": content[:truncate_len] + "...[trimmed]"

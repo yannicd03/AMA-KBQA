@@ -8,6 +8,7 @@ questions about general domain facts.
 from __future__ import annotations
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -40,26 +41,31 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
 CORE_TOOLS = {
     "FindNode", "GetNodeSummary", "GetAttributeDetails", "GetRelationDetails",
     "ManageJournal", "GetJournalSummary", "RunSPARQL", "GetNodeLabel",
-    "BatchGetNodeLabels", "FilterEntities",
+    "BatchGetNodeLabels", "FilterEntities", "FindByAttribute",
 }
 
 # Extra tools per question type (on top of CORE_TOOLS)
 QTYPE_TOOL_MAP: Dict[str, set] = {
-    "Count":                 {"CompareEntities", "FindByAttribute", "FindEntitiesByRelationPath"},
+    "Count":                 {"CompareEntities", "FindByAttribute", "FindEntitiesByRelationPath",
+                              "CountEntities", "CountUnion"},
     "Verify":                {"VerifyNumericCondition", "VerifyString", "CompareEntities", "FindByAttribute"},
     "SelectBetween":         {"CompareEntities", "GetSchemaForAttribute"},
     "SelectAmong":           {"CompareEntities", "GetSchemaForAttribute", "FindByAttribute"},
-    "QueryAttr":             {"FindByAttribute", "GetSchemaForAttribute"},
+    "QueryAttr":             {"FindByAttribute", "GetSchemaForAttribute",
+                              "GetQualifierValue", "GetQualifiersByPredicate"},
     "QueryAttrQualifier":    {"GetEdgeQualifiers", "GetQualifiersByPredicate",
                               "GetAttributeWithQualifiers", "TemporalAttributeQuery",
                               "GetSchemaForAttribute", "QualifierFilter",
                               "GetQualifierValue"},
-    "QueryRelation":         {"ExploreNeighborhood", "FindEntitiesByRelationPath"},
+    "QueryRelation":         {"ExploreNeighborhood", "FindEntitiesByRelationPath",
+                              "GetRelationBetween", "GetQualifierValue",
+                              "GetQualifiersByPredicate"},
     "QueryRelationQualifier":{"GetEdgeQualifiers", "GetQualifiersByPredicate",
                               "ExploreNeighborhood", "QualifierFilter",
                               "GetQualifierValue"},
     "QueryName":             {"FindByAttribute", "FindEntitiesByRelationPath",
-                              "ExploreNeighborhood"},
+                              "ExploreNeighborhood", "GetQualifierValue",
+                              "GetQualifiersByPredicate"},
 }
 
 
@@ -108,6 +114,68 @@ class KQAProAgent(BaseKBQAAgent):
     def _get_qtype_strategies(self) -> Dict[str, str]:
         """Get KQAPro question-type strategies."""
         return QTYPE_STRATEGIES
+
+    def _extract_exact_attribute_constraints(self, query: str) -> List[Dict[str, str]]:
+        """Extract reusable exact attribute/value constraints for KQAPro."""
+        constraints: List[Dict[str, str]] = []
+
+        def add(attribute_name: str, value: str) -> None:
+            attribute_name = re.sub(r"\s+", " ", attribute_name.strip())
+            value = value.strip().strip('"').strip("'").rstrip("?.!,;:")
+            if not attribute_name or not value:
+                return
+            aliases = {
+                "iscw": "ISWC",
+                "iswc": "ISWC",
+                "isni": "ISNI",
+                "umls cui": "UMLS CUI",
+                "icd-10-cm": "ICD-10-CM",
+                "official name": "official name",
+                "date of birth": "date of birth",
+            }
+            attribute_name = aliases.get(attribute_name.lower(), attribute_name)
+            item = {"attribute_name": attribute_name, "value": value}
+            if item not in constraints:
+                constraints.append(item)
+
+        # Exact quoted values: "has official name \"Land Force Command\"".
+        for match in re.finditer(
+            r"\b(?:has|with|whose|having|that has)\s+(?:the\s+)?"
+            r"(?P<attr>official name|date of birth|IAB code|ICD-10-CM|UMLS CUI|ISWC|ISCW|ISNI|[A-Za-z][A-Za-z0-9 -]{0,40}? code)"
+            r"\s+(?:is\s+|=|:)?\"(?P<value>[^\"]+)\"",
+            query,
+            flags=re.I,
+        ):
+            add(match.group("attr"), match.group("value"))
+
+        # Exact unquoted values, ending at punctuation or a relative clause.
+        for match in re.finditer(
+            r"\b(?:has|with|whose|having|that has)\s+(?:the\s+)?"
+            r"(?P<attr>official name|date of birth|IAB code|ICD-10-CM|UMLS CUI|ISWC|ISCW|ISNI|[A-Za-z][A-Za-z0-9 -]{0,40}? code)"
+            r"\s+(?:is\s+|=|:)?(?P<value>[A-Za-z0-9][A-Za-z0-9 ._:/+-]*?)"
+            r"(?=,|\?|;|$|\s+(?:and|or|that|which|whose|who)\b)",
+            query,
+            flags=re.I,
+        ):
+            add(match.group("attr"), match.group("value"))
+
+        # Identifier wording that does not use "has/with": "known under ISWC T-...".
+        for match in re.finditer(
+            r"\b(?:known under|identified by|recorded under)\s+"
+            r"(?P<attr>ISWC|ISCW|ISNI|UMLS CUI|ICD-10-CM|[A-Za-z][A-Za-z0-9 -]{0,40}? code)"
+            r"\s+(?P<value>[A-Za-z0-9][A-Za-z0-9 ._:/+-]*?)"
+            r"(?=,|\?|;|$|\s+(?:and|or|that|which|whose|who)\b)",
+            query,
+            flags=re.I,
+        ):
+            add(match.group("attr"), match.group("value"))
+
+        # Entity disambiguation phrasing: "John Powell born 1936-03-10".
+        birth_match = re.search(r"\bborn\s+(?P<value>\d{4}-\d{2}-\d{2})\b", query, flags=re.I)
+        if birth_match:
+            add("date of birth", birth_match.group("value"))
+
+        return constraints
 
     def _get_classification_prompt(self, question: str) -> str:
         """Get the classification prompt for a question."""
