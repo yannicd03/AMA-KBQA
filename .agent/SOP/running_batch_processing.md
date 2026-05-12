@@ -102,6 +102,17 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --n-questions 20 --seed 42 -
 python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_questionnaire.json --n-questions 5
 ```
 
+### Focused Regression Rows
+
+Use explicit 0-based indices to rerun only the rows implicated by a trace audit:
+
+```bash
+python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_questionnaire.json --question-indices 8,15,18,99 --output-dir benchmark_results/focused-kqapro-$(date +%F)
+python -m ama_kbqa.benchmark_agents --agents sciqa --questionnaire db/sciqa_questionnaire.json --question-indices 6,9,21,58 --output-dir benchmark_results/focused-sciqa-$(date +%F)
+```
+
+When `--questionnaire` or `--n-questions` is also used, indices apply after that loaded question list is built.
+
 ---
 
 ## Command Line Arguments
@@ -111,6 +122,7 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_qu
 | `--agents` | both | Which agents to test: `kqapro`, `sciqa`, or both |
 | `--models` | (none) | Filter to specific models for multi-model mode |
 | `--n-questions` | all/10 | Number of questions to process |
+| `--question-indices` | (none) | Comma-separated 0-based question indices to run after questionnaire/sampling is loaded |
 | `--seed` | (none) | Random seed for on-the-fly sampling |
 | `--questionnaire` | (none) | Path to pre-generated questionnaire JSON file |
 | `--postprocessing, -p` | llm_judge | `choice`, `sparql`, `llm_judge`, or `simple` |
@@ -123,6 +135,15 @@ python -m ama_kbqa.benchmark_agents --agents kqapro --questionnaire db/kqapro_qu
 | `--export-csv` | false | Export results to CSV |
 | `--no-fewshot` | false | Disable few-shot example injection |
 | `--generate-fewshot` | false | Generate fewshot examples from benchmark results (requires llm_judge) |
+
+### Audit an Existing Run
+
+```bash
+python -m ama_kbqa.analyze_benchmark_run benchmark_results/<run>/<agent>/<model>
+python -m ama_kbqa.analyze_benchmark_run benchmark_results/<run>/<agent>/<model> --json
+```
+
+The audit reports headline accuracy, wrong indices, wrong-by-qtype, zero-tool rows, context-window rows, max-iteration rows, target-tool adoption, and top tools. Use it immediately after focused panels so fixes are judged by trace path, not only by final answer text.
 
 ### Postprocessing Mode Validation
 

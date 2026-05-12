@@ -34,6 +34,19 @@
     "collected_at": "2026-05-08T12:00:00"
   },
   {
+    "question": "How many woodwind instruments have Hornbostel-Sachs classification 421.221.12 or are instruments used by Sonny Rollins?",
+    "answer": "3",
+    "qtype": "Count",
+    "trace": [
+      {"tool": "FindNode", "args": "Sonny Rollins", "result": "found Q299208"},
+      {"tool": "GetRelationDetails", "args": "Q299208, instrument", "result": "instrument IDs [Q1414932, Q1463985]"},
+      {"tool": "CountUnion", "args": "{'branches': [{'concept': 'woodwind instrument', 'attribute_name': 'Hornbostel-Sachs classification', 'attribute_value': '421.221.12', 'operator': '=', 'transitive_concept': true}, {'entity_ids': ['Q1414932', 'Q1463985']}]}", "result": "{\"count\": 3, \"description\": \"type=≤woodwind instrument + Hornbostel-Sachs classification=421.221.12 OR 2 explicit ids\", \"status\": \"ok\"}"}
+    ],
+    "lesson": "For heterogeneous OR questions, use CountUnion. Do NOT pass relation-derived entity_ids to CountEntities globally; that intersects the explicit set with the concept/attribute branch and undercounts. Each OR branch must stand alone, and the tool counts DISTINCT entities across the union.",
+    "tool_count": 3,
+    "collected_at": "2026-05-11T10:00:00"
+  },
+  {
     "question": "How many films were released after 2000 and have a duration greater than 120 minutes?",
     "answer": "354",
     "qtype": "Count",

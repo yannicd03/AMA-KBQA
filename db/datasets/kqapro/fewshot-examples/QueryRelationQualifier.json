@@ -62,5 +62,21 @@
     "pitfall": "Do NOT conclude the qualifier 'is not recorded' after exploring with SPARQL or GetEdgeQualifiers. If you reach a SPARQL loop on capital qualifiers, stop and call GetQualifierValue with start_time directly — it auto-handles forward/backward direction and label resolution.",
     "tool_count": 5,
     "collected_at": "2026-05-05T20:30:00"
+  },
+  {
+    "question": "How many matches did David Cross play in Bolton Wanderers F.C., the club he's a member of?",
+    "answer": "23",
+    "qtype": "QueryRelationQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "David Cross footballer", "result": "found Q15044080 (David Cross)"},
+      {"tool": "FindNode", "args": "Bolton Wanderers F.C.", "result": "found Q19451"},
+      {"tool": "GetRelationDetails", "args": "Q15044080, member of sports team", "result": "targets include Bolton Wanderers F.C. (Q19451)"},
+      {"tool": "GetQualifierValue", "args": "Q15044080, member_of_sports_team, Q19451, qualifier_name=number_of_matches, predicate_type=relation", "result": "{value: '23', source: 'relation_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: 23 (number_of_matches qualifier on the membership statement)", "result": "updated"}
+    ],
+    "lesson": "'How many matches/appearances did player X play for club Y?' asks for the number_of_matches qualifier on the member_of_sports_team relation. Once player and club are identified, call GetQualifierValue directly. Do not call GetEdgeQualifiers with predicate/target arguments or hand-write SPARQL.",
+    "pitfall": "The answer is not a plain attribute of the player. It is a qualifier on the specific player --member_of_sports_team--> club statement.",
+    "tool_count": 5,
+    "collected_at": "2026-05-11T10:00:00"
   }
 ]

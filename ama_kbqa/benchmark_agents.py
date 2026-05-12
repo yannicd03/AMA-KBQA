@@ -53,6 +53,7 @@ import csv as csv_module
 import json
 import os
 import random
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -454,9 +455,88 @@ def load_sciqa_questionnaire(
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     questions = data.get("questions", [])
+    questions = [normalize_sciqa_question(q) for q in questions]
     if n_questions and n_questions < len(questions):
         questions = questions[:n_questions]
     return questions
+
+
+def normalize_sciqa_question(question: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply deterministic SciQA question text normalizations.
+
+    Some SciQA rows contain the literal placeholder "paper title" while another
+    field carries the actual title. Replace the placeholder before the agent sees
+    the question. Rows with a comparison-scoped gold query also carry a
+    context-rich question variant; use it so the agent sees the Comparison title
+    required by the gold SPARQL. The CSV also uses "no comparison used" as a
+    sentinel, not as a question.
+    """
+    text = question.get("question", "")
+    raw = question.get("raw") or {}
+    normalized = dict(question)
+
+    if isinstance(raw, dict):
+        contextual = raw.get("Question with context (comparison)", "")
+        question_without_context = raw.get("Question without context (comparison)", "")
+        related_comparison = raw.get("Related to Comparison", "")
+        contextual_clean = contextual.strip()
+        contextual_is_usable = (
+            contextual_clean
+            and contextual_clean.upper() != "#N/A"
+            and contextual_clean.lower() != "no comparison used"
+        )
+        if contextual_is_usable and related_comparison:
+            contextual = contextual.strip()
+            if contextual != text:
+                normalized["question"] = contextual
+                normalized["normalized_question"] = True
+                normalized.setdefault("original_question", text)
+                normalized["comparison_id_hint"] = related_comparison
+                text = contextual
+        elif question_without_context and (
+            "paper title" in text.lower()
+            or "\n" in text
+            or text.lstrip().startswith("-")
+        ):
+            normalized["question"] = question_without_context.strip()
+            normalized["normalized_question"] = True
+            normalized.setdefault("original_question", text)
+            text = normalized["question"]
+
+    if "paper title" not in text.lower():
+        return normalized
+
+    sparql_query = question.get("sparql_query", "")
+    if not sparql_query and isinstance(raw, dict):
+        sparql_query = raw.get("Machine-readable query", "")
+
+    title = None
+    match = re.search(r'REGEX\(\s*STR\(\?paper_title\)\s*,\s*"([^"]+)"', sparql_query, flags=re.I)
+    if match:
+        title = match.group(1)
+    elif isinstance(raw, dict):
+        for key in ("Paper title", "paper title", "Title"):
+            if raw.get(key):
+                title = raw[key]
+                break
+        if not title:
+            question_without_context = raw.get("Question without context (comparison)", "")
+            title_match = re.search(r'"([^"]+)"', question_without_context)
+            if title_match:
+                title = title_match.group(1)
+
+    if not title:
+        return normalized
+
+    normalized["question"] = re.sub(
+        r'"paper title"',
+        f'"{title}"',
+        text,
+        flags=re.I,
+    )
+    normalized["normalized_question"] = True
+    normalized.setdefault("original_question", text)
+    return normalized
 
 
 def load_raw_dataset(agent_name: str, dataset_type: str = "handcrafted") -> List[Dict[str, Any]]:
@@ -505,14 +585,14 @@ def load_raw_dataset(agent_name: str, dataset_type: str = "handcrafted") -> List
                 research_field = row.get("Research field", "").strip()
 
                 if question and answer:
-                    data.append({
+                    data.append(normalize_sciqa_question({
                         "question": question,
                         "answer": answer,
                         "sparql_query": sparql_query,
                         "q_type": q_type,
                         "research_field": research_field,
                         "raw": row
-                    })
+                    }))
 
         print(f"[OK] Loaded {len(data)} questions from SciQA {dataset_type} dataset")
         return data
@@ -1403,6 +1483,7 @@ async def run_full_benchmark(
     dataset_type: str = "handcrafted",
     stratified: bool = False,
     generate_fewshot: bool = False,
+    question_indices: Optional[List[int]] = None,
 ):
     """Run the full benchmark across models and agents."""
     is_single_model = len(models) == 1 and models[0].name == "default"
@@ -1419,6 +1500,7 @@ async def run_full_benchmark(
             dataset_type=dataset_type,
             stratified=stratified,
             is_single_model=is_single_model,
+            question_indices=question_indices,
         )
         if questions is None:
             print(f"WARNING: No questions available for {agent_name}, skipping")
@@ -1500,8 +1582,21 @@ def _load_questions_for_agent(
     dataset_type: str,
     stratified: bool,
     is_single_model: bool,
+    question_indices: Optional[List[int]] = None,
 ) -> Optional[List[Dict[str, Any]]]:
     """Load questions for an agent based on CLI args."""
+    def _apply_question_indices(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not question_indices:
+            return questions
+        selected = []
+        for idx in question_indices:
+            if 0 <= idx < len(questions):
+                selected.append(questions[idx])
+            else:
+                print(f"WARNING: question index {idx} out of range for {agent_name} ({len(questions)} questions)")
+        print(f"[OK] Selected {len(selected)} explicit question indices for {agent_name}: {question_indices}")
+        return selected
+
     # Priority 1: explicit questionnaire path
     if questionnaire_path:
         path = Path(questionnaire_path)
@@ -1514,7 +1609,7 @@ def _load_questions_for_agent(
         if n_questions and n_questions < len(questions):
             questions = questions[:n_questions]
         print(f"[OK] Loaded questionnaire from: {questionnaire_path} ({len(questions)} questions)")
-        return questions
+        return _apply_question_indices(questions)
 
     # Priority 2: seed-based on-the-fly sampling
     if seed is not None:
@@ -1522,9 +1617,9 @@ def _load_questions_for_agent(
             n_questions = 10  # default for seed-based sampling
         raw_data = load_raw_dataset(agent_name, dataset_type)
         if stratified:
-            return stratified_sample(raw_data, n_questions, seed, agent_name)
+            return _apply_question_indices(stratified_sample(raw_data, n_questions, seed, agent_name))
         else:
-            return sample_questions(raw_data, n_questions, seed)
+            return _apply_question_indices(sample_questions(raw_data, n_questions, seed))
 
     # Priority 3: default questionnaire files (multi-model mode) or error (single-model)
     if is_single_model:
@@ -1535,13 +1630,13 @@ def _load_questions_for_agent(
     if agent_name == "kqapro":
         path = PROJECT_ROOT / "db" / "kqapro_questionnaire.json"
         if path.exists():
-            return load_kqapro_questionnaire(path, n_questions)
+            return _apply_question_indices(load_kqapro_questionnaire(path, n_questions))
         print(f"WARNING: KQAPro questionnaire not found at {path}")
         return None
     elif agent_name == "sciqa":
         path = PROJECT_ROOT / "db" / "sciqa_questionnaire.json"
         if path.exists():
-            return load_sciqa_questionnaire(path, n_questions)
+            return _apply_question_indices(load_sciqa_questionnaire(path, n_questions))
         print(f"WARNING: SciQA questionnaire not found at {path}")
         return None
 
@@ -1697,10 +1792,23 @@ Examples:
                         help="SciQA dataset type (default: handcrafted)")
     parser.add_argument("--stratified", action="store_true",
                         help="Stratified sampling by question type")
+    parser.add_argument("--question-indices", type=str, default=None,
+                        help="Comma-separated 0-based indices after questionnaire/sampling selection, e.g. 0,8,15")
     parser.add_argument("--generate-fewshot", action="store_true", default=None,
                         help="Generate LLM-based fewshot examples from results (default: from config.toml)")
 
     args = parser.parse_args()
+    question_indices = None
+    if args.question_indices:
+        try:
+            question_indices = [
+                int(part.strip())
+                for part in args.question_indices.split(",")
+                if part.strip()
+            ]
+        except ValueError as e:
+            print(f"ERROR: --question-indices must be comma-separated integers: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Timeout sanity check. kqapro/sciqa agents routinely need 30–60 s per
     # question (FindNode + several tool calls); run 2026-04-20-4 hit --timeout 60
@@ -1807,6 +1915,7 @@ Examples:
         dataset_type=args.dataset,
         stratified=args.stratified,
         generate_fewshot=generate_fewshot,
+        question_indices=question_indices,
     ))
 
     # Exit with non-zero code if all runs failed

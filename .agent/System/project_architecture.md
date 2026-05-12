@@ -26,6 +26,7 @@ ama-kbqa/
 ├── ama_kbqa/                   # Main Python package
 │   ├── cli.py                  # CLI entrypoint (ama-kbqa command)
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
+│   ├── analyze_benchmark_run.py # Offline run-audit CLI: accuracy, wrong rows, tool adoption, zero-tool/context buckets
 │   ├── postprocessing.py       # PostProcessor class (choice/sparql/llm_judge/simple)
 │   ├── fewshot_generator.py    # LLM-based fewshot example generator — config-driven, tool-catalog-aware
 │   ├── run_fewshot_generator.py # Post-hoc generator runner: replays over saved benchmark dir, shadow output only
@@ -55,7 +56,7 @@ ama-kbqa/
 │   │   └── orchestrator_agent/ # Multi-agent router
 │   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
-│   │   ├── kqapro_server.py    # KQAPro tools (26 tools)
+│   │   ├── kqapro_server.py    # KQAPro tools (28 tools)
 │   │   ├── sciqa_server.py     # SciQA/ORKG tools (21 tools: 4 discovery, 6 retrieval, 9 domain, 1 SPARQL, 1 verification) ✅ Active
 │   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
@@ -174,6 +175,7 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 **BaseKBQAAgent provides:**
 - MCP client management
 - Pre-agent hooks (classification, entity extraction)
+- KG-specific exact-attribute constraint hook (`_extract_exact_attribute_constraints`) and pre-analysis constraint injection
 - 6-layer loop detection (includes FindResource cap and RunORKGSPARQL cap)
 - Scratchpad-enforced tool-calling loop:
   - Forced reflection after each non-journal tool
@@ -240,7 +242,7 @@ The SciQA agent for Open Research Knowledge Graph (ORKG) scientific QA, inheriti
 
 **File Organization:**
 - `agent.py` (~190 lines) - Implements abstract methods, SciQA-specific logic
-- `prompts.py` (~890 lines) - ORKG-specific prompts, 8 enriched strategies with few-shot examples (author search, negation, aggregation scoping, energy domain, boolean comparison-embedded values), predicate dictionary, 9 loop recovery entries (includes RunORKGSPARQL 10-call cap warning)
+- `prompts.py` (~890 lines) - ORKG-specific prompts, 8 enriched strategies with few-shot examples (author search, negation, aggregation scoping, energy domain, boolean comparison-embedded values), predicate dictionary, 9 loop recovery entries. Current guidance is evidence-first: high-level aggregation tools before raw SPARQL for supported count/superlative/aggregation shapes.
 
 ### 1.3 Prompts Module (`ama_kbqa/agents/sciqa_agent/prompts.py`)
 
@@ -249,7 +251,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 | Prompt | Purpose |
 |--------|---------|
 | `QTYPE_STRATEGIES` | 8 question-type-specific strategies (Factoid, Count, List, Boolean, Comparison, Superlative, Aggregation, General) with comparison patterns, HAS_VALUE nested patterns, SPARQL templates, and decision trees. Only the relevant strategy is loaded after classification. |
-| `SYSTEM_PROMPT` | Lean agent system prompt (~165 lines) with ORKG rules, 5-tier tool listing, 10-step execution strategy, and predicate reference dictionary. Strategy-specific content lives in QTYPE_STRATEGIES. |
+| `SYSTEM_PROMPT` | Lean agent system prompt (~165 lines) with ORKG rules, evidence-first requirement, scope-before-query aggregation routing, 5-tier tool listing, 10-step execution strategy, and predicate reference dictionary. Strategy-specific content lives in QTYPE_STRATEGIES. |
 | `CLASSIFICATION_PROMPT_TEMPLATE` | Scientific question classification (8 types) |
 | `ENTITY_EXTRACTION_PROMPT` | Extract papers, authors, contributions, fields |
 | `FEWSHOT_EXAMPLES` | 8 type-specific few-shot example sets loaded alongside strategies (enhanced with author search, negation queries, aggregation scoping, energy domain distinctions, boolean comparison-embedded values) |
@@ -258,7 +260,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
-Provides 26 tools for knowledge graph interaction, organized by tier:
+Provides 28 tools for knowledge graph interaction, organized by tier:
 
 **T1 Discovery:**
 - `FindNode` - Semantic entity search (deduplicates via `visited_nodes` cache)
@@ -272,11 +274,12 @@ Provides 26 tools for knowledge graph interaction, organized by tier:
 - `GetNodeSummary` - Complete node data in one call
 - `GetAttributeDetails` - Specific attribute values
 - `GetRelationDetails` - Connected entities via relation. Writes to **both** `verified_facts` (provenance) and `found_values` (answer visibility to synthesis). Before April 2026 it only wrote to `verified_facts`, making relation-based answers invisible to the synthesis step.
+- `GetRelationBetween` - Deterministically inspects all predicates connecting two known endpoints in both directions. Returns `subject_to_object`, `object_to_subject`, and `preferred_answer` so QueryRelation questions can preserve direction instead of inferring it from node summaries.
 
 **T3 Qualifiers:**
-- `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern); returns full qualifier dict — use for discovery
-- `GetQualifiersByPredicate` - Relation statement qualifiers; returns full qualifier dict — use for discovery
-- `GetQualifierValue` - Direct projection of a single qualifier value (`subject_id`, `predicate`, `target`, `qualifier_name`). Auto-detects relation vs attribute from target shape (Q-id → relation; literal → attribute); auto-retries backward direction. Logs to `verified_facts` as `type="qualifier_value"`. **Preferred over full-dict tools once qualifier name is known.** ✨ NEW
+- `GetEdgeQualifiers` - Attribute statement qualifiers (uses RDF reification pattern); returns full qualifier dict — use for discovery. Relation-style calls with `predicate` + target Q-id delegate through the private relation-qualifier helper rather than calling the decorated public tool object.
+- `GetQualifiersByPredicate` - Relation statement qualifiers; returns full qualifier dict — use for discovery. Internally backed by `_get_qualifiers_by_predicate_impl` so other server tools can reuse it safely.
+- `GetQualifierValue` - Direct projection of a single qualifier value (`subject_id`, `predicate`, `target`, `qualifier_name`). Auto-detects relation vs attribute from target shape (Q-id → relation; literal → attribute); auto-retries backward direction; unwraps qualifier bnodes via `rdf:value`; supports slash qualifier URIs such as `number_of_matches_played/races/starts` through aliases `number_of_matches`, `matches_played`, and `appearances`. Logs to `verified_facts` as `type="qualifier_value"` and to `found_values` under `predicate.qualifier_name`. **Preferred over full-dict tools once qualifier name is known.** ✨ UPDATED
 - `GetAttributeWithQualifiers` - Attribute values with all context (dual-method SPARQL: blank-node pattern + RDF reification pattern)
 - `TemporalAttributeQuery` - Date-specific attribute lookup
 
@@ -286,6 +289,7 @@ Provides 26 tools for knowledge graph interaction, organized by tier:
 
 **Complex:**
 - `RunSPARQL` - Raw SPARQL queries (stores results in `found_values["sparql_result_N"]` to survive message truncation)
+- `CountUnion` - Branch-aware `COUNT(DISTINCT ?entity)` over heterogeneous OR conditions via SPARQL `UNION`. Prevents relation-derived candidate leakage and double-counting in Count questions that combine multiple concept/attribute branches.
 - `CompareEntities` - Compare attribute across multiple entities
 - `FindEntitiesByRelationPath` - Multi-hop entity discovery
 
@@ -309,7 +313,9 @@ Provides 26 tools for knowledge graph interaction, organized by tier:
 **Key implementation details:**
 - `JournalState` imported from `ama_kbqa.framework.state` (not defined locally)
 - `FindNode` deduplicates via `visited_nodes`: skips Qdrant search if label already cached (case-insensitive)
-- `RunSPARQL` stores results in `found_values["sparql_result_N"]` so they survive message truncation
+- `KQAProAgent._extract_exact_attribute_constraints()` detects exact attribute/value constraints such as `official name`, `date of birth`, `IAB code`, `ICD-10-CM`, `UMLS CUI`, `ISWC/ISNI`, and `known under <identifier>`. These constraints are injected into pre-analysis and can drive fast-path `FindByAttribute`, preventing same-name semantic matches from overriding explicit identifiers.
+- `RunSPARQL`, `CountUnion`, `GetRelationBetween`, and `GetQualifierValue` store answer-grade values in `found_values` so they survive message truncation and are visible to synthesis
+- Public MCP tool functions should not call other decorated public tool names directly. Shared behavior that needs server-internal reuse lives in private helpers such as `_batch_get_node_labels_impl` and `_get_qualifiers_by_predicate_impl`.
 - `GetRelationDetails` writes to both `verified_facts` (provenance) and `found_values` (required for synthesis visibility)
 - `GetNodeLabel` / `BatchGetNodeLabels` backfill `value` fields in `found_values` entries after resolving a node's label
 - `GetJournalSummary` renders `found_values` as `📊 DISCOVERED VALUES` and `verified_facts` as `🔗 VERIFIED FACTS` (up to 15 triples); IDs are resolved to labels via `visited_nodes` at render time
@@ -341,8 +347,8 @@ Provides 21 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 - `GetResearchFieldPapers` - List papers in field (P30)
 - `GetComparisonContributions` - Navigate Comparison -> Contribution pattern with predicate discovery mode, now **stores values in journal's found_values** ✨ UPDATED
 - `FollowRelationPath` - Multi-hop relation navigation in one SPARQL call
-- `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, `value_via_group` 2-hop switch for grouped energy-domain patterns, and `comparison_ids` CSV for multi-Comparison union mode (VALUES clause, backwards-compatible). Closes 9/20 SciQA aggregation questions. ✨ UPDATED
-- `FindFrequentValues` - Cross-resource aggregation for global-scope questions ("most popular X", "largest Y across the papers"). No Comparison anchor required. Scope tiers: research_field_id → P30/P31; comparison_ids → VALUES union; default → all compareContribution subjects. Supports same agg modes as AggregateComparisonValues; hard cap `limit_subjects=5000`. ✨ NEW
+- `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, `value_via_group` 2-hop switch, `comparison_ids` CSV for multi-Comparison union mode, `value_parser` for embedded numeric strings, `return_predicate` for companion values on min/max rows, and `intermediate_predicate` for nested rows such as contribution → energy source → electricity generation. ✨ UPDATED
+- `FindFrequentValues` - Cross-resource aggregation for global-scope questions ("most popular X", "largest Y across the papers"). No Comparison anchor required. Scope tiers: research_field_id → P30/P31; comparison_ids → VALUES union; default → all compareContribution subjects. Supports the same agg, `value_parser`, and `return_predicate` modes as AggregateComparisonValues; writes results to `found_values`; hard cap `limit_subjects=5000`. ✨ UPDATED
 - `FindCoAuthors` - Finds co-authors of papers by a seed author (case-insensitive partial match; handles both resource-URI and literal-string author predicates P6/P27); returns co-authors sorted by shared-paper count. Closes Q2 co-author pattern.
 
 **Tier 4 - Raw SPARQL (1 tool):**

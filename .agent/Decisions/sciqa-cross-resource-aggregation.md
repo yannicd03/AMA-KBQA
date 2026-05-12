@@ -133,3 +133,39 @@ The failure class was **model-independent**: minimax, gemma, and earlier qwen al
 ## Deployment Note
 
 Shipped locally as of 2026-05-09. Hetzner deployment needed before benchmark impact can be measured.
+
+---
+
+## 2026-05-11 Follow-up: Trace-Audit Fixes
+
+The latest Hetzner deep dive showed the original tool was useful but incomplete for three recurring SciQA failure modes:
+
+1. Numeric values often appear inside strings such as `"6452 patients"`, so strict leading-number parsing silently dropped usable rows.
+2. Superlative questions often ask for a companion field, not the numeric extreme itself, e.g. "which studied location has the largest geographic scale".
+3. `FindFrequentValues` results were visible in the tool response but not reliably preserved in `found_values`, making synthesis vulnerable after context trimming.
+
+Implemented follow-up changes:
+
+- `AggregateComparisonValues` and `FindFrequentValues` now accept `value_parser="leading_number"|"embedded_number"|"auto"`.
+- Both tools accept `return_predicate` and include companion values on min/max result rows.
+- `FindFrequentValues` writes aggregate outputs to `session_journal.found_values`.
+- The SciQA prompt now routes global/multi-comparison aggregation to these tools first and treats raw SPARQL as the last resort for negation or unusual graph patterns.
+- `SciQAAdapter.domain_settings` sets `max_tool_calls=25`; `BaseKBQAAgent` forces synthesis at that cap instead of allowing context-window aborts.
+
+## 2026-05-11 Live Validation Follow-up
+
+Focused SciQA validation surfaced two more dataset-shape issues:
+
+1. Several handcrafted SciQA rows have a context-free `Question` field but a precise `Question with context (comparison)` field plus `Related to Comparison`. The benchmark runner now normalizes these rows to the contextual question when available and records `original_question`, `normalized_question=true`, and `comparison_id_hint` in metadata. This prevents impossible prompts such as "How many species are examined throughout the papers?" from hiding the needed comparison anchor.
+2. Some comparison rows are nested below each contribution, e.g. `Contribution -> energy source (P43135) -> electricity generation (P43134) -> HAS_VALUE`. The model could solve this with raw SPARQL, but it required long exploratory traces. `AggregateComparisonValues` now has `intermediate_predicate` for this exact shape:
+
+```python
+AggregateComparisonValues(
+    comparison_id="R153799",
+    intermediate_predicate="P43135",
+    value_predicate="P43134",
+    agg="avg",
+)
+```
+
+This keeps nested comparison aggregation inside the high-level tool surface and reserves raw SPARQL for genuinely unusual graph patterns.

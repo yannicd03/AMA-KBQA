@@ -42,5 +42,35 @@
     "pitfall": "Do NOT answer 'Manitoba' (the entity) or 'Manitobain' (the demonym itself). The answer is the qualifier saying which grammatical FORM the demonym applies to. If you find yourself in a SPARQL loop, stop and call GetQualifierValue directly.",
     "tool_count": 4,
     "collected_at": "2026-05-05T20:30:00"
+  },
+  {
+    "question": "What relation type does C0043395, the UMLS CUI of the disease whose ICD-10-CM is A95.0, map to?",
+    "answer": "exact match",
+    "qtype": "QueryAttrQualifier",
+    "trace": [
+      {"tool": "FindByAttribute", "args": "ICD-10-CM=A95.0", "result": "found Q154874 (yellow fever)"},
+      {"tool": "FindByAttribute", "args": "UMLS CUI=C0043395", "result": "found Q154874 (yellow fever)"},
+      {"tool": "GetQualifierValue", "args": "Q154874, UMLS_CUI, C0043395, qualifier_name=relation_type, predicate_type=attribute", "result": "{value: 'exact match', source: 'attribute_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: exact match (relation_type qualifier on the UMLS CUI attribute)", "result": "updated"}
+    ],
+    "lesson": "External identifiers can have qualifiers. 'What relation type does code X map to?' targets the relation_type qualifier on the identifier attribute, not rdf:type of the entity. After locating the entity by both identifiers, call GetQualifierValue on the identifier attribute value.",
+    "pitfall": "Do NOT answer the entity's class such as 'infectious disease'. That is rdf:type, not the mapping relation_type qualifier.",
+    "tool_count": 4,
+    "collected_at": "2026-05-11T10:00:00"
+  },
+  {
+    "question": "To which part of a sovereign state, which is the county of Genoa, does a demonym 'sardo' apply?",
+    "answer": "masculine singular",
+    "qtype": "QueryAttrQualifier",
+    "trace": [
+      {"tool": "FindNode", "args": "Sardinia", "result": "found Q1462 (Sardinia)"},
+      {"tool": "GetAttributeWithQualifiers", "args": "Q1462, demonym, query='sardo'", "result": "found demonym='sardo' with qualifier applies_to_part=masculine singular"},
+      {"tool": "GetQualifierValue", "args": "Q1462, demonym, sardo, qualifier_name=applies_to_part, predicate_type=attribute", "result": "{value: 'masculine singular', source: 'attribute_qualifier'}"},
+      {"tool": "ManageJournal", "args": "set_partial_answer: masculine singular", "result": "updated"}
+    ],
+    "lesson": "For demonym/name questions asking 'to which part/form' the answer is the applies_to_part qualifier on the literal demonym value. Return the grammatical form, not the place whose demonym it is.",
+    "pitfall": "Do NOT answer 'Sardinia' or 'Italy'. Those identify the entity; the requested value is the qualifier attached to the demonym literal.",
+    "tool_count": 4,
+    "collected_at": "2026-05-11T10:00:00"
   }
 ]
