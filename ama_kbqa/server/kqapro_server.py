@@ -1313,6 +1313,10 @@ async def GetQualifierValue(
             "number_of_matches": ["number_of_matches_played/races/starts"],
             "matches_played": ["number_of_matches_played/races/starts"],
             "appearances": ["number_of_matches_played/races/starts"],
+            "subscribers": ["number_of_subscribers"],
+            "subscriber_count": ["number_of_subscribers"],
+            "twitter_subscribers": ["number_of_subscribers"],
+            "followers": ["number_of_followers", "number_of_subscribers"],
         }
         qualifier_variants = [qual_normalized]
         for alias in qualifier_aliases.get(qual_normalized, []):
@@ -4302,8 +4306,10 @@ def CountUnion(
     Use this for "How many X satisfy A OR are in explicit/relation-derived set B?"
     questions where applying `entity_ids` globally would incorrectly intersect all
     branches. Each branch may contain `concept`, `attribute_name`, `attribute_value`,
-    `operator`, `entity_ids`, `or_conditions`, `not_conditions`, and
-    `transitive_concept`.
+    `operator`, `entity_ids`, `or_conditions`, `not_conditions`, `transitive_concept`,
+    and a branch-local relation filter (`relation_name`, optional
+    `relation_target_id` / `relation_target_ids`, and `relation_direction` =
+    "forward" / "backward" / "either").
 
     Example:
       CountUnion(branches=[
@@ -4336,6 +4342,54 @@ def CountUnion(
         concept_block = _concept_clause(concept, transitive)
         if concept_block:
             pre_blocks.append(concept_block.rstrip())
+
+        relation_name = branch.get("relation_name") or branch.get("predicate") or ""
+        relation_direction = str(branch.get("relation_direction", "forward")).lower()
+        if relation_direction not in {"forward", "backward", "either"}:
+            relation_direction = "forward"
+        relation_target_ids: list[str] = []
+        raw_targets = branch.get("relation_target_ids") or branch.get("target_ids") or []
+        if isinstance(raw_targets, str):
+            relation_target_ids.extend(t.strip() for t in raw_targets.split(",") if t.strip())
+        else:
+            relation_target_ids.extend(str(t).strip() for t in raw_targets if str(t).strip())
+        single_target = branch.get("relation_target_id") or branch.get("target_id")
+        if single_target:
+            relation_target_ids.append(str(single_target).strip())
+
+        relation_block = ""
+        if relation_name:
+            rel_uri = format_property_uri(str(relation_name))
+            target_values = " ".join(format_entity_uri(tid) for tid in relation_target_ids)
+            rel_target = f"?relTarget_u{i}"
+            rel_source = f"?relSource_u{i}"
+            if relation_target_ids:
+                if relation_direction == "backward":
+                    relation_block = (
+                        f"VALUES {rel_source} {{ {target_values} }}\n"
+                        f"        {rel_source} {rel_uri} ?entity ."
+                    )
+                elif relation_direction == "either":
+                    relation_block = (
+                        f"VALUES {rel_target} {{ {target_values} }}\n"
+                        f"        {{ {{ ?entity {rel_uri} {rel_target} . }} UNION "
+                        f"{{ {rel_target} {rel_uri} ?entity . }} }}"
+                    )
+                else:
+                    relation_block = (
+                        f"VALUES {rel_target} {{ {target_values} }}\n"
+                        f"        ?entity {rel_uri} {rel_target} ."
+                    )
+            else:
+                if relation_direction == "backward":
+                    relation_block = f"{rel_source} {rel_uri} ?entity ."
+                elif relation_direction == "either":
+                    relation_block = (
+                        f"{{ {{ ?entity {rel_uri} {rel_target} . }} UNION "
+                        f"{{ {rel_source} {rel_uri} ?entity . }} }}"
+                    )
+                else:
+                    relation_block = f"?entity {rel_uri} {rel_target} ."
 
         attr_blocks: list[str] = []
         attribute_name = branch.get("attribute_name", "")
@@ -4370,7 +4424,7 @@ def CountUnion(
             )
             not_blocks.append("FILTER NOT EXISTS { " + cond_sparql.rstrip() + " }")
 
-        body = "\n        ".join(filter(None, pre_blocks + [attr_block] + not_blocks))
+        body = "\n        ".join(filter(None, pre_blocks + [relation_block, attr_block] + not_blocks))
         if not body.strip():
             continue
         branch_blocks.append("{\n        " + body + "\n      }")
@@ -4382,6 +4436,13 @@ def CountUnion(
             bits.append(f"{attribute_name}{branch.get('operator', '=')}{branch.get('attribute_value', '')}")
         if entity_ids:
             bits.append(f"{len(entity_ids)} explicit ids")
+        if relation_name:
+            target_desc = (
+                f"->{','.join(relation_target_ids)}"
+                if relation_target_ids
+                else "exists"
+            )
+            bits.append(f"{relation_direction} {relation_name} {target_desc}")
         desc_parts.append(" + ".join(bits) or f"branch {i + 1}")
 
     if not branch_blocks:

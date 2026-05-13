@@ -376,6 +376,85 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         return None
 
+    @staticmethod
+    def _strip_think_blocks(text: str) -> str:
+        """Remove model-internal reasoning blocks from user-facing answers."""
+        if not text:
+            return ""
+        cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.IGNORECASE | re.DOTALL)
+        cleaned = re.sub(r"</?think>", "", cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
+
+    @staticmethod
+    def _normalize_verify_answer(answer: str) -> Optional[str]:
+        """Normalize verification answers to the benchmark yes/no contract."""
+        cleaned = BaseKBQAAgent._strip_think_blocks(answer)
+        compact = cleaned.strip().lower().strip(" .!?:;\"'")
+        if compact in {"yes", "true"}:
+            return "yes"
+        if compact in {"no", "false"}:
+            return "no"
+
+        explicit = re.search(
+            r"\b(?:answer|final answer|result|verdict)\s*[:\-]\s*(yes|no|true|false)\b",
+            compact,
+        )
+        if explicit:
+            return "yes" if explicit.group(1) in {"yes", "true"} else "no"
+
+        negative_phrases = (
+            "does not",
+            "do not",
+            "did not",
+            "is not",
+            "are not",
+            "was not",
+            "were not",
+            "not true",
+            "not correct",
+            "not verified",
+            "not satisfied",
+            "doesn't",
+            "isn't",
+            "wasn't",
+            "false",
+        )
+        if any(phrase in compact for phrase in negative_phrases):
+            return "no"
+
+        affirmative_phrases = (
+            "yes,",
+            "yes.",
+            "is true",
+            "is correct",
+            "is verified",
+            "verified",
+            "confirmed",
+            "satisfies",
+            "meets the condition",
+            "greater than",
+            "less than",
+            "at least",
+            "at most",
+            "over ",
+            "under ",
+            "before ",
+            "after ",
+        )
+        if any(phrase in compact for phrase in affirmative_phrases):
+            return "yes"
+
+        return None
+
+    def _finalize_answer_text(self, answer: str, qtype: str = "") -> str:
+        """Apply final answer-shape cleanup without changing non-Verify semantics."""
+        cleaned = self._strip_think_blocks(answer)
+        if qtype == "Verify":
+            normalized = self._normalize_verify_answer(cleaned)
+            if normalized:
+                return normalized
+        return cleaned
+
     def _get_journal_summary_answer_prompt(self) -> str:
         """
         Get the prompt to inject after GetJournalSummary.
@@ -799,7 +878,7 @@ Change strategy or acknowledge the data doesn't exist."""
                     _fp_span.set_attribute("succeeded", fast_answer is not None)
                 if fast_answer is not None:
                     self._trace(f"Fast path succeeded ({len(fast_answer)} chars)", COLOR_GREEN)
-                    return fast_answer
+                    return self._finalize_answer_text(fast_answer, qtype)
                 self._trace("Fast path failed - falling back to full loop", COLOR_YELLOW)
 
             # Filter tools by question type (saves ~2-3k tokens per iteration)
@@ -817,7 +896,7 @@ Change strategy or acknowledge the data doesn't exist."""
             refresh_interval = config.domain_settings.get("journal_refresh_interval", 5)
 
             answer = await self._run_tool_loop(
-                query, openai_tools, max_iterations, refresh_interval
+                query, openai_tools, max_iterations, refresh_interval, qtype=qtype
             )
 
             return answer
@@ -969,7 +1048,8 @@ Change strategy or acknowledge the data doesn't exist."""
         query: str,
         tools: List[Dict],
         max_iterations: int,
-        refresh_interval: int
+        refresh_interval: int,
+        qtype: str = "",
     ) -> str:
         """
         Run the main tool-calling loop.
@@ -1225,7 +1305,7 @@ Change strategy or acknowledge the data doesn't exist."""
                     f"Reached max tool-call cap ({total_tool_calls_made}/{max_tool_calls}) - forcing synthesis",
                     COLOR_RED,
                 )
-                return await self._run_synthesis(query)
+                return await self._run_synthesis(query, qtype=qtype)
 
             # Early exit: nudge agent to wrap up after iteration 15
             if iteration_count >= 15 and iteration_count % 5 == 0:
@@ -1248,14 +1328,14 @@ Change strategy or acknowledge the data doesn't exist."""
                     "Synthesis bypassed - using agent's final message as answer",
                     COLOR_CYAN,
                 )
-                return final_agent_content.strip()
+                return self._finalize_answer_text(final_agent_content, qtype)
             self._trace(
                 "Synthesis bypassed but agent produced no final content - falling back to synthesis",
                 COLOR_YELLOW,
             )
 
         # Run synthesis
-        return await self._run_synthesis(query)
+        return await self._run_synthesis(query, qtype=qtype)
 
     async def _execute_tool_calls(self, tool_calls: List, as_user_messages: bool = False) -> bool:
         """
@@ -1622,7 +1702,7 @@ Change strategy or acknowledge the data doesn't exist."""
                 },
             )
 
-    async def _run_synthesis(self, query: str) -> str:
+    async def _run_synthesis(self, query: str, qtype: str = "") -> str:
         """
         Run the deterministic synthesis step.
 
@@ -1641,9 +1721,9 @@ Change strategy or acknowledge the data doesn't exist."""
             attributes={"model": self.synthesis_model},
             payload={"query": query},
         ) as _syn_span:
-            return await self._run_synthesis_impl(query, _syn_span)
+            return await self._run_synthesis_impl(query, _syn_span, qtype=qtype)
 
-    async def _run_synthesis_impl(self, query: str, _syn_span) -> str:
+    async def _run_synthesis_impl(self, query: str, _syn_span, qtype: str = "") -> str:
         self._trace("Starting synthesis step", COLOR_CYAN)
 
         # Get journal summary
@@ -1714,9 +1794,10 @@ Change strategy or acknowledge the data doesn't exist."""
                     if final_answer and final_answer.strip():
                         self._trace(f"Re-synthesis complete ({len(final_answer)} chars)", COLOR_GREEN)
 
+            final_answer = self._finalize_answer_text(final_answer, qtype)
             self._trace(f"Synthesis complete ({len(final_answer)} chars)", COLOR_GREEN)
             self._messages.append({"role": "assistant", "content": final_answer})
-            return final_answer.strip()
+            return final_answer
         else:
             self._trace("WARNING: Synthesis returned empty", COLOR_RED)
             fallback = "Unable to generate answer. Investigation completed but synthesis failed."

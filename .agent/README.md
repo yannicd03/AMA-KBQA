@@ -51,6 +51,7 @@
 | [Decisions/sciqa-node-type-filter.md](Decisions/sciqa-node-type-filter.md) | `node_type_filter` for `FindResource`: over-fetches 4×top_n then prunes by `rdf:type orkgc:<class>`; fixes wrong-resource-type silently corrupting `AggregateComparisonValues` (Paper returned instead of Comparison); Aggregation fewshot updated |
 | [Decisions/sciqa-cross-resource-aggregation.md](Decisions/sciqa-cross-resource-aggregation.md) | New tool `FindFrequentValues` (tool 21) + `comparison_ids` extension to `AggregateComparisonValues`; closes 12-failure global-scope superlative/aggregation class; SCOPE decision tree in Superlative/Aggregation strategies; 25-call hard-stop in NO_PROGRESS_TEMPLATE |
 | [Decisions/multi-label-fewshot-tolerance.md](Decisions/multi-label-fewshot-tolerance.md) | Split-and-merge fewshot lookup in `SciQAAgent._classify_question()`: handles compound classifier outputs like `"Factoid\nSuperlative"` that silently yielded empty fewshots and hid `FindFrequentValues` traces from the agent |
+| [Decisions/root-cause-tool-generalization-2026-05-14.md](Decisions/root-cause-tool-generalization-2026-05-14.md) | Root-cause fixes from the seed-43 trace audit: answer cleanup, branch-local `CountUnion` relations, qualifier aliases, `QueryComparisonRows`, multi-predicate aggregation, and subject-scope frequencies |
 
 ---
 
