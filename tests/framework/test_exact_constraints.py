@@ -1,4 +1,5 @@
 from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
+from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 
 
 def _agent() -> KQAProAgent:
@@ -35,3 +36,22 @@ def test_kqapro_normalizes_iswc_typo():
     )
 
     assert {"attribute_name": "ISWC", "value": "T-011.363.815-5"} in constraints
+
+
+def test_agent_analysis_context_overrides_accept_query_argument():
+    kqapro = _agent()
+    kqapro.use_fewshot = False
+    context = kqapro._build_analysis_context(
+        "Query",
+        [],
+        [],
+        query="Which type of sport has IAB code 543?",
+    )
+
+    assert "EXACT ATTRIBUTE CONSTRAINTS DETECTED" in context
+    assert "IAB code = 543" in context
+
+    sciqa = object.__new__(SciQAAgent)
+    context = sciqa._build_analysis_context("Factoid", [], [], query="Any query")
+
+    assert "Question Type" in context
