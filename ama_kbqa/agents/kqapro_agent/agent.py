@@ -394,7 +394,8 @@ class KQAProAgent(BaseKBQAAgent):
         qtype: str,
         entities: List[str],
         relations: List[str],
-        fewshot_examples: str = ""
+        fewshot_examples: str = "",
+        query: str = "",
     ) -> str:
         """
         Build the analysis context message with KQAPro templates.
@@ -419,6 +420,20 @@ class KQAProAgent(BaseKBQAAgent):
             formatted_relations=formatted_relations,
             qtype_strategy=qtype_strategy
         )
+
+        exact_constraints = self._extract_exact_attribute_constraints(query)
+        if exact_constraints:
+            formatted_constraints = "\n".join(
+                f"  - {c['attribute_name']} = {c['value']}"
+                for c in exact_constraints
+            )
+            context += (
+                "\n\nEXACT ATTRIBUTE CONSTRAINTS DETECTED:\n"
+                f"{formatted_constraints}\n"
+                "Use exact reverse lookup (`FindByAttribute`) or explicit verification "
+                "for these constraints before semantic entity search or final synthesis. "
+                "If several entities share a name, prefer the one satisfying all exact constraints."
+            )
 
         if fewshot_examples and fewshot_examples.strip():
             context += FEWSHOT_EXAMPLES_TEMPLATE.format(

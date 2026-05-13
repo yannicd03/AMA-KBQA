@@ -113,6 +113,17 @@ python -m ama_kbqa.benchmark_agents --agents sciqa --questionnaire db/sciqa_ques
 
 When `--questionnaire` or `--n-questions` is also used, indices apply after that loaded question list is built.
 
+### Current Hard-Case Panels
+
+After the 2026-05-13 seed=43 KIT baseline, the reusable focused panels are:
+
+```bash
+python -m ama_kbqa.benchmark_agents --agents kqapro --models minimax-m2.7-kit gemma-4-31b-kit --n-questions 100 --seed 42 --stratified --question-indices 0,8,15,18,22,33,38,43,47,74,77,85,99 --postprocessing llm_judge --output-dir benchmark_results/focused-kqapro-$(date +%F)-stratified-v8 --timeout 600
+python -m ama_kbqa.benchmark_agents --agents sciqa --models minimax-m2.7-kit gemma-4-31b-kit --n-questions 100 --seed 42 --stratified --question-indices 0,5,8,16,17,19,23,31,34,36,57,60,69,74,80,88,91,92,95,96 --postprocessing llm_judge --output-dir benchmark_results/focused-sciqa-$(date +%F)-stratified-v8 --timeout 600
+```
+
+Track the path, not just final accuracy: KQAPro should show fewer zero-tool answers and higher use of exact attribute lookup, `GetQualifierValue`, `GetRelationBetween`, and complete-candidate Select evidence. SciQA should show high-level aggregation before raw `RunORKGSPARQL`, especially `AggregateComparisonValues` / `FindFrequentValues` on comparison and global-scope questions.
+
 ---
 
 ## Command Line Arguments

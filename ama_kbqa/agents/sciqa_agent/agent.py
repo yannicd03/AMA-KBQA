@@ -215,7 +215,8 @@ class SciQAAgent(BaseKBQAAgent):
         qtype: str,
         entities: List[str],
         relations: List[str],
-        fewshot_examples: str = ""
+        fewshot_examples: str = "",
+        query: str = "",
     ) -> str:
         """
         Build the analysis context message with SciQA templates.
