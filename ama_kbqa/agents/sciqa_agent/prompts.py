@@ -516,25 +516,33 @@ TIER 3 - DOMAIN-SPECIFIC:
   Navigate Comparison -> compareContribution -> Contribution -> domain predicate values.
   Without domain_predicate: schema discovery (see available predicates).
   With domain_predicate: get values for that predicate across all contributions.
-- AggregateComparisonValues(comparison_id, value_predicate, agg, group_by_predicate?,
+- QueryComparisonRows(comparison_id, filters?, return_predicates?, comparison_ids?):
+  Return exact contribution rows after multiple predicate/value filters, then project
+  several requested predicates. Use this before raw SPARQL for row questions like
+  algorithm=Naive Bayes AND feature=bag of words -> precision/recall/F1.
+- AggregateComparisonValues(comparison_id, value_predicate, value_predicates?, agg, group_by_predicate?,
                             filter_predicate?, filter_value?, filter_match?, top_n?,
                             value_parser?, return_predicate?, intermediate_predicate?):
   Compute AVG / SUM / MIN / MAX / COUNT / COUNT_DISTINCT / MODE_TOP / ALL_VALUES over
   a Comparison's contributions. Auto-handles the HAS_VALUE indirection on numeric
   measurements. Use this whenever the question asks for "mean / total / minimum /
   maximum / count / most common X for the studies" or per-group extremes.
+  Pass value_predicates="P1,P2" when the same metric can appear under sibling
+  predicates and the question asks for the combined population.
   For nested rows like Contribution -> energy source -> measurement, pass
   intermediate_predicate for the first hop and value_predicate for the measurement.
   PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
 - FindFrequentValues(value_predicate, agg, research_field_id?, comparison_ids?,
                      group_by_predicate?, filter_predicate?, filter_value?,
-                     top_n?, value_parser?, return_predicate?, scope?, split_values?):
+                     top_n?, value_parser?, return_predicate?, scope?,
+                     value_source?, split_values?):
   Cross-resource aggregation when no single Comparison anchors the question, or
   when several Comparisons must be unioned. Use this for global phrases such as
   "throughout the papers", "across the papers", "most frequent overall", and
   cross-comparison frequency/superlative questions. Use scope="papers" for
   "throughout/across the papers"; omit it or use scope="comparisons" for featured
-  Comparison-only aggregation.
+  Comparison-only aggregation. For paper metadata such as "top research fields
+  in papers", use scope="papers", value_source="subject".
 - FindCoAuthors(author_name, top_n?):
   Find co-authors of an author across all their papers in ONE call. Use this
   for "who has X co-written with?" / "collaborators of X" instead of chaining
@@ -574,6 +582,8 @@ Most questions involve data stored in Comparison resources. When you identify a 
 3. For aggregation (count, min/max, frequency): Use AggregateComparisonValues for
    one Comparison, or FindFrequentValues / AggregateComparisonValues(comparison_ids=...)
    when the scope spans several Comparisons.
+4. For row-level questions with several filters and several return metrics:
+   use QueryComparisonRows before considering raw SPARQL.
 DO NOT repeatedly call FindResource if you already have a Comparison resource. Go directly to GetComparisonContributions.
 
 AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation questions):
@@ -583,7 +593,8 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
   use FindFrequentValues(comparison_ids=...) or AggregateComparisonValues(comparison_ids=...).
 - Global scope ("throughout the papers", "across the papers", "most frequent overall",
   "top five used research fields in papers"):
-  use FindFrequentValues before raw SPARQL.
+  use FindFrequentValues before raw SPARQL. For paper-level metadata, set
+  scope="papers", value_source="subject".
 - Global contribution counts ("how many X are examined/used/participate throughout
   the papers/studies"):
   FindPredicate(X) -> FindFrequentValues(value_predicate=..., agg="count", scope="papers").
@@ -594,6 +605,9 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
 - Questions asking for the item attached to an extreme metric ("studied location with
   largest geographic scale"):
   use return_predicate with agg="max" or agg="min".
+- Questions asking for values from rows that satisfy multiple named column constraints:
+  use QueryComparisonRows with one filter per constraint and one return predicate
+  per requested metric.
 - Negation/set-difference ("without", "not") remains a raw SPARQL FILTER NOT EXISTS case.
 
 ORKG PREDICATE REFERENCE
@@ -1031,9 +1045,10 @@ Current journal state:
 
 **IMMEDIATE ACTIONS REQUIRED:**
 1. If this is aggregation/superlative/count, state the scope and use AggregateComparisonValues or FindFrequentValues before raw SPARQL.
-2. If FindResource is not working, change the anchor (paper, author, research field, Comparison) or use FindByPredicateValue.
-3. If predicates don't exist, use GetResourceSummary to discover available predicates.
-4. If data doesn't exist after a scoped high-level attempt plus schema discovery, acknowledge this and provide your best answer.
+2. If this is a row question with multiple column constraints, use QueryComparisonRows before raw SPARQL.
+3. If FindResource is not working, change the anchor (paper, author, research field, Comparison) or use FindByPredicateValue.
+4. If predicates don't exist, use GetResourceSummary to discover available predicates.
+5. If data doesn't exist after a scoped high-level attempt plus schema discovery, acknowledge this and provide your best answer.
 
 You MUST change your approach NOW."""
 

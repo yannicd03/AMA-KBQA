@@ -55,3 +55,30 @@ def test_agent_analysis_context_overrides_accept_query_argument():
     context = sciqa._build_analysis_context("Factoid", [], [], query="Any query")
 
     assert "Question Type" in context
+
+
+def test_final_answer_cleanup_strips_think_blocks():
+    answer = _agent()._finalize_answer_text(
+        "<think>internal reasoning</think>\nLand Force Command",
+        "Query",
+    )
+
+    assert answer == "Land Force Command"
+
+
+def test_verify_answer_cleanup_normalizes_affirmative_statement():
+    answer = _agent()._finalize_answer_text(
+        "Reno's population is greater than 100.",
+        "Verify",
+    )
+
+    assert answer == "yes"
+
+
+def test_verify_answer_cleanup_normalizes_negative_statement():
+    answer = _agent()._finalize_answer_text(
+        "The condition is not satisfied.",
+        "Verify",
+    )
+
+    assert answer == "no"
