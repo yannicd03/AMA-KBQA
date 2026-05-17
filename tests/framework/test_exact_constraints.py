@@ -1,5 +1,7 @@
 from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
+from ama_kbqa.framework.base_agent import BaseKBQAAgent
+from ama_kbqa.server.sciqa_server import _payload_node_type_matches
 
 
 def _agent() -> KQAProAgent:
@@ -82,3 +84,32 @@ def test_verify_answer_cleanup_normalizes_negative_statement():
     )
 
     assert answer == "no"
+
+
+def test_fast_path_extractors_parse_answer_values():
+    node_id, name = BaseKBQAAgent._extract_first_match_identity(
+        '{"matches": [{"original_id": "Q42", "name": "Douglas Adams"}]}'
+    )
+    assert node_id == "Q42"
+    assert name == "Douglas Adams"
+
+    attr_values = BaseKBQAAgent._extract_attribute_values(
+        '{"values": [{"value": "1952-03-11"}, {"value": "42", "unit": "year"}]}'
+    )
+    assert attr_values == ["1952-03-11", "42 year"]
+
+    relation_ids = BaseKBQAAgent._extract_relation_ids(
+        '{"triples": [{"related_id": "Q1"}, {"related_id": "Q1"}, {"related_id": "Q2"}]}'
+    )
+    assert relation_ids == ["Q1", "Q2"]
+
+    labels = BaseKBQAAgent._extract_batch_labels(
+        '{"resolved": {"Q1": "Universe", "Q2": "Earth"}}'
+    )
+    assert labels == {"Q1": "Universe", "Q2": "Earth"}
+
+
+def test_sciqa_payload_node_type_filter_accepts_normalized_payload_type():
+    assert _payload_node_type_matches("comparison", "Comparison")
+    assert _payload_node_type_matches("orkgc:ResearchField", "Research Field")
+    assert not _payload_node_type_matches("paper", "Comparison")

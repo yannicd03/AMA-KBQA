@@ -303,6 +303,127 @@ def format_predicate_uri(predicate_id: str) -> str:
     return f"<{NS_PREDICATE}{predicate_id}>"
 
 
+def _normalize_node_type_label(value: str) -> str:
+    """Normalize ORKG/Qdrant type labels for comparison."""
+    text = (value or "").strip()
+    if text.startswith("orkgc:"):
+        text = text[6:]
+    if "/" in text:
+        text = text.rsplit("/", 1)[-1]
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _payload_node_type_matches(payload_type: str, wanted_class: str) -> bool:
+    """Return True when Qdrant payload node_type satisfies node_type_filter."""
+    return (
+        bool(payload_type and wanted_class)
+        and _normalize_node_type_label(payload_type) == _normalize_node_type_label(wanted_class)
+    )
+
+
+def _sparql_quote_literal(value: str) -> str:
+    """Escape a Python string as a SPARQL double-quoted literal body."""
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
+def _get_available_predicates(app, resource_id: str) -> List[str]:
+    """Return compact predicate labels for a resource."""
+    predicates = []
+    try:
+        pred_query = f"""
+        SELECT DISTINCT ?p WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                orkgr:{resource_id} ?p ?o .
+            }}
+        }} LIMIT 20
+        """
+        full_query = SPARQL_PREFIXES + pred_query
+        app.sparql.setQuery(full_query)
+        results = app.sparql.query().convert()
+
+        for binding in results.get("results", {}).get("bindings", []):
+            pred_uri = binding.get("p", {}).get("value", "")
+            pred_label = pred_uri.split("/")[-1]
+            if pred_label not in ["type", "label"]:
+                predicates.append(pred_label)
+    except Exception as e:
+        logger.warning(f"Failed to get predicates for {resource_id}: {e}")
+    return predicates[:10]
+
+
+def _find_resources_by_label(
+    app,
+    semantic_query: str,
+    top_n: int,
+    node_type_filter: str = "",
+) -> List[ResourceMatch]:
+    """Fallback lexical label lookup for exact or quoted resource titles."""
+    terms = [semantic_query.strip()]
+    terms.extend(t.strip() for t in re.findall(r'"([^"]{3,})"', semantic_query))
+    seen_terms = set()
+    ordered_terms = []
+    for term in terms:
+        if term and term.lower() not in seen_terms:
+            seen_terms.add(term.lower())
+            ordered_terms.append(term)
+
+    matches: list[ResourceMatch] = []
+    seen_ids: set[str] = set()
+    wanted = node_type_filter.strip()
+    if wanted.startswith("orkgc:"):
+        wanted = wanted[6:]
+
+    for term in ordered_terms:
+        safe = _sparql_quote_literal(term)
+        query = f"""
+        SELECT DISTINCT ?resource ?label ?type WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                ?resource rdfs:label ?label .
+                OPTIONAL {{ ?resource rdf:type ?type }}
+                FILTER(
+                    LCASE(STR(?label)) = LCASE("{safe}") ||
+                    CONTAINS(LCASE(STR(?label)), LCASE("{safe}"))
+                )
+            }}
+        }} LIMIT {max(top_n * 3, 10)}
+        """
+        try:
+            app.sparql.setQuery(SPARQL_PREFIXES + query)
+            results = app.sparql.query().convert()
+        except Exception as e:
+            logger.warning(f"FindResource lexical fallback failed for {term!r}: {e}")
+            continue
+
+        for binding in results.get("results", {}).get("bindings", []):
+            resource_uri = binding.get("resource", {}).get("value", "")
+            if not resource_uri.startswith(NS_RESOURCE):
+                continue
+            resource_id = resource_uri.split("/")[-1]
+            if resource_id in seen_ids:
+                continue
+
+            type_uri = binding.get("type", {}).get("value", "")
+            node_type = type_uri.split("/")[-1] if type_uri else "resource"
+            if wanted and type_uri and not _payload_node_type_matches(node_type, wanted):
+                continue
+
+            label = binding.get("label", {}).get("value", "")
+            exact = label.lower() == term.lower()
+            matches.append(ResourceMatch(
+                original_id=resource_id,
+                name=label,
+                node_type=node_type.lower() if node_type else "resource",
+                relevance_score=1.0 if exact else 0.9,
+                available_predicates=_get_available_predicates(app, resource_id),
+            ))
+            session_journal.visited_nodes[resource_id] = label
+            seen_ids.add(resource_id)
+            if len(matches) >= top_n:
+                return matches
+
+    return matches
+
+
 def get_embedding(client: OpenAI, text: str) -> List[float]:
     """Get embedding for text."""
     text = text.replace("\n", " ")
@@ -431,9 +552,14 @@ async def FindResource(
             limit=candidate_limit,
             score_threshold=ENTITY_THRESHOLD
         ).points
+        unfiltered_search_results = list(search_results)
+        filter_source = ""
 
         # If a node_type_filter is supplied, batch-check rdf:type via SPARQL
-        # and keep only candidates matching the requested ORKG class.
+        # and keep only candidates matching the requested ORKG class. If the
+        # RDF type triples are missing or stale, fall back to the Qdrant
+        # payload's indexed node_type; this avoids losing valid Comparison
+        # candidates solely because ORKG type metadata is incomplete.
         if node_type_filter and search_results:
             wanted_class = node_type_filter.strip()
             if wanted_class.startswith("orkgc:"):
@@ -460,12 +586,26 @@ async def FindResource(
                     b["resource"]["value"].split("/")[-1]
                     for b in tres.get("results", {}).get("bindings", [])
                 }
-                search_results = [
+                rdf_filtered = [
                     hit for hit in search_results
                     if (hit.payload or {}).get("uri", "").split("/")[-1] in matched_ids
-                ][:top_n]
+                ]
+                if rdf_filtered:
+                    search_results = rdf_filtered[:top_n]
+                    filter_source = "rdf_type"
+                else:
+                    payload_filtered = [
+                        hit for hit in unfiltered_search_results
+                        if _payload_node_type_matches(
+                            str((hit.payload or {}).get("node_type", "")),
+                            wanted_class,
+                        )
+                    ]
+                    search_results = payload_filtered[:top_n]
+                    filter_source = "payload_node_type" if payload_filtered else "none"
             else:
                 search_results = []
+                filter_source = "none"
 
         matches = []
         for hit in search_results:
@@ -478,36 +618,31 @@ async def FindResource(
             session_journal.visited_nodes[resource_id] = name
 
             # Get available predicates via SPARQL
-            predicates = []
-            try:
-                pred_query = f"""
-                SELECT DISTINCT ?p WHERE {{
-                    GRAPH <{SCIQA_GRAPH}> {{
-                        orkgr:{resource_id} ?p ?o .
-                    }}
-                }} LIMIT 20
-                """
-                full_query = SPARQL_PREFIXES + pred_query
-                app.sparql.setQuery(full_query)
-                results = app.sparql.query().convert()
-
-                for binding in results.get("results", {}).get("bindings", []):
-                    pred_uri = binding.get("p", {}).get("value", "")
-                    pred_label = pred_uri.split("/")[-1]
-                    if pred_label not in ["type", "label"]:
-                        predicates.append(pred_label)
-            except Exception as e:
-                logger.warning(f"Failed to get predicates for {resource_id}: {e}")
+            predicates = _get_available_predicates(app, resource_id)
 
             matches.append(ResourceMatch(
                 original_id=resource_id,
                 name=name,
                 node_type=node_type,
                 relevance_score=round(hit.score, 4),
-                available_predicates=predicates[:10]
+                available_predicates=predicates
             ))
 
-        session_journal.completed_steps.append(f"FindResource('{semantic_query}') -> {len(matches)} results")
+        if node_type_filter and not matches:
+            lexical_matches = _find_resources_by_label(
+                app,
+                semantic_query,
+                top_n,
+                node_type_filter,
+            )
+            if lexical_matches:
+                matches = lexical_matches
+                filter_source = "lexical_label"
+
+        suffix = f", filter={node_type_filter}:{filter_source}" if node_type_filter else ""
+        session_journal.completed_steps.append(
+            f"FindResource('{semantic_query}') -> {len(matches)} results{suffix}"
+        )
 
         response = SearchResponse(matches=matches, result_count=len(matches))
         return response.model_dump_json(indent=2)
