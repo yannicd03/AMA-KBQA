@@ -1,7 +1,13 @@
 from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
-from ama_kbqa.server.sciqa_server import _payload_node_type_matches
+from ama_kbqa.server.sciqa_server import (
+    _looks_numeric_value,
+    _payload_node_type_matches,
+    _schema_display_value,
+    _schema_usage_hint,
+    _short_orkg_term,
+)
 
 
 def _agent() -> KQAProAgent:
@@ -113,3 +119,24 @@ def test_sciqa_payload_node_type_filter_accepts_normalized_payload_type():
     assert _payload_node_type_matches("comparison", "Comparison")
     assert _payload_node_type_matches("orkgc:ResearchField", "Research Field")
     assert not _payload_node_type_matches("paper", "Comparison")
+
+
+def test_sciqa_schema_helpers_compact_values_and_paths():
+    binding = {
+        "obj": {"value": "http://orkg.org/orkg/resource/R43133"},
+        "objLabel": {"value": "Installed capacity"},
+        "nestedValue": {"value": "367.570798339843756"},
+    }
+
+    assert _short_orkg_term("http://orkg.org/orkg/predicate/P43133") == "P43133"
+    assert _schema_display_value(binding, "obj", "objLabel", "nestedValue") == "367.570798339843756"
+    assert _looks_numeric_value("n=54 patients")
+    assert not _looks_numeric_value("Heat sector")
+
+    hint = _schema_usage_hint(
+        "R153801",
+        "P43133",
+        intermediate_predicate="P43135",
+    )
+    assert 'intermediate_predicate="P43135"' in hint
+    assert 'value_predicate="P43133"' in hint
