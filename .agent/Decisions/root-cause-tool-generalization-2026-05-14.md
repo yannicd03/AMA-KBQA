@@ -119,3 +119,31 @@ Concrete fixes to implement next:
 - Extend `analyze_benchmark_run.py` to flag hidden fast-path returns separately
   from true zero-tool failures, using trace messages plus tool summary
   inconsistencies.
+
+## 2026-05-17 Implementation Follow-Up
+
+Implemented the first low-overfit recovery pass:
+
+- `BaseKBQAAgent` fast path is now evidence-only. It executes tools through the
+  normal tool-call recorder, mirrors synthetic tool-call/result messages into
+  the conversation trace, and returns only directly extracted attribute or
+  relation values. It no longer asks the LLM to synthesize from a broad node
+  summary inside the fast path.
+- The main tool loop now initializes its zero-tool accounting from tool calls
+  already made before the loop, so a fallback answer grounded in fast-path
+  evidence is not misclassified as a true zero-tool answer.
+- `FindResource(node_type_filter=...)` still prefers RDF type matches, but now
+  falls back to the Qdrant payload `node_type` when RDF typing yields no
+  candidates. If both semantic/type-filter paths fail, it tries a lexical label
+  fallback for exact or quoted titles.
+- `used_results/` is ignored locally so copied benchmark artifacts remain
+  available for analysis without entering git history.
+
+Validation:
+
+- `uv run python -m compileall ama_kbqa/framework/base_agent.py ama_kbqa/server/sciqa_server.py tests/framework/test_exact_constraints.py`
+- `uv run pytest tests/framework/test_exact_constraints.py -q` = 10 passed.
+- `uv run pytest tests/framework -q` = 132 passed.
+
+These are still root-cause fixes rather than benchmark-row patches: they change
+trace integrity, conservative answer gating, and generic resource discovery.

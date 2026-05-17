@@ -958,7 +958,10 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         Attempt to answer simple 1-hop questions without the full agent loop.
 
-        Executes: FindNode → GetNodeSummary → Synthesis
+        Executes a small, trace-visible lookup and returns only directly
+        extracted values. It deliberately does not ask the LLM to synthesize from
+        partial evidence; if the exact requested value is not present, the full
+        loop gets the recorded tool evidence and continues normally.
         Returns None if the fast path cannot answer (fallback to full loop).
         """
         entity_name = entities[0]
@@ -973,75 +976,159 @@ Change strategy or acknowledge the data doesn't exist."""
                     f"{exact_lookup['attribute_name']}={exact_lookup['value']}",
                     COLOR_GREEN,
                 )
-                find_result = await self.mcp.call_tool("FindByAttribute", exact_lookup)
-                self.tool_call_counts["FindByAttribute"] = self.tool_call_counts.get("FindByAttribute", 0) + 1
+                find_result = await self._execute_fast_path_tool("FindByAttribute", exact_lookup)
             else:
-                find_result = await self.mcp.call_tool("FindNode", {"semantic_node_name": entity_name})
-                self.tool_call_counts["FindNode"] = self.tool_call_counts.get("FindNode", 0) + 1
+                find_result = await self._execute_fast_path_tool(
+                    "FindNode",
+                    {"semantic_node_name": entity_name},
+                )
 
             # Parse the result to get node_id
-            import re as _re
-            id_match = _re.search(r'"original_id":\s*"([^"]+)"', find_result)
-            if not id_match:
+            node_id, _resolved_entity_name = self._extract_first_match_identity(find_result)
+            if not node_id:
                 return None
-            node_id = id_match.group(1)
-            name_match = _re.search(r'"name":\s*"([^"]+)"', find_result)
-            resolved_entity_name = name_match.group(1) if name_match else entity_name
 
-            # Step 2: Get full node summary
-            summary_result = await self.mcp.call_tool("GetNodeSummary", {"node_id": node_id})
-
-            # Track tool calls
-            self.tool_call_counts["GetNodeSummary"] = self.tool_call_counts.get("GetNodeSummary", 0) + 1
-
-            # Step 3: If relation-specific, also get relation details
-            relation_result = ""
-            if relations and qtype == "QueryRelation":
-                try:
-                    relation_result = await self.mcp.call_tool(
-                        "GetRelationDetails",
-                        {"base_node_id": node_id, "relation_name": relations[0]}
-                    )
-                    self.tool_call_counts["GetRelationDetails"] = self.tool_call_counts.get("GetRelationDetails", 0) + 1
-                except Exception:
-                    pass
-
-            # Step 4: Synthesize answer from gathered data
-            data_context = f"Entity: {resolved_entity_name} (ID: {node_id})\n"
-            if exact_lookup:
-                data_context += (
-                    "Exact lookup: "
-                    f"{exact_lookup['attribute_name']} = {exact_lookup['value']}\n"
+            # Step 2: Try the exact requested relation/attribute first. Direct
+            # values are safe to return; empty results fall back to the full loop.
+            relation_name = relations[0] if relations else ""
+            if qtype == "QueryAttr" and relation_name:
+                attr_result = await self._execute_fast_path_tool(
+                    "GetAttributeDetails",
+                    {"base_node_id": node_id, "attribute_name": relation_name},
                 )
-            data_context += f"Node Summary:\n{summary_result}\n"
-            if relation_result:
-                data_context += f"Relation Details:\n{relation_result}\n"
+                values = self._extract_attribute_values(attr_result)
+                if values:
+                    return self._format_fast_path_values(values)
 
-            synthesis_prompt = self._get_synthesis_prompt_template().format(
-                journal_summary=data_context,
-                query=query
-            )
+            if qtype == "QueryRelation" and relation_name:
+                relation_result = await self._execute_fast_path_tool(
+                    "GetRelationDetails",
+                    {"base_node_id": node_id, "relation_name": relation_name},
+                )
+                related_ids = self._extract_relation_ids(relation_result)
+                if related_ids:
+                    labels_result = await self._execute_fast_path_tool(
+                        "BatchGetNodeLabels",
+                        {"node_ids": related_ids[:10]},
+                    )
+                    labels = self._extract_batch_labels(labels_result)
+                    values = [labels[rid] for rid in related_ids if rid in labels]
+                    if values:
+                        return self._format_fast_path_values(values)
 
-            synthesis_messages = [
-                {"role": "system", "content": self._get_synthesis_system_prompt()},
-                {"role": "user", "content": synthesis_prompt}
-            ]
-
-            answer = self._llm_call_synthesis(messages_override=synthesis_messages)
-
-            if answer and answer.strip():
-                # Check for failure indicators
-                failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
-                                   "unable to determine", "could not find"]
-                if any(phrase in answer.lower() for phrase in failure_phrases):
-                    return None  # Fallback to full loop
-                return answer.strip()
+            # Step 3: Preserve broad evidence for the fallback loop, but do not
+            # let a synthesis-only fast path answer from this summary.
+            await self._execute_fast_path_tool("GetNodeSummary", {"node_id": node_id})
 
             return None
 
         except Exception as e:
             self._trace(f"Fast path error: {e}", COLOR_YELLOW)
             return None
+
+    async def _execute_fast_path_tool(self, func_name: str, func_args: Dict[str, Any]) -> str:
+        """Execute a fast-path tool through normal tracing and mirror it into messages."""
+        result = await self._execute_single_tool(func_name, func_args)
+        self._append_fast_path_tool_messages(func_name, func_args, result)
+        return result
+
+    def _append_fast_path_tool_messages(
+        self,
+        func_name: str,
+        func_args: Dict[str, Any],
+        result: str,
+    ) -> None:
+        """Add synthetic assistant/tool messages so fast-path evidence is visible."""
+        args_json = json.dumps(func_args, ensure_ascii=False)
+        if self._text_tool_call_mode:
+            call = json.dumps({"name": func_name, "arguments": func_args}, ensure_ascii=False)
+            self._messages.append({
+                "role": "assistant",
+                "content": f"<tool_call>{call}</tool_call>",
+            })
+            self._messages.append({
+                "role": "user",
+                "content": f"<tool_result name=\"{func_name}\">{result}</tool_result>",
+            })
+            return
+
+        tool_call_id = f"fast_path_{len(self.tool_call_durations)}_{func_name}"
+        self._messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": func_name,
+                    "arguments": args_json,
+                },
+            }],
+        })
+        self._messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "name": func_name,
+            "content": result,
+        })
+
+    @staticmethod
+    def _parse_tool_json(raw: str) -> Dict[str, Any]:
+        """Best-effort parser for JSON returned by MCP tools."""
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            extracted = BaseKBQAAgent._extract_json_object(str(raw))
+            return extracted or {}
+
+    @classmethod
+    def _extract_first_match_identity(cls, raw: str) -> Tuple[str, str]:
+        data = cls._parse_tool_json(raw)
+        matches = data.get("matches") or []
+        if not matches or not isinstance(matches[0], dict):
+            return "", ""
+        first = matches[0]
+        return str(first.get("original_id") or ""), str(first.get("name") or "")
+
+    @classmethod
+    def _extract_attribute_values(cls, raw: str) -> List[str]:
+        data = cls._parse_tool_json(raw)
+        values = []
+        for item in data.get("values") or []:
+            if isinstance(item, dict):
+                value = item.get("value")
+                if value is None:
+                    continue
+                unit = item.get("unit")
+                values.append(f"{value} {unit}" if unit else str(value))
+            elif item is not None:
+                values.append(str(item))
+        return values
+
+    @classmethod
+    def _extract_relation_ids(cls, raw: str) -> List[str]:
+        data = cls._parse_tool_json(raw)
+        ids = []
+        for item in data.get("triples") or []:
+            if isinstance(item, dict) and item.get("related_id"):
+                rid = str(item["related_id"])
+                if rid not in ids:
+                    ids.append(rid)
+        return ids
+
+    @classmethod
+    def _extract_batch_labels(cls, raw: str) -> Dict[str, str]:
+        data = cls._parse_tool_json(raw)
+        resolved = data.get("resolved") or {}
+        return {str(k): str(v) for k, v in resolved.items()} if isinstance(resolved, dict) else {}
+
+    @staticmethod
+    def _format_fast_path_values(values: List[str]) -> str:
+        clean = [str(v).strip() for v in values if str(v).strip()]
+        return " ".join(clean)
 
     async def _run_tool_loop(
         self,
@@ -1065,7 +1152,10 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         iteration_count = 0
         final_agent_content: Optional[str] = None
-        total_tool_calls_made = 0
+        # Fast-path evidence is collected before the loop. Count it here so a
+        # model may synthesize from already-recorded tool evidence without being
+        # mislabeled as a true zero-tool answer.
+        total_tool_calls_made = sum(self.tool_call_counts.values())
         zero_tool_call_retries = 0
         zero_tool_call_retry_max = get_zero_tool_call_retry_max() if get_zero_tool_call_retry() else 0
 
