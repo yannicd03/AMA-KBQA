@@ -147,3 +147,41 @@ Validation:
 
 These are still root-cause fixes rather than benchmark-row patches: they change
 trace integrity, conservative answer gating, and generic resource discovery.
+
+## 2026-05-17 Hetzner Focused Validation
+
+Deployed commit `f17af03` to Hetzner, merged into the deployment branch, rebuilt
+the frontend container, and re-ran the framework tests on the server:
+
+- Hetzner `uv run pytest tests/framework -q` = 132 passed.
+- Focused KQAPro fast-path panel
+  (`benchmark_results/focused-kqapro-fastpath-2026-05-17`):
+  - MiniMax: 3/4 = 75%.
+  - Gemma: 3/4 = 75%.
+  - The qualifier-backed fast-path failures now use recorded tools and pass.
+  - Remaining miss in both models is the TBS/Eureka row: the agent finds
+    `Eureka Seven` among candidates but refuses to commit to it as the answer.
+- Focused SciQA lookup/aggregation panel
+  (`benchmark_results/focused-sciqa-lookup-2026-05-17`):
+  - MiniMax: 0/7 = 0%.
+  - Gemma: 0/7 = 0%, with one context/runtime error.
+  - `AggregateComparisonValues` is being adopted, but all focused answers are
+    wrong because the agent selects the wrong predicate, comparison scope, or
+    nested row path after lookup succeeds.
+
+Decision: do not start another full n=100 benchmark from this state. The KQAPro
+trace-integrity fix is validated for the targeted fast-path class, but the SciQA
+focused panel shows that the remaining root cause is schema-guided comparison
+aggregation, not resource-type lookup alone.
+
+Next implementation direction:
+
+- Add a SciQA comparison-schema/row-path helper that lists candidate predicates,
+  nested predicates, labels, units, and contribution counts before aggregation.
+- Make `AggregateComparisonValues` require or strongly prefer schema-discovered
+  predicates for nested rows, with compact diagnostics when the selected
+  predicate is only a sibling/domain label rather than the requested metric.
+- Add a row-filter plus companion-return path for questions that ask for values
+  attached to the max/min or most-frequent row.
+- Keep KQAPro work focused on the remaining commitment failure class, not on
+  deterministic row patches.
