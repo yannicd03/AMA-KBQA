@@ -23,6 +23,7 @@ Tools provided:
 - CompareResources: Compare a predicate across multiple resources
 - FollowRelationPath: Multi-hop relation navigation
 - GetComparisonContributions: Navigate Comparison -> Contribution -> Value pattern
+- InspectComparisonSchema: Compact predicate/path schema for Comparison resources
 - FindAuthorPapers: Find papers by author name (SPARQL-based, better than vector for names)
 - QueryComparisonRows: Return comparison contribution rows after multi-predicate filters
 - AggregateComparisonValues: AVG/SUM/MIN/MAX/COUNT/MODE_TOP over a Comparison's
@@ -422,6 +423,82 @@ def _find_resources_by_label(
                 return matches
 
     return matches
+
+
+def _short_orkg_term(value: str) -> str:
+    """Return a compact ORKG/resource/predicate ID for a URI-like value."""
+    value = value or ""
+    for prefix in (NS_RESOURCE, NS_PREDICATE, NS_CLASS):
+        if value.startswith(prefix):
+            return value.rsplit("/", 1)[-1]
+    if value.startswith("http://") or value.startswith("https://"):
+        return value.rstrip("/").rsplit("/", 1)[-1]
+    return value
+
+
+def _binding_value(binding: Dict[str, Any], key: str) -> str:
+    """Extract a SPARQLWrapper binding value, returning an empty string when absent."""
+    raw = binding.get(key, {})
+    if isinstance(raw, dict):
+        return raw.get("value", "") or ""
+    return ""
+
+
+def _schema_display_value(
+    binding: Dict[str, Any],
+    obj_key: str,
+    label_key: str,
+    nested_key: str,
+) -> str:
+    """Pick the best human-readable value from object/label/HAS_VALUE bindings."""
+    nested = _binding_value(binding, nested_key)
+    if nested:
+        return nested
+    label = _binding_value(binding, label_key)
+    if label:
+        return label
+    return _short_orkg_term(_binding_value(binding, obj_key))
+
+
+def _looks_numeric_value(value: Any) -> bool:
+    """Return True when a schema sample looks usable for numeric aggregation."""
+    if value is None:
+        return False
+    return bool(re.search(r"[+-]?\d+(\.\d+)?([eE][+-]?\d+)?", str(value).replace(",", "")))
+
+
+def _append_unique_sample(samples: List[str], value: str, limit: int) -> None:
+    """Append a compact sample value once, preserving insertion order."""
+    if not value or value in samples or len(samples) >= limit:
+        return
+    samples.append(value)
+
+
+def _unit_sample(binding: Dict[str, Any]) -> str:
+    """Return a compact unit sample from optional unit bindings."""
+    return (
+        _binding_value(binding, "unitObjLabel")
+        or _short_orkg_term(_binding_value(binding, "unitObj"))
+        or _binding_value(binding, "unitPredLabel")
+        or _short_orkg_term(_binding_value(binding, "unitPred"))
+    )
+
+
+def _schema_usage_hint(
+    comparison_arg: str,
+    predicate_id: str,
+    *,
+    intermediate_predicate: str = "",
+) -> str:
+    """Build a short tool-call hint for schema entries."""
+    scope = f'comparison_ids="{comparison_arg}"' if "," in comparison_arg else f'comparison_id="{comparison_arg}"'
+    if intermediate_predicate:
+        return (
+            f"AggregateComparisonValues({scope}, "
+            f'intermediate_predicate="{intermediate_predicate}", '
+            f'value_predicate="{predicate_id}", agg=...)'
+        )
+    return f'AggregateComparisonValues({scope}, value_predicate="{predicate_id}", agg=...)'
 
 
 def get_embedding(client: OpenAI, text: str) -> List[float]:
@@ -2337,7 +2414,289 @@ SELECT DISTINCT ?paper ?paperLabel ?author ?authorLabel WHERE {{
 
 
 # ==============================================================================
-# TOOL 19: QueryComparisonRows
+# TOOL 19: InspectComparisonSchema
+# ==============================================================================
+
+@mcp.tool()
+async def InspectComparisonSchema(
+    app_context: Context,
+    comparison_id: str = "",
+    comparison_ids: str = "",
+    top_n: int = 20,
+    sample_values_per_predicate: int = 4,
+    limit_bindings: int = 8000,
+) -> str:
+    """
+    Return a compact predicate/path schema for one or more Comparison resources.
+
+    Use this BEFORE choosing predicates for AggregateComparisonValues,
+    FindFrequentValues(comparison_ids=...), or QueryComparisonRows. It summarizes
+    direct contribution predicates and two-hop nested paths such as:
+
+        Contribution -> energy source (P43135) -> installed capacity (P43133)
+
+    The response is intentionally compact: predicate labels, row/value counts,
+    sample values, numeric/HAS_VALUE evidence, and ready-to-use aggregation hints.
+    This prevents guessing the wrong metric predicate or aggregating a domain
+    category when the requested value lives on a nested row.
+
+    Args:
+        comparison_id: Single Comparison resource ID. Used when comparison_ids is empty.
+        comparison_ids: Optional comma-separated Comparison IDs to inspect as one union.
+        top_n: Maximum direct predicates and nested paths to return.
+        sample_values_per_predicate: Number of example values kept per predicate/path.
+        limit_bindings: Safety cap for raw schema bindings scanned.
+
+    Returns:
+        JSON with n_contributions, direct_predicates, nested_paths, and guidance.
+    """
+    app = app_context.request_context.lifespan_context
+
+    try:
+        cmp_id_list = [c.strip() for c in (comparison_ids or "").split(",") if c.strip()]
+        multi_mode = bool(cmp_id_list)
+        if not multi_mode and not (comparison_id or "").strip():
+            return json.dumps({"error": "Either comparison_id or comparison_ids must be set"}, indent=2)
+
+        top_n = max(1, min(int(top_n or 20), 50))
+        sample_limit = max(1, min(int(sample_values_per_predicate or 4), 8))
+        limit_bindings = max(100, min(int(limit_bindings or 8000), 20000))
+
+        if multi_mode:
+            cmp_values = " ".join(f"orkgr:{c}" for c in cmp_id_list)
+            scope_clause = (
+                f"VALUES ?cmp {{ {cmp_values} }}\n"
+                f"        ?cmp orkgp:compareContribution ?contrib .\n"
+            )
+            scope_label = ",".join(cmp_id_list)
+        else:
+            scope_clause = (
+                f"BIND(orkgr:{comparison_id} AS ?cmp)\n"
+                f"        orkgr:{comparison_id} orkgp:compareContribution ?contrib .\n"
+            )
+            scope_label = comparison_id
+
+        count_query = f"""
+SELECT (COUNT(DISTINCT ?contrib) AS ?count) WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+    }}
+}}
+"""
+        app.sparql.setQuery(SPARQL_PREFIXES + count_query)
+        count_results = app.sparql.query().convert()
+        count_bindings = count_results.get("results", {}).get("bindings", [])
+        n_contributions = 0
+        if count_bindings:
+            try:
+                n_contributions = int(count_bindings[0].get("count", {}).get("value", 0))
+            except (TypeError, ValueError):
+                n_contributions = 0
+
+        unit_optional = """
+        OPTIONAL {
+            ?obj ?unitPred ?unitObj .
+            OPTIONAL { ?unitPred rdfs:label ?unitPredLabel }
+            OPTIONAL { ?unitObj rdfs:label ?unitObjLabel }
+            FILTER(
+                CONTAINS(LCASE(STR(?unitPred)), "unit") ||
+                CONTAINS(LCASE(STR(?unitPredLabel)), "unit")
+            )
+        }
+"""
+        direct_query = f"""
+SELECT DISTINCT ?contrib ?pred ?predLabel ?obj ?objLabel ?nestedValue
+                ?unitPred ?unitPredLabel ?unitObj ?unitObjLabel WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+        ?contrib ?pred ?obj .
+        FILTER(?pred NOT IN (rdf:type, rdfs:label))
+        OPTIONAL {{ ?pred rdfs:label ?predLabel }}
+        OPTIONAL {{ ?obj rdfs:label ?objLabel }}
+        OPTIONAL {{ ?obj orkgp:HAS_VALUE ?nestedValue }}
+        {unit_optional}
+    }}
+}} LIMIT {limit_bindings}
+"""
+        app.sparql.setQuery(SPARQL_PREFIXES + direct_query)
+        direct_results = app.sparql.query().convert()
+        direct_bindings = direct_results.get("results", {}).get("bindings", [])
+
+        nested_query = f"""
+SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
+                ?intermediate ?intermediateLabel ?valuePred ?valuePredLabel
+                ?valueObj ?valueObjLabel ?nestedValue
+                ?unitPred ?unitPredLabel ?unitObj ?unitObjLabel WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+        ?contrib ?intermediatePred ?intermediate .
+        FILTER(?intermediatePred NOT IN (rdf:type, rdfs:label))
+        FILTER(STRSTARTS(STR(?intermediate), "{NS_RESOURCE}"))
+        ?intermediate ?valuePred ?valueObj .
+        FILTER(?valuePred NOT IN (rdf:type, rdfs:label, orkgp:HAS_VALUE))
+        OPTIONAL {{ ?intermediatePred rdfs:label ?intermediatePredLabel }}
+        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}
+        OPTIONAL {{ ?valuePred rdfs:label ?valuePredLabel }}
+        OPTIONAL {{ ?valueObj rdfs:label ?valueObjLabel }}
+        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}
+        OPTIONAL {{
+            ?valueObj ?unitPred ?unitObj .
+            OPTIONAL {{ ?unitPred rdfs:label ?unitPredLabel }}
+            OPTIONAL {{ ?unitObj rdfs:label ?unitObjLabel }}
+            FILTER(
+                CONTAINS(LCASE(STR(?unitPred)), "unit") ||
+                CONTAINS(LCASE(STR(?unitPredLabel)), "unit")
+            )
+        }}
+    }}
+}} LIMIT {limit_bindings}
+"""
+        app.sparql.setQuery(SPARQL_PREFIXES + nested_query)
+        nested_results = app.sparql.query().convert()
+        nested_bindings = nested_results.get("results", {}).get("bindings", [])
+
+        direct: Dict[str, Dict[str, Any]] = {}
+        for binding in direct_bindings:
+            pred_id = _short_orkg_term(_binding_value(binding, "pred"))
+            if not pred_id:
+                continue
+            entry = direct.setdefault(pred_id, {
+                "predicate_id": pred_id,
+                "label": _binding_value(binding, "predLabel") or pred_id,
+                "_rows": set(),
+                "value_count": 0,
+                "has_value_count": 0,
+                "numeric_sample_count": 0,
+                "sample_values": [],
+                "unit_samples": [],
+            })
+            contrib_id = _short_orkg_term(_binding_value(binding, "contrib"))
+            if contrib_id:
+                entry["_rows"].add(contrib_id)
+            entry["value_count"] += 1
+            value = _schema_display_value(binding, "obj", "objLabel", "nestedValue")
+            _append_unique_sample(entry["sample_values"], value, sample_limit)
+            if _binding_value(binding, "nestedValue"):
+                entry["has_value_count"] += 1
+            if _looks_numeric_value(value):
+                entry["numeric_sample_count"] += 1
+            unit = _unit_sample(binding)
+            _append_unique_sample(entry["unit_samples"], unit, sample_limit)
+
+        direct_payload = []
+        for pred_id, entry in direct.items():
+            row_count = len(entry.pop("_rows"))
+            entry["row_count"] = row_count
+            entry["usage_hint"] = _schema_usage_hint(scope_label, pred_id)
+            direct_payload.append(entry)
+        direct_payload.sort(key=lambda x: (-x["row_count"], -x["value_count"], x["label"]))
+
+        nested: Dict[tuple[str, str], Dict[str, Any]] = {}
+        for binding in nested_bindings:
+            intermediate_pred = _short_orkg_term(_binding_value(binding, "intermediatePred"))
+            value_pred = _short_orkg_term(_binding_value(binding, "valuePred"))
+            if not intermediate_pred or not value_pred:
+                continue
+            key = (intermediate_pred, value_pred)
+            entry = nested.setdefault(key, {
+                "intermediate_predicate": intermediate_pred,
+                "intermediate_label": _binding_value(binding, "intermediatePredLabel") or intermediate_pred,
+                "value_predicate": value_pred,
+                "value_label": _binding_value(binding, "valuePredLabel") or value_pred,
+                "_rows": set(),
+                "value_count": 0,
+                "has_value_count": 0,
+                "numeric_sample_count": 0,
+                "sample_intermediate_values": [],
+                "sample_values": [],
+                "unit_samples": [],
+            })
+            contrib_id = _short_orkg_term(_binding_value(binding, "contrib"))
+            if contrib_id:
+                entry["_rows"].add(contrib_id)
+            entry["value_count"] += 1
+            intermediate_value = _schema_display_value(
+                binding,
+                "intermediate",
+                "intermediateLabel",
+                "intermediateLabel",
+            )
+            value = _schema_display_value(binding, "valueObj", "valueObjLabel", "nestedValue")
+            _append_unique_sample(entry["sample_intermediate_values"], intermediate_value, sample_limit)
+            _append_unique_sample(entry["sample_values"], value, sample_limit)
+            if _binding_value(binding, "nestedValue"):
+                entry["has_value_count"] += 1
+            if _looks_numeric_value(value):
+                entry["numeric_sample_count"] += 1
+            unit = _unit_sample(binding)
+            _append_unique_sample(entry["unit_samples"], unit, sample_limit)
+
+        nested_payload = []
+        for (intermediate_pred, value_pred), entry in nested.items():
+            row_count = len(entry.pop("_rows"))
+            entry["row_count"] = row_count
+            entry["usage_hint"] = _schema_usage_hint(
+                scope_label,
+                value_pred,
+                intermediate_predicate=intermediate_pred,
+            )
+            nested_payload.append(entry)
+        nested_payload.sort(
+            key=lambda x: (
+                -x["numeric_sample_count"],
+                -x["row_count"],
+                -x["value_count"],
+                x["intermediate_label"],
+                x["value_label"],
+            )
+        )
+
+        result_payload = {
+            ("comparison_ids" if multi_mode else "comparison_id"): scope_label,
+            "n_contributions": n_contributions,
+            "direct_predicates": direct_payload[:top_n],
+            "nested_paths": nested_payload[:top_n],
+            "truncated": {
+                "direct_bindings": len(direct_bindings) >= limit_bindings,
+                "nested_bindings": len(nested_bindings) >= limit_bindings,
+                "limit_bindings": limit_bindings,
+            },
+            "guidance": [
+                "Use direct_predicates with AggregateComparisonValues(value_predicate=...) for contribution-level columns.",
+                "Use nested_paths with AggregateComparisonValues(intermediate_predicate=..., value_predicate=...) for row objects that carry measurements.",
+                "For min/max questions that ask for the attached item, add return_predicate or group_by_predicate after choosing the metric path.",
+            ],
+            "status": (
+                f"Inspected {n_contributions} comparison contributions; "
+                f"found {len(direct_payload)} direct predicates and {len(nested_payload)} nested paths"
+            ),
+        }
+
+        journal_key = f"comparison_schema:{scope_label}"
+        session_journal.found_values[journal_key] = {
+            "direct_predicates": direct_payload[:top_n],
+            "nested_paths": nested_payload[:top_n],
+        }
+        session_journal.completed_steps.append(
+            f"InspectComparisonSchema({scope_label}) -> "
+            f"{len(direct_payload)} predicates, {len(nested_payload)} nested paths"
+        )
+        for cid in (cmp_id_list if multi_mode else [comparison_id]):
+            if cid:
+                session_journal.visited_nodes.setdefault(cid, "Comparison schema")
+
+        return json.dumps(result_payload, indent=2, default=str)
+
+    except Exception as e:
+        error_msg = f"Error in InspectComparisonSchema: {str(e)}"
+        logger.error(error_msg)
+        scope_for_log = comparison_ids or comparison_id
+        session_journal.failed_attempts.append(f"InspectComparisonSchema({scope_for_log}): {str(e)}")
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 20: QueryComparisonRows
 # ==============================================================================
 
 @mcp.tool()
@@ -2536,7 +2895,7 @@ SELECT DISTINCT {select_vars} WHERE {{
 
 
 # ==============================================================================
-# TOOL 20: AggregateComparisonValues
+# TOOL 21: AggregateComparisonValues
 # ==============================================================================
 
 @mcp.tool()
@@ -2999,7 +3358,7 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
 
 
 # ==============================================================================
-# TOOL 21: FindFrequentValues — cross-resource aggregation (no Comparison anchor)
+# TOOL 22: FindFrequentValues — cross-resource aggregation (no Comparison anchor)
 # ==============================================================================
 
 @mcp.tool()
@@ -3407,7 +3766,7 @@ SELECT DISTINCT ?valueSubject {group_select}?valueObj ?valueLabel ?nestedValue {
 
 
 # ==============================================================================
-# TOOL 22: FindCoAuthors
+# TOOL 23: FindCoAuthors
 # ==============================================================================
 
 @mcp.tool()
@@ -3540,7 +3899,7 @@ SELECT DISTINCT ?paper ?paperLabel ?seedAuthor ?seedLabel ?coAuthor ?coLabel WHE
 
 
 # ==============================================================================
-# TOOL 21: ManageJournal
+# TOOL 24: ManageJournal
 # ==============================================================================
 
 @mcp.tool()
@@ -3608,7 +3967,7 @@ async def ManageJournal(
 
 
 # ==============================================================================
-# TOOL 19: GetJournalSummary
+# TOOL 25: GetJournalSummary
 # ==============================================================================
 
 @mcp.tool()
@@ -3627,7 +3986,7 @@ async def GetJournalSummary(
 
 
 # ==============================================================================
-# TOOL 20: GetJournalStateJSON
+# TOOL 26: GetJournalStateJSON
 # ==============================================================================
 
 @mcp.tool()

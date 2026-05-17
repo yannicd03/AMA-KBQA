@@ -340,13 +340,14 @@ Provides 22 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 - `BatchGetResourceLabels` - Batch label resolution
 - `CompareResources` - Compare a predicate across multiple resources (returns sorted)
 
-**Tier 3 - Domain-Specific (10 tools):**
+**Tier 3 - Domain-Specific (11 tools):**
 - `GetPaperContributions` - Get contributions for a paper (P31)
 - `GetPaperAuthors` - Get authors (P6/P27)
 - `GetContributionMethods` - Get methods used (P2)
 - `GetResearchFieldPapers` - List papers in field (P30)
 - `GetComparisonContributions` - Navigate Comparison -> Contribution pattern with predicate discovery mode, now **stores values in journal's found_values** ✨ UPDATED
 - `FollowRelationPath` - Multi-hop relation navigation in one SPARQL call
+- `InspectComparisonSchema` - Compact schema map for Comparison resources. Lists direct contribution predicates and nested contribution -> row-object -> metric paths with labels, counts, sample values, numeric/HAS_VALUE evidence, unit samples when present, and `AggregateComparisonValues` usage hints. Use before choosing predicates for aggregation. ✨ NEW
 - `QueryComparisonRows` - Multi-predicate row selector for Comparison contributions. Applies one filter per column/constraint, projects several return predicates, and writes the matched rows to `found_values`; use before raw SPARQL for "column A = X and column B = Y, return metrics C/D/E" questions. ✨ NEW
 - `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, `value_via_group` 2-hop switch, `comparison_ids` CSV for multi-Comparison union mode, `value_parser` for embedded numeric strings, `return_predicate` for companion values on min/max rows, `intermediate_predicate` for nested rows such as contribution → energy source → electricity generation, and `value_predicates` for unioning sibling metric predicates. ✨ UPDATED
 - `FindFrequentValues` - Cross-resource aggregation for global-scope questions ("most popular X", "largest Y across the papers"). No Comparison anchor required. Scope tiers: research_field_id → P30/P31; comparison_ids → VALUES union; default → all compareContribution subjects; `scope="papers"` scans paper contributions. `value_source="subject"` reads values from scoped Paper/Comparison resources themselves, covering paper metadata like top research fields. Supports the same agg, `value_parser`, and `return_predicate` modes as AggregateComparisonValues; writes results to `found_values`; hard cap `limit_subjects=5000`. ✨ UPDATED

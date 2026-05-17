@@ -28,8 +28,8 @@ QTYPE_STRATEGIES = {
     Many factoid questions involve Comparison resources rather than simple paper lookups.
     If the question asks about "values", "sources", "methods" across studies:
     1. FindResource to locate the Comparison resource
-    2. GetComparisonContributions(comparison_id) to discover available predicates
-    3. GetComparisonContributions(comparison_id, domain_predicate) to get values
+    2. InspectComparisonSchema(comparison_id) to see direct predicates and nested paths
+    3. GetComparisonContributions(comparison_id, domain_predicate) or QueryComparisonRows to get values
 
     **SPARQL TIP:** When looking for domain data, always follow:
       ?paper orkgp:P31 ?contribution .
@@ -72,7 +72,7 @@ QTYPE_STRATEGIES = {
     **COMPARISON-BASED COUNTING (CRITICAL - ~55% of questions):**
     Many count questions involve Comparison resources. The pattern is:
       Comparison --compareContribution--> Contribution --domainPred--> Value
-    Use GetComparisonContributions for schema discovery, then AggregateComparisonValues.
+    Use InspectComparisonSchema for compact schema discovery, then AggregateComparisonValues.
     If the question says "throughout the papers" or "across the papers", use
     FindFrequentValues before hand-written SPARQL.
 
@@ -132,7 +132,7 @@ QTYPE_STRATEGIES = {
     Many list questions involve Comparison resources. The pattern is:
       Comparison --compareContribution--> Contribution --domainPred--> Value
     1. FindResource to locate the Comparison resource
-    2. GetComparisonContributions(comparison_id) to discover available predicates
+    2. InspectComparisonSchema(comparison_id) to discover available predicates/paths
     3. GetComparisonContributions(comparison_id, domain_predicate) to list all values
 
     **MULTI-HOP LISTS:**
@@ -215,11 +215,11 @@ QTYPE_STRATEGIES = {
     Many questions involve Comparison resources in ORKG:
       Comparison --compareContribution--> Contribution --domainPred--> Value
     1. FindResource to locate the Comparison resource
-    2. GetComparisonContributions(comparison_id) to discover available predicates
+    2. InspectComparisonSchema(comparison_id) to discover available predicates/paths
     3. GetComparisonContributions(comparison_id, domain_predicate) to get values
 
     **COMPARISON VERIFICATION:** After finding a Comparison resource with FindResource,
-    ALWAYS call GetComparisonContributions(comparison_id) in schema discovery mode first.
+    ALWAYS call InspectComparisonSchema(comparison_id) first.
     If it returns 0 contributions, the resource may not be a real Comparison - try other
     results from FindResource or search with a different query.
 
@@ -255,8 +255,8 @@ QTYPE_STRATEGIES = {
     Most superlative questions ("highest efficiency", "largest capacity") involve:
       Comparison --compareContribution--> Contribution --domainPred--> Value
     1. FindResource to locate the Comparison resource
-    2. GetComparisonContributions(comparison_id) to discover available predicates
-    3. GetComparisonContributions(comparison_id, domain_predicate) to get values
+    2. InspectComparisonSchema(comparison_id) to discover direct predicates and nested metric paths
+    3. Use the schema usage_hint to choose AggregateComparisonValues / QueryComparisonRows
     4. Use AggregateComparisonValues for numeric ranking; raw SPARQL is last resort
 
     **TIP: For "across the studies" / "globally most popular X" questions where
@@ -266,7 +266,7 @@ QTYPE_STRATEGIES = {
     for unioned multi-Comparison aggregation.**
 
     **COMPARISON VERIFICATION:** After finding a Comparison resource with FindResource,
-    ALWAYS call GetComparisonContributions(comparison_id) in schema discovery mode first.
+    ALWAYS call InspectComparisonSchema(comparison_id) first.
     If it returns 0 contributions, the resource may not be a real Comparison - try other
     results from FindResource or search with a different query.
 
@@ -334,7 +334,7 @@ QTYPE_STRATEGIES = {
     Most aggregation questions involve Comparison resources:
       Comparison --compareContribution--> Contribution --domainPred--> Value
     1. FindResource to locate the Comparison resource
-    2. GetComparisonContributions(comparison_id) to discover available predicates
+    2. InspectComparisonSchema(comparison_id) to discover available predicates/paths
     3. Use AggregateComparisonValues for AVG/SUM/MIN/MAX/COUNT/MODE_TOP
        (handles HAS_VALUE indirection automatically — prefer over hand-written SPARQL)
 
@@ -516,6 +516,12 @@ TIER 3 - DOMAIN-SPECIFIC:
   Navigate Comparison -> compareContribution -> Contribution -> domain predicate values.
   Without domain_predicate: schema discovery (see available predicates).
   With domain_predicate: get values for that predicate across all contributions.
+- InspectComparisonSchema(comparison_id?, comparison_ids?, top_n?):
+  Compact schema map for Comparison resources. Returns direct contribution
+  predicates and nested paths with labels, row counts, sample values, numeric /
+  HAS_VALUE evidence, and ready-to-use AggregateComparisonValues hints.
+  ALWAYS call this before choosing value_predicate/intermediate_predicate for
+  aggregation when the predicate is not already proven by a previous tool result.
 - QueryComparisonRows(comparison_id, filters?, return_predicates?, comparison_ids?):
   Return exact contribution rows after multiple predicate/value filters, then project
   several requested predicates. Use this before raw SPARQL for row questions like
@@ -577,8 +583,8 @@ EXECUTION STRATEGY
 
 COMPARISON RESOURCE PATTERN (~55% of SciQA questions):
 Most questions involve data stored in Comparison resources. When you identify a Comparison resource:
-1. FIRST: Call GetComparisonContributions(comparison_id) WITHOUT domain_predicate to discover available predicates
-2. THEN: Call GetComparisonContributions(comparison_id, domain_predicate) to get values
+1. FIRST: Call InspectComparisonSchema(comparison_id) to discover direct predicates and nested paths with counts/samples
+2. THEN: Call GetComparisonContributions(comparison_id, domain_predicate) for simple value listing, QueryComparisonRows for filtered rows, or AggregateComparisonValues for aggregation
 3. For aggregation (count, min/max, frequency): Use AggregateComparisonValues for
    one Comparison, or FindFrequentValues / AggregateComparisonValues(comparison_ids=...)
    when the scope spans several Comparisons.
@@ -588,9 +594,10 @@ DO NOT repeatedly call FindResource if you already have a Comparison resource. G
 
 AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation questions):
 - Named single Comparison or clearly local "the comparison" scope:
-  use AggregateComparisonValues.
+  call InspectComparisonSchema, then use AggregateComparisonValues with the schema-discovered predicate/path.
 - Several related Comparisons or cross-comparison distribution:
-  use FindFrequentValues(comparison_ids=...) or AggregateComparisonValues(comparison_ids=...).
+  call InspectComparisonSchema(comparison_ids=...), then use FindFrequentValues(comparison_ids=...)
+  or AggregateComparisonValues(comparison_ids=...) with the schema-discovered predicate/path.
 - Global scope ("throughout the papers", "across the papers", "most frequent overall",
   "top five used research fields in papers"):
   use FindFrequentValues before raw SPARQL. For paper-level metadata, set
@@ -764,7 +771,7 @@ FEWSHOT_EXAMPLES = {
 
 **Example: "What energy sources are used in the comparison of renewable energy?"**
 1. FindResource("renewable energy comparison") -> R44073 (Comparison)
-2. GetComparisonContributions("R44073") -> discovers predicates including P43135 (energy sources)
+2. InspectComparisonSchema("R44073") -> discovers predicates including P43135 (energy sources)
 3. GetComparisonContributions("R44073", "P43135") -> ["solar", "wind", "hydro"]
 4. Answer: "Solar, wind, and hydro"
 
@@ -936,10 +943,11 @@ If the question asks about sectors (Heat, Electricity, Gas, Liquid fuels), use G
    is often a Paper or Contribution, not the Comparison that anchors the
    aggregation, and AggregateComparisonValues silently returns the wrong number
    on the wrong scope.
-2. AggregateComparisonValues(comparison_id="R33008", value_predicate="P15585",
+2. InspectComparisonSchema("R33008") -> choose the patient-count predicate/path with numeric samples
+3. AggregateComparisonValues(comparison_id="R33008", value_predicate="P15585",
                               agg="sum", value_parser="embedded_number")
    -> {result: 6452.0, n_contributions: 18}
-3. Answer: "6452"
+4. Answer: "6452"
 
 If the result looks implausible (e.g., 217918 patients vs an expected ~6000),
 the comparison_id is wrong. Re-run FindResource with a more specific topic
@@ -957,7 +965,7 @@ and pick the one whose label matches the question's domain.
 **Example: "What is the average energy generation of all energy sources considered in X?"**
    (nested row aggregation: contribution -> energy source -> generation -> HAS_VALUE)
 1. FindResource("X", node_type_filter="Comparison") -> R153799
-2. GetComparisonContributions("R153799") -> discover energy source P43135 and generation P43134
+2. InspectComparisonSchema("R153799") -> nested_paths shows energy source P43135 -> generation P43134
 3. AggregateComparisonValues(comparison_id="R153799", intermediate_predicate="P43135",
                               value_predicate="P43134", agg="avg")
    -> {result: 157.146390041493776, n_contributions: 241}
@@ -965,16 +973,18 @@ and pick the one whose label matches the question's domain.
 
 **Example: "What is the total installed capacity across all contributions?"** (sum pattern)
 1. FindResource("installed capacity comparison") -> R44073
-2. AggregateComparisonValues(comparison_id="R44073", value_predicate="P43133", agg="sum")
-3. Answer: the total value
+2. InspectComparisonSchema("R44073") -> verify whether installed capacity is direct P43133 or nested under an energy-source path
+3. AggregateComparisonValues(comparison_id="R44073", value_predicate="P43133", agg="sum")
+4. Answer: the total value
 
 **Example: "List of sectors which are considered as energy sectors with corresponding frequencies"**
    (per-group count = frequency table; mode_top with top_n=large works as a frequency table)
 1. FindResource(question's named comparison) -> RXXXXX
-2. AggregateComparisonValues(comparison_id="RXXXXX", value_predicate="P_sector",
+2. InspectComparisonSchema("RXXXXX") -> choose the sector/category predicate, not a metric predicate
+3. AggregateComparisonValues(comparison_id="RXXXXX", value_predicate="P_sector",
                               agg="mode_top", top_n=10)
    -> [{value: 'Heat sector', count: 10}, {value: 'Liquid fuels sector', count: 5}, ...]
-3. Answer: the frequency table
+4. Answer: the frequency table
 
 **Example: "Which energy sector is the most frequent for the studies?"** (cross-comparison frequency)
    Multiple energy-sector comparisons exist. The right scope is several Comparisons unioned.
@@ -1012,6 +1022,8 @@ or list candidate Comparisons via FindByPredicateValue first.
 ALWAYS prefer AggregateComparisonValues over RunORKGSPARQL for AVG/SUM/MIN/MAX/
 COUNT/COUNT_DISTINCT/MODE_TOP within a Comparison — the tool handles HAS_VALUE
 indirection, label fallback, and value_via_group two-hop paths automatically.
+When unsure which predicate/path to aggregate, call InspectComparisonSchema first
+and use the returned usage_hint. Do not guess from a predicate label alone.
 Reach for RunORKGSPARQL only for set-difference (FILTER NOT EXISTS), three-hop
 paths the tool can't express (e.g. contrib -> P_a -> ?x -> P_b -> ?y -> P_c -> ?val),
 or graph-wide aggregations not anchored to a Comparison.

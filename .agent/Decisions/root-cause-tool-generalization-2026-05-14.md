@@ -185,3 +185,28 @@ Next implementation direction:
   attached to the max/min or most-frequent row.
 - Keep KQAPro work focused on the remaining commitment failure class, not on
   deterministic row patches.
+
+## 2026-05-17 Schema-Guided SciQA Aggregation Pass
+
+Implemented the next low-overfit SciQA fix:
+
+- Added `InspectComparisonSchema`, a compact Comparison schema tool that reports
+  direct contribution predicates and two-hop nested paths with labels, row/value
+  counts, sample values, numeric/HAS_VALUE evidence, unit samples when present,
+  and ready-to-use `AggregateComparisonValues` hints.
+- Updated SciQA prompts so comparison factoid/list/comparison/superlative/
+  aggregation questions inspect schema before choosing `value_predicate` or
+  `intermediate_predicate`.
+- Updated system docs to show the SciQA domain-specific tool tier as 11 tools.
+
+Rationale: the focused SciQA failures were no longer mainly lookup failures.
+The agent reached Comparison resources but guessed predicates or nested row
+paths. This helper still keeps the model responsible for choosing scope and
+metric semantics, while removing the brittle predicate/path discovery step that
+was forcing it toward raw SPARQL or wrong `AggregateComparisonValues` calls.
+
+Validation before deployment:
+
+- `uv run python -m compileall ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
+- `uv run pytest tests/framework/test_exact_constraints.py -q` = 11 passed.
+- `uv run pytest tests/framework -q` = 133 passed.
