@@ -2,6 +2,7 @@ from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.server.sciqa_server import (
+    AggregateComparisonValues,
     _looks_numeric_value,
     _payload_node_type_matches,
     _schema_display_value,
@@ -140,3 +141,11 @@ def test_sciqa_schema_helpers_compact_values_and_paths():
     )
     assert 'intermediate_predicate="P43135"' in hint
     assert 'value_predicate="P43133"' in hint
+    assert "intermediate_filter_value" in hint
+
+
+def test_sciqa_aggregate_tool_exposes_intermediate_filter_parameter():
+    params = AggregateComparisonValues.parameters["properties"]
+
+    assert "intermediate_filter_value" in params
+    assert "intermediate_filter_match" in params
