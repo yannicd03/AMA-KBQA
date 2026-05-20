@@ -58,8 +58,9 @@ QTYPE_STRATEGIES = {
     1. Single Comparison count/sum/avg/min/max/mode -> AggregateComparisonValues
     2. Multiple Comparisons or global scope -> FindFrequentValues or comparison_ids
     3. Embedded numeric strings (e.g. "n=54") -> value_parser="embedded_number"
-    4. Simple paper/author counts outside comparison data -> GetResearchFieldPapers or SPARQL COUNT
-    5. Negation/set-difference -> RunORKGSPARQL with FILTER NOT EXISTS
+    4. Ambiguous denominator/scope after schema lookup -> DiagnoseComparisonAggregation
+    5. Simple paper/author counts outside comparison data -> GetResearchFieldPapers or SPARQL COUNT
+    6. Negation/set-difference -> RunORKGSPARQL with FILTER NOT EXISTS
 
     HARD ROUTING RULE: For global/cross-paper counts over contribution values
     ("How many species throughout the papers?", "most frequent X across papers",
@@ -447,7 +448,9 @@ CRITICAL RULES
 7. **Scope Before Query:** For count/average/sum/min/max/frequency/top questions, decide scope before querying:
    named Comparison -> AggregateComparisonValues; multiple Comparisons -> comparison_ids;
    papers/global -> FindFrequentValues; set difference/unsupported 3-hop -> RunORKGSPARQL.
-   Do not use raw SPARQL as the first aggregation attempt when a high-level tool applies.
+   If the value path gives many rows per contribution or the denominator is unclear,
+   call DiagnoseComparisonAggregation before finalizing. Do not use raw SPARQL as
+   the first aggregation attempt when a high-level tool applies.
 
 8. **Boolean Values in ORKG:** Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent.
    When filtering for presence of a property (e.g., therapeutic effect), filter for "T" not "F".
@@ -542,6 +545,15 @@ TIER 3 - DOMAIN-SPECIFIC:
   intermediate_filter_value with that label so only matching intermediate row
   objects contribute.
   PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
+- DiagnoseComparisonAggregation(comparison_id?, value_predicate, value_predicates?,
+                                comparison_ids?, group_by_predicate?,
+                                filter_predicate?, filter_value?, intermediate_predicate?,
+                                intermediate_filter_value?, value_parser?):
+  Inspect aggregation denominator choices for a Comparison value path. Returns
+  scope contributions, matched rows, distinct contributions, nested/group
+  populations, samples, and row-level / contribution-level / group-level numeric
+  candidates. Use it before answering ambiguous averages/counts where wording
+  could mean "all value rows", "per contribution/study", or "per category".
 - FindFrequentValues(value_predicate, agg, research_field_id?, comparison_ids?,
                      group_by_predicate?, filter_predicate?, filter_value?,
                      top_n?, value_parser?, return_predicate?, scope?,
@@ -616,6 +628,11 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
 - Nested component filters ("variables for atmosphere models", "capacity for photovoltaics"):
   use InspectComparisonSchema to find the nested path, then pass
   intermediate_filter_value="Atmosphere" / "photovoltaics" to AggregateComparisonValues.
+- Ambiguous denominators ("average of all values", "average per study", nested
+  source/category rows, or a surprising AggregateComparisonValues result):
+  call DiagnoseComparisonAggregation with the same comparison/path/filter. Choose
+  row_level, contribution_*_level, intermediate_label_*_level, or group_*_level
+  according to the wording before finalizing.
 - Questions asking for the item attached to an extreme metric ("studied location with
   largest geographic scale"):
   use return_predicate with agg="max" or agg="min".
@@ -973,10 +990,14 @@ and pick the one whose label matches the question's domain.
    (nested row aggregation: contribution -> energy source -> generation -> HAS_VALUE)
 1. FindResource("X", node_type_filter="Comparison") -> R153799
 2. InspectComparisonSchema("R153799") -> nested_paths shows energy source P43135 -> generation P43134
-3. AggregateComparisonValues(comparison_id="R153799", intermediate_predicate="P43135",
+3. DiagnoseComparisonAggregation(comparison_id="R153799", intermediate_predicate="P43135",
+                                  value_predicate="P43134")
+   -> compare row_level vs contribution-level denominators; wording says all energy sources,
+      so use row_level if every source row should count once
+4. AggregateComparisonValues(comparison_id="R153799", intermediate_predicate="P43135",
                               value_predicate="P43134", agg="avg")
    -> {result: 157.146390041493776, n_contributions: 241}
-4. Answer: the average value. Do not hand-write SPARQL for this pattern.
+5. Answer: the average value. Do not hand-write SPARQL for this pattern.
 
 **Example: "Which are the three most common variables for the atmosphere models in X?"**
    (nested row aggregation with intermediate filter)
@@ -1041,7 +1062,9 @@ indirection, label fallback, and value_via_group two-hop paths automatically.
 When unsure which predicate/path to aggregate, call InspectComparisonSchema first
 and use the returned usage_hint. If nested_paths sample_intermediate_values names
 the component/category in the question, pass it as intermediate_filter_value.
-Do not guess from a predicate label alone.
+If the chosen path is plausible but the denominator is unclear or the result looks
+surprising, call DiagnoseComparisonAggregation and choose the candidate whose
+population matches the wording. Do not guess from a predicate label alone.
 Reach for RunORKGSPARQL only for set-difference (FILTER NOT EXISTS), three-hop
 paths the tool can't express (e.g. contrib -> P_a -> ?x -> P_b -> ?y -> P_c -> ?val),
 or graph-wide aggregations not anchored to a Comparison.
@@ -1075,10 +1098,11 @@ Current journal state:
 
 **IMMEDIATE ACTIONS REQUIRED:**
 1. If this is aggregation/superlative/count, state the scope and use AggregateComparisonValues or FindFrequentValues before raw SPARQL.
-2. If this is a row question with multiple column constraints, use QueryComparisonRows before raw SPARQL.
-3. If FindResource is not working, change the anchor (paper, author, research field, Comparison) or use FindByPredicateValue.
-4. If predicates don't exist, use GetResourceSummary to discover available predicates.
-5. If data doesn't exist after a scoped high-level attempt plus schema discovery, acknowledge this and provide your best answer.
+2. If the aggregation path exists but the denominator/scope is unclear, call DiagnoseComparisonAggregation before changing tools.
+3. If this is a row question with multiple column constraints, use QueryComparisonRows before raw SPARQL.
+4. If FindResource is not working, change the anchor (paper, author, research field, Comparison) or use FindByPredicateValue.
+5. If predicates don't exist, use GetResourceSummary to discover available predicates.
+6. If data doesn't exist after a scoped high-level attempt plus schema discovery, acknowledge this and provide your best answer.
 
 You MUST change your approach NOW."""
 

@@ -57,7 +57,7 @@ ama-kbqa/
 │   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
 │   │   ├── kqapro_server.py    # KQAPro tools (28 tools)
-│   │   ├── sciqa_server.py     # SciQA/ORKG tools (22 tools: 4 discovery, 6 retrieval, 10 domain, 1 SPARQL, 1 verification) ✅ Active
+│   │   ├── sciqa_server.py     # SciQA/ORKG tools (27 registered: 4 discovery, 6 retrieval, 12 domain, 1 SPARQL, 1 verification, 2 state, 1 hidden snapshot) ✅ Active
 │   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
@@ -229,7 +229,7 @@ All prompts are centralized in a separate module for easier maintenance:
 The SciQA agent for Open Research Knowledge Graph (ORKG) scientific QA, inheriting from `BaseKBQAAgent`:
 
 1. **Pre-Agent Hook** - Classifies question type (8 types), extracts entities, loads type-specific strategy
-2. **Iterative Tool Loop** - Calls SciQA MCP tools (22 tools) to gather research information
+2. **Iterative Tool Loop** - Calls SciQA MCP tools (27 registered tools) to gather research information
 3. **Post-Agent Hook** - Synthesizes final answer from journal
 
 **Key Features (inherited from BaseKBQAAgent):**
@@ -256,7 +256,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 | `ENTITY_EXTRACTION_PROMPT` | Extract papers, authors, contributions, fields |
 | `FEWSHOT_EXAMPLES` | 8 type-specific few-shot example sets loaded alongside strategies (enhanced with author search, negation queries, aggregation scoping, energy domain distinctions, boolean comparison-embedded values) |
 | `SYNTHESIS_PROMPT_TEMPLATE` | Final answer synthesis |
-| `TOOL_LOOP_GUIDANCE` | 9 tool-specific loop recovery entries (covers all 22 tools, includes RunORKGSPARQL 10-call cap warning) |
+| `TOOL_LOOP_GUIDANCE` | 9 tool-specific loop recovery entries (covers the high-traffic tool classes, includes RunORKGSPARQL 10-call cap warning) |
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
@@ -324,7 +324,7 @@ Provides 28 tools for knowledge graph interaction, organized by tier:
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
-Provides 22 tools for ORKG knowledge graph interaction, organized into 5 tiers:
+Provides 27 registered tools for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, and 1 LLM-hidden journal snapshot tool.
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource` - Semantic vector search for papers, authors, contributions
@@ -340,7 +340,7 @@ Provides 22 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 - `BatchGetResourceLabels` - Batch label resolution
 - `CompareResources` - Compare a predicate across multiple resources (returns sorted)
 
-**Tier 3 - Domain-Specific (11 tools):**
+**Tier 3 - Domain-Specific (12 tools):**
 - `GetPaperContributions` - Get contributions for a paper (P31)
 - `GetPaperAuthors` - Get authors (P6/P27)
 - `GetContributionMethods` - Get methods used (P2)
@@ -350,6 +350,7 @@ Provides 22 tools for ORKG knowledge graph interaction, organized into 5 tiers:
 - `InspectComparisonSchema` - Compact schema map for Comparison resources. Lists direct contribution predicates and nested contribution -> row-object -> metric paths with labels, counts, sample values, numeric/HAS_VALUE evidence, unit samples when present, and `AggregateComparisonValues` usage hints. Use before choosing predicates or nested row filters for aggregation. ✨ NEW
 - `QueryComparisonRows` - Multi-predicate row selector for Comparison contributions. Applies one filter per column/constraint, projects several return predicates, and writes the matched rows to `found_values`; use before raw SPARQL for "column A = X and column B = Y, return metrics C/D/E" questions. ✨ NEW
 - `AggregateComparisonValues` - Single SPARQL + Python aggregation over Comparison contributions. Handles HAS_VALUE/label indirection; supports avg/sum/min/max/count/count_distinct/mode_top/all_values; optional grouping, pre-filtering, `value_via_group` 2-hop switch, `comparison_ids` CSV for multi-Comparison union mode, `value_parser` for embedded numeric strings, `return_predicate` for companion values on min/max rows, `intermediate_predicate` for nested rows such as contribution → energy source → electricity generation, `intermediate_filter_value` for restricting nested row objects by label/ID, and `value_predicates` for unioning sibling metric predicates. ✨ UPDATED
+- `DiagnoseComparisonAggregation` - Wrapped SPARQL diagnostics for denominator/scope ambiguity after schema discovery. Reports total scope contributions, matched value rows, distinct contributions, nested/group populations, row-level numeric summaries, per-contribution sum/mean candidates, and per-intermediate/per-group candidates. Use before answering averages/counts where the wording could mean all rows, per study/contribution, or per category. ✨ NEW
 - `FindFrequentValues` - Cross-resource aggregation for global-scope questions ("most popular X", "largest Y across the papers"). No Comparison anchor required. Scope tiers: research_field_id → P30/P31; comparison_ids → VALUES union; default → all compareContribution subjects; `scope="papers"` scans paper contributions. `value_source="subject"` reads values from scoped Paper/Comparison resources themselves, covering paper metadata like top research fields. Supports the same agg, `value_parser`, and `return_predicate` modes as AggregateComparisonValues; writes results to `found_values`; hard cap `limit_subjects=5000`. ✨ UPDATED
 - `FindCoAuthors` - Finds co-authors of papers by a seed author (case-insensitive partial match; handles both resource-URI and literal-string author predicates P6/P27); returns co-authors sorted by shared-paper count. Closes Q2 co-author pattern.
 

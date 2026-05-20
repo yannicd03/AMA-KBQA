@@ -3,7 +3,10 @@ from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.server.sciqa_server import (
     AggregateComparisonValues,
+    DiagnoseComparisonAggregation,
+    _build_comparison_aggregation_diagnostics,
     _looks_numeric_value,
+    _parse_numeric_value,
     _payload_node_type_matches,
     _schema_display_value,
     _schema_usage_hint,
@@ -149,3 +152,35 @@ def test_sciqa_aggregate_tool_exposes_intermediate_filter_parameter():
 
     assert "intermediate_filter_value" in params
     assert "intermediate_filter_match" in params
+
+
+def test_sciqa_diagnostics_helper_reports_denominator_candidates():
+    rows = [
+        {"contrib": "C1", "intermediate": "Solar", "group": None, "value": "10"},
+        {"contrib": "C1", "intermediate": "Wind", "group": None, "value": "20"},
+        {"contrib": "C2", "intermediate": "Solar", "group": None, "value": "30"},
+    ]
+
+    diagnostics = _build_comparison_aggregation_diagnostics(
+        rows,
+        value_parser="leading_number",
+        scope_contribution_count=3,
+    )
+
+    assert diagnostics["population"]["matched_rows"] == 3
+    assert diagnostics["population"]["distinct_contributions_with_values"] == 2
+    assert diagnostics["population"]["contributions_without_matching_value"] == 1
+    assert diagnostics["denominator_candidates"]["row_level"]["avg"] == 20
+    assert diagnostics["denominator_candidates"]["contribution_sum_level"]["avg"] == 30
+    assert diagnostics["denominator_candidates"]["contribution_mean_level"]["avg"] == 22.5
+    assert "intermediate_label_mean_level" in diagnostics["denominator_candidates"]
+    assert diagnostics["warnings"]
+
+
+def test_sciqa_diagnostics_tool_schema_exposes_generic_parameters():
+    params = DiagnoseComparisonAggregation.parameters["properties"]
+
+    assert "intermediate_filter_value" in params
+    assert "comparison_ids" in params
+    assert "value_parser" in params
+    assert _parse_numeric_value("n=54", "embedded_number") == 54
