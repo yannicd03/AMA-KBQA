@@ -28,6 +28,8 @@ Tools provided:
 - QueryComparisonRows: Return comparison contribution rows after multi-predicate filters
 - AggregateComparisonValues: AVG/SUM/MIN/MAX/COUNT/MODE_TOP over a Comparison's
   contributions, with optional GROUP BY and prefilter (handles HAS_VALUE indirection)
+- DiagnoseComparisonAggregation: Compare row/contribution/group denominator
+  candidates before finalizing ambiguous Comparison aggregations
 - FindFrequentValues: Cross-resource aggregation without a single Comparison anchor
 - FindCoAuthors: Find co-authors of an author across all their papers in one call
 - ManageJournal: Scratchpad for state management
@@ -501,6 +503,220 @@ def _schema_usage_hint(
             "nested row label."
         )
     return f'AggregateComparisonValues({scope}, value_predicate="{predicate_id}", agg=...)'
+
+
+def _parse_numeric_value(value: Any, value_parser: str = "leading_number") -> Optional[float]:
+    """Parse a numeric value using the same modes as SciQA aggregation tools."""
+    if value is None:
+        return None
+    parser = value_parser if value_parser in {"leading_number", "embedded_number", "auto"} else "leading_number"
+    text = str(value).strip().replace(",", "")
+    pattern = r"[+-]?\d+(\.\d+)?([eE][+-]?\d+)?"
+    if parser == "embedded_number":
+        match = re.search(pattern, text)
+    elif parser == "auto":
+        match = re.match(pattern, text) or re.search(pattern, text)
+    else:
+        match = re.match(pattern, text)
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _numeric_summary(numbers: List[float]) -> Dict[str, Any]:
+    """Return compact numeric summary fields for diagnostics payloads."""
+    if not numbers:
+        return {"n": 0, "sum": None, "avg": None, "min": None, "max": None}
+    total = sum(numbers)
+    return {
+        "n": len(numbers),
+        "sum": total,
+        "avg": total / len(numbers),
+        "min": min(numbers),
+        "max": max(numbers),
+    }
+
+
+def _build_comparison_aggregation_diagnostics(
+    rows: List[Dict[str, Any]],
+    *,
+    value_parser: str = "leading_number",
+    scope_contribution_count: int = 0,
+    sample_limit: int = 12,
+) -> Dict[str, Any]:
+    """Build denominator diagnostics from raw comparison value rows."""
+    from collections import defaultdict
+
+    parsed_rows: List[Dict[str, Any]] = []
+    numeric_values: List[float] = []
+    contribs = set()
+    intermediates = set()
+    groups_seen = set()
+
+    for row in rows:
+        parsed = dict(row)
+        numeric_value = _parse_numeric_value(row.get("value"), value_parser)
+        parsed["numeric_value"] = numeric_value
+        parsed_rows.append(parsed)
+        if numeric_value is not None:
+            numeric_values.append(numeric_value)
+        if row.get("contrib"):
+            contribs.add(row["contrib"])
+        if row.get("intermediate"):
+            intermediates.add(row["intermediate"])
+        if row.get("group"):
+            groups_seen.add(row["group"])
+
+    rows_by_contrib: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    rows_by_intermediate: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    rows_by_group: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in parsed_rows:
+        if row.get("contrib"):
+            rows_by_contrib[row["contrib"]].append(row)
+        if row.get("intermediate"):
+            rows_by_intermediate[row["intermediate"]].append(row)
+        if row.get("group"):
+            rows_by_group[row["group"]].append(row)
+
+    def _numbers(items: List[Dict[str, Any]]) -> List[float]:
+        return [r["numeric_value"] for r in items if r.get("numeric_value") is not None]
+
+    per_contrib_sums = [sum(nums) for nums in (_numbers(items) for items in rows_by_contrib.values()) if nums]
+    per_contrib_means = [
+        sum(nums) / len(nums)
+        for nums in (_numbers(items) for items in rows_by_contrib.values())
+        if nums
+    ]
+    per_intermediate_sums = [
+        sum(nums) for nums in (_numbers(items) for items in rows_by_intermediate.values()) if nums
+    ]
+    per_intermediate_means = [
+        sum(nums) / len(nums)
+        for nums in (_numbers(items) for items in rows_by_intermediate.values())
+        if nums
+    ]
+    per_group_sums = [sum(nums) for nums in (_numbers(items) for items in rows_by_group.values()) if nums]
+    per_group_means = [
+        sum(nums) / len(nums)
+        for nums in (_numbers(items) for items in rows_by_group.values())
+        if nums
+    ]
+
+    grouped_payload = []
+    grouping_source = rows_by_group if rows_by_group else rows_by_intermediate
+    grouping_label = "group_by_predicate" if rows_by_group else "intermediate_label"
+    for label, items in grouping_source.items():
+        nums = _numbers(items)
+        summary = _numeric_summary(nums)
+        grouped_payload.append({
+            "group": label,
+            "row_count": len(items),
+            "distinct_contributions": len({r.get("contrib") for r in items if r.get("contrib")}),
+            "numeric_count": summary["n"],
+            "sum": summary["sum"],
+            "avg": summary["avg"],
+            "min": summary["min"],
+            "max": summary["max"],
+        })
+    grouped_payload.sort(
+        key=lambda g: (
+            g["numeric_count"] or 0,
+            g["row_count"] or 0,
+            g["sum"] if isinstance(g["sum"], (int, float)) else float("-inf"),
+        ),
+        reverse=True,
+    )
+
+    null_or_non_numeric = sum(1 for row in parsed_rows if row.get("numeric_value") is None)
+    contribution_rows = [len(items) for items in rows_by_contrib.values()]
+    max_rows_per_contribution = max(contribution_rows) if contribution_rows else 0
+    multi_row_contributions = sum(1 for count in contribution_rows if count > 1)
+
+    denominator_candidates = {
+        "row_level": {
+            "meaning": "Each matched value row contributes once.",
+            **_numeric_summary(numeric_values),
+            "count_rows": len(rows),
+            "count_distinct_values": len({r.get("value") for r in rows if r.get("value") is not None}),
+        },
+        "contribution_sum_level": {
+            "meaning": "Sum numeric rows per contribution, then aggregate those contribution totals.",
+            **_numeric_summary(per_contrib_sums),
+            "denominator": len(per_contrib_sums),
+        },
+        "contribution_mean_level": {
+            "meaning": "Average numeric rows inside each contribution, then aggregate contribution means.",
+            **_numeric_summary(per_contrib_means),
+            "denominator": len(per_contrib_means),
+        },
+    }
+    if per_intermediate_means:
+        denominator_candidates["intermediate_label_mean_level"] = {
+            "meaning": "Average per intermediate row label, then aggregate those label means.",
+            **_numeric_summary(per_intermediate_means),
+            "denominator": len(per_intermediate_means),
+        }
+        denominator_candidates["intermediate_label_sum_level"] = {
+            "meaning": "Sum numeric rows per intermediate row label, then aggregate those label totals.",
+            **_numeric_summary(per_intermediate_sums),
+            "denominator": len(per_intermediate_sums),
+        }
+    if per_group_means:
+        denominator_candidates["group_mean_level"] = {
+            "meaning": "Average per explicit group_by value, then aggregate group means.",
+            **_numeric_summary(per_group_means),
+            "denominator": len(per_group_means),
+        }
+        denominator_candidates["group_sum_level"] = {
+            "meaning": "Sum numeric rows per explicit group_by value, then aggregate group totals.",
+            **_numeric_summary(per_group_sums),
+            "denominator": len(per_group_sums),
+        }
+
+    warnings = []
+    if len(rows) != len(contribs):
+        warnings.append(
+            "matched_rows differs from distinct_contributions_with_values; choose row-level vs contribution-level denominator from the question wording."
+        )
+    if intermediates:
+        warnings.append(
+            "nested rows are present; if the question names a component/category, pass intermediate_filter_value before final aggregation."
+        )
+    if numeric_values and null_or_non_numeric:
+        warnings.append(
+            "some matched values did not parse numerically; inspect samples before trusting avg/sum/min/max."
+        )
+    if not numeric_values:
+        warnings.append(
+            "no numeric values parsed; use count/count_distinct/mode_top semantics or a different value_parser/path."
+        )
+
+    samples = parsed_rows[:max(1, min(sample_limit, 30))]
+    return {
+        "population": {
+            "scope_contributions": scope_contribution_count,
+            "matched_rows": len(rows),
+            "distinct_contributions_with_values": len(contribs),
+            "contributions_without_matching_value": (
+                max(scope_contribution_count - len(contribs), 0)
+                if scope_contribution_count else None
+            ),
+            "distinct_intermediate_labels": len(intermediates),
+            "distinct_group_values": len(groups_seen),
+            "numeric_value_count": len(numeric_values),
+            "non_numeric_or_empty_value_count": null_or_non_numeric,
+            "multi_row_contributions": multi_row_contributions,
+            "max_rows_per_contribution": max_rows_per_contribution,
+        },
+        "denominator_candidates": denominator_candidates,
+        "grouped_diagnostics_source": grouping_label if grouping_source else None,
+        "grouped_diagnostics": grouped_payload[:20],
+        "samples": samples,
+        "warnings": warnings,
+    }
 
 
 def get_embedding(client: OpenAI, text: str) -> List[float]:
@@ -3408,7 +3624,356 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
 
 
 # ==============================================================================
-# TOOL 22: FindFrequentValues — cross-resource aggregation (no Comparison anchor)
+# TOOL 22: DiagnoseComparisonAggregation
+# ==============================================================================
+
+@mcp.tool()
+async def DiagnoseComparisonAggregation(
+    app_context: Context,
+    comparison_id: str = "",
+    value_predicate: str = "",
+    value_predicates: str = "",
+    comparison_ids: str = "",
+    group_by_predicate: str = "",
+    filter_predicate: str = "",
+    filter_value: str = "",
+    filter_match: Literal["exact", "contains", "regex"] = "contains",
+    value_via_group: bool = False,
+    intermediate_predicate: str = "",
+    intermediate_filter_value: str = "",
+    intermediate_filter_match: Literal["exact", "contains", "regex"] = "contains",
+    value_parser: str = "leading_number",
+    sample_limit: int = 12,
+) -> str:
+    """
+    Diagnose denominator/scope choices for a Comparison aggregation.
+
+    Use this after InspectComparisonSchema and before finalizing ambiguous
+    average/count/sum answers, especially when a nested path yields multiple
+    value rows per contribution. It runs the same wrapped SPARQL row extraction
+    pattern as AggregateComparisonValues, then reports:
+
+    - total Comparison contributions vs matched value rows
+    - distinct contributions, intermediate row labels, and groups
+    - row-level, per-contribution, per-intermediate, and per-group numeric
+      denominator candidates
+    - compact samples for checking whether the chosen value path matches the
+      question wording
+
+    The tool does not decide the answer. It exposes graph populations so the
+    agent can choose the denominator that matches phrases like "all values",
+    "per study", "per contribution", or "per category" without hand-writing
+    raw SPARQL.
+
+    Args:
+        comparison_id: Single Comparison resource ID. Used when comparison_ids
+            is empty.
+        value_predicate: Predicate ID for the value path to diagnose.
+        value_predicates: Optional comma-separated sibling value predicates to
+            union with value_predicate.
+        comparison_ids: Optional comma-separated Comparison IDs to union.
+        group_by_predicate: Optional explicit group predicate.
+        filter_predicate: Optional contribution-level filter predicate.
+        filter_value: Value the filter_predicate must match.
+        filter_match: exact, contains, or regex matching for filter_value.
+        value_via_group: If True, read values from the group node.
+        intermediate_predicate: Optional nested row predicate from contribution
+            to intermediate object.
+        intermediate_filter_value: Optional label/ID filter for intermediate
+            nested rows.
+        intermediate_filter_match: exact, contains, or regex matching for the
+            intermediate filter.
+        value_parser: leading_number, embedded_number, or auto.
+        sample_limit: Maximum raw sample rows to return.
+
+    Returns:
+        JSON with population counts, denominator_candidates, grouped diagnostics,
+        samples, warnings, and guidance.
+    """
+    app = app_context.request_context.lifespan_context
+
+    def _norm_pred(p: str) -> str:
+        p = p.strip()
+        if not p:
+            return ""
+        if p.startswith("orkgp:"):
+            return p
+        if p.startswith("http"):
+            return f"<{p}>"
+        return f"orkgp:{p}"
+
+    cmp_id_list = [c.strip() for c in (comparison_ids or "").split(",") if c.strip()]
+    multi_mode = bool(cmp_id_list)
+    if not multi_mode and not (comparison_id or "").strip():
+        return json.dumps(
+            {"error": "Either comparison_id or comparison_ids must be set"},
+            indent=2,
+        )
+
+    try:
+        raw_value_predicates = [
+            p.strip()
+            for p in ([value_predicate] + (value_predicates or "").split(","))
+            if p and p.strip()
+        ]
+        value_predicate_list: list[str] = []
+        value_pred_list: list[str] = []
+        for raw in raw_value_predicates:
+            norm = _norm_pred(raw)
+            if norm and norm not in value_pred_list:
+                value_predicate_list.append(raw)
+                value_pred_list.append(norm)
+        if not value_pred_list:
+            return json.dumps({"error": "value_predicate is required"}, indent=2)
+
+        value_pred_values = " ".join(value_pred_list)
+        value_pred_label = ",".join(value_predicate_list)
+        group_pred = _norm_pred(group_by_predicate) if group_by_predicate else ""
+        flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
+        intermediate_pred = _norm_pred(intermediate_predicate) if intermediate_predicate else ""
+        if intermediate_filter_value and not intermediate_pred:
+            return json.dumps(
+                {"error": "intermediate_filter_value requires intermediate_predicate"},
+                indent=2,
+            )
+        if filter_match not in {"exact", "contains", "regex"}:
+            filter_match = "contains"
+        if intermediate_filter_match not in {"exact", "contains", "regex"}:
+            intermediate_filter_match = "contains"
+        if value_parser not in {"leading_number", "embedded_number", "auto"}:
+            value_parser = "auto" if value_parser in {"string", "text", "literal"} else "leading_number"
+        sample_limit = max(1, min(int(sample_limit or 12), 30))
+
+        filter_block = ""
+        if flt_pred and filter_value:
+            safe = filter_value.replace('"', '\\"')
+            if filter_match == "exact":
+                filter_block = (
+                    f"?contrib {flt_pred} ?fobj .\n"
+                    f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
+                    f'        FILTER( STR(?fobj) = "{safe}" || STR(?flbl) = "{safe}" )\n'
+                )
+            elif filter_match == "regex":
+                filter_block = (
+                    f"?contrib {flt_pred} ?fobj .\n"
+                    f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
+                    f'        FILTER( REGEX(STR(?fobj), "{safe}", "i") '
+                    f'|| REGEX(STR(?flbl), "{safe}", "i") )\n'
+                )
+            else:
+                filter_block = (
+                    f"?contrib {flt_pred} ?fobj .\n"
+                    f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
+                    f'        FILTER( CONTAINS(LCASE(STR(?fobj)), LCASE("{safe}")) '
+                    f'|| CONTAINS(LCASE(STR(?flbl)), LCASE("{safe}")) )\n'
+                )
+
+        intermediate_filter_block = ""
+        if intermediate_pred and intermediate_filter_value:
+            safe_intermediate = intermediate_filter_value.replace('"', '\\"')
+            if intermediate_filter_match == "exact":
+                intermediate_filter_block = (
+                    f'FILTER( STR(?intermediate) = "{safe_intermediate}" '
+                    f'|| STRAFTER(STR(?intermediate), "{NS_RESOURCE}") = "{safe_intermediate}" '
+                    f'|| STR(?intermediateLabel) = "{safe_intermediate}" )\n'
+                )
+            elif intermediate_filter_match == "regex":
+                intermediate_filter_block = (
+                    f'FILTER( REGEX(STR(?intermediate), "{safe_intermediate}", "i") '
+                    f'|| REGEX(STR(?intermediateLabel), "{safe_intermediate}", "i") )\n'
+                )
+            else:
+                intermediate_filter_block = (
+                    f'FILTER( CONTAINS(LCASE(STR(?intermediate)), LCASE("{safe_intermediate}")) '
+                    f'|| CONTAINS(LCASE(STR(?intermediateLabel)), LCASE("{safe_intermediate}")) )\n'
+                )
+
+        group_select = "?group ?groupLabel " if group_pred else ""
+        intermediate_select = "?intermediate ?intermediateLabel " if intermediate_pred else ""
+        if group_pred and value_via_group:
+            value_block = (
+                f"?contrib {group_pred} ?group .\n"
+                f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
+                f"        VALUES ?valuePred {{ {value_pred_values} }}\n"
+                f"        ?group ?valuePred ?valueObj .\n"
+                f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
+                f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
+            )
+        elif intermediate_pred:
+            group_clause = (
+                f"?contrib {group_pred} ?group .\n"
+                f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
+                if group_pred else ""
+            )
+            value_block = (
+                f"?contrib {intermediate_pred} ?intermediate .\n"
+                f"        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}\n"
+                f"        {intermediate_filter_block}"
+                f"        VALUES ?valuePred {{ {value_pred_values} }}\n"
+                f"        ?intermediate ?valuePred ?valueObj .\n"
+                f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
+                f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
+                f"        {group_clause}"
+            )
+        else:
+            group_clause = (
+                f"?contrib {group_pred} ?group .\n"
+                f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
+                if group_pred else ""
+            )
+            value_block = (
+                f"VALUES ?valuePred {{ {value_pred_values} }}\n"
+                f"        ?contrib ?valuePred ?valueObj .\n"
+                f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
+                f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
+                f"        {group_clause}"
+            )
+
+        if multi_mode:
+            cmp_values = " ".join(f"orkgr:{c}" for c in cmp_id_list)
+            scope_clause = (
+                f"VALUES ?cmp {{ {cmp_values} }}\n"
+                f"        ?cmp orkgp:compareContribution ?contrib .\n"
+            )
+            scope_label = ",".join(cmp_id_list)
+        else:
+            scope_clause = (
+                f"BIND(orkgr:{comparison_id} AS ?cmp)\n"
+                f"        orkgr:{comparison_id} orkgp:compareContribution ?contrib .\n"
+            )
+            scope_label = comparison_id
+
+        count_query = f"""
+SELECT (COUNT(DISTINCT ?contrib) AS ?count) WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+    }}
+}}
+"""
+        app.sparql.setQuery(SPARQL_PREFIXES + count_query)
+        count_results = app.sparql.query().convert()
+        count_bindings = count_results.get("results", {}).get("bindings", [])
+        scope_contribution_count = 0
+        if count_bindings:
+            try:
+                scope_contribution_count = int(count_bindings[0].get("count", {}).get("value", 0))
+            except (TypeError, ValueError):
+                scope_contribution_count = 0
+
+        body_query = f"""
+SELECT DISTINCT ?cmp ?contrib ?valuePred {intermediate_select}{group_select}?valueObj ?valueLabel ?nestedValue WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+        {value_block}
+        {filter_block}
+    }}
+}}
+"""
+        app.sparql.setQuery(SPARQL_PREFIXES + body_query)
+        results = app.sparql.query().convert()
+        bindings = results.get("results", {}).get("bindings", [])
+
+        def _row_value(binding):
+            for key in ("nestedValue", "valueLabel", "valueObj"):
+                value = binding.get(key, {}).get("value")
+                if value is not None and value != "":
+                    if value.startswith("http://orkg.org/orkg/"):
+                        continue
+                    return value
+            value = binding.get("valueObj", {}).get("value", "")
+            return _short_orkg_term(value) if value else None
+
+        def _row_group(binding):
+            if not group_pred:
+                return None
+            value = binding.get("groupLabel", {}).get("value") or binding.get("group", {}).get("value", "")
+            return _short_orkg_term(value) if value.startswith("http://orkg.org/orkg/") else (value or None)
+
+        def _row_intermediate(binding):
+            if not intermediate_pred:
+                return None
+            value = (
+                binding.get("intermediateLabel", {}).get("value")
+                or binding.get("intermediate", {}).get("value", "")
+            )
+            return _short_orkg_term(value) if value.startswith("http://orkg.org/orkg/") else (value or None)
+
+        rows = []
+        for binding in bindings:
+            rows.append({
+                "comparison": _short_orkg_term(binding.get("cmp", {}).get("value", "")),
+                "contrib": _short_orkg_term(binding.get("contrib", {}).get("value", "")),
+                "source_predicate": _short_orkg_term(binding.get("valuePred", {}).get("value", "")),
+                "intermediate": _row_intermediate(binding),
+                "group": _row_group(binding),
+                "value": _row_value(binding),
+            })
+
+        diagnostics = _build_comparison_aggregation_diagnostics(
+            rows,
+            value_parser=value_parser,
+            scope_contribution_count=scope_contribution_count,
+            sample_limit=sample_limit,
+        )
+        result_payload = {
+            ("comparison_ids" if multi_mode else "comparison_id"): scope_label,
+            "value_predicate": value_predicate,
+            "value_predicates": value_predicate_list,
+            "group_by": group_by_predicate or None,
+            "intermediate_predicate": intermediate_predicate or None,
+            "intermediate_filter": (
+                {"value": intermediate_filter_value, "match": intermediate_filter_match}
+                if intermediate_filter_value else None
+            ),
+            "filter": (
+                {"predicate": filter_predicate, "value": filter_value, "match": filter_match}
+                if filter_predicate else None
+            ),
+            "value_parser": value_parser,
+            **diagnostics,
+            "guidance": [
+                "Choose row_level when the question says all values/items/sources and every matched value row should count.",
+                "Choose contribution_sum_level or contribution_mean_level when the wording implies one aggregate per study/contribution.",
+                "Choose intermediate_label_* or group_* candidates when the wording asks per component/category/group.",
+                "If the chosen candidate matches the question, answer from this diagnostics payload or call AggregateComparisonValues with matching path/filter for the simple row-level aggregate.",
+                "Do not fall back to raw SPARQL unless none of these generic denominator candidates matches the question shape.",
+            ],
+            "status": (
+                f"Diagnosed {len(rows)} matched rows across "
+                f"{diagnostics['population']['distinct_contributions_with_values']} contributions"
+            ),
+        }
+
+        journal_key = f"aggregation_diagnostics:{scope_label}"
+        session_journal.found_values[journal_key] = {
+            "value_predicates": value_predicate_list,
+            "population": diagnostics["population"],
+            "denominator_candidates": diagnostics["denominator_candidates"],
+        }
+        session_journal.completed_steps.append(
+            f"DiagnoseComparisonAggregation({scope_label}, {value_pred_label}) "
+            f"-> {len(rows)} rows, {diagnostics['population']['numeric_value_count']} numeric"
+        )
+        if multi_mode:
+            for cid in cmp_id_list:
+                session_journal.visited_nodes.setdefault(cid, "Comparison diagnostics")
+        else:
+            session_journal.visited_nodes.setdefault(comparison_id, "Comparison diagnostics")
+
+        return json.dumps(result_payload, indent=2, default=str)
+
+    except Exception as e:
+        error_msg = f"Error in DiagnoseComparisonAggregation: {str(e)}"
+        logger.error(error_msg)
+        scope_for_log = ",".join(cmp_id_list) if cmp_id_list else comparison_id
+        session_journal.failed_attempts.append(
+            f"DiagnoseComparisonAggregation({scope_for_log}, {value_predicate}): {str(e)}"
+        )
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 23: FindFrequentValues — cross-resource aggregation (no Comparison anchor)
 # ==============================================================================
 
 @mcp.tool()
@@ -3816,7 +4381,7 @@ SELECT DISTINCT ?valueSubject {group_select}?valueObj ?valueLabel ?nestedValue {
 
 
 # ==============================================================================
-# TOOL 23: FindCoAuthors
+# TOOL 24: FindCoAuthors
 # ==============================================================================
 
 @mcp.tool()
@@ -3949,7 +4514,7 @@ SELECT DISTINCT ?paper ?paperLabel ?seedAuthor ?seedLabel ?coAuthor ?coLabel WHE
 
 
 # ==============================================================================
-# TOOL 24: ManageJournal
+# TOOL 25: ManageJournal
 # ==============================================================================
 
 @mcp.tool()
@@ -4017,7 +4582,7 @@ async def ManageJournal(
 
 
 # ==============================================================================
-# TOOL 25: GetJournalSummary
+# TOOL 26: GetJournalSummary
 # ==============================================================================
 
 @mcp.tool()
@@ -4036,7 +4601,7 @@ async def GetJournalSummary(
 
 
 # ==============================================================================
-# TOOL 26: GetJournalStateJSON
+# TOOL 27: GetJournalStateJSON
 # ==============================================================================
 
 @mcp.tool()

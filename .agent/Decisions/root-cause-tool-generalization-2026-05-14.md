@@ -247,3 +247,32 @@ the panel, but the remaining wrong rows are all count/aggregation rows. Trace
 analysis shows the next root cause is not lookup; it is aggregation semantics:
 the agent chooses a plausible Comparison and path, then computes over the wrong
 denominator/scope or re-enters raw SPARQL after a high-level tool result.
+
+## 2026-05-21 Aggregation Diagnostics Layer
+
+Implemented the next low-overfit SciQA fix:
+
+- Added `DiagnoseComparisonAggregation`, a wrapped SPARQL graph-operation tool
+  that uses the same Comparison value-row path as `AggregateComparisonValues`
+  and reports denominator candidates instead of hard-coding an answer.
+- The diagnostics expose total scope contributions, matched value rows,
+  distinct contributions with values, nested intermediate labels, explicit
+  groups, numeric parse counts, row-level summaries, per-contribution
+  sum/mean summaries, and per-intermediate/per-group summaries.
+- Updated SciQA prompts so ambiguous count/average/sum questions call
+  diagnostics after schema discovery when wording could mean all rows, per
+  contribution/study, or per category. Raw SPARQL remains a last resort for
+  unsupported shapes.
+- Updated system docs to show the SciQA tool tier as 27 registered tools and
+  12 domain-specific tools.
+
+Rationale: this keeps the design aligned with wrapped SPARQL calls as basic
+graph exploration operations. The model still chooses the Comparison, value
+path, filters, and final denominator from the question wording; the tool only
+surfaces the graph populations that were previously invisible in traces.
+
+Validation before deployment:
+
+- `uv run python -m compileall ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
+- `uv run pytest tests/framework/test_exact_constraints.py -q` = 14 passed.
+- `uv run pytest tests/framework -q` = 136 passed.

@@ -38,7 +38,7 @@ All agents communicate with their MCP servers via **stdio protocol**.
         ▼                     ▼
 ┌─────────────────┐  ┌─────────────────┐
 │ kqapro_server   │  │ sciqa_server    │
-│ (28 tools)      │  │ (22 tools)      │
+│ (28 tools)      │  │ (27 tools)      │
 └─────────────────┘  └─────────────────┘
 ```
 
@@ -309,12 +309,12 @@ The agent classifies questions into 10 types, each with a specific strategy:
 6. **No Progress** (Journal unchanged for 5 iterations)
    - Checked during periodic journal refresh
    - Triggers a 6-branch decision-tree intervention (`NO_PROGRESS_TEMPLATE`):
-     1. Global-scope question locked onto one Comparison → call `FindFrequentValues`
-     2. Multi-filter row question → call `QueryComparisonRows`
-     3. Retrying same SPARQL with empty results → use `FindPredicate` to find the correct predicate
-     4. Need resource IDs but have only labels → use `GetComparisonContributions` / `FindByPredicateValue`
-     5. FindResource returning wrong type → re-run with `node_type_filter`
-     6. **25+ tool calls without journal change → STOP; synthesize from current journal**
+     1. Aggregation/count/superlative → state scope and use `AggregateComparisonValues` or `FindFrequentValues`
+     2. Aggregation path found but denominator/scope unclear → call `DiagnoseComparisonAggregation`
+     3. Multi-filter row question → call `QueryComparisonRows`
+     4. Bad resource anchor → switch paper/author/research-field/Comparison anchor or use `FindByPredicateValue`
+     5. Missing predicate → use `GetResourceSummary`
+     6. Scoped high-level attempt plus schema discovery found no data → synthesize from current evidence
 
 7. **Max Tool Calls** (domain-configured hard cap)
    - Configured via `max_tool_calls` in `domain_settings`; SciQA currently uses 25.
@@ -488,7 +488,7 @@ Follows the same 4-phase pattern as KQAProAgent:
 
 1. **Initialization** - Load LLM clients, connect to sciqa_server.py
 2. **Pre-Agent Hook** - Classify question (8 types), extract entities, load type-specific strategy
-3. **Main Agent Loop** - Call ORKG tools (22 tools), track progress
+3. **Main Agent Loop** - Call ORKG tools (27 registered tools), track progress
 4. **Post-Agent Hook** - Synthesize answer from journal
 
 ### Multi-Label Classifier-Output Tolerance
@@ -526,12 +526,12 @@ Message History:
 4. Pivot logic - if search fails twice, switch strategies
 5. Complete retrieval - always follow up FindResource with GetResourceDetails/GetResourceSummary/GetRelationTargets
 6. Constraint verification - verify ALL conditions with VerifyNumericCondition before including items
-7. Scope before query - for count/average/sum/min/max/frequency/top questions, decide single-comparison vs multi-comparison vs global/papers before choosing tools
+7. Scope before query - for count/average/sum/min/max/frequency/top questions, decide single-comparison vs multi-comparison vs global/papers before choosing tools; use aggregation diagnostics when the denominator is unclear
 8. **Boolean values in ORKG** - Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent. When filtering for presence of a property (e.g., therapeutic effect), filter for "T" not "F".
 
 **Evidence-First Block:**
 - Short traces are acceptable when they establish the right scope, predicate, and answer-producing tool result.
-- For aggregation/count/superlative questions, inspect the Comparison schema first, then try the dedicated high-level tool (`AggregateComparisonValues` or `FindFrequentValues`) before raw `RunORKGSPARQL` unless the shape is set-difference or an unsupported 3-hop path. `AggregateComparisonValues(value_predicates=...)` handles sibling metric predicates.
+- For aggregation/count/superlative questions, inspect the Comparison schema first, then try the dedicated high-level tool (`AggregateComparisonValues` or `FindFrequentValues`) before raw `RunORKGSPARQL` unless the shape is set-difference or an unsupported 3-hop path. `AggregateComparisonValues(value_predicates=...)` handles sibling metric predicates; `DiagnoseComparisonAggregation` exposes row/contribution/group denominator candidates when the value path is plausible but the scope is ambiguous.
 - For row-level questions with several column constraints, use `QueryComparisonRows` before raw `RunORKGSPARQL`.
 - For paper-level metadata frequencies ("top research fields in papers"), use `FindFrequentValues(scope="papers", value_source="subject")` so values are read from Paper resources rather than Contribution rows.
 - Recovery strategies now change anchors or inspect schema first: author/paper/research-field/Comparison search variants, `FindByPredicateValue`, `GetComparisonContributions`, and `GetResourceSummary`.
@@ -550,17 +550,17 @@ SciQA classifies questions into 8 types:
 | Type | Description | Strategy |
 |------|-------------|----------|
 | **Factoid** | Direct fact lookup | GetResourceSummary for exploration, comparison-based factoid guidance, SPARQL domain data tip |
-| **Count** | "How many..." | Scope first; use `AggregateComparisonValues` for named Comparisons, `FindFrequentValues` for global/paper contribution counts, and raw SPARQL only for set-difference or unsupported graph shapes |
+| **Count** | "How many..." | Scope first; use `AggregateComparisonValues` for named Comparisons, `FindFrequentValues` for global/paper contribution counts, `DiagnoseComparisonAggregation` when the counted population is unclear, and raw SPARQL only for set-difference or unsupported graph shapes |
 | **List** | "Which papers..." | Comparison-based list pattern, GetComparisonContributions, multi-hop lists |
 | **Boolean** | "Is...", "Does..." | ASK SPARQL for comparison data, VerifyNumericCondition for numeric conditions |
 | **Comparison** | Compare entities | CompareResources for batch comparison, full comparison navigation with nested value pattern |
 | **Superlative** | "highest", "lowest", "most popular X overall" | Decide SCOPE first: (A) single-comparison → `InspectComparisonSchema` then `AggregateComparisonValues`; (B) multi-comparison → `InspectComparisonSchema(comparison_ids=...)` then `AggregateComparisonValues(comparison_ids=...)`; (C) global/cross-graph → `FindFrequentValues`; (D) paper metadata → `FindFrequentValues(scope="papers", value_source="subject")`. GLOBAL-SCOPE WARNING: locking onto a single Comparison for a global-scope question is the highest-leverage failure mode. |
-| **Aggregation** | SUM, AVG, total, frequency | Decide SCOPE first: (A) single-comparison → `InspectComparisonSchema` then `AggregateComparisonValues`; (B) multi-comparison → `InspectComparisonSchema(comparison_ids=...)` then `AggregateComparisonValues(comparison_ids=...)`; (C) cross-graph / no Comparison anchor → `FindFrequentValues`. Prefer high-level tools over `RunORKGSPARQL` for AVG/SUM/MIN/MAX/COUNT/MODE_TOP; use schema-discovered `intermediate_predicate` for nested comparison rows, `value_predicates` for sibling metric predicates, and `QueryComparisonRows` for multi-filter row projection before falling back to raw SPARQL. |
+| **Aggregation** | SUM, AVG, total, frequency | Decide SCOPE first: (A) single-comparison → `InspectComparisonSchema` then `AggregateComparisonValues`; (B) multi-comparison → `InspectComparisonSchema(comparison_ids=...)` then `AggregateComparisonValues(comparison_ids=...)`; (C) cross-graph / no Comparison anchor → `FindFrequentValues`. Prefer high-level tools over `RunORKGSPARQL` for AVG/SUM/MIN/MAX/COUNT/MODE_TOP; use schema-discovered `intermediate_predicate` for nested comparison rows, `value_predicates` for sibling metric predicates, `DiagnoseComparisonAggregation` for row/contribution/group denominator ambiguity, and `QueryComparisonRows` for multi-filter row projection before falling back to raw SPARQL. |
 | **General** | Complex/other | GetResourceSummary for exploration, comparison mention as fallback, SPARQL domain data tip |
 
 ### SciQA MCP Tools
 
-The sciqa_server.py provides 22 tools organized by tier:
+The sciqa_server.py provides 27 registered MCP tools: 24 user-visible KB tools, 2 explicit state-management tools, and 1 LLM-hidden journal snapshot tool.
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource(semantic_query)` - Vector search for ORKG resources
@@ -576,7 +576,7 @@ The sciqa_server.py provides 22 tools organized by tier:
 - `BatchGetResourceLabels(resource_ids)` - Batch resolution
 - `CompareResources(resource_ids, predicate_id)` - Compare predicate across resources (sorted)
 
-**Tier 3 - Domain-Specific (11 tools):**
+**Tier 3 - Domain-Specific (12 tools):**
 - `GetPaperContributions(paper_id)` - Paper contributions via P31
 - `GetPaperAuthors(paper_id)` - Authors via P6/P27
 - `GetContributionMethods(contribution_id)` - Methods via P2
@@ -586,6 +586,7 @@ The sciqa_server.py provides 22 tools organized by tier:
 - `InspectComparisonSchema(comparison_id?, comparison_ids?, top_n?, sample_values_per_predicate?, limit_bindings?)` - Compact schema map for Comparison resources. Returns direct contribution predicates and two-hop nested paths with predicate labels, contribution/value counts, sample values, numeric/HAS_VALUE evidence, unit samples when present, and ready-to-use `AggregateComparisonValues` hints. Use before choosing `value_predicate`, `intermediate_predicate`, or `intermediate_filter_value` for aggregation.
 - `QueryComparisonRows(comparison_id?, filters?, return_predicates?, comparison_ids?, filter_match?, limit?)` - Multi-predicate row selector for Comparison contributions. Applies several predicate/value filters and returns several metric predicates per matched row, then writes those rows to `found_values`. Use before raw SPARQL for column-filtered row questions.
 - `AggregateComparisonValues(comparison_id, value_predicate, value_predicates?, agg, comparison_ids?, group_by_predicate?, filter_predicate?, filter_value?, filter_match?, top_n?, value_via_group?, value_parser?, return_predicate?, intermediate_predicate?, intermediate_filter_value?, intermediate_filter_match?)` - SPARQL + Python aggregation over a Comparison's contributions. Handles HAS_VALUE/label indirection. `agg` options: `avg|sum|min|max|count|count_distinct|mode_top|all_values`. `comparison_ids` overrides `comparison_id` and unions rows from multiple Comparisons via VALUES clause. `value_predicates` unions sibling metric predicates. `value_parser="embedded_number"` extracts numbers from strings like "6452 patients". `return_predicate` fetches companion labels/values for the row(s) that produce a min/max. `intermediate_predicate` handles nested rows such as contribution → energy source → electricity generation, while `intermediate_filter_value` restricts the nested row object by label/ID (for example Earth System Model = Atmosphere) without hand-written SPARQL.
+- `DiagnoseComparisonAggregation(comparison_id?, value_predicate, value_predicates?, comparison_ids?, group_by_predicate?, filter_predicate?, filter_value?, intermediate_predicate?, intermediate_filter_value?, value_parser?)` - Runs the same wrapped SPARQL value-row extraction as `AggregateComparisonValues`, then reports population counts and denominator candidates: row-level, per-contribution sum/mean, per-intermediate-label, and per-group. Use before finalizing ambiguous averages/counts when a nested path yields multiple rows per contribution or the question wording could mean all value rows vs per-study/per-category aggregation.
 - `FindFrequentValues(value_predicate, agg?, research_field_id?, comparison_ids?, group_by_predicate?, filter_predicate?, filter_value?, filter_match?, top_n?, limit_subjects?, value_parser?, return_predicate?, scope?, value_source?, split_values?)` - **Cross-resource aggregation** when no single Comparison anchors the question. Scope tiers: (1) `research_field_id` → papers/contributions in that field via P30/P31; (2) `comparison_ids` → VALUES-clause union across listed Comparisons; (3) default → all Contributions of any Comparison; (4) `scope="papers"` → all paper contributions. `value_source="subject"` reads values from the scoped Paper/Comparison itself instead of each Contribution. Supports same `agg`, `value_parser`, and `return_predicate` modes as `AggregateComparisonValues`; writes aggregated results into `found_values` for synthesis. Hard cap `limit_subjects=5000`.
 - `FindCoAuthors(author_name, top_n?)` - Finds co-authors of papers by a seed author (partial case-insensitive match; handles resource-URI authors via P27/P6 + rdfs:label and literal-string authors via isLiteral() filter); returns co-authors sorted by shared-paper count descending. Smoke-tested against Q2 gold.
 
