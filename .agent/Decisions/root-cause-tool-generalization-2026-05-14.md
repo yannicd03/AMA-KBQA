@@ -224,3 +224,26 @@ Follow-up from the first focused schema run:
   variables` without raw SPARQL.
 - Updated `InspectComparisonSchema` hints and SciQA prompts so named nested
   components/categories are passed as `intermediate_filter_value`.
+
+Hetzner validation after deploying `474fc20`:
+
+- Server rebuild succeeded; frontend health check passed.
+- Hetzner `uv run pytest tests/framework -q` = 134 passed.
+- Live smoke test:
+  `AggregateComparisonValues(R68871, intermediate_predicate=P7144,
+  intermediate_filter_value=Atmosphere, value_predicate=P26032, agg=mode_top)`
+  returned the expected top atmospheric-variable class:
+  `Surface pressure`, `Wind components`, `Vapour/solid/liquid`.
+- Focused SciQA panel
+  (`benchmark_results/focused-sciqa-schema-filter-2026-05-21`):
+  - MiniMax: 3/7 = 42.9%, errors 0.
+  - Gemma: 2/7 = 28.6%, errors 0.
+  - Previous focused baselines were 0/7 on both models before schema inspection,
+    then 1/7 MiniMax and 3/7 Gemma after schema inspection only.
+
+Decision: still do not launch a full benchmark. The schema/nested-filter work
+fixed several superlative/frequency rows and removed context/runtime errors from
+the panel, but the remaining wrong rows are all count/aggregation rows. Trace
+analysis shows the next root cause is not lookup; it is aggregation semantics:
+the agent chooses a plausible Comparison and path, then computes over the wrong
+denominator/scope or re-enters raw SPARQL after a high-level tool result.
