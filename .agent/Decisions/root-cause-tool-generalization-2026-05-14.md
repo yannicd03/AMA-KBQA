@@ -210,3 +210,17 @@ Validation before deployment:
 - `uv run python -m compileall ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
 - `uv run pytest tests/framework/test_exact_constraints.py -q` = 11 passed.
 - `uv run pytest tests/framework -q` = 133 passed.
+
+Follow-up from the first focused schema run:
+
+- Focused SciQA schema validation improved from 0/7 on both KIT models to
+  MiniMax 1/7 and Gemma 3/7, but traces showed a remaining generic gap:
+  schema inspection exposed nested paths, while `AggregateComparisonValues`
+  could not restrict those paths to a named intermediate row such as
+  `Atmosphere`.
+- Added `intermediate_filter_value` / `intermediate_filter_match` to
+  `AggregateComparisonValues` so nested row aggregation can express patterns
+  like `Contribution -> Earth System Model -> Atmosphere -> prognostic
+  variables` without raw SPARQL.
+- Updated `InspectComparisonSchema` hints and SciQA prompts so named nested
+  components/categories are passed as `intermediate_filter_value`.

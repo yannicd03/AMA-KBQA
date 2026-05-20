@@ -528,7 +528,8 @@ TIER 3 - DOMAIN-SPECIFIC:
   algorithm=Naive Bayes AND feature=bag of words -> precision/recall/F1.
 - AggregateComparisonValues(comparison_id, value_predicate, value_predicates?, agg, group_by_predicate?,
                             filter_predicate?, filter_value?, filter_match?, top_n?,
-                            value_parser?, return_predicate?, intermediate_predicate?):
+                            value_parser?, return_predicate?, intermediate_predicate?,
+                            intermediate_filter_value?):
   Compute AVG / SUM / MIN / MAX / COUNT / COUNT_DISTINCT / MODE_TOP / ALL_VALUES over
   a Comparison's contributions. Auto-handles the HAS_VALUE indirection on numeric
   measurements. Use this whenever the question asks for "mean / total / minimum /
@@ -537,6 +538,9 @@ TIER 3 - DOMAIN-SPECIFIC:
   predicates and the question asks for the combined population.
   For nested rows like Contribution -> energy source -> measurement, pass
   intermediate_predicate for the first hop and value_predicate for the measurement.
+  If the question names one nested component/category (e.g. Atmosphere), pass
+  intermediate_filter_value with that label so only matching intermediate row
+  objects contribute.
   PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
 - FindFrequentValues(value_predicate, agg, research_field_id?, comparison_ids?,
                      group_by_predicate?, filter_predicate?, filter_value?,
@@ -609,6 +613,9 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
   For packed categorical values such as species lists, pass split_values=true.
 - Values like "n=54", "86 %", or "sample size: 1,234":
   pass value_parser="embedded_number" for numeric aggregation.
+- Nested component filters ("variables for atmosphere models", "capacity for photovoltaics"):
+  use InspectComparisonSchema to find the nested path, then pass
+  intermediate_filter_value="Atmosphere" / "photovoltaics" to AggregateComparisonValues.
 - Questions asking for the item attached to an extreme metric ("studied location with
   largest geographic scale"):
   use return_predicate with agg="max" or agg="min".
@@ -971,6 +978,15 @@ and pick the one whose label matches the question's domain.
    -> {result: 157.146390041493776, n_contributions: 241}
 4. Answer: the average value. Do not hand-write SPARQL for this pattern.
 
+**Example: "Which are the three most common variables for the atmosphere models in X?"**
+   (nested row aggregation with intermediate filter)
+1. FindResource("X", node_type_filter="Comparison") -> RXXXXX
+2. InspectComparisonSchema("RXXXXX") -> nested_paths shows Earth System Model P7144 -> prognostic variable P26032, with sample_intermediate_values including "Atmosphere"
+3. AggregateComparisonValues(comparison_id="RXXXXX", intermediate_predicate="P7144",
+                              intermediate_filter_value="Atmosphere",
+                              value_predicate="P26032", agg="mode_top", top_n=3)
+4. Answer with the top three variable labels.
+
 **Example: "What is the total installed capacity across all contributions?"** (sum pattern)
 1. FindResource("installed capacity comparison") -> R44073
 2. InspectComparisonSchema("R44073") -> verify whether installed capacity is direct P43133 or nested under an energy-source path
@@ -1023,7 +1039,9 @@ ALWAYS prefer AggregateComparisonValues over RunORKGSPARQL for AVG/SUM/MIN/MAX/
 COUNT/COUNT_DISTINCT/MODE_TOP within a Comparison — the tool handles HAS_VALUE
 indirection, label fallback, and value_via_group two-hop paths automatically.
 When unsure which predicate/path to aggregate, call InspectComparisonSchema first
-and use the returned usage_hint. Do not guess from a predicate label alone.
+and use the returned usage_hint. If nested_paths sample_intermediate_values names
+the component/category in the question, pass it as intermediate_filter_value.
+Do not guess from a predicate label alone.
 Reach for RunORKGSPARQL only for set-difference (FILTER NOT EXISTS), three-hop
 paths the tool can't express (e.g. contrib -> P_a -> ?x -> P_b -> ?y -> P_c -> ?val),
 or graph-wide aggregations not anchored to a Comparison.

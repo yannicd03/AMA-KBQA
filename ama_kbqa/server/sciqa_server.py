@@ -497,6 +497,8 @@ def _schema_usage_hint(
             f"AggregateComparisonValues({scope}, "
             f'intermediate_predicate="{intermediate_predicate}", '
             f'value_predicate="{predicate_id}", agg=...)'
+            " Add intermediate_filter_value=... when the question names one "
+            "nested row label."
         )
     return f'AggregateComparisonValues({scope}, value_predicate="{predicate_id}", agg=...)'
 
@@ -2640,6 +2642,11 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
                 value_pred,
                 intermediate_predicate=intermediate_pred,
             )
+            if entry.get("sample_intermediate_values"):
+                entry["filter_hint"] = (
+                    "If the question names one of sample_intermediate_values, "
+                    "pass it as intermediate_filter_value."
+                )
             nested_payload.append(entry)
         nested_payload.sort(
             key=lambda x: (
@@ -2664,6 +2671,7 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
             "guidance": [
                 "Use direct_predicates with AggregateComparisonValues(value_predicate=...) for contribution-level columns.",
                 "Use nested_paths with AggregateComparisonValues(intermediate_predicate=..., value_predicate=...) for row objects that carry measurements.",
+                "If a nested question names a component/category shown in sample_intermediate_values, add intermediate_filter_value.",
                 "For min/max questions that ask for the attached item, add return_predicate or group_by_predicate after choosing the metric path.",
             ],
             "status": (
@@ -2915,6 +2923,8 @@ async def AggregateComparisonValues(
     value_parser: str = "leading_number",
     return_predicate: str = "",
     intermediate_predicate: str = "",
+    intermediate_filter_value: str = "",
+    intermediate_filter_match: Literal["exact", "contains", "regex"] = "contains",
 ) -> str:
     """
     Aggregate values across the contributions of one or more Comparison resources.
@@ -2974,6 +2984,12 @@ async def AggregateComparisonValues(
             ?intermediate value_pred ?valueObj``. Use this for questions like
             "average energy generation of all energy sources", where energy
             sources are rows below each contribution.
+        intermediate_filter_value: Optional label/ID filter applied to the
+            intermediate row object. Use this for nested rows where only one
+            component/category should contribute, e.g. Contribution -> Earth
+            System Model -> Atmosphere -> prognostic variables.
+        intermediate_filter_match: Matching mode for intermediate_filter_value:
+            exact, contains, or regex.
         comparison_ids: Optional comma-separated list of Comparison IDs
             (e.g. "R153801,R155266,R44073"). When non-empty this OVERRIDES
             ``comparison_id`` and the aggregate is computed over the UNION of
@@ -3034,6 +3050,13 @@ async def AggregateComparisonValues(
         flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
         return_pred = _norm_pred(return_predicate) if return_predicate else ""
         intermediate_pred = _norm_pred(intermediate_predicate) if intermediate_predicate else ""
+        if intermediate_filter_value and not intermediate_pred:
+            return json.dumps(
+                {"error": "intermediate_filter_value requires intermediate_predicate"},
+                indent=2,
+            )
+        if intermediate_filter_match not in {"exact", "contains", "regex"}:
+            intermediate_filter_match = "contains"
         if value_parser not in {"leading_number", "embedded_number", "auto"}:
             value_parser = "auto" if value_parser in {"string", "text", "literal"} else "leading_number"
 
@@ -3060,6 +3083,26 @@ async def AggregateComparisonValues(
                     f"        OPTIONAL {{ ?fobj rdfs:label ?flbl }}\n"
                     f'        FILTER( CONTAINS(LCASE(STR(?fobj)), LCASE("{safe}")) '
                     f'|| CONTAINS(LCASE(STR(?flbl)), LCASE("{safe}")) )\n'
+                )
+
+        intermediate_filter_block = ""
+        if intermediate_pred and intermediate_filter_value:
+            safe_intermediate = intermediate_filter_value.replace('"', '\\"')
+            if intermediate_filter_match == "exact":
+                intermediate_filter_block = (
+                    f'FILTER( STR(?intermediate) = "{safe_intermediate}" '
+                    f'|| STRAFTER(STR(?intermediate), "{NS_RESOURCE}") = "{safe_intermediate}" '
+                    f'|| STR(?intermediateLabel) = "{safe_intermediate}" )\n'
+                )
+            elif intermediate_filter_match == "regex":
+                intermediate_filter_block = (
+                    f'FILTER( REGEX(STR(?intermediate), "{safe_intermediate}", "i") '
+                    f'|| REGEX(STR(?intermediateLabel), "{safe_intermediate}", "i") )\n'
+                )
+            else:
+                intermediate_filter_block = (
+                    f'FILTER( CONTAINS(LCASE(STR(?intermediate)), LCASE("{safe_intermediate}")) '
+                    f'|| CONTAINS(LCASE(STR(?intermediateLabel)), LCASE("{safe_intermediate}")) )\n'
                 )
 
         # Body retrieving raw rows: contribution, group, raw value (with
@@ -3095,6 +3138,7 @@ async def AggregateComparisonValues(
             value_block = (
                 f"?contrib {intermediate_pred} ?intermediate .\n"
                 f"        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}\n"
+                f"        {intermediate_filter_block}"
                 f"        VALUES ?valuePred {{ {value_pred_values} }}\n"
                 f"        ?intermediate ?valuePred ?valueObj .\n"
                 f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
@@ -3311,6 +3355,8 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
         key = f"{agg}({value_pred_label})" + (f" by {group_by_predicate}" if group_by_predicate else "")
         if intermediate_predicate:
             key += f" via {intermediate_predicate}"
+        if intermediate_filter_value:
+            key += f" filtered {intermediate_filter_value}"
         if return_predicate:
             key += f" return {return_predicate}"
         session_journal.found_values[journal_key][key] = result_payload
@@ -3331,6 +3377,10 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             "agg": agg,
             "group_by": group_by_predicate or None,
             "intermediate_predicate": intermediate_predicate or None,
+            "intermediate_filter": (
+                {"value": intermediate_filter_value, "match": intermediate_filter_match}
+                if intermediate_filter_value else None
+            ),
             "value_parser": value_parser,
             "return_predicate": return_predicate or None,
             "filter": (
