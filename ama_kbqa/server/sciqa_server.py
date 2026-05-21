@@ -3126,7 +3126,7 @@ SELECT DISTINCT {select_vars} WHERE {{
 async def AggregateComparisonValues(
     app_context: Context,
     comparison_id: str,
-    value_predicate: str,
+    value_predicate: str = "",
     value_predicates: str = "",
     agg: Literal["avg", "sum", "min", "max", "count", "count_distinct", "mode_top", "all_values"] = "avg",
     group_by_predicate: str = "",
@@ -3170,7 +3170,8 @@ async def AggregateComparisonValues(
         value_predicate: Predicate ID of the value to aggregate
             (e.g., "P23140", "P43133"). Numeric predicates often store their
             literal under HAS_VALUE; this tool tries direct, HAS_VALUE, and
-            label fallbacks automatically.
+            label fallbacks automatically. May be empty when value_predicates
+            supplies all value predicates.
         value_predicates: Optional comma-separated extra value predicates to union
             with value_predicate. Use when a metric appears under several sibling
             predicates and the question asks for the combined population.

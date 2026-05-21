@@ -529,7 +529,7 @@ TIER 3 - DOMAIN-SPECIFIC:
   Return exact contribution rows after multiple predicate/value filters, then project
   several requested predicates. Use this before raw SPARQL for row questions like
   algorithm=Naive Bayes AND feature=bag of words -> precision/recall/F1.
-- AggregateComparisonValues(comparison_id, value_predicate, value_predicates?, agg, group_by_predicate?,
+- AggregateComparisonValues(comparison_id, value_predicate?, value_predicates?, agg, group_by_predicate?,
                             filter_predicate?, filter_value?, filter_match?, top_n?,
                             value_parser?, return_predicate?, intermediate_predicate?,
                             intermediate_filter_value?):
@@ -538,7 +538,8 @@ TIER 3 - DOMAIN-SPECIFIC:
   measurements. Use this whenever the question asks for "mean / total / minimum /
   maximum / count / most common X for the studies" or per-group extremes.
   Pass value_predicates="P1,P2" when the same metric can appear under sibling
-  predicates and the question asks for the combined population.
+  predicates and the question asks for the combined population; value_predicate
+  may be empty if value_predicates supplies all predicates.
   For nested rows like Contribution -> energy source -> measurement, pass
   intermediate_predicate for the first hop and value_predicate for the measurement.
   If the question names one nested component/category (e.g. Atmosphere), pass

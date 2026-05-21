@@ -263,6 +263,10 @@ Implemented the next low-overfit SciQA fix:
   diagnostics after schema discovery when wording could mean all rows, per
   contribution/study, or per category. Raw SPARQL remains a last resort for
   unsupported shapes.
+- Made `AggregateComparisonValues(value_predicates=...)` valid without a
+  redundant `value_predicate`, matching how schema inspection sometimes
+  exposes sibling value predicates and how text-mode models naturally call the
+  tool.
 - Updated system docs to show the SciQA tool tier as 27 registered tools and
   12 domain-specific tools.
 
