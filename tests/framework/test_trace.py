@@ -197,3 +197,81 @@ class TestJournalMutatingTools:
     def test_known_sciqa_mutators_present(self):
         for tool in ("FindResource", "GetResourceDetails", "ExploreNeighborhood"):
             assert tool in JOURNAL_MUTATING_TOOLS
+
+
+class TestRecorderListeners:
+    def test_listener_sees_open_close_and_event_in_order(self):
+        rec = TraceRecorder()
+        seen: list[tuple[str, str, str]] = []
+
+        def listener(phase, info):
+            seen.append((phase, info.get("kind"), info.get("name")))
+
+        rec.add_listener(listener)
+
+        async def main():
+            async with rec.span("agent_run", "ask"):
+                rec.event("intervention", "retry")
+
+        _run(main())
+
+        assert seen == [
+            ("open", "agent_run", "ask"),
+            ("event", "intervention", "retry"),
+            ("close", "agent_run", "ask"),
+        ]
+
+    def test_listener_exception_does_not_break_recording(self):
+        rec = TraceRecorder()
+
+        def bad_listener(phase, info):
+            raise RuntimeError("boom")
+
+        rec.add_listener(bad_listener)
+
+        async def main():
+            async with rec.span("agent_run", "ask"):
+                rec.event("loop_detected", "x")
+
+        _run(main())
+
+        assert len(rec.events) == 2
+        assert rec.events[0].kind == "loop_detected"
+        assert rec.events[1].kind == "agent_run"
+
+    def test_remove_listener_stops_notifications(self):
+        rec = TraceRecorder()
+        seen: list[str] = []
+
+        def listener(phase, info):
+            seen.append(phase)
+
+        rec.add_listener(listener)
+        rec.event("foo", "first")
+        rec.remove_listener(listener)
+        rec.event("foo", "second")
+
+        assert seen == ["event"]
+
+    def test_close_payload_is_full_trace_event_dict(self):
+        rec = TraceRecorder()
+        closes: list[dict] = []
+
+        def listener(phase, info):
+            if phase == "close":
+                closes.append(info)
+
+        rec.add_listener(listener)
+
+        async def main():
+            async with rec.span("llm_call", "gpt-4o", attributes={"prompt_tokens": 7}):
+                pass
+
+        _run(main())
+
+        assert len(closes) == 1
+        ev = closes[0]
+        assert ev["kind"] == "llm_call"
+        assert ev["status"] == "ok"
+        assert ev["attributes"]["prompt_tokens"] == 7
+        assert "duration_ms" in ev
