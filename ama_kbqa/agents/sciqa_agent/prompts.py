@@ -537,6 +537,8 @@ TIER 3 - DOMAIN-SPECIFIC:
   a Comparison's contributions. Auto-handles the HAS_VALUE indirection on numeric
   measurements. Use this whenever the question asks for "mean / total / minimum /
   maximum / count / most common X for the studies" or per-group extremes.
+  agg accepts aliases like "frequency" -> "mode_top", "mean" -> "avg", and
+  "total" -> "sum".
   Pass value_predicates="P1,P2" when the same metric can appear under sibling
   predicates and the question asks for the combined population; value_predicate
   may be empty if value_predicates supplies all predicates.
