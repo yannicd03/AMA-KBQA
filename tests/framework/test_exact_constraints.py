@@ -6,6 +6,7 @@ from ama_kbqa.server.sciqa_server import (
     DiagnoseComparisonAggregation,
     _build_comparison_aggregation_diagnostics,
     _looks_numeric_value,
+    _normalize_aggregation_name,
     _parse_numeric_value,
     _payload_node_type_matches,
     _schema_display_value,
@@ -186,3 +187,5 @@ def test_sciqa_diagnostics_tool_schema_exposes_generic_parameters():
     assert "comparison_ids" in params
     assert "value_parser" in params
     assert _parse_numeric_value("n=54", "embedded_number") == 54
+    assert _normalize_aggregation_name("frequency") == "mode_top"
+    assert _normalize_aggregation_name("mean") == "avg"

@@ -267,6 +267,11 @@ Implemented the next low-overfit SciQA fix:
   redundant `value_predicate`, matching how schema inspection sometimes
   exposes sibling value predicates and how text-mode models naturally call the
   tool.
+- Normalized common aggregation aliases for `AggregateComparisonValues` and
+  `FindFrequentValues` (`frequency`/`most_common` -> `mode_top`, `mean` ->
+  `avg`, `total` -> `sum`, `unique_count` -> `count_distinct`) so natural
+  model vocabulary does not fail FastMCP validation before the graph operation
+  can run.
 - Updated system docs to show the SciQA tool tier as 27 registered tools and
   12 domain-specific tools.
 

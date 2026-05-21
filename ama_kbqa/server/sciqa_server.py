@@ -526,6 +526,48 @@ def _parse_numeric_value(value: Any, value_parser: str = "leading_number") -> Op
         return None
 
 
+_VALID_AGGREGATIONS = {
+    "avg",
+    "sum",
+    "min",
+    "max",
+    "count",
+    "count_distinct",
+    "mode_top",
+    "all_values",
+}
+
+_AGGREGATION_ALIASES = {
+    "average": "avg",
+    "mean": "avg",
+    "total": "sum",
+    "minimum": "min",
+    "lowest": "min",
+    "maximum": "max",
+    "highest": "max",
+    "frequency": "mode_top",
+    "frequencies": "mode_top",
+    "freq": "mode_top",
+    "mode": "mode_top",
+    "most_common": "mode_top",
+    "most_frequent": "mode_top",
+    "top": "mode_top",
+    "distinct": "count_distinct",
+    "unique": "count_distinct",
+    "unique_count": "count_distinct",
+    "distinct_count": "count_distinct",
+    "values": "all_values",
+    "list": "all_values",
+    "all": "all_values",
+}
+
+
+def _normalize_aggregation_name(agg: Any, default: str = "avg") -> str:
+    """Normalize common LLM aggregation aliases to tool aggregation names."""
+    raw = str(agg or default).strip().lower().replace("-", "_").replace(" ", "_")
+    return _AGGREGATION_ALIASES.get(raw, raw)
+
+
 def _numeric_summary(numbers: List[float]) -> Dict[str, Any]:
     """Return compact numeric summary fields for diagnostics payloads."""
     if not numbers:
@@ -3128,7 +3170,7 @@ async def AggregateComparisonValues(
     comparison_id: str,
     value_predicate: str = "",
     value_predicates: str = "",
-    agg: Literal["avg", "sum", "min", "max", "count", "count_distinct", "mode_top", "all_values"] = "avg",
+    agg: str = "avg",
     group_by_predicate: str = "",
     filter_predicate: str = "",
     filter_value: str = "",
@@ -3175,12 +3217,14 @@ async def AggregateComparisonValues(
         value_predicates: Optional comma-separated extra value predicates to union
             with value_predicate. Use when a metric appears under several sibling
             predicates and the question asks for the combined population.
-        agg: Aggregation:
+        agg: Aggregation. Canonical values are:
             - avg / sum / min / max: numeric aggregate of parsed values
             - count: total contributions matching the filter
             - count_distinct: distinct values for value_predicate
             - mode_top: most frequent value (returns top_n)
             - all_values: list raw values per contribution (no aggregation)
+            Common aliases such as mean, total, frequency, most_common, and
+            unique_count are normalized.
         group_by_predicate: Optional predicate to GROUP BY. When set, the
             aggregate is computed per distinct value of this predicate
             (e.g., "extreme values per energy source").
@@ -3247,6 +3291,11 @@ async def AggregateComparisonValues(
         )
 
     try:
+        agg = _normalize_aggregation_name(agg, default="avg")
+        if agg not in _VALID_AGGREGATIONS:
+            return json.dumps({
+                "error": f"Unsupported agg '{agg}'. Use one of {sorted(_VALID_AGGREGATIONS)}."
+            }, indent=2)
         raw_value_predicates = [
             p.strip()
             for p in ([value_predicate] + (value_predicates or "").split(","))
@@ -3981,7 +4030,7 @@ SELECT DISTINCT ?cmp ?contrib ?valuePred {intermediate_select}{group_select}?val
 async def FindFrequentValues(
     app_context: Context,
     value_predicate: str,
-    agg: Literal["mode_top", "count", "count_distinct", "sum", "avg", "min", "max", "all_values"] = "mode_top",
+    agg: str = "mode_top",
     research_field_id: str = "",
     comparison_ids: str = "",
     group_by_predicate: str = "",
@@ -4030,7 +4079,8 @@ async def FindFrequentValues(
         value_predicate: Predicate ID of the value to count/aggregate
             (e.g., "P15585", "P43133"). HAS_VALUE/label fallbacks applied.
         agg: One of mode_top (default — frequency table), count, count_distinct,
-            sum, avg, min, max, all_values.
+            sum, avg, min, max, all_values. Common aliases such as frequency,
+            most_common, mean, total, and unique_count are normalized.
         research_field_id: Optional Research Field resource (e.g. "R132").
             When set, only contributions whose paper has P30→<field> are scanned.
         comparison_ids: Optional comma-separated list (e.g. "R153801,R155266").
@@ -4074,6 +4124,11 @@ async def FindFrequentValues(
         return f"orkgp:{p}"
 
     try:
+        agg = _normalize_aggregation_name(agg, default="mode_top")
+        if agg not in _VALID_AGGREGATIONS:
+            return json.dumps({
+                "error": f"Unsupported agg '{agg}'. Use one of {sorted(_VALID_AGGREGATIONS)}."
+            }, indent=2)
         value_pred = _norm_pred(value_predicate)
         if not value_pred:
             return json.dumps({"error": "value_predicate is required"}, indent=2)
