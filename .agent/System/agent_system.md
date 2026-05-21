@@ -563,7 +563,7 @@ SciQA classifies questions into 8 types:
 The sciqa_server.py provides 27 registered MCP tools: 24 user-visible KB tools, 2 explicit state-management tools, and 1 LLM-hidden journal snapshot tool.
 
 **Tier 1 - Discovery (4 tools):**
-- `FindResource(semantic_query)` - Vector search for ORKG resources, with high-confidence lexical label promotion for queries that include resource titles plus extra words
+- `FindResource(semantic_query)` - Vector search for ORKG resources, with high-confidence lexical label promotion for queries that include resource titles plus extra words; short title-like queries run strict token-coverage label lookup before broad token fallback
 - `FindPredicate(semantic_query)` - Find ORKG predicate names
 - `FindByPredicateValue(predicate_id, value, match_type)` - Reverse lookup by predicate value (exact/contains/greater/less)
 - `FindAuthorPapers(author_name)` - SPARQL-based author name search with **UNION clause for both resource-URI authors and string literal authors** (handles `orkgp:P27 ?author` with `?author rdfs:label` OR `orkgp:P27 ?authorLabel` with `isLiteral()` filter). Case-insensitive partial match, better than vector search for proper nouns.

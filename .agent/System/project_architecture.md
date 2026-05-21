@@ -327,7 +327,7 @@ Provides 28 tools for knowledge graph interaction, organized by tier:
 Provides 27 registered tools for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, and 1 LLM-hidden journal snapshot tool.
 
 **Tier 1 - Discovery (4 tools):**
-- `FindResource` - Semantic vector search for papers, authors, contributions, with high-confidence lexical label promotion when a query contains a resource title plus extra words
+- `FindResource` - Semantic vector search for papers, authors, contributions, with high-confidence lexical label promotion when a query contains a resource title plus extra words; short title-like queries run strict token-coverage label lookup before broad token fallback
 - `FindPredicate` - Find ORKG predicate names by description
 - `FindByPredicateValue` - Reverse lookup: find resources by predicate value (exact/contains/greater/less)
 - `FindAuthorPapers` - SPARQL-based author name search (case-insensitive partial match, better than vector search for proper nouns) ✨ NEW
