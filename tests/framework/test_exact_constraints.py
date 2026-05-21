@@ -5,6 +5,7 @@ from ama_kbqa.server.sciqa_server import (
     AggregateComparisonValues,
     DiagnoseComparisonAggregation,
     _build_comparison_aggregation_diagnostics,
+    _lexical_candidate_token_sets,
     _lexical_label_score,
     _looks_numeric_value,
     _normalize_aggregation_name,
@@ -130,6 +131,14 @@ def test_sciqa_payload_node_type_filter_accepts_normalized_payload_type():
 def test_sciqa_lexical_label_score_handles_extra_query_words():
     assert _lexical_label_score("text summarization before 2002", "Summarization before 2002") > 0.9
     assert _lexical_label_score("summarization comparison", "Extractive Text Summarization") == 0
+
+
+def test_sciqa_lexical_token_sets_allow_one_context_word():
+    token_sets = _lexical_candidate_token_sets({"text", "summarization", "before", "2002"})
+
+    assert ("2002", "before", "summarization", "text") in token_sets
+    assert ("2002", "before", "summarization") in token_sets
+    assert _lexical_candidate_token_sets({"token1", "token2", "token3", "token4", "token5", "token6", "token7"}) == []
 
 
 def test_sciqa_schema_helpers_compact_values_and_paths():

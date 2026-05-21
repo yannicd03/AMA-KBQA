@@ -276,6 +276,12 @@ Implemented the next low-overfit SciQA fix:
   vector search already returned candidates. This catches cases where a query
   contains an exact Comparison title plus extra context words, e.g. a title
   embedded in "text <title>", without hard-coding the title.
+- Added a strict token-coverage pass before the broad token fallback in
+  `FindResource`. For short title-like queries it first asks Virtuoso for
+  labels containing all query tokens, then labels containing all but one token,
+  before trying noisy token-OR matching. This keeps exact resource-title
+  recovery generic while avoiding the previous `LIMIT` window issue where
+  generic semantic hits could hide the true Comparison label.
 - Updated system docs to show the SciQA tool tier as 27 registered tools and
   12 domain-specific tools.
 
@@ -287,5 +293,5 @@ surfaces the graph populations that were previously invisible in traces.
 Validation before deployment:
 
 - `uv run python -m compileall ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
-- `uv run pytest tests/framework/test_exact_constraints.py -q` = 15 passed.
-- `uv run pytest tests/framework -q` = 137 passed.
+- `uv run pytest tests/framework/test_exact_constraints.py -q` = 16 passed.
+- `uv run pytest tests/framework -q` = 138 passed.

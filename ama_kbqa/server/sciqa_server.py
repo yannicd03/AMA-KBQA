@@ -387,6 +387,33 @@ def _lexical_label_score(query: str, label: str) -> float:
     return 0.0
 
 
+def _lexical_candidate_token_sets(query_tokens: set[str]) -> list[tuple[str, ...]]:
+    """Build bounded AND-token filters for title-like resource lookup."""
+    tokens = sorted(query_tokens)
+    if len(tokens) < 2 or len(tokens) > 6:
+        return []
+
+    token_sets: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+
+    def add(candidate: list[str]) -> None:
+        key = tuple(sorted(candidate))
+        if len(key) >= 2 and key not in seen:
+            seen.add(key)
+            token_sets.append(key)
+
+    add(tokens)
+
+    # Natural search strings often add one context word before an exact ORKG
+    # title, e.g. "text Summarization before 2002". Try one-token omissions
+    # before the broader token-OR fallback so exact titles are not crowded out.
+    if len(tokens) >= 4:
+        for token in tokens:
+            add([candidate for candidate in tokens if candidate != token])
+
+    return token_sets
+
+
 def _get_available_predicates(app, resource_id: str) -> List[str]:
     """Return compact predicate labels for a resource."""
     predicates = []
@@ -435,36 +462,8 @@ def _find_resources_by_label(
     if wanted.startswith("orkgc:"):
         wanted = wanted[6:]
 
-    for term in ordered_terms:
-        safe = _sparql_quote_literal(term)
-        token_filter = ""
-        if query_tokens:
-            token_conditions = [
-                f'CONTAINS(LCASE(STR(?label)), LCASE("{_sparql_quote_literal(token)}"))'
-                for token in sorted(query_tokens)
-            ]
-            token_filter = " || " + " || ".join(token_conditions)
-        query = f"""
-        SELECT DISTINCT ?resource ?label ?type WHERE {{
-            GRAPH <{SCIQA_GRAPH}> {{
-                ?resource rdfs:label ?label .
-                OPTIONAL {{ ?resource rdf:type ?type }}
-                FILTER(
-                    LCASE(STR(?label)) = LCASE("{safe}") ||
-                    CONTAINS(LCASE(STR(?label)), LCASE("{safe}"))
-                    {token_filter}
-                )
-            }}
-        }} LIMIT {max(top_n * 10, 50)}
-        """
-        try:
-            app.sparql.setQuery(SPARQL_PREFIXES + query)
-            results = app.sparql.query().convert()
-        except Exception as e:
-            logger.warning(f"FindResource lexical fallback failed for {term!r}: {e}")
-            continue
-
-        for binding in results.get("results", {}).get("bindings", []):
+    def add_candidate_bindings(bindings: list[dict]) -> None:
+        for binding in bindings:
             resource_uri = binding.get("resource", {}).get("value", "")
             if not resource_uri.startswith(NS_RESOURCE):
                 continue
@@ -490,6 +489,46 @@ def _find_resources_by_label(
             ))
             session_journal.visited_nodes[resource_id] = label
             seen_ids.add(resource_id)
+
+    def run_label_query(filter_expression: str, limit: int, description: str) -> None:
+        query = f"""
+        SELECT DISTINCT ?resource ?label ?type WHERE {{
+            GRAPH <{SCIQA_GRAPH}> {{
+                ?resource rdfs:label ?label .
+                OPTIONAL {{ ?resource rdf:type ?type }}
+                FILTER({filter_expression})
+            }}
+        }} LIMIT {limit}
+        """
+        try:
+            app.sparql.setQuery(SPARQL_PREFIXES + query)
+            results = app.sparql.query().convert()
+        except Exception as e:
+            logger.warning(f"FindResource lexical fallback failed for {description}: {e}")
+            return
+        add_candidate_bindings(results.get("results", {}).get("bindings", []))
+
+    for token_set in _lexical_candidate_token_sets(query_tokens):
+        token_filter = " && ".join(
+            f'CONTAINS(LCASE(STR(?label)), LCASE("{_sparql_quote_literal(token)}"))'
+            for token in token_set
+        )
+        run_label_query(token_filter, max(top_n * 20, 100), f"tokens={token_set!r}")
+
+    for term in ordered_terms:
+        safe = _sparql_quote_literal(term)
+        phrase_filter = (
+            f'LCASE(STR(?label)) = LCASE("{safe}") || '
+            f'CONTAINS(LCASE(STR(?label)), LCASE("{safe}"))'
+        )
+        run_label_query(phrase_filter, max(top_n * 10, 50), f"term={term!r}")
+
+    if query_tokens and len(matches) < top_n:
+        token_filter = " || ".join(
+            f'CONTAINS(LCASE(STR(?label)), LCASE("{_sparql_quote_literal(token)}"))'
+            for token in sorted(query_tokens)
+        )
+        run_label_query(token_filter, max(top_n * 20, 100), "broad token fallback")
 
     matches.sort(key=lambda match: match.relevance_score, reverse=True)
     return matches[:top_n]
