@@ -62,34 +62,43 @@ ama-kbqa/
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
 │   │   ├── pages/              # Streamlit pages
-│   │   │   ├── 1_Chat.py       # Interactive Q&A with agent selector; Trace/Graph buttons
+│   │   │   ├── 1_Chat.py       # Interactive Q&A; background-thread run; live SVG lifecycle; Lifecycle/Trace/Graph tab panel; Simplified view toggle ✅ UPDATED
 │   │   │   ├── 2_Batch_Processing.py # Batch runner: live progress, tqdm parsing, console auto-scroll
 │   │   │   ├── 3_Evaluation.py # Results dashboard (charts, metrics, per-question details)
 │   │   │   ├── 4_Settings.py   # config.toml editor
-│   │   │   ├── 5_Trace_Inspector.py  # Span tree + per-span detail tabs + JSONL export ✅ NEW
-│   │   │   └── 6_Graph_View.py       # vis-network KG subgraph + snapshot scrubber ✅ NEW
+│   │   │   ├── 5_Trace_Inspector.py  # Thin wrapper: trace selector + render_trace_panel() ✅ UPDATED
+│   │   │   └── 6_Graph_View.py       # Thin wrapper: trace selector + render_graph_panel() ✅ UPDATED
 │   │   └── utils/              # Shared utilities
 │   │       ├── styling.py      # CSS, ansi_to_html, avatars, kind-coloured span pills
 │   │       ├── async_helpers.py # run_async() wrapper
 │   │       ├── agent_factory.py # Agent creation + metadata
 │   │       ├── batch_results_loader.py # Load benchmark result files from benchmark_results/
 │   │       ├── config_editor.py # config.toml loading/saving
-│   │       ├── trace_render.py  # Pure-Python trace helpers: build_tree, summarise, render_tree_html ✅ NEW
-│   │       └── graph_html.py    # journal_to_graph, build_graph_html (vis-network HTML template) ✅ NEW
+│   │       ├── trace_render.py  # Pure-Python trace helpers: build_tree, summarise, render_tree_html
+│   │       ├── graph_html.py    # journal_to_graph, build_graph_html (vis-network HTML template)
+│   │       ├── lifecycle_runner.py # LiveLifecycleState, start_run(), drain_into() — background thread + queue ✅ NEW
+│   │       ├── lifecycle_svg.py    # Inline-SVG agent-lifecycle figure (ported from paper TikZ, data-state nodes) ✅ NEW
+│   │       ├── lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/TOOLS_B frozensets ✅ NEW
+│   │       ├── trace_panel.py   # render_trace_panel() — extracted panel helper shared by Chat + page 5 ✅ NEW
+│   │       └── graph_panel.py   # render_graph_panel() — extracted panel helper shared by Chat + page 6 ✅ NEW
 │   ├── config.py               # Configuration loader
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
 │   ├── postprocessing.py       # Postprocessing modes (choice, sparql, llm_judge, simple)
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
-├── tests/                      # Test suite
-│   └── framework/              # ✅ Framework unit tests (122 tests)
-│       ├── test_types.py       # Response type tests
-│       ├── test_config.py      # Configuration tests
-│       ├── test_state.py       # State management tests
-│       ├── test_adapters.py    # Adapter tests
-│       ├── test_trace.py       # TraceRecorder: nesting, contextvar isolation, sync/async parity, JSONL roundtrip ✅ NEW
-│       └── test_trace_render.py # trace_render helpers: tree-building, HTML, journal→graph ✅ NEW
+├── tests/                      # Test suite (176 tests total)
+│   ├── framework/              # Framework unit tests (138 tests)
+│   │   ├── test_types.py       # Response type tests
+│   │   ├── test_config.py      # Configuration tests
+│   │   ├── test_state.py       # State management tests
+│   │   ├── test_adapters.py    # Adapter tests
+│   │   ├── test_trace.py       # TraceRecorder: nesting, contextvar isolation, sync/async parity, JSONL roundtrip; TestRecorderListeners (4 new)
+│   │   └── test_trace_render.py # trace_render helpers: tree-building, HTML, journal→graph
+│   └── frontend/               # Frontend unit tests (38 tests) ✅ NEW
+│       ├── test_lifecycle_svg.py    # SVG generation, node state transitions (12 tests)
+│       ├── test_lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/B coverage (19 tests)
+│       └── test_lifecycle_runner.py  # start_run/drain_into with stub agent + threading.Event (3 tests)
 ├── db/                         # Database utilities
 │   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
 │   ├── populate_vector_db.py   # KQAPro Qdrant initialization
@@ -167,7 +176,7 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 | `mcp_client.py` | Shared MCPClient for MCP server communication | ~120 |
 | `base_agent.py` | BaseKBQAAgent ABC with full tool-calling loop + span instrumentation | ~600 |
 | `text_tool_calls.py` | Text-mode shim for models that can't emit native function calls | ~150 |
-| `trace.py` | `TraceEvent` (OTel-shaped dataclass) + `TraceRecorder` (ContextVar nesting, async/sync spans, point-in-time events, JSONL export) | ~200 |
+| `trace.py` | `TraceEvent` (OTel-shaped dataclass) + `TraceRecorder` (ContextVar nesting, async/sync spans, point-in-time events, JSONL export, `add_listener`/`remove_listener` observer hooks for live streaming) | ~200 |
 | `adapters/base_adapter.py` | BaseKGAdapter ABC for KG configuration | ~200 |
 | `adapters/kqapro_adapter.py` | KQAPro-specific adapter | ~150 |
 | `adapters/sciqa_adapter.py` | SciQA/ORKG-specific adapter | ~180 |
@@ -665,12 +674,29 @@ User Question
            ▼
      Final Answer
            │
-           ▼  (Chat page reads after ask() returns)
-┌──────────────────────────────────────┐
-│  st.session_state["traces"]          │
-│  recorder.to_dicts()                 │  ← Trace Inspector (page 5)
-│  agent.journal_snapshots             │  ← Graph View (page 6)
-└──────────────────────────────────────┘
+           ▼  (via background-thread queue + @st.fragment polling)
+┌────────────────────────────────────────────────────────────────┐
+│  Chat Page  (1_Chat.py)  — background-thread run               │
+│                                                                │
+│  Worker thread (daemon)          Main Streamlit thread         │
+│  ┌──────────────────────┐        ┌──────────────────────────┐  │
+│  │ asyncio loop         │        │ @st.fragment(run_every=  │  │
+│  │ agent.ask(query)     │        │   0.4)  drain_into()     │  │
+│  │   │                  │        │   ├─ SVG node highlight   │  │
+│  │   └─ TraceRecorder   │──────► │   ├─ Lifecycle tab live  │  │
+│  │     listener push    │queue   │   └─ answer render       │  │
+│  └──────────────────────┘        └──────────────────────────┘  │
+│                                                                │
+│  After run completes:                                          │
+│    st.session_state["traces"] ← recorder.to_dicts()           │
+│    Lifecycle | Trace | Graph tabs (in-page panel)             │
+│      ├─ Lifecycle: inline SVG from lifecycle_svg.py            │
+│      ├─ Trace: render_trace_panel() → Trace Inspector         │
+│      └─ Graph: render_graph_panel() → vis-network KG view     │
+│                                                                │
+│  Pages 5 / 6 remain as standalone historical-trace viewers    │
+│  (trace selector + sidebar + delegate to same panel helpers)  │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ---
