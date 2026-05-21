@@ -329,6 +329,64 @@ def _sparql_quote_literal(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
+def _resource_label_tokens(value: str) -> set[str]:
+    """Tokenize resource labels for lexical lookup/reranking."""
+    stopwords = {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "is",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
+    tokens = set()
+    for token in re.findall(r"[a-z0-9]+", (value or "").lower()):
+        if token in stopwords:
+            continue
+        if len(token) >= 3 or token.isdigit():
+            tokens.add(token)
+    return tokens
+
+
+def _lexical_label_score(query: str, label: str) -> float:
+    """Score whether a resource label is a high-confidence lexical query match."""
+    query_norm = " ".join((query or "").lower().split())
+    label_norm = " ".join((label or "").lower().split())
+    if not query_norm or not label_norm:
+        return 0.0
+    if query_norm == label_norm:
+        return 1.0
+    if query_norm in label_norm:
+        return 0.94
+
+    query_tokens = _resource_label_tokens(query_norm)
+    label_tokens = _resource_label_tokens(label_norm)
+    if not query_tokens or not label_tokens:
+        return 0.0
+    overlap = query_tokens & label_tokens
+    if not overlap:
+        return 0.0
+
+    label_coverage = len(overlap) / len(label_tokens)
+    query_coverage = len(overlap) / len(query_tokens)
+    if len(overlap) >= 2 and label_coverage >= 0.8:
+        return min(0.98, 0.84 + 0.12 * label_coverage + 0.04 * query_coverage)
+    if len(overlap) >= 3 and query_coverage >= 0.6:
+        return min(0.9, 0.72 + 0.18 * query_coverage)
+    return 0.0
+
+
 def _get_available_predicates(app, resource_id: str) -> List[str]:
     """Return compact predicate labels for a resource."""
     predicates = []
@@ -360,9 +418,10 @@ def _find_resources_by_label(
     top_n: int,
     node_type_filter: str = "",
 ) -> List[ResourceMatch]:
-    """Fallback lexical label lookup for exact or quoted resource titles."""
+    """Fallback lexical label lookup for exact, quoted, or token-covered titles."""
     terms = [semantic_query.strip()]
     terms.extend(t.strip() for t in re.findall(r'"([^"]{3,})"', semantic_query))
+    query_tokens = _resource_label_tokens(semantic_query)
     seen_terms = set()
     ordered_terms = []
     for term in terms:
@@ -378,6 +437,13 @@ def _find_resources_by_label(
 
     for term in ordered_terms:
         safe = _sparql_quote_literal(term)
+        token_filter = ""
+        if query_tokens:
+            token_conditions = [
+                f'CONTAINS(LCASE(STR(?label)), LCASE("{_sparql_quote_literal(token)}"))'
+                for token in sorted(query_tokens)
+            ]
+            token_filter = " || " + " || ".join(token_conditions)
         query = f"""
         SELECT DISTINCT ?resource ?label ?type WHERE {{
             GRAPH <{SCIQA_GRAPH}> {{
@@ -386,9 +452,10 @@ def _find_resources_by_label(
                 FILTER(
                     LCASE(STR(?label)) = LCASE("{safe}") ||
                     CONTAINS(LCASE(STR(?label)), LCASE("{safe}"))
+                    {token_filter}
                 )
             }}
-        }} LIMIT {max(top_n * 3, 10)}
+        }} LIMIT {max(top_n * 10, 50)}
         """
         try:
             app.sparql.setQuery(SPARQL_PREFIXES + query)
@@ -411,20 +478,21 @@ def _find_resources_by_label(
                 continue
 
             label = binding.get("label", {}).get("value", "")
-            exact = label.lower() == term.lower()
+            lexical_score = _lexical_label_score(semantic_query, label)
+            if lexical_score < 0.8:
+                continue
             matches.append(ResourceMatch(
                 original_id=resource_id,
                 name=label,
                 node_type=node_type.lower() if node_type else "resource",
-                relevance_score=1.0 if exact else 0.9,
+                relevance_score=round(lexical_score, 4),
                 available_predicates=_get_available_predicates(app, resource_id),
             ))
             session_journal.visited_nodes[resource_id] = label
             seen_ids.add(resource_id)
-            if len(matches) >= top_n:
-                return matches
 
-    return matches
+    matches.sort(key=lambda match: match.relevance_score, reverse=True)
+    return matches[:top_n]
 
 
 def _short_orkg_term(value: str) -> str:
@@ -965,7 +1033,7 @@ async def FindResource(
                 available_predicates=predicates
             ))
 
-        if node_type_filter and not matches:
+        if not matches:
             lexical_matches = _find_resources_by_label(
                 app,
                 semantic_query,
@@ -975,6 +1043,26 @@ async def FindResource(
             if lexical_matches:
                 matches = lexical_matches
                 filter_source = "lexical_label"
+        elif matches:
+            lexical_matches = _find_resources_by_label(
+                app,
+                semantic_query,
+                top_n,
+                node_type_filter,
+            )
+            if lexical_matches:
+                merged_matches: list[ResourceMatch] = []
+                seen_ids: set[str] = set()
+                for match in lexical_matches + matches:
+                    if match.original_id in seen_ids:
+                        continue
+                    merged_matches.append(match)
+                    seen_ids.add(match.original_id)
+                    if len(merged_matches) >= top_n:
+                        break
+                matches = merged_matches
+                if node_type_filter:
+                    filter_source = f"{filter_source}+lexical_label" if filter_source else "lexical_label"
 
         suffix = f", filter={node_type_filter}:{filter_source}" if node_type_filter else ""
         session_journal.completed_steps.append(
