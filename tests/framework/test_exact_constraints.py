@@ -5,6 +5,7 @@ from ama_kbqa.server.sciqa_server import (
     AggregateComparisonValues,
     DiagnoseComparisonAggregation,
     _build_comparison_aggregation_diagnostics,
+    _lexical_label_score,
     _looks_numeric_value,
     _normalize_aggregation_name,
     _parse_numeric_value,
@@ -124,6 +125,11 @@ def test_sciqa_payload_node_type_filter_accepts_normalized_payload_type():
     assert _payload_node_type_matches("comparison", "Comparison")
     assert _payload_node_type_matches("orkgc:ResearchField", "Research Field")
     assert not _payload_node_type_matches("paper", "Comparison")
+
+
+def test_sciqa_lexical_label_score_handles_extra_query_words():
+    assert _lexical_label_score("text summarization before 2002", "Summarization before 2002") > 0.9
+    assert _lexical_label_score("summarization comparison", "Extractive Text Summarization") == 0
 
 
 def test_sciqa_schema_helpers_compact_values_and_paths():
