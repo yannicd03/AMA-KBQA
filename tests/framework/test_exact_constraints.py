@@ -149,9 +149,11 @@ def test_sciqa_schema_helpers_compact_values_and_paths():
 
 def test_sciqa_aggregate_tool_exposes_intermediate_filter_parameter():
     params = AggregateComparisonValues.parameters["properties"]
+    required = AggregateComparisonValues.parameters.get("required", [])
 
     assert "intermediate_filter_value" in params
     assert "intermediate_filter_match" in params
+    assert "value_predicate" not in required
 
 
 def test_sciqa_diagnostics_helper_reports_denominator_candidates():
