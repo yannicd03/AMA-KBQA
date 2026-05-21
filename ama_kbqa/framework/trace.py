@@ -20,11 +20,21 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Callable, Optional
+
+
+_LOG = logging.getLogger(__name__)
+
+
+# Listener signature: fn(phase, info_dict). `phase` is "open", "close", or
+# "event". `info_dict` for "open" is a synthetic dict (the real TraceEvent
+# doesn't exist yet); for "close" and "event" it is the full TraceEvent dict.
+Listener = Callable[[str, dict[str, Any]], None]
 
 
 SpanKind = str  # one of the literals listed in trace.py docs; kept loose for forward-compat
@@ -72,6 +82,24 @@ class TraceRecorder:
     def __init__(self, trace_id: Optional[str] = None) -> None:
         self.trace_id: str = trace_id or uuid.uuid4().hex
         self.events: list[TraceEvent] = []
+        self._listeners: list[Listener] = []
+
+    def add_listener(self, listener: Listener) -> None:
+        self._listeners.append(listener)
+
+    def remove_listener(self, listener: Listener) -> None:
+        try:
+            self._listeners.remove(listener)
+        except ValueError:
+            pass
+
+    def _notify(self, phase: str, info: dict[str, Any]) -> None:
+        # Listener failures must never break agent execution.
+        for fn in list(self._listeners):
+            try:
+                fn(phase, info)
+            except Exception:
+                _LOG.exception("TraceRecorder listener raised; ignoring")
 
     @staticmethod
     def _now_ns() -> int:
@@ -101,6 +129,19 @@ class TraceRecorder:
         evt_payload: dict[str, Any] = dict(payload or {})
         token = _current_span_id.set(span_id)
         handle = _SpanHandle(span_id=span_id, attributes=evt_attrs, payload=evt_payload)
+        self._notify(
+            "open",
+            {
+                "trace_id": self.trace_id,
+                "span_id": span_id,
+                "parent_span_id": parent_id,
+                "kind": kind,
+                "name": name,
+                "start_time_unix_nano": start_ns,
+                "attributes": dict(evt_attrs),
+                "is_event": False,
+            },
+        )
         return handle, token, parent_id, start_ns, evt_attrs, evt_payload
 
     def _close_span(
@@ -118,23 +159,23 @@ class TraceRecorder:
     ) -> None:
         _current_span_id.reset(token)
         end_ns = self._now_ns()
-        self.events.append(
-            TraceEvent(
-                trace_id=self.trace_id,
-                span_id=span_id,
-                parent_span_id=parent_id,
-                kind=kind,
-                name=name,
-                start_time_unix_nano=start_ns,
-                end_time_unix_nano=end_ns,
-                duration_ms=(end_ns - start_ns) / 1e6,
-                status=status,
-                is_event=False,
-                attributes=evt_attrs,
-                payload=evt_payload,
-                error=error_msg,
-            )
+        evt = TraceEvent(
+            trace_id=self.trace_id,
+            span_id=span_id,
+            parent_span_id=parent_id,
+            kind=kind,
+            name=name,
+            start_time_unix_nano=start_ns,
+            end_time_unix_nano=end_ns,
+            duration_ms=(end_ns - start_ns) / 1e6,
+            status=status,
+            is_event=False,
+            attributes=evt_attrs,
+            payload=evt_payload,
+            error=error_msg,
         )
+        self.events.append(evt)
+        self._notify("close", evt.to_dict())
 
     @contextlib.asynccontextmanager
     async def span(
@@ -202,22 +243,22 @@ class TraceRecorder:
         """Record a point-in-time event under the current span."""
         now = self._now_ns()
         parent_id = _current_span_id.get()
-        self.events.append(
-            TraceEvent(
-                trace_id=self.trace_id,
-                span_id=self._new_span_id(),
-                parent_span_id=parent_id,
-                kind=kind,
-                name=name,
-                start_time_unix_nano=now,
-                end_time_unix_nano=now,
-                duration_ms=0.0,
-                status="ok",
-                is_event=True,
-                attributes=dict(attributes or {}),
-                payload=dict(payload or {}),
-            )
+        evt = TraceEvent(
+            trace_id=self.trace_id,
+            span_id=self._new_span_id(),
+            parent_span_id=parent_id,
+            kind=kind,
+            name=name,
+            start_time_unix_nano=now,
+            end_time_unix_nano=now,
+            duration_ms=0.0,
+            status="ok",
+            is_event=True,
+            attributes=dict(attributes or {}),
+            payload=dict(payload or {}),
         )
+        self.events.append(evt)
+        self._notify("event", evt.to_dict())
 
     def to_jsonl(self) -> str:
         return "\n".join(json.dumps(e.to_dict(), default=str) for e in self.events)

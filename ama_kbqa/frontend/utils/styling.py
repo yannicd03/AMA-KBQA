@@ -153,6 +153,108 @@ SHARED_CSS = """
     }
     .trace-summary-stat { color: #8b949e; }
     .trace-summary-stat strong { color: #e6edf3; margin-right: 1.2rem; }
+
+    /* ── Lifecycle figure (pages/1_Chat.py live view) ─────────────────── */
+    .lifecycle-wrap {
+        background: #fafbfc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0.6rem 0.8rem 0.4rem;
+        margin: 0.25rem 0 0.5rem;
+    }
+    .lifecycle-status {
+        font-size: 0.78rem;
+        color: #475569;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        display: flex;
+        gap: 1rem;
+        margin-top: 0.35rem;
+    }
+    .lifecycle-status .label {
+        color: #94a3b8;
+    }
+    .lifecycle-svg {
+        width: 100%;
+        height: auto;
+        max-height: 360px;
+        display: block;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .lifecycle-svg .phase-bg.phase-pre  { fill: #dbe7ff; opacity: 0.55; }
+    .lifecycle-svg .phase-bg.phase-main { fill: #fff1c7; opacity: 0.55; }
+    .lifecycle-svg .phase-bg.phase-post { fill: #fde0ec; opacity: 0.55; }
+    .lifecycle-svg .phase-title {
+        font-size: 13px;
+        font-weight: 700;
+        fill: #475569;
+        letter-spacing: 0.02em;
+    }
+    .lifecycle-svg .node {
+        fill: white;
+        stroke: #94a3b8;
+        stroke-width: 1.4;
+        transition: stroke 0.2s, stroke-width 0.2s, filter 0.2s;
+    }
+    .lifecycle-svg [data-state="visited"] .node {
+        stroke: #475569;
+        stroke-width: 1.7;
+    }
+    .lifecycle-svg [data-state="active"] .node {
+        stroke: #2563eb;
+        stroke-width: 2.6;
+        filter: drop-shadow(0 0 6px rgba(37, 99, 235, 0.55));
+        animation: lifecycle-pulse 1.4s ease-in-out infinite;
+    }
+    .lifecycle-svg [data-state="active"] .node-label {
+        fill: #1d4ed8;
+    }
+    .lifecycle-svg .node-label {
+        font-size: 12px;
+        font-weight: 600;
+        fill: #1e293b;
+        pointer-events: none;
+    }
+    .lifecycle-svg .node-label-small {
+        font-size: 11px;
+    }
+    .lifecycle-svg .textlabel-text {
+        font-size: 11px;
+        fill: #334155;
+    }
+    .lifecycle-svg .textlabel-head {
+        font-weight: 700;
+        fill: #1e293b;
+    }
+    .lifecycle-svg .textlabel-tail {
+        font-weight: 500;
+        fill: #475569;
+    }
+    .lifecycle-svg .edge {
+        stroke: #64748b;
+        stroke-width: 1.5;
+        fill: none;
+    }
+    .lifecycle-svg .edge.dashed {
+        stroke-dasharray: 5 4;
+        stroke: #94a3b8;
+    }
+    .lifecycle-svg .edge-arrow {
+        fill: #64748b;
+    }
+    .lifecycle-svg .edge-label {
+        font-size: 10.5px;
+        fill: #475569;
+        font-style: italic;
+    }
+    .lifecycle-svg .lifecycle-caption {
+        font-size: 11px;
+        fill: #475569;
+        font-style: italic;
+    }
+    @keyframes lifecycle-pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.78; }
+    }
 </style>
 """
 
