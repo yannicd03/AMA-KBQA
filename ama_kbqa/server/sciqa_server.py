@@ -3294,7 +3294,7 @@ SELECT DISTINCT {select_vars} WHERE {{
 @mcp.tool()
 async def AggregateComparisonValues(
     app_context: Context,
-    comparison_id: str,
+    comparison_id: str = "",
     value_predicate: str = "",
     value_predicates: str = "",
     agg: str = "avg",
