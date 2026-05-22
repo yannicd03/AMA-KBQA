@@ -286,6 +286,15 @@ Implemented the next low-overfit SciQA fix:
   before trying noisy token-OR matching. This keeps exact resource-title
   recovery generic while avoiding the previous `LIMIT` window issue where
   generic semantic hits could hide the true Comparison label.
+- Added rollup-denominator hints for nested Comparison aggregation. Schema
+  inspection now surfaces rollup-like intermediate labels such as "all
+  sources", and unfiltered nested numeric aggregation responses include
+  denominator hints plus rollup candidate summaries. This keeps the final
+  denominator choice with the agent while making the graph evidence visible.
+- Added `AggregateComparisonValues(intermediate_path="P1,P2")` for deeper
+  nested contribution paths. This keeps multi-hop row aggregation inside the
+  wrapped SPARQL tool surface instead of forcing agents to hand-write raw
+  SPARQL when a value lives below contribution -> node -> row -> predicate.
 - Updated system docs to show the SciQA tool tier as 27 registered tools and
   12 domain-specific tools.
 
@@ -297,5 +306,5 @@ surfaces the graph populations that were previously invisible in traces.
 Validation before deployment:
 
 - `uv run python -m compileall ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
-- `uv run pytest tests/framework/test_exact_constraints.py -q` = 16 passed.
-- `uv run pytest tests/framework -q` = 138 passed.
+- `uv run pytest tests/framework/test_exact_constraints.py -q` = 17 passed.
+- `uv run pytest tests/framework -q` = 143 passed.

@@ -689,6 +689,67 @@ def _numeric_summary(numbers: List[float]) -> Dict[str, Any]:
     }
 
 
+def _looks_rollup_label(value: str) -> bool:
+    """Return True for labels that appear to represent rollup/total rows."""
+    text = " ".join((value or "").lower().split())
+    if not text:
+        return False
+    return bool(
+        re.search(
+            r"\b(all|overall|total|aggregate|aggregated|combined|sum|whole|entire)\b",
+            text,
+        )
+    )
+
+
+def _rollup_intermediate_candidates(
+    rows: List[Dict[str, Any]],
+    *,
+    value_parser: str = "leading_number",
+    sample_limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """Summarize nested intermediate labels that look like rollup rows."""
+    from collections import defaultdict
+
+    grouped: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        label = row.get("intermediate")
+        if label and _looks_rollup_label(str(label)):
+            grouped[str(label)].append(row)
+
+    candidates = []
+    for label, items in grouped.items():
+        nums = [
+            _parse_numeric_value(row.get("value"), value_parser)
+            for row in items
+        ]
+        nums = [num for num in nums if num is not None]
+        values = []
+        for row in items:
+            value = row.get("value")
+            if value is not None and value not in values:
+                values.append(value)
+            if len(values) >= sample_limit:
+                break
+        candidates.append({
+            "intermediate_filter_value": label,
+            "row_count": len(items),
+            "distinct_contributions": len({row.get("contrib") for row in items if row.get("contrib")}),
+            "numeric_summary": _numeric_summary(nums),
+            "sample_values": values,
+            "usage_hint": f'intermediate_filter_value="{label}"',
+        })
+
+    candidates.sort(
+        key=lambda candidate: (
+            candidate["numeric_summary"]["n"] or 0,
+            candidate["row_count"] or 0,
+        ),
+        reverse=True,
+    )
+    return candidates
+
+
 def _build_comparison_aggregation_diagnostics(
     rows: List[Dict[str, Any]],
     *,
@@ -2997,6 +3058,7 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
                 "sample_intermediate_values": [],
                 "sample_values": [],
                 "unit_samples": [],
+                "_rollup_intermediate_values": {},
             })
             contrib_id = _short_orkg_term(_binding_value(binding, "contrib"))
             if contrib_id:
@@ -3011,6 +3073,14 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
             value = _schema_display_value(binding, "valueObj", "valueObjLabel", "nestedValue")
             _append_unique_sample(entry["sample_intermediate_values"], intermediate_value, sample_limit)
             _append_unique_sample(entry["sample_values"], value, sample_limit)
+            if _looks_rollup_label(intermediate_value):
+                rollup_entry = entry["_rollup_intermediate_values"].setdefault(
+                    intermediate_value,
+                    {"label": intermediate_value, "value_count": 0, "numeric_sample_count": 0},
+                )
+                rollup_entry["value_count"] += 1
+                if _looks_numeric_value(value):
+                    rollup_entry["numeric_sample_count"] += 1
             if _binding_value(binding, "nestedValue"):
                 entry["has_value_count"] += 1
             if _looks_numeric_value(value):
@@ -3021,6 +3091,14 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
         nested_payload = []
         for (intermediate_pred, value_pred), entry in nested.items():
             row_count = len(entry.pop("_rows"))
+            rollup_values = list(entry.pop("_rollup_intermediate_values", {}).values())
+            rollup_values.sort(
+                key=lambda item: (
+                    item.get("numeric_sample_count", 0),
+                    item.get("value_count", 0),
+                ),
+                reverse=True,
+            )
             entry["row_count"] = row_count
             entry["usage_hint"] = _schema_usage_hint(
                 scope_label,
@@ -3031,6 +3109,13 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
                 entry["filter_hint"] = (
                     "If the question names one of sample_intermediate_values, "
                     "pass it as intermediate_filter_value."
+                )
+            if rollup_values:
+                entry["rollup_intermediate_values"] = rollup_values[:sample_limit]
+                entry["rollup_filter_hint"] = (
+                    "Rollup-like intermediate labels were present. If the question asks "
+                    "for all/overall/total values, use one of these labels as "
+                    "intermediate_filter_value instead of averaging every nested row."
                 )
             nested_payload.append(entry)
         nested_payload.sort(
@@ -3057,6 +3142,7 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
                 "Use direct_predicates with AggregateComparisonValues(value_predicate=...) for contribution-level columns.",
                 "Use nested_paths with AggregateComparisonValues(intermediate_predicate=..., value_predicate=...) for row objects that carry measurements.",
                 "If a nested question names a component/category shown in sample_intermediate_values, add intermediate_filter_value.",
+                "If a nested path includes rollup_intermediate_values and the question asks all/overall/total, aggregate with that intermediate_filter_value.",
                 "For min/max questions that ask for the attached item, add return_predicate or group_by_predicate after choosing the metric path.",
             ],
             "status": (
@@ -3308,6 +3394,7 @@ async def AggregateComparisonValues(
     value_parser: str = "leading_number",
     return_predicate: str = "",
     intermediate_predicate: str = "",
+    intermediate_path: str = "",
     intermediate_filter_value: str = "",
     intermediate_filter_match: Literal["exact", "contains", "regex"] = "contains",
 ) -> str:
@@ -3372,6 +3459,10 @@ async def AggregateComparisonValues(
             ?intermediate value_pred ?valueObj``. Use this for questions like
             "average energy generation of all energy sources", where energy
             sources are rows below each contribution.
+        intermediate_path: Optional comma-separated predicate path for deeper
+            nested row objects. Use when the value lives at
+            ``contribution -> P1 -> node -> P2 -> row -> value_predicate``.
+            When set, it takes precedence over ``intermediate_predicate``.
         intermediate_filter_value: Optional label/ID filter applied to the
             intermediate row object. Use this for nested rows where only one
             component/category should contribute, e.g. Contribution -> Earth
@@ -3443,9 +3534,16 @@ async def AggregateComparisonValues(
         flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
         return_pred = _norm_pred(return_predicate) if return_predicate else ""
         intermediate_pred = _norm_pred(intermediate_predicate) if intermediate_predicate else ""
-        if intermediate_filter_value and not intermediate_pred:
+        raw_intermediate_path = [
+            p.strip()
+            for p in (intermediate_path or "").split(",")
+            if p and p.strip()
+        ]
+        intermediate_path_predicates = [_norm_pred(p) for p in raw_intermediate_path]
+        intermediate_chain = intermediate_path_predicates or ([intermediate_pred] if intermediate_pred else [])
+        if intermediate_filter_value and not intermediate_chain:
             return json.dumps(
-                {"error": "intermediate_filter_value requires intermediate_predicate"},
+                {"error": "intermediate_filter_value requires intermediate_predicate or intermediate_path"},
                 indent=2,
             )
         if intermediate_filter_match not in {"exact", "contains", "regex"}:
@@ -3502,7 +3600,7 @@ async def AggregateComparisonValues(
         # HAS_VALUE/label indirection lifted to ?val).
         group_select = "?group ?groupLabel " if group_pred else ""
         value_pred_select = "?valuePred "
-        intermediate_select = "?intermediate ?intermediateLabel " if intermediate_pred else ""
+        intermediate_select = "?intermediate ?intermediateLabel " if intermediate_chain else ""
         return_select = "?returnObj ?returnLabel ?returnNested " if return_pred else ""
         return_block = (
             f"OPTIONAL {{\n"
@@ -3522,14 +3620,22 @@ async def AggregateComparisonValues(
                 f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
                 f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
             )
-        elif intermediate_pred:
+        elif intermediate_chain:
             group_clause = (
                 f"?contrib {group_pred} ?group .\n"
                 f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
                 if group_pred else ""
             )
+            path_lines = []
+            current_node = "?contrib"
+            for index, path_predicate in enumerate(intermediate_chain):
+                next_node = f"?pathIntermediate{index}"
+                path_lines.append(f"{current_node} {path_predicate} {next_node} .")
+                current_node = next_node
+            path_block = "\n        ".join(path_lines)
             value_block = (
-                f"?contrib {intermediate_pred} ?intermediate .\n"
+                f"{path_block}\n"
+                f"        BIND({current_node} AS ?intermediate)\n"
                 f"        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}\n"
                 f"        {intermediate_filter_block}"
                 f"        VALUES ?valuePred {{ {value_pred_values} }}\n"
@@ -3609,7 +3715,7 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             return v.split("/")[-1] if v.startswith("http") else (v or None)
 
         def _row_intermediate(b):
-            if not intermediate_pred:
+            if not intermediate_chain:
                 return None
             v = b.get("intermediateLabel", {}).get("value") or b.get("intermediate", {}).get("value", "")
             if v.startswith("http://orkg.org/orkg/"):
@@ -3741,12 +3847,42 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                     "rows": extreme_rows[:50],
                 }
 
+        denominator_hints = None
+        if intermediate_chain and not intermediate_filter_value and agg in {"avg", "sum", "min", "max", "count"}:
+            diagnostics = _build_comparison_aggregation_diagnostics(
+                rows,
+                value_parser=value_parser,
+                sample_limit=5,
+            )
+            denominator_hints = {
+                "warning": (
+                    "Nested rows were aggregated without intermediate_filter_value. "
+                    "If the question asks for all/overall/total values, inspect "
+                    "rollup_intermediate_candidates before trusting the row-level result."
+                ),
+                "population": diagnostics["population"],
+                "row_level": diagnostics["denominator_candidates"].get("row_level"),
+                "contribution_mean_level": diagnostics["denominator_candidates"].get("contribution_mean_level"),
+                "rollup_intermediate_candidates": _rollup_intermediate_candidates(
+                    rows,
+                    value_parser=value_parser,
+                ),
+                "guidance": [
+                    "Use result as-is when every nested value row should count equally.",
+                    "Use contribution_mean_level when the question asks per contribution/study averages.",
+                    "Call again with intermediate_filter_value from rollup_intermediate_candidates when the question asks all/overall/total.",
+                    "Call DiagnoseComparisonAggregation for a fuller denominator audit before finalizing ambiguous aggregates.",
+                ],
+            }
+
         # Journal — bucket per scope
         journal_key = scope_label
         if journal_key not in session_journal.found_values:
             session_journal.found_values[journal_key] = {}
         key = f"{agg}({value_pred_label})" + (f" by {group_by_predicate}" if group_by_predicate else "")
-        if intermediate_predicate:
+        if raw_intermediate_path:
+            key += f" via {','.join(raw_intermediate_path)}"
+        elif intermediate_predicate:
             key += f" via {intermediate_predicate}"
         if intermediate_filter_value:
             key += f" filtered {intermediate_filter_value}"
@@ -3770,6 +3906,7 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             "agg": agg,
             "group_by": group_by_predicate or None,
             "intermediate_predicate": intermediate_predicate or None,
+            "intermediate_path": raw_intermediate_path or None,
             "intermediate_filter": (
                 {"value": intermediate_filter_value, "match": intermediate_filter_match}
                 if intermediate_filter_value else None
@@ -3780,6 +3917,7 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                 {"predicate": filter_predicate, "value": filter_value, "match": filter_match}
                 if filter_predicate else None
             ),
+            "denominator_hints": denominator_hints,
             "result": result_payload,
             "n_contributions": n_rows,
             "status": (

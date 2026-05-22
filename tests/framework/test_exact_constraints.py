@@ -8,9 +8,11 @@ from ama_kbqa.server.sciqa_server import (
     _lexical_candidate_token_sets,
     _lexical_label_score,
     _looks_numeric_value,
+    _looks_rollup_label,
     _normalize_aggregation_name,
     _parse_numeric_value,
     _payload_node_type_matches,
+    _rollup_intermediate_candidates,
     _schema_display_value,
     _schema_usage_hint,
     _short_orkg_term,
@@ -169,6 +171,7 @@ def test_sciqa_aggregate_tool_exposes_intermediate_filter_parameter():
 
     assert "intermediate_filter_value" in params
     assert "intermediate_filter_match" in params
+    assert "intermediate_path" in params
     assert "value_predicate" not in required
     assert "comparison_id" not in required
 
@@ -194,6 +197,22 @@ def test_sciqa_diagnostics_helper_reports_denominator_candidates():
     assert diagnostics["denominator_candidates"]["contribution_mean_level"]["avg"] == 22.5
     assert "intermediate_label_mean_level" in diagnostics["denominator_candidates"]
     assert diagnostics["warnings"]
+
+
+def test_sciqa_rollup_intermediate_candidates_surface_total_rows():
+    rows = [
+        {"contrib": "C1", "intermediate": "all sources", "value": "10"},
+        {"contrib": "C2", "intermediate": "all sources", "value": "20"},
+        {"contrib": "C1", "intermediate": "wind power", "value": "5"},
+    ]
+
+    candidates = _rollup_intermediate_candidates(rows)
+
+    assert _looks_rollup_label("all sources")
+    assert not _looks_rollup_label("wind power")
+    assert candidates[0]["intermediate_filter_value"] == "all sources"
+    assert candidates[0]["numeric_summary"]["avg"] == 15
+    assert candidates[0]["distinct_contributions"] == 2
 
 
 def test_sciqa_diagnostics_tool_schema_exposes_generic_parameters():
