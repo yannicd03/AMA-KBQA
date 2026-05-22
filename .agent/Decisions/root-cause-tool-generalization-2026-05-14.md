@@ -371,3 +371,26 @@ Validation:
 - `uv run python -m py_compile ama_kbqa/postprocessing.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
 - `uv run pytest tests/framework/test_exact_constraints.py` = 18 passed.
 - `uv run pytest tests/framework` = 144 passed.
+
+## 2026-05-22 Quoted Anchor Routing Follow-Up
+
+The next focused run showed a stochastic lookup failure on the previously fixed
+`"summarization before 2002"` question. The tool surface could retrieve `R6948`
+when asked for the exact title, but the agent sometimes paraphrased the quoted
+anchor into broader searches such as "text summarization approaches methods
+comparison" and then explored adjacent empty/irrelevant resources.
+
+Implemented a general prompt rule rather than a question-specific shortcut:
+
+- If a user question contains a quoted title/label, search the exact quoted
+  substring first.
+- For aggregation/count/superlative wording that asks about values in a quoted
+  thing, the first lookup should be
+  `FindResource("<quoted text>", node_type_filter="Comparison", top_n=10)`.
+- Only after the exact quoted anchor fails should the agent broaden or
+  paraphrase the search.
+
+Rationale: quoted spans are user-provided graph anchors. Preserving them is a
+general search discipline and keeps resource selection inside the existing
+semantic/lexical `FindResource` tool instead of adding deterministic
+question-specific routing.
