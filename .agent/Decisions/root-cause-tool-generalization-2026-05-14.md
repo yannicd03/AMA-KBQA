@@ -308,3 +308,36 @@ Validation before deployment:
 - `uv run python -m compileall ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
 - `uv run pytest tests/framework/test_exact_constraints.py -q` = 17 passed.
 - `uv run pytest tests/framework -q` = 143 passed.
+
+## 2026-05-22 Multi-Hop Schema Discovery Follow-Up
+
+Focused validation after the rollup/intermediate-path patch confirmed that the
+tool could express the previously failing path, but the agent still did not see
+that path through normal schema discovery. In the Scenario Factsheets trace it
+manually enumerated factsheet -> study links with repeated `GetRelationTargets`
+calls and then fell back to raw `RunORKGSPARQL`, even though the wrapped call
+`AggregateComparisonValues(intermediate_path="P37586,P37675",
+value_predicate="P37668", agg="mode_top")` returns the target `Heat sector (8)`.
+
+Implemented the generic fix:
+
+- `InspectComparisonSchema` now scans two-hop nested paths from each Comparison
+  contribution and merges them into `nested_paths` alongside one-hop paths.
+- Multi-hop entries include `intermediate_path`, `intermediate_path_labels`,
+  path/intermediate samples, value samples, and ready-to-use
+  `AggregateComparisonValues(intermediate_path="P1,P2", value_predicate=..., agg=...)`
+  hints.
+- The SciQA prompt now tells agents to pass schema-discovered
+  `intermediate_path` hints directly to `AggregateComparisonValues` instead of
+  manually following every row.
+
+This keeps the change aligned with the wrapped-tool philosophy: the model still
+chooses the relevant path from graph evidence, but the system now exposes the
+multi-hop graph operation through the same high-level aggregation wrapper used
+for one-hop nested rows.
+
+Validation:
+
+- `uv run python -m py_compile ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
+- `uv run pytest tests/framework/test_exact_constraints.py` = 17 passed.
+- `uv run pytest tests/framework` = 143 passed.

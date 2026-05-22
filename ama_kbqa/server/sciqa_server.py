@@ -598,9 +598,19 @@ def _schema_usage_hint(
     predicate_id: str,
     *,
     intermediate_predicate: str = "",
+    intermediate_path: Optional[List[str]] = None,
 ) -> str:
     """Build a short tool-call hint for schema entries."""
     scope = f'comparison_ids="{comparison_arg}"' if "," in comparison_arg else f'comparison_id="{comparison_arg}"'
+    path = [p for p in (intermediate_path or []) if p]
+    if path:
+        return (
+            f"AggregateComparisonValues({scope}, "
+            f'intermediate_path="{",".join(path)}", '
+            f'value_predicate="{predicate_id}", agg=...)'
+            " Add intermediate_filter_value=... when the question names one "
+            "nested row label."
+        )
     if intermediate_predicate:
         return (
             f"AggregateComparisonValues({scope}, "
@@ -2879,9 +2889,10 @@ async def InspectComparisonSchema(
 
     Use this BEFORE choosing predicates for AggregateComparisonValues,
     FindFrequentValues(comparison_ids=...), or QueryComparisonRows. It summarizes
-    direct contribution predicates and two-hop nested paths such as:
+    direct contribution predicates and nested paths such as:
 
         Contribution -> energy source (P43135) -> installed capacity (P43133)
+        Contribution -> factsheet (P37586) -> study (P37675) -> sector (P37668)
 
     The response is intentionally compact: predicate labels, row/value counts,
     sample values, numeric/HAS_VALUE evidence, and ready-to-use aggregation hints.
@@ -3003,6 +3014,45 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
         nested_results = app.sparql.query().convert()
         nested_bindings = nested_results.get("results", {}).get("bindings", [])
 
+        deep_nested_query = f"""
+SELECT DISTINCT ?contrib ?pathPred1 ?pathPred1Label ?pathNode1 ?pathNode1Label
+                ?pathPred2 ?pathPred2Label ?intermediate ?intermediateLabel
+                ?valuePred ?valuePredLabel ?valueObj ?valueObjLabel ?nestedValue
+                ?unitPred ?unitPredLabel ?unitObj ?unitObjLabel WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+        ?contrib ?pathPred1 ?pathNode1 .
+        FILTER(?pathPred1 NOT IN (rdf:type, rdfs:label, orkgp:HAS_VALUE))
+        FILTER(STRSTARTS(STR(?pathNode1), "{NS_RESOURCE}"))
+        ?pathNode1 ?pathPred2 ?intermediate .
+        FILTER(?pathPred2 NOT IN (rdf:type, rdfs:label, orkgp:HAS_VALUE))
+        FILTER(STRSTARTS(STR(?intermediate), "{NS_RESOURCE}"))
+        FILTER(?pathNode1 != ?intermediate)
+        ?intermediate ?valuePred ?valueObj .
+        FILTER(?valuePred NOT IN (rdf:type, rdfs:label, orkgp:HAS_VALUE))
+        OPTIONAL {{ ?pathPred1 rdfs:label ?pathPred1Label }}
+        OPTIONAL {{ ?pathNode1 rdfs:label ?pathNode1Label }}
+        OPTIONAL {{ ?pathPred2 rdfs:label ?pathPred2Label }}
+        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}
+        OPTIONAL {{ ?valuePred rdfs:label ?valuePredLabel }}
+        OPTIONAL {{ ?valueObj rdfs:label ?valueObjLabel }}
+        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}
+        OPTIONAL {{
+            ?valueObj ?unitPred ?unitObj .
+            OPTIONAL {{ ?unitPred rdfs:label ?unitPredLabel }}
+            OPTIONAL {{ ?unitObj rdfs:label ?unitObjLabel }}
+            FILTER(
+                CONTAINS(LCASE(STR(?unitPred)), "unit") ||
+                CONTAINS(LCASE(STR(?unitPredLabel)), "unit")
+            )
+        }}
+    }}
+}} LIMIT {limit_bindings}
+"""
+        app.sparql.setQuery(SPARQL_PREFIXES + deep_nested_query)
+        deep_nested_results = app.sparql.query().convert()
+        deep_nested_bindings = deep_nested_results.get("results", {}).get("bindings", [])
+
         direct: Dict[str, Dict[str, Any]] = {}
         for binding in direct_bindings:
             pred_id = _short_orkg_term(_binding_value(binding, "pred"))
@@ -3039,7 +3089,7 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
             direct_payload.append(entry)
         direct_payload.sort(key=lambda x: (-x["row_count"], -x["value_count"], x["label"]))
 
-        nested: Dict[tuple[str, str], Dict[str, Any]] = {}
+        nested: Dict[tuple[str, ...], Dict[str, Any]] = {}
         for binding in nested_bindings:
             intermediate_pred = _short_orkg_term(_binding_value(binding, "intermediatePred"))
             value_pred = _short_orkg_term(_binding_value(binding, "valuePred"))
@@ -3088,8 +3138,68 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
             unit = _unit_sample(binding)
             _append_unique_sample(entry["unit_samples"], unit, sample_limit)
 
+        for binding in deep_nested_bindings:
+            path_pred_1 = _short_orkg_term(_binding_value(binding, "pathPred1"))
+            path_pred_2 = _short_orkg_term(_binding_value(binding, "pathPred2"))
+            value_pred = _short_orkg_term(_binding_value(binding, "valuePred"))
+            if not path_pred_1 or not path_pred_2 or not value_pred:
+                continue
+            key = (path_pred_1, path_pred_2, value_pred)
+            entry = nested.setdefault(key, {
+                "intermediate_path": [path_pred_1, path_pred_2],
+                "intermediate_path_labels": [
+                    _binding_value(binding, "pathPred1Label") or path_pred_1,
+                    _binding_value(binding, "pathPred2Label") or path_pred_2,
+                ],
+                "value_predicate": value_pred,
+                "value_label": _binding_value(binding, "valuePredLabel") or value_pred,
+                "_rows": set(),
+                "value_count": 0,
+                "has_value_count": 0,
+                "numeric_sample_count": 0,
+                "sample_path_values": [],
+                "sample_intermediate_values": [],
+                "sample_values": [],
+                "unit_samples": [],
+                "_rollup_intermediate_values": {},
+            })
+            contrib_id = _short_orkg_term(_binding_value(binding, "contrib"))
+            if contrib_id:
+                entry["_rows"].add(contrib_id)
+            entry["value_count"] += 1
+            path_value = _schema_display_value(
+                binding,
+                "pathNode1",
+                "pathNode1Label",
+                "pathNode1Label",
+            )
+            intermediate_value = _schema_display_value(
+                binding,
+                "intermediate",
+                "intermediateLabel",
+                "intermediateLabel",
+            )
+            value = _schema_display_value(binding, "valueObj", "valueObjLabel", "nestedValue")
+            _append_unique_sample(entry["sample_path_values"], path_value, sample_limit)
+            _append_unique_sample(entry["sample_intermediate_values"], intermediate_value, sample_limit)
+            _append_unique_sample(entry["sample_values"], value, sample_limit)
+            if _looks_rollup_label(intermediate_value):
+                rollup_entry = entry["_rollup_intermediate_values"].setdefault(
+                    intermediate_value,
+                    {"label": intermediate_value, "value_count": 0, "numeric_sample_count": 0},
+                )
+                rollup_entry["value_count"] += 1
+                if _looks_numeric_value(value):
+                    rollup_entry["numeric_sample_count"] += 1
+            if _binding_value(binding, "nestedValue"):
+                entry["has_value_count"] += 1
+            if _looks_numeric_value(value):
+                entry["numeric_sample_count"] += 1
+            unit = _unit_sample(binding)
+            _append_unique_sample(entry["unit_samples"], unit, sample_limit)
+
         nested_payload = []
-        for (intermediate_pred, value_pred), entry in nested.items():
+        for entry in nested.values():
             row_count = len(entry.pop("_rows"))
             rollup_values = list(entry.pop("_rollup_intermediate_values", {}).values())
             rollup_values.sort(
@@ -3100,10 +3210,13 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
                 reverse=True,
             )
             entry["row_count"] = row_count
+            value_pred = entry["value_predicate"]
+            intermediate_path = entry.get("intermediate_path") or []
             entry["usage_hint"] = _schema_usage_hint(
                 scope_label,
                 value_pred,
-                intermediate_predicate=intermediate_pred,
+                intermediate_predicate=entry.get("intermediate_predicate", ""),
+                intermediate_path=intermediate_path,
             )
             if entry.get("sample_intermediate_values"):
                 entry["filter_hint"] = (
@@ -3123,7 +3236,7 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
                 -x["numeric_sample_count"],
                 -x["row_count"],
                 -x["value_count"],
-                x["intermediate_label"],
+                x.get("intermediate_label") or ",".join(x.get("intermediate_path_labels", [])),
                 x["value_label"],
             )
         )
@@ -3136,11 +3249,13 @@ SELECT DISTINCT ?contrib ?intermediatePred ?intermediatePredLabel
             "truncated": {
                 "direct_bindings": len(direct_bindings) >= limit_bindings,
                 "nested_bindings": len(nested_bindings) >= limit_bindings,
+                "deep_nested_bindings": len(deep_nested_bindings) >= limit_bindings,
                 "limit_bindings": limit_bindings,
             },
             "guidance": [
                 "Use direct_predicates with AggregateComparisonValues(value_predicate=...) for contribution-level columns.",
                 "Use nested_paths with AggregateComparisonValues(intermediate_predicate=..., value_predicate=...) for row objects that carry measurements.",
+                "If a nested path includes intermediate_path, pass it exactly to AggregateComparisonValues instead of manually following every row.",
                 "If a nested question names a component/category shown in sample_intermediate_values, add intermediate_filter_value.",
                 "If a nested path includes rollup_intermediate_values and the question asks all/overall/total, aggregate with that intermediate_filter_value.",
                 "For min/max questions that ask for the attached item, add return_predicate or group_by_predicate after choosing the metric path.",
