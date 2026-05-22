@@ -457,7 +457,7 @@ ama-kbqa benchmark -s sciqa -n 50 --dataset auto --postprocessing simple
 | `--subagent, -s` | **Required.** The subagent to benchmark (`kqapro` or `sciqa`) |
 | `-n, --n_questions` | Number of questions to sample (default: 10) |
 | `--seed` | Random seed for reproducibility (default: 42) |
-| `-p, --postprocessing` | Evaluation method: `choice`, `sparql`, `llm_judge`, or `simple` (default: `llm_judge`) |
+| `-p, --postprocessing` | Evaluation method: `choice`, `sparql`, `llm_judge`, or `simple` (default: `llm_judge`). `llm_judge` keeps the model judge but applies a deterministic single-number numeric-equivalence guard for harmless decimal formatting differences. |
 | `-d, --dataset` | SciQA only: `handcrafted` or `auto` (default: handcrafted) |
 
 ### 6. Fewshot Generator (`ama_kbqa/fewshot_generator.py`)

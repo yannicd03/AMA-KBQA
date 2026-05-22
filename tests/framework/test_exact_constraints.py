@@ -1,6 +1,7 @@
 from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
+from ama_kbqa.postprocessing import evaluate_accuracy_simple, numeric_answer_equivalent
 from ama_kbqa.server.sciqa_server import (
     AggregateComparisonValues,
     DiagnoseComparisonAggregation,
@@ -232,3 +233,15 @@ def test_sciqa_diagnostics_tool_schema_exposes_generic_parameters():
     assert _parse_numeric_value("n=54", "embedded_number") == 54
     assert _normalize_aggregation_name("frequency") == "mode_top"
     assert _normalize_aggregation_name("mean") == "avg"
+
+
+def test_numeric_answer_equivalence_allows_benchmark_rounding_noise():
+    gold = "367.570798339843756"
+    predicted = (
+        'The average installed capacity in "Greenhouse Gas Reduction Scenarios '
+        'for Germany" is 367.57 GW across 25 scenario contributions.'
+    )
+
+    assert numeric_answer_equivalent(predicted, gold)
+    assert evaluate_accuracy_simple(predicted, gold, "Non-Factoid\nCount")
+    assert not numeric_answer_equivalent("Heat sector 8", "Heat sector 8")

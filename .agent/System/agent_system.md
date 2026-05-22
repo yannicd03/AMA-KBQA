@@ -644,6 +644,12 @@ Paper --P31--> Contribution --domain_predicate--> Value
 
 **See:** [SOP/running_batch_processing.md](../SOP/running_batch_processing.md) for complete unified batch processing documentation.
 
+`llm_judge` evaluation still uses the configured model judge for semantic
+correctness, but `postprocessing.py` applies a deterministic guard for
+single-number gold answers: if the predicted answer contains the same numeric
+value within a small decimal tolerance, harmless rounding/formatting differences
+do not become false negatives.
+
 ```bash
 # Run on handcrafted dataset (100 Q&A)
 python -m ama_kbqa.benchmark_agents --agents sciqa --n-questions 10 --seed 42 --dataset handcrafted
