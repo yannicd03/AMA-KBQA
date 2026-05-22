@@ -522,10 +522,12 @@ TIER 3 - DOMAIN-SPECIFIC:
 - InspectComparisonSchema(comparison_id?, comparison_ids?, top_n?):
   Compact schema map for Comparison resources. Returns direct contribution
   predicates and nested paths with labels, row counts, sample values, numeric /
-  HAS_VALUE evidence, rollup-like intermediate labels, and ready-to-use
-  AggregateComparisonValues hints.
+  HAS_VALUE evidence, rollup-like intermediate labels, multi-hop
+  intermediate_path hints, and ready-to-use AggregateComparisonValues hints.
   ALWAYS call this before choosing value_predicate/intermediate_predicate for
   aggregation when the predicate is not already proven by a previous tool result.
+  If a usage_hint contains intermediate_path="P1,P2", pass that exact path to
+  AggregateComparisonValues instead of manually following every row.
 - QueryComparisonRows(comparison_id, filters?, return_predicates?, comparison_ids?):
   Return exact contribution rows after multiple predicate/value filters, then project
   several requested predicates. Use this before raw SPARQL for row questions like
@@ -832,10 +834,12 @@ FEWSHOT_EXAMPLES = {
 
 **Example: "Which energy sector is the most frequent for the studies?"** (mode_top pattern)
 1. FindResource("energy sector studies" or named comparison) -> R150337 (Comparison)
-2. AggregateComparisonValues(comparison_id="R150337", value_predicate="P37668",
-                              agg="mode_top", top_n=1)
+2. InspectComparisonSchema("R150337") -> nested_paths usage_hint may show the
+   multi-hop path from contribution factsheet to study metadata.
+3. AggregateComparisonValues(comparison_id="R150337", intermediate_path="P37586,P37675",
+                              value_predicate="P37668", agg="mode_top", top_n=1)
    -> {result: [{value: 'Heat sector', count: 8}], ...}
-3. Answer: "Heat sector (8)"
+4. Answer: "Heat sector (8)"
 
 **Example: "How many species are examined throughout the papers?"** (global contribution count)
 1. FindPredicate("investigated species") -> P31023

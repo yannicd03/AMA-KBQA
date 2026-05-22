@@ -164,6 +164,14 @@ def test_sciqa_schema_helpers_compact_values_and_paths():
     assert 'value_predicate="P43133"' in hint
     assert "intermediate_filter_value" in hint
 
+    path_hint = _schema_usage_hint(
+        "R150337",
+        "P37668",
+        intermediate_path=["P37586", "P37675"],
+    )
+    assert 'intermediate_path="P37586,P37675"' in path_hint
+    assert 'value_predicate="P37668"' in path_hint
+
 
 def test_sciqa_aggregate_tool_exposes_intermediate_filter_parameter():
     params = AggregateComparisonValues.parameters["properties"]
