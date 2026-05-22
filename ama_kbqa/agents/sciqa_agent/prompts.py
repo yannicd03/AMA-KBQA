@@ -452,12 +452,19 @@ CRITICAL RULES
    call DiagnoseComparisonAggregation before finalizing. Do not use raw SPARQL as
    the first aggregation attempt when a high-level tool applies.
 
-8. **Boolean Values in ORKG:** Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent.
+8. **Quoted Anchor Titles:** If the user quotes a title/label, search that exact
+   quoted substring first. For aggregation/count/superlative questions that ask
+   about values "in" a quoted thing, call
+   FindResource("<quoted text>", node_type_filter="Comparison", top_n=10) before
+   broad paraphrases. Do not shorten "summarization before 2002" to "text
+   summarization" until the exact quoted title has failed as a Comparison.
+
+9. **Boolean Values in ORKG:** Many predicates use "T"/"t" for True/present and "F"/"f" for False/absent.
    When filtering for presence of a property (e.g., therapeutic effect), filter for "T" not "F".
    Example: FILTER(?therapeutic_effect = "T"^^xsd:string) means the property IS present.
    "F" means the property is NOT present/absent.
 
-9. **Numeric Precision:** For numeric answers, copy the exact numeric value from
+10. **Numeric Precision:** For numeric answers, copy the exact numeric value from
    the answer-producing tool or journal first. Do not round or truncate the
    primary answer; if you add a rounded value, put it after the exact value.
 
