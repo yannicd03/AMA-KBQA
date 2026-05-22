@@ -522,7 +522,8 @@ TIER 3 - DOMAIN-SPECIFIC:
 - InspectComparisonSchema(comparison_id?, comparison_ids?, top_n?):
   Compact schema map for Comparison resources. Returns direct contribution
   predicates and nested paths with labels, row counts, sample values, numeric /
-  HAS_VALUE evidence, and ready-to-use AggregateComparisonValues hints.
+  HAS_VALUE evidence, rollup-like intermediate labels, and ready-to-use
+  AggregateComparisonValues hints.
   ALWAYS call this before choosing value_predicate/intermediate_predicate for
   aggregation when the predicate is not already proven by a previous tool result.
 - QueryComparisonRows(comparison_id, filters?, return_predicates?, comparison_ids?):
@@ -532,7 +533,7 @@ TIER 3 - DOMAIN-SPECIFIC:
 - AggregateComparisonValues(comparison_id, value_predicate?, value_predicates?, agg, group_by_predicate?,
                             filter_predicate?, filter_value?, filter_match?, top_n?,
                             value_parser?, return_predicate?, intermediate_predicate?,
-                            intermediate_filter_value?):
+                            intermediate_path?, intermediate_filter_value?):
   Compute AVG / SUM / MIN / MAX / COUNT / COUNT_DISTINCT / MODE_TOP / ALL_VALUES over
   a Comparison's contributions. Auto-handles the HAS_VALUE indirection on numeric
   measurements. Use this whenever the question asks for "mean / total / minimum /
@@ -544,9 +545,16 @@ TIER 3 - DOMAIN-SPECIFIC:
   may be empty if value_predicates supplies all predicates.
   For nested rows like Contribution -> energy source -> measurement, pass
   intermediate_predicate for the first hop and value_predicate for the measurement.
+  For deeper nested rows, pass intermediate_path="P1,P2" for the path from
+  contribution to the row object, then value_predicate for the measurement/category
+  on that final row object.
   If the question names one nested component/category (e.g. Atmosphere), pass
   intermediate_filter_value with that label so only matching intermediate row
   objects contribute.
+  If schema or aggregate output shows rollup_intermediate_values/candidates
+  (e.g. "all sources") and the wording asks for all/overall/total, call this
+  again with that intermediate_filter_value instead of trusting the row-level
+  aggregate.
   PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
 - DiagnoseComparisonAggregation(comparison_id?, value_predicate, value_predicates?,
                                 comparison_ids?, group_by_predicate?,
@@ -631,6 +639,10 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
 - Nested component filters ("variables for atmosphere models", "capacity for photovoltaics"):
   use InspectComparisonSchema to find the nested path, then pass
   intermediate_filter_value="Atmosphere" / "photovoltaics" to AggregateComparisonValues.
+- Nested rollup rows ("all sources", "total", "overall"):
+  if InspectComparisonSchema shows rollup_intermediate_values, or AggregateComparisonValues
+  returns denominator_hints.rollup_intermediate_candidates, use that
+  intermediate_filter_value when the question wording asks for all/overall/total.
 - Ambiguous denominators ("average of all values", "average per study", nested
   source/category rows, or a surprising AggregateComparisonValues result):
   call DiagnoseComparisonAggregation with the same comparison/path/filter. Choose
@@ -995,11 +1007,12 @@ and pick the one whose label matches the question's domain.
 2. InspectComparisonSchema("R153799") -> nested_paths shows energy source P43135 -> generation P43134
 3. DiagnoseComparisonAggregation(comparison_id="R153799", intermediate_predicate="P43135",
                                   value_predicate="P43134")
-   -> compare row_level vs contribution-level denominators; wording says all energy sources,
-      so use row_level if every source row should count once
+   -> compare row_level, contribution-level, and rollup intermediate candidates; if a
+      rollup label such as "all sources" is present and matches the wording, filter to it
 4. AggregateComparisonValues(comparison_id="R153799", intermediate_predicate="P43135",
+                              intermediate_filter_value="all sources",
                               value_predicate="P43134", agg="avg")
-   -> {result: 157.146390041493776, n_contributions: 241}
+   -> average over the rollup rows
 5. Answer: the average value. Do not hand-write SPARQL for this pattern.
 
 **Example: "Which are the three most common variables for the atmosphere models in X?"**
