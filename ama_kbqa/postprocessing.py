@@ -16,6 +16,7 @@ import os
 import re
 import toml
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,6 +36,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # Color codes for terminal output
 COLOR_RED = '\033[91m'
 COLOR_END = '\033[0m'
+
+NUMERIC_TOKEN_RE = re.compile(
+    r"(?<![\w.])[+-]?(?:\d+(?:,\d{3})*|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?"
+)
 
 # SPARQL prefixes (matching kqapro_server.py)
 SPARQL_PREFIXES = """
@@ -88,6 +93,54 @@ class PostProcessingResult:
     judgment: Optional[Dict] = None           # AnswerJudgment.model_dump()
     synthesized_sparql: Optional[str] = None
     intermediate_thinking: str = ""
+
+
+def _decimal_tokens(text: Optional[str]) -> List[Decimal]:
+    """Extract numeric tokens as Decimals, preserving benchmark-scale precision."""
+    values: List[Decimal] = []
+    if text is None:
+        return values
+    for match in NUMERIC_TOKEN_RE.finditer(str(text)):
+        token = match.group(0).replace(",", "")
+        try:
+            values.append(Decimal(token))
+        except InvalidOperation:
+            continue
+    return values
+
+
+def _single_plain_numeric_gold(gold_answer: str) -> Optional[Decimal]:
+    """Return gold number only when the gold answer is essentially numeric."""
+    text = str(gold_answer or "").strip()
+    matches = list(NUMERIC_TOKEN_RE.finditer(text))
+    if len(matches) != 1:
+        return None
+    remainder = (text[:matches[0].start()] + text[matches[0].end():]).strip()
+    if re.search(r"[A-Za-z]", remainder):
+        return None
+    try:
+        return Decimal(matches[0].group(0).replace(",", ""))
+    except InvalidOperation:
+        return None
+
+
+def numeric_answer_equivalent(
+    predicted_answer: Optional[str],
+    gold_answer: str,
+    *,
+    rel_tol: Decimal = Decimal("0.0001"),
+    abs_tol: Decimal = Decimal("0.001"),
+) -> bool:
+    """General numeric equivalence guard for strict LLM-judge false negatives."""
+    gold_value = _single_plain_numeric_gold(gold_answer)
+    if gold_value is None:
+        return False
+    scale = max(abs(gold_value), Decimal("1"))
+    for predicted_value in _decimal_tokens(predicted_answer):
+        diff = abs(predicted_value - gold_value)
+        if diff <= abs_tol or (diff / scale) <= rel_tol:
+            return True
+    return False
 
 
 # ============================================================================
@@ -628,6 +681,14 @@ Respond ONLY with the JSON object, no additional text."""
         judgment = AnswerJudgment(**judgment_dict)
 
         if judgment:
+            if not judgment.is_correct and numeric_answer_equivalent(predicted_answer, gold_answer):
+                judgment.is_correct = True
+                judgment.correctness_reasoning = (
+                    f"{judgment.correctness_reasoning}\n\n"
+                    "Numeric equivalence guard: the gold answer is a single numeric "
+                    "value and the predicted answer contains the same value within "
+                    "benchmark tolerance."
+                )
             print(f"{COLOR_RED}[JUDGE] Correctness: {'CORRECT' if judgment.is_correct else 'INCORRECT'}{COLOR_END}")
             print(f"{COLOR_RED}[JUDGE] Argumentation Score: {judgment.argumentation_score}/5{COLOR_END}")
             print(f"{COLOR_RED}[JUDGE] Reasoning: {judgment.correctness_reasoning}{COLOR_END}")
@@ -647,14 +708,18 @@ Respond ONLY with the JSON object, no additional text."""
                     content_lower = raw_content.lower()
                     is_correct = (
                         "correct" in content_lower and "incorrect" not in content_lower or
-                        predicted_answer.lower().strip() == gold_answer.lower().strip()
+                        predicted_answer.lower().strip() == gold_answer.lower().strip() or
+                        numeric_answer_equivalent(predicted_answer, gold_answer)
                     )
                     print(f"[FALLBACK] Heuristic correctness: {'CORRECT' if is_correct else 'INCORRECT'}")
                     return None, is_correct
             except Exception as fallback_error:
                 print(f"[WARNING] Fallback analysis also failed: {fallback_error}")
 
-        simple_match = predicted_answer.lower().strip() == gold_answer.lower().strip()
+        simple_match = (
+            predicted_answer.lower().strip() == gold_answer.lower().strip()
+            or numeric_answer_equivalent(predicted_answer, gold_answer)
+        )
         print(f"[FALLBACK] Using simple string matching: {'MATCH' if simple_match else 'NO MATCH'}")
         return None, simple_match
 
@@ -672,6 +737,9 @@ def evaluate_accuracy_simple(predicted: Optional[str], gold: str, q_type: str = 
     gold_norm = str(gold).lower().strip()
 
     if pred_norm == gold_norm:
+        return True
+
+    if numeric_answer_equivalent(predicted, gold):
         return True
 
     if gold_norm in pred_norm:

@@ -457,6 +457,10 @@ CRITICAL RULES
    Example: FILTER(?therapeutic_effect = "T"^^xsd:string) means the property IS present.
    "F" means the property is NOT present/absent.
 
+9. **Numeric Precision:** For numeric answers, copy the exact numeric value from
+   the answer-producing tool or journal first. Do not round or truncate the
+   primary answer; if you add a rounded value, put it after the exact value.
+
 SCHEMA INTROSPECTION
 If a predicate returns no results:
 1. Use GetResourceSummary to see ALL available predicates for the resource
@@ -1175,6 +1179,7 @@ VERIFICATION CHECKLIST (check before answering):
 - Does your answer directly address what was ASKED? (e.g., "without X" vs "with X")
 - If the question asks for a percentage/count, verify the direction (complement check)
 - If numeric, verify units and scale match what was asked
+- If numeric, preserve the exact value from the journal/tool result before any rounded form
 - If the question asks "how many", ensure you return a number, not a description
 - Cross-check: Does your answer align with the verified_facts in the journal?
 - If the journal contains specific resource IDs and values, prefer those over general statements
