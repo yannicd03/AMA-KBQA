@@ -3500,6 +3500,8 @@ async def AggregateComparisonValues(
     value_predicates: str = "",
     agg: str = "avg",
     group_by_predicate: str = "",
+    group_by_path: str = "",
+    group_by_intermediate: bool = False,
     filter_predicate: str = "",
     filter_value: str = "",
     filter_match: Literal["exact", "contains", "regex"] = "contains",
@@ -3557,6 +3559,14 @@ async def AggregateComparisonValues(
         group_by_predicate: Optional predicate to GROUP BY. When set, the
             aggregate is computed per distinct value of this predicate
             (e.g., "extreme values per energy source").
+        group_by_path: Optional comma-separated predicate path from each
+            contribution to the grouping value. Use when the group key is not a
+            direct contribution predicate, e.g. contribution -> scenario -> goal
+            -> time frame.
+        group_by_intermediate: If True and using intermediate_predicate or
+            intermediate_path, include the nested row label itself as a grouping
+            axis. Use this for table questions such as "average installed
+            capacity for each energy source by time frame".
         filter_predicate: Optional predicate used to subset contributions.
         filter_value: Value the filter_predicate must match.
         filter_match: "exact" (literal equals), "contains" (substring on
@@ -3646,6 +3656,19 @@ async def AggregateComparisonValues(
         value_pred_values = " ".join(value_pred_list)
         value_pred_label = ",".join(value_predicate_list)
         group_pred = _norm_pred(group_by_predicate) if group_by_predicate else ""
+        raw_group_by_path = [
+            p.strip()
+            for p in (group_by_path or "").split(",")
+            if p and p.strip()
+        ]
+        group_path_predicates = [_norm_pred(p) for p in raw_group_by_path]
+        if group_pred and group_path_predicates:
+            return json.dumps(
+                {"error": "Use either group_by_predicate or group_by_path, not both."},
+                indent=2,
+            )
+        group_chain = group_path_predicates or ([group_pred] if group_pred else [])
+        group_label = ",".join(raw_group_by_path) if raw_group_by_path else group_by_predicate
         flt_pred = _norm_pred(filter_predicate) if filter_predicate else ""
         return_pred = _norm_pred(return_predicate) if return_predicate else ""
         intermediate_pred = _norm_pred(intermediate_predicate) if intermediate_predicate else ""
@@ -3692,7 +3715,7 @@ async def AggregateComparisonValues(
                 )
 
         intermediate_filter_block = ""
-        if intermediate_pred and intermediate_filter_value:
+        if intermediate_chain and intermediate_filter_value:
             safe_intermediate = intermediate_filter_value.replace('"', '\\"')
             if intermediate_filter_match == "exact":
                 intermediate_filter_block = (
@@ -3713,7 +3736,7 @@ async def AggregateComparisonValues(
 
         # Body retrieving raw rows: contribution, group, raw value (with
         # HAS_VALUE/label indirection lifted to ?val).
-        group_select = "?group ?groupLabel " if group_pred else ""
+        group_select = "?group ?groupLabel ?groupNested " if group_chain else ""
         value_pred_select = "?valuePred "
         intermediate_select = "?intermediate ?intermediateLabel " if intermediate_chain else ""
         return_select = "?returnObj ?returnLabel ?returnNested " if return_pred else ""
@@ -3725,32 +3748,40 @@ async def AggregateComparisonValues(
             f"        }}\n"
             if return_pred else ""
         )
-        if group_pred and value_via_group:
-            # contrib -- group_pred --> ?group -- value_pred --> ?valueObj
-            value_block = (
-                f"?contrib {group_pred} ?group .\n"
+
+        def _path_clause(start_var: str, predicates: list[str], terminal_var: str, prefix: str) -> str:
+            current_node = start_var
+            lines = []
+            for index, path_predicate in enumerate(predicates):
+                next_node = terminal_var if index == len(predicates) - 1 else f"?{prefix}{index}"
+                lines.append(f"{current_node} {path_predicate} {next_node} .")
+                current_node = next_node
+            return "\n        ".join(lines)
+
+        def _group_clause() -> str:
+            if not group_chain:
+                return ""
+            path_block = _path_clause("?contrib", group_chain, "?group", "groupPath")
+            return (
+                f"{path_block}\n"
                 f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
+                f"        OPTIONAL {{ ?group orkgp:HAS_VALUE ?groupNested }}\n"
+            )
+
+        group_clause = _group_clause()
+        if group_chain and value_via_group:
+            # contrib -- group path --> ?group -- value_pred --> ?valueObj
+            value_block = (
+                f"{group_clause}"
                 f"        VALUES ?valuePred {{ {value_pred_values} }}\n"
                 f"        ?group ?valuePred ?valueObj .\n"
                 f"        OPTIONAL {{ ?valueObj rdfs:label ?valueLabel }}\n"
                 f"        OPTIONAL {{ ?valueObj orkgp:HAS_VALUE ?nestedValue }}\n"
             )
         elif intermediate_chain:
-            group_clause = (
-                f"?contrib {group_pred} ?group .\n"
-                f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
-                if group_pred else ""
-            )
-            path_lines = []
-            current_node = "?contrib"
-            for index, path_predicate in enumerate(intermediate_chain):
-                next_node = f"?pathIntermediate{index}"
-                path_lines.append(f"{current_node} {path_predicate} {next_node} .")
-                current_node = next_node
-            path_block = "\n        ".join(path_lines)
+            path_block = _path_clause("?contrib", intermediate_chain, "?intermediate", "pathIntermediate")
             value_block = (
                 f"{path_block}\n"
-                f"        BIND({current_node} AS ?intermediate)\n"
                 f"        OPTIONAL {{ ?intermediate rdfs:label ?intermediateLabel }}\n"
                 f"        {intermediate_filter_block}"
                 f"        VALUES ?valuePred {{ {value_pred_values} }}\n"
@@ -3760,11 +3791,6 @@ async def AggregateComparisonValues(
                 f"        {group_clause}"
             )
         else:
-            group_clause = (
-                f"?contrib {group_pred} ?group .\n"
-                f"        OPTIONAL {{ ?group rdfs:label ?groupLabel }}\n"
-                if group_pred else ""
-            )
             value_block = (
                 f"VALUES ?valuePred {{ {value_pred_values} }}\n"
                 f"        ?contrib ?valuePred ?valueObj .\n"
@@ -3810,9 +3836,13 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             return v.split("/")[-1] if v.startswith("http") else v
 
         def _row_group(b):
-            if not group_pred:
+            if not group_chain:
                 return None
-            v = b.get("groupLabel", {}).get("value") or b.get("group", {}).get("value", "")
+            v = (
+                b.get("groupNested", {}).get("value")
+                or b.get("groupLabel", {}).get("value")
+                or b.get("group", {}).get("value", "")
+            )
             if v.startswith("http://orkg.org/orkg/"):
                 v = v.split("/")[-1]
             return v
@@ -3891,8 +3921,26 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
         # Group rows
         from collections import defaultdict, Counter
         groups: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
+
+        def _row_group_key(row: Dict[str, Any]) -> Any:
+            parts: list[tuple[str, Any]] = []
+            if group_by_intermediate:
+                parts.append(("intermediate", row.get("intermediate")))
+            if group_chain:
+                parts.append((group_label or "group", row.get("group")))
+            if not parts:
+                return None
+            return tuple(parts)
+
+        def _display_group(group_key: Any) -> Any:
+            if not isinstance(group_key, tuple):
+                return group_key
+            if len(group_key) == 1:
+                return group_key[0][1]
+            return {label: value for label, value in group_key}
+
         for r in rows:
-            groups[r["group"]].append(r)
+            groups[_row_group_key(r)].append(r)
 
         def _aggregate(items: List[Dict[str, Any]]):
             vals = [it["value"] for it in items]
@@ -3920,11 +3968,11 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                 return max(nums)
             return None
 
-        if group_pred:
+        if group_chain or group_by_intermediate:
             grouped_result = []
             for g, items in groups.items():
                 grouped_result.append({
-                    "group": g,
+                    "group": _display_group(g),
                     "value": _aggregate(items),
                     "n": len(items),
                 })
@@ -3995,6 +4043,10 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
         if journal_key not in session_journal.found_values:
             session_journal.found_values[journal_key] = {}
         key = f"{agg}({value_pred_label})" + (f" by {group_by_predicate}" if group_by_predicate else "")
+        if raw_group_by_path:
+            key += f" by {','.join(raw_group_by_path)}"
+        if group_by_intermediate:
+            key += " by intermediate"
         if raw_intermediate_path:
             key += f" via {','.join(raw_intermediate_path)}"
         elif intermediate_predicate:
@@ -4020,6 +4072,8 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             "value_predicates": value_predicate_list,
             "agg": agg,
             "group_by": group_by_predicate or None,
+            "group_by_path": raw_group_by_path or None,
+            "group_by_intermediate": group_by_intermediate,
             "intermediate_predicate": intermediate_predicate or None,
             "intermediate_path": raw_intermediate_path or None,
             "intermediate_filter": (
@@ -4038,6 +4092,8 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             "status": (
                 f"Aggregated {n_rows} contribution rows with {agg}"
                 + (f" grouped by {group_by_predicate}" if group_by_predicate else "")
+                + (f" grouped by path {','.join(raw_group_by_path)}" if raw_group_by_path else "")
+                + (" grouped by intermediate" if group_by_intermediate else "")
                 + (f" across {len(cmp_id_list)} comparisons" if multi_mode else "")
             ),
         }, indent=2, default=str)

@@ -544,6 +544,7 @@ TIER 3 - DOMAIN-SPECIFIC:
   several requested predicates. Use this before raw SPARQL for row questions like
   algorithm=Naive Bayes AND feature=bag of words -> precision/recall/F1.
 - AggregateComparisonValues(comparison_id, value_predicate?, value_predicates?, agg, group_by_predicate?,
+                            group_by_path?, group_by_intermediate?,
                             filter_predicate?, filter_value?, filter_match?, top_n?,
                             value_parser?, return_predicate?, intermediate_predicate?,
                             intermediate_path?, intermediate_filter_value?):
@@ -561,6 +562,10 @@ TIER 3 - DOMAIN-SPECIFIC:
   For deeper nested rows, pass intermediate_path="P1,P2" for the path from
   contribution to the row object, then value_predicate for the measurement/category
   on that final row object.
+  For grouped table questions where the group key is itself reached through a
+  graph path, pass group_by_path="P1,P2,P3". If the nested row label is also one
+  grouping axis, pass group_by_intermediate=true, e.g. value under energy-source
+  rows grouped by scenario time frame and energy source.
   If the question names one nested component/category (e.g. Atmosphere), pass
   intermediate_filter_value with that label so only matching intermediate row
   objects contribute.
@@ -652,6 +657,12 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
 - Nested component filters ("variables for atmosphere models", "capacity for photovoltaics"):
   use InspectComparisonSchema to find the nested path, then pass
   intermediate_filter_value="Atmosphere" / "photovoltaics" to AggregateComparisonValues.
+- Grouped interval/table questions ("for each source by year/time frame", "in 5-year
+  intervals"):
+  use AggregateComparisonValues with the metric path plus group_by_path for the
+  time/category path. If the metric rows are nested under the item being grouped
+  (e.g. energy source -> installed capacity), also set group_by_intermediate=true
+  so the result is grouped by both the nested row label and the time/category.
 - Nested rollup rows ("all sources", "total", "overall"):
   if InspectComparisonSchema shows rollup_intermediate_values, or AggregateComparisonValues
   returns denominator_hints.rollup_intermediate_candidates, use that
@@ -1029,6 +1040,19 @@ and pick the one whose label matches the question's domain.
                               value_predicate="P43134", agg="avg")
    -> average over the rollup rows
 5. Answer: the average value. Do not hand-write SPARQL for this pattern.
+
+**Example: "What is the average installed capacity for each energy source in 5-year intervals in X?"**
+   (nested metric rows grouped by nested row label and scenario time-frame path)
+1. FindResource("X", node_type_filter="Comparison") -> RXXXXX
+2. InspectComparisonSchema("RXXXXX") -> nested_paths show energy source P43135 -> installed capacity P43133
+   and scenario/goal/time-frame path P37581 -> P43138 -> P43139
+3. AggregateComparisonValues(comparison_id="RXXXXX", intermediate_predicate="P43135",
+                              value_predicate="P43133", agg="avg",
+                              group_by_intermediate=true,
+                              group_by_path="P37581,P43138,P43139")
+   -> average capacity grouped by energy-source row label and time frame
+4. Answer from the grouped result. If only some time frames exist, say which time
+   frames the graph actually contains. Do not hand-write SPARQL for this pattern.
 
 **Example: "Which are the three most common variables for the atmosphere models in X?"**
    (nested row aggregation with intermediate filter)
