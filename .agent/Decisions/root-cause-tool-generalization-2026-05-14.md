@@ -467,10 +467,12 @@ Implemented the generic fixes:
   `returned_count`, `truncated`, and a refinement note. This keeps raw SPARQL as
   a last-resort graph operation without allowing broad probes to poison context.
 - `AggregateComparisonValues` now adds `denominator_hints.recommended_follow_up`
-  when rollup intermediate candidates are present, and the journal stores an
-  `ambiguous_denominator` object with the row-level result, candidate rollup
-  result, and exact wrapped follow-up call instead of promoting the row-level
-  aggregate as final.
+  for ungrouped, unfiltered nested numeric aggregates when rollup intermediate
+  candidates are present. The journal stores an `ambiguous_denominator` object
+  with the row-level result, candidate rollup result, and exact wrapped
+  follow-up call instead of promoting the row-level aggregate as final. Grouped
+  table outputs such as "for each source by time frame" are not marked
+  ambiguous just because one group is a rollup row.
 
 These changes preserve the wrapped-SPARQL philosophy: the agent still chooses
 graph anchors, paths, filters, and aggregates from schema/tool evidence. The
