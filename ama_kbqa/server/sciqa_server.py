@@ -4027,7 +4027,13 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
 
         denominator_hints = None
         recommended_rollup_follow_up = None
-        if intermediate_chain and not intermediate_filter_value and agg in {"avg", "sum", "min", "max", "count"}:
+        is_grouped_aggregate = bool(group_by_predicate or raw_group_by_path or group_by_intermediate)
+        if (
+            intermediate_chain
+            and not intermediate_filter_value
+            and not is_grouped_aggregate
+            and agg in {"avg", "sum", "min", "max", "count"}
+        ):
             diagnostics = _build_comparison_aggregation_diagnostics(
                 rows,
                 value_parser=value_parser,
