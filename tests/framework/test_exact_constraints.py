@@ -181,6 +181,8 @@ def test_sciqa_aggregate_tool_exposes_intermediate_filter_parameter():
     assert "intermediate_filter_value" in params
     assert "intermediate_filter_match" in params
     assert "intermediate_path" in params
+    assert "group_by_path" in params
+    assert "group_by_intermediate" in params
     assert "value_predicate" not in required
     assert "comparison_id" not in required
 

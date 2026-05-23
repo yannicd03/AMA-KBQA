@@ -394,3 +394,45 @@ Rationale: quoted spans are user-provided graph anchors. Preserving them is a
 general search discipline and keeps resource selection inside the existing
 semantic/lexical `FindResource` tool instead of adding deterministic
 question-specific routing.
+
+## 2026-05-22 Grouped Path Aggregation Follow-Up
+
+The next focused validation confirmed that the earlier fixes recovered the
+exact-title, rollup-denominator, numeric-precision, and multi-hop factsheet
+cases. The remaining interval/table case did answer correctly, but only after a
+long raw `RunORKGSPARQL` trajectory that manually joined:
+
+`Comparison -> contribution -> scenario -> goal -> time frame`
+
+with:
+
+`contribution -> energy source -> installed capacity -> HAS_VALUE`
+
+That is a generic missing graph operation rather than an argument for
+question-specific routing. The agent needed to aggregate a nested metric row
+while grouping by both the nested row label and a separate contribution-relative
+path.
+
+Implemented the generic wrapper extension:
+
+- `AggregateComparisonValues` now accepts `group_by_path="P1,P2,P3"` so the
+  grouping key can be reached through a relation path from each contribution,
+  not only a direct contribution predicate.
+- `AggregateComparisonValues(group_by_intermediate=true)` adds the nested row
+  label as another grouping axis when values live below
+  `contribution -> row-object -> metric`.
+- The SciQA prompt now routes interval/table wording such as "for each source by
+  year/time frame" or "in 5-year intervals" to the wrapped aggregation call
+  before raw SPARQL.
+
+This keeps with the design goal of wrapped SPARQL calls as basic graph
+operations. The model still chooses the Comparison, metric path, grouping path,
+and final interpretation from graph evidence; the code only exposes a reusable
+projection/aggregation shape that previously required brittle hand-written
+SPARQL.
+
+Validation:
+
+- `uv run python -m py_compile ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
+- `uv run pytest tests/framework/test_exact_constraints.py -q` = 18 passed.
+- `uv run pytest tests/framework -q` = 144 passed.
