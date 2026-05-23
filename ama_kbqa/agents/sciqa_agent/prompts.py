@@ -438,6 +438,8 @@ CRITICAL RULES
 
 3. **State Management:** Use ManageJournal to track progress and avoid loops.
    Valid actions: "read", "write", "clear", "add_step", "add_fact", "set_answer"
+   Use ManageJournal(action="read") for a state read. GetJournalSummary takes
+   no arguments; call exactly GetJournalSummary().
 
 4. **Pivot Logic:** If a search strategy fails twice, PIVOT to a different approach.
 
@@ -573,6 +575,10 @@ TIER 3 - DOMAIN-SPECIFIC:
   (e.g. "all sources") and the wording asks for all/overall/total, call this
   again with that intermediate_filter_value instead of trusting the row-level
   aggregate.
+  If AggregateComparisonValues returns "ambiguous_denominator" or
+  denominator_hints.recommended_follow_up, do not finalize from the row-level
+  result; execute the recommended follow-up or answer from its candidate_result
+  only when it matches the question wording.
   PREFER THIS over hand-writing aggregation SPARQL with RunORKGSPARQL.
 - DiagnoseComparisonAggregation(comparison_id?, value_predicate, value_predicates?,
                                 comparison_ids?, group_by_predicate?,
@@ -601,7 +607,9 @@ TIER 3 - DOMAIN-SPECIFIC:
 
 TIER 4 - RAW SPARQL:
 - RunORKGSPARQL(query): Execute SPARQL (prefixes auto-injected) — last-resort
-  escape hatch for patterns the dedicated tools don't cover.
+  escape hatch for patterns the dedicated tools don't cover. SELECT output is
+  capped for context safety; if truncated, refine with COUNT/GROUP BY/LIMIT or
+  switch to a dedicated graph tool.
 
 TIER 5 - VERIFICATION:
 - VerifyNumericCondition(value1, operator, value2, unit): Deterministic math comparison
@@ -609,7 +617,8 @@ TIER 5 - VERIFICATION:
 
 STATE MANAGEMENT:
 - ManageJournal(action, content): Manage scratchpad state
-- GetJournalSummary(): Get formatted summary of all findings
+- GetJournalSummary(): Get formatted summary of all findings. Takes no arguments;
+  do not pass action/content.
 
 EXECUTION STRATEGY
 1. **Analyze:** Read the pre-analysis (question type, entities)

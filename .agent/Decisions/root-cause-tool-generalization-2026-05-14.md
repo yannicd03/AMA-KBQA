@@ -436,3 +436,50 @@ Validation:
 - `uv run python -m py_compile ama_kbqa/server/sciqa_server.py ama_kbqa/agents/sciqa_agent/prompts.py tests/framework/test_exact_constraints.py`
 - `uv run pytest tests/framework/test_exact_constraints.py -q` = 18 passed.
 - `uv run pytest tests/framework -q` = 144 passed.
+
+## 2026-05-23 Context-Safety and Ambiguous-Denominator Follow-Up
+
+Focused validation after deploying grouped path aggregation showed three
+separate failure modes that were not question-specific:
+
+- MiniMax used the new grouped aggregation wrapper for both interval/table rows
+  and produced plausible graph-derived tables, but the judge still marked both
+  incorrect because the gold answers are opaque TinyURL artifacts. Do not solve
+  this by hardcoding URL strings; the dataset/evaluation layer should dereference
+  or semantically evaluate those artifacts.
+- Gemma issued broad exploratory `RunORKGSPARQL` queries while trying to recover
+  a nested factsheet path. One query returned 3,866 rows, the full Virtuoso JSON
+  was fed back into the LLM, and the next prompt exceeded the KIT Gemma context
+  window. This is an unbounded-tool-output bug.
+- Gemma also called `AggregateComparisonValues` on nested energy-source rows
+  without the `all sources` rollup filter, received denominator hints containing
+  the correct rollup candidate, but still finalized the row-level average because
+  that ambiguous result was written to the journal like a normal answer value.
+
+Implemented the generic fixes:
+
+- `BaseKBQAAgent._execute_tool_calls()` only treats a no-argument
+  `GetJournalSummary()` call as the answer-prompt trigger. Malformed calls such
+  as `GetJournalSummary(action="read")` return their tool error to the model but
+  no longer push the "answer now" prompt.
+- `ama_kbqa/utils/sparql_results.py` compacts SPARQL SELECT responses for both
+  `RunSPARQL` and `RunORKGSPARQL`: bounded row preview plus `result_count`,
+  `returned_count`, `truncated`, and a refinement note. This keeps raw SPARQL as
+  a last-resort graph operation without allowing broad probes to poison context.
+- `AggregateComparisonValues` now adds `denominator_hints.recommended_follow_up`
+  when rollup intermediate candidates are present, and the journal stores an
+  `ambiguous_denominator` object with the row-level result, candidate rollup
+  result, and exact wrapped follow-up call instead of promoting the row-level
+  aggregate as final.
+
+These changes preserve the wrapped-SPARQL philosophy: the agent still chooses
+graph anchors, paths, filters, and aggregates from schema/tool evidence. The
+system only makes generic graph operations safer and prevents ambiguous evidence
+from being presented as a final fact.
+
+Validation:
+
+- `uv run python -m py_compile` on the edited agent, server, prompt, utility, and
+  test files.
+- `uv run pytest tests/framework/test_base_agent_tool_loop.py tests/framework/test_sparql_results.py tests/framework/test_exact_constraints.py -q` = 22 passed.
+- `uv run pytest tests/framework -q` = 148 passed.

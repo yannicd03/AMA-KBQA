@@ -72,6 +72,8 @@ from typing import Literal
 from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
 
+from ama_kbqa.utils.sparql_results import compact_sparql_select_results
+
 load_dotenv(find_dotenv())
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -167,6 +169,10 @@ class SPARQLResponse(BaseModel):
     vars: List[str] = Field(...)
     bindings: List[Dict[str, Any]] = Field(...)
     raw_json: Dict[str, Any] = Field(...)
+    result_count: Optional[int] = Field(default=None)
+    returned_count: Optional[int] = Field(default=None)
+    truncated: bool = Field(default=False)
+    note: Optional[str] = Field(default=None)
 
 
 class JournalState(BaseModel):
@@ -758,6 +764,14 @@ def _rollup_intermediate_candidates(
         reverse=True,
     )
     return candidates
+
+
+def _rollup_candidate_value(candidate: Dict[str, Any], agg: str) -> Any:
+    """Return the aggregate value implied by a rollup candidate."""
+    if agg == "count":
+        return candidate.get("row_count")
+    numeric_summary = candidate.get("numeric_summary") or {}
+    return numeric_summary.get(agg)
 
 
 def _build_comparison_aggregation_diagnostics(
@@ -1544,27 +1558,28 @@ async def RunORKGSPARQL(
         vars_list = results.get("head", {}).get("vars", [])
         bindings = results.get("results", {}).get("bindings", [])
 
-        # Simplify bindings
-        simplified = []
-        for binding in bindings:
-            row = {}
-            for var in vars_list:
-                if var in binding:
-                    val = binding[var].get("value", "")
-                    # Shorten URIs
-                    if val.startswith("http://orkg.org/orkg/"):
-                        val = val.split("/")[-1]
-                    row[var] = val
-            simplified.append(row)
+        compact = compact_sparql_select_results(
+            results,
+            vars_list,
+            uri_prefixes_to_strip=(
+                "http://orkg.org/orkg/resource/",
+                "http://orkg.org/orkg/predicate/",
+                "http://orkg.org/orkg/class/",
+            ),
+        )
 
         session_journal.completed_steps.append(
-            f"RunORKGSPARQL() -> {len(simplified)} results"
+            f"RunORKGSPARQL() -> {compact['result_count']} results"
         )
 
         response = SPARQLResponse(
             vars=vars_list,
-            bindings=simplified,
-            raw_json=results
+            bindings=compact["bindings"],
+            raw_json=compact["raw_json"],
+            result_count=compact["result_count"],
+            returned_count=compact["returned_count"],
+            truncated=compact["truncated"],
+            note=compact["note"],
         )
         return response.model_dump_json(indent=2)
 
@@ -4011,12 +4026,47 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                 }
 
         denominator_hints = None
+        recommended_rollup_follow_up = None
         if intermediate_chain and not intermediate_filter_value and agg in {"avg", "sum", "min", "max", "count"}:
             diagnostics = _build_comparison_aggregation_diagnostics(
                 rows,
                 value_parser=value_parser,
                 sample_limit=5,
             )
+            rollup_candidates = _rollup_intermediate_candidates(
+                rows,
+                value_parser=value_parser,
+            )
+            if rollup_candidates:
+                top_rollup = rollup_candidates[0]
+                follow_up_args: Dict[str, Any] = {
+                    "agg": agg,
+                    "intermediate_filter_value": top_rollup["intermediate_filter_value"],
+                    "intermediate_filter_match": "contains",
+                }
+                if multi_mode:
+                    follow_up_args["comparison_ids"] = ",".join(cmp_id_list)
+                else:
+                    follow_up_args["comparison_id"] = comparison_id
+                if len(value_predicate_list) == 1:
+                    follow_up_args["value_predicate"] = value_predicate_list[0]
+                else:
+                    follow_up_args["value_predicates"] = ",".join(value_predicate_list)
+                if intermediate_predicate:
+                    follow_up_args["intermediate_predicate"] = intermediate_predicate
+                if raw_intermediate_path:
+                    follow_up_args["intermediate_path"] = ",".join(raw_intermediate_path)
+                if value_parser != "leading_number":
+                    follow_up_args["value_parser"] = value_parser
+                recommended_rollup_follow_up = {
+                    "when_to_use": "Use when the question asks for all/overall/total/combined values rather than per-row source/category values.",
+                    "tool_call": {
+                        "name": "AggregateComparisonValues",
+                        "arguments": follow_up_args,
+                    },
+                    "candidate_result": _rollup_candidate_value(top_rollup, agg),
+                    "candidate": top_rollup,
+                }
             denominator_hints = {
                 "warning": (
                     "Nested rows were aggregated without intermediate_filter_value. "
@@ -4026,10 +4076,8 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                 "population": diagnostics["population"],
                 "row_level": diagnostics["denominator_candidates"].get("row_level"),
                 "contribution_mean_level": diagnostics["denominator_candidates"].get("contribution_mean_level"),
-                "rollup_intermediate_candidates": _rollup_intermediate_candidates(
-                    rows,
-                    value_parser=value_parser,
-                ),
+                "rollup_intermediate_candidates": rollup_candidates,
+                "recommended_follow_up": recommended_rollup_follow_up,
                 "guidance": [
                     "Use result as-is when every nested value row should count equally.",
                     "Use contribution_mean_level when the question asks per contribution/study averages.",
@@ -4055,7 +4103,15 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             key += f" filtered {intermediate_filter_value}"
         if return_predicate:
             key += f" return {return_predicate}"
-        session_journal.found_values[journal_key][key] = result_payload
+        journal_result_payload = result_payload
+        if recommended_rollup_follow_up:
+            journal_result_payload = {
+                "status": "ambiguous_denominator",
+                "row_level_result": result_payload,
+                "do_not_finalize_without_denominator_choice": True,
+                "recommended_follow_up": recommended_rollup_follow_up,
+            }
+        session_journal.found_values[journal_key][key] = journal_result_payload
         session_journal.completed_steps.append(
             f"AggregateComparisonValues({scope_label}, {value_pred_label}, {agg}) "
             f"-> {n_rows} contributions"
@@ -4090,7 +4146,12 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             "result": result_payload,
             "n_contributions": n_rows,
             "status": (
-                f"Aggregated {n_rows} contribution rows with {agg}"
+                (
+                    "Ambiguous nested-row denominator: inspect denominator_hints "
+                    "and use recommended_follow_up before finalizing. "
+                    if recommended_rollup_follow_up else ""
+                )
+                + f"Aggregated {n_rows} contribution rows with {agg}"
                 + (f" grouped by {group_by_predicate}" if group_by_predicate else "")
                 + (f" grouped by path {','.join(raw_group_by_path)}" if raw_group_by_path else "")
                 + (" grouped by intermediate" if group_by_intermediate else "")
