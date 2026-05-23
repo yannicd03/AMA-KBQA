@@ -1475,9 +1475,6 @@ Change strategy or acknowledge the data doesn't exist."""
                 _append_tool_result(tool_call, func_name, tool_result)
                 continue
 
-            if func_name == "GetJournalSummary":
-                called_get_journal_summary = True
-
             # Parse arguments
             try:
                 args_str = tool_call.function.arguments
@@ -1487,6 +1484,16 @@ Change strategy or acknowledge the data doesn't exist."""
 
             args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
             self._trace(f"Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
+
+            if func_name == "GetJournalSummary":
+                if func_args:
+                    self._trace(
+                        "GetJournalSummary called with unexpected arguments; "
+                        "not injecting answer prompt until a no-argument summary call succeeds",
+                        COLOR_YELLOW,
+                    )
+                else:
+                    called_get_journal_summary = True
 
             # Check for loops
             loop_detected, loop_reason = self._detect_loops(func_name, func_args)

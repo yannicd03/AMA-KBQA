@@ -13,6 +13,7 @@ from ama_kbqa.server.sciqa_server import (
     _normalize_aggregation_name,
     _parse_numeric_value,
     _payload_node_type_matches,
+    _rollup_candidate_value,
     _rollup_intermediate_candidates,
     _schema_display_value,
     _schema_usage_hint,
@@ -224,6 +225,8 @@ def test_sciqa_rollup_intermediate_candidates_surface_total_rows():
     assert candidates[0]["intermediate_filter_value"] == "all sources"
     assert candidates[0]["numeric_summary"]["avg"] == 15
     assert candidates[0]["distinct_contributions"] == 2
+    assert _rollup_candidate_value(candidates[0], "avg") == 15
+    assert _rollup_candidate_value(candidates[0], "count") == 2
 
 
 def test_sciqa_diagnostics_tool_schema_exposes_generic_parameters():

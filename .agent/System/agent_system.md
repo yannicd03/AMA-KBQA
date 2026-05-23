@@ -859,7 +859,7 @@ Two injection sites in `_run_tool_loop` are guarded by this flag:
 
 1. **Periodic refresh** — every `journal_refresh_interval` iterations (default: every 5), `_inject_journal_refresh` is called. It fetches `GetJournalSummary`, applies the `WORKING MEMORY REFRESH (Iteration N)` template (or the `WARNING: NO PROGRESS DETECTED` template when the journal state is unchanged), strips any prior refresh message from history (replace-not-append strategy), and appends the new one. When `auto_inject_journal = false` this call is skipped entirely.
 
-2. **Post-GetJournalSummary answer prompt** — when the agent voluntarily calls `GetJournalSummary` as a tool, `_execute_tool_calls` sets a flag and `_run_tool_loop` injects `"Now provide your final answer. Do NOT call more tools."` immediately after the tool result. When `auto_inject_journal = false` this prompt is suppressed.
+2. **Post-GetJournalSummary answer prompt** — when the agent voluntarily calls `GetJournalSummary` as a tool with no arguments, `_execute_tool_calls` sets a flag and `_run_tool_loop` injects `"Now provide your final answer. Do NOT call more tools."` immediately after the tool result. Malformed calls such as `GetJournalSummary(action="read")` still return the tool error to the model but do not trigger the answer prompt; the agent must retry the no-argument summary call first. When `auto_inject_journal = false` this prompt is suppressed.
 
 `GetJournalSummary` remains available as a callable tool regardless of this flag. The toggle only disables *automatic* pushes; the agent can still consult the journal on its own initiative.
 

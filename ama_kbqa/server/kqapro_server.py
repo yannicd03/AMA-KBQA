@@ -36,6 +36,8 @@ from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
+from ama_kbqa.utils.sparql_results import compact_sparql_select_results
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FEWSHOT_EXAMPLES_DIR = REPO_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
 
@@ -189,6 +191,10 @@ class SPARQLResponse(BaseModel):
     bindings: list[dict[str, Any]
                    ] = Field(..., description="List of rows. Each row is a dict mapping variable name to value.")
     raw_json: dict[str, Any] = Field(..., description="The full raw JSON response from Virtuoso.")
+    result_count: Optional[int] = Field(default=None, description="Total number of rows returned by Virtuoso.")
+    returned_count: Optional[int] = Field(default=None, description="Number of rows included in this response.")
+    truncated: bool = Field(default=False, description="Whether bindings/raw_json were truncated for context safety.")
+    note: Optional[str] = Field(default=None, description="Truncation/refinement note when applicable.")
 
 
 class QualifierResponse(BaseModel):
@@ -3224,19 +3230,16 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
         bindings = raw_results.get("results", {}).get("bindings", [])
         logger.info(f"RunSPARQL: Query returned {len(bindings)} result(s) with variables: {head_vars}")
 
-        simplified_rows = []
-        for row in bindings:
-            simple_row = {}
-            for var in head_vars:
-                if var in row:
-                    simple_row[var] = row[var]["value"]
-            simplified_rows.append(simple_row)
+        compact = compact_sparql_select_results(raw_results, head_vars)
+        simplified_rows = compact["bindings"]
 
         if bindings:
             fact_entry = {
                 "query_type": "SPARQL",
                 "variables": head_vars,
-                "result_count": len(simplified_rows),
+                "result_count": compact["result_count"],
+                "returned_count": compact["returned_count"],
+                "truncated": compact["truncated"],
                 "results": simplified_rows[:10],
                 "source": "RunSPARQL"
             }
@@ -3248,17 +3251,27 @@ def RunSPARQL(query: str, context: Context) -> SPARQLResponse:
             session_journal.found_values[sparql_key] = {
                 "query": query[:200],
                 "results": simplified_rows[:10],
+                "result_count": compact["result_count"],
+                "returned_count": compact["returned_count"],
+                "truncated": compact["truncated"],
             }
 
             session_journal.add_completed_step(
-                f"Executed SPARQL query: {len(simplified_rows)} results"
+                f"Executed SPARQL query: {compact['result_count']} results"
             )
-            logger.info(f"Journal auto-updated: Stored {len(simplified_rows)} SPARQL results")
+            logger.info(
+                f"Journal auto-updated: Stored {len(simplified_rows)} of "
+                f"{compact['result_count']} SPARQL results"
+            )
 
         return SPARQLResponse(
             vars=head_vars,
             bindings=simplified_rows,
-            raw_json=raw_results
+            raw_json=compact["raw_json"],
+            result_count=compact["result_count"],
+            returned_count=compact["returned_count"],
+            truncated=compact["truncated"],
+            note=compact["note"],
         )
 
     except Exception as e:

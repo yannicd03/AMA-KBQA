@@ -279,7 +279,7 @@ T2 Retrieval: GetAttributeDetails | GetRelationDetails | GetNodeSummary (all dat
 T3 Qualifiers: GetQualifierValue (preferred single qualifier projection) | GetEdgeQualifiers/GetQualifiersByPredicate (qualifier discovery)
 T4 Verify: VerifyFact (deterministic ASK for "does this fact exist") | VerifyNumericCondition (never do mental math) | VerifyString (never guess string equality)
 T5 Aggregate: CountEntities (exact, no truncation, supports OR/transitive) | CountUnion (heterogeneous OR branches) | SelectExtreme (argmax/argmin via SPARQL ORDER BY)
-Complex: GetRelationBetween (exact direct/inverse predicate labels) | RunSPARQL (multi-hop >2, unusual joins) | CompareEntities | FindEntitiesByRelationPath
+Complex: GetRelationBetween (exact direct/inverse predicate labels) | RunSPARQL (multi-hop >2, unusual joins; SELECT output is capped, so refine broad queries with COUNT/GROUP BY/LIMIT) | CompareEntities | FindEntitiesByRelationPath
 
 QUALIFIER DECISION: Question specifies a known qualifier value target? → GetQualifierValue. Need to discover qualifier keys first? → GetEdgeQualifiers/GetQualifiersByPredicate. General property? → GetAttributeDetails.
 PREPOSITIONAL: "X in Y" → find Y first, then find X related to Y. Return X's attribute, not Y's.
