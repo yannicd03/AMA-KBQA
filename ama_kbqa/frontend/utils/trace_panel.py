@@ -46,68 +46,47 @@ def render_trace_panel(trace: dict, *, key_prefix: str = "trace") -> None:
 
     selected_key = f"{key_prefix}:selected_span:{trace_id}"
     tree = build_tree(events)
+    valid_span_ids = set(tree["by_id"])
     if selected_key not in st.session_state:
         if tree["roots"]:
             st.session_state[selected_key] = tree["roots"][0]["span_id"]
         else:
             st.session_state[selected_key] = events[0]["span_id"]
 
+    # Rows in the dark tree are query-param anchors (see render_tree_html); a
+    # click reloads with ?<link_param>=<span_id>. Consume it here, persist the
+    # selection in session_state, then clear the param so the URL stays clean.
+    link_param = f"sp_{key_prefix}"
+    clicked = st.query_params.get(link_param)
+    if clicked and clicked in valid_span_ids:
+        del st.query_params[link_param]
+        if clicked != st.session_state.get(selected_key):
+            st.session_state[selected_key] = clicked
+            st.rerun()
+    elif clicked:
+        # Stale/foreign span id — drop it so it doesn't stick in the URL.
+        del st.query_params[link_param]
+
     selected_span_id: Optional[str] = st.session_state.get(selected_key)
 
     with left:
         st.markdown("##### Spans")
+        st.caption(":gray[Click a span to inspect it.]")
         st.markdown(
-            render_tree_html(events, selected_span_id=selected_span_id),
+            render_tree_html(
+                events, selected_span_id=selected_span_id, link_param=link_param
+            ),
             unsafe_allow_html=True,
         )
-
-        # Depth-ordered list (drives the radio selector).
-        ordered: list[dict] = []
-
-        def _walk(node: dict, depth: int) -> None:
-            ordered.append({**node, "_depth": depth})
-            for c in tree["children"].get(node["span_id"], []):
-                _walk(c, depth + 1)
-
-        for r in tree["roots"]:
-            _walk(r, 0)
-
-        def _radio_label(e: dict) -> str:
-            d = e["_depth"]
-            prefix = "  " * d + ("• " if e.get("is_event") else "")
-            kind = e.get("kind", "?")
-            name = e.get("name", "")[:50]
-            tail = (
-                ""
-                if e.get("is_event")
-                else f"  ({format_duration(e.get('duration_ms', 0))})"
-            )
-            return f"{prefix}[{kind}] {name}{tail}"
-
-        span_ids = [e["span_id"] for e in ordered]
-        ordered_by_id = {e["span_id"]: e for e in ordered}
-        try:
-            idx = span_ids.index(selected_span_id) if selected_span_id else 0
-        except ValueError:
-            idx = 0
-        picked = st.radio(
-            "Select span",
-            options=span_ids,
-            index=idx,
-            format_func=lambda sid: _radio_label(ordered_by_id[sid]),
-            label_visibility="collapsed",
-            key=f"{key_prefix}:radio:{trace_id}",
-        )
-        if picked != selected_span_id:
-            st.session_state[selected_key] = picked
-            st.rerun()
 
     # ── Right pane ──────────────────────────────────────────────────────────
     with right:
         if selected_span_id and selected_span_id in tree["by_id"]:
             evt = tree["by_id"][selected_span_id]
+        elif tree["roots"]:
+            evt = tree["roots"][0]
         else:
-            evt = ordered[0] if ordered else None
+            evt = None
 
         if evt is None:
             st.info("Select a span to inspect.")

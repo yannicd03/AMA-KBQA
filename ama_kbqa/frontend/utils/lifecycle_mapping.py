@@ -4,8 +4,10 @@ Pure-Python, Streamlit-free. The mapping is consumed by
 ``lifecycle_runner.drain_into`` to decide which boxes to light up as the
 agent runs.
 
-Tools A is graph-traversal ("FindNode / GetAttr…" in the figure); Tools B is
-summary/verify ("GetSumm / Verify"). The split mirrors the figure caption.
+The figure has a single *Tool Call* box, so both tool families below light the
+same node; the split is kept for documentation and possible future use.
+``TOOLS_A`` is graph-traversal ("FindNode / GetAttr…"); ``TOOLS_B`` is
+summary/verify ("GetSumm / Verify").
 """
 
 from __future__ import annotations
@@ -49,13 +51,13 @@ def span_to_node_ids(
 
     ``phase`` is one of ``"open"``, ``"close"``, ``"event"``. The same span
     can light different nodes on open vs close (e.g. ``classify`` lights the
-    Classifier/Extractor on open and the Strategy Inject on close).
+    classifier/extractor on open and the strategy-injection box on close).
     """
     if kind == "agent_run":
         if phase == "open":
-            return ["user_query"]
+            return ["agent_invocation"]
         if phase == "close":
-            # Final settle-down: the right-edge boxes get a brief flash.
+            # Final settle-down: the Post-Agent Hook boxes get a brief flash.
             return ["post_evaluate", "post_lessons"]
         return []
 
@@ -67,42 +69,37 @@ def span_to_node_ids(
         return []
 
     if kind == "synthesis":
-        if phase == "open":
-            return ["post_synthesis"]
-        if phase == "close":
-            return ["post_answer", "post_response"]
-        return []
+        return ["post_synthesis"]
 
     if kind == "llm_call":
         return ["main_llm_reason"]
 
     if kind == "tool_call":
         if name == "GetJournalStateJSON":
-            return ["main_journal_state"]
-        if name in TOOLS_A:
-            return ["main_tools_a"]
-        if name in TOOLS_B:
-            return ["main_tools_b"]
-        # Unknown tool: still light the journal-state box as a generic
-        # "interacting with KG" signal, so the viz never goes blank during a
-        # tool call.
-        return ["main_journal_state"]
+            return ["main_scratchpad"]
+        # All KG tools (traversal + summary/verify) light the single Tool Call
+        # box; the scratchpad reflects journal state separately.
+        if name in TOOLS_A or name in TOOLS_B:
+            return ["main_tool_call"]
+        # Unknown tool: still light the Tool Call box so the viz never goes
+        # blank during a tool call.
+        return ["main_tool_call"]
 
     if kind == "tool_loop_iter":
         return ["main_llm_reason"]
 
     if kind == "loop_detected":
-        return ["main_loop_detect"]
+        return ["main_done"]
 
     if kind in ("intervention", "context_trim"):
-        return ["main_more"]
+        return ["main_done"]
 
     if kind == "journal_refresh":
-        return ["main_journal_state"]
+        return ["main_scratchpad"]
 
     if kind == "fast_path":
         # Fast-path bypasses the loop and goes straight to synthesis.
-        return ["main_llm_reason"] if phase == "open" else ["post_answer"]
+        return ["main_llm_reason"] if phase == "open" else ["post_synthesis"]
 
     if kind == "delegate":
         # The child sub-agent's spans drive the figure.

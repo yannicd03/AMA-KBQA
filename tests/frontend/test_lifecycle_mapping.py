@@ -12,17 +12,17 @@ from ama_kbqa.frontend.utils.lifecycle_mapping import (
 
 
 @pytest.mark.parametrize("kind,name,phase,expected", [
-    ("agent_run", "ask", "open",  ["user_query"]),
+    ("agent_run", "ask", "open",  ["agent_invocation"]),
     ("classify",  "classify", "open",  ["pre_classifier", "pre_extractor"]),
     ("classify",  "classify", "close", ["pre_strategy_inject"]),
     ("tool_loop_iter", "iter 0", "event", ["main_llm_reason"]),
     ("llm_call", "gpt-4o", "open",  ["main_llm_reason"]),
     ("llm_call", "gpt-4o", "close", ["main_llm_reason"]),
-    ("loop_detected", "consecutive_tool_repeat", "event", ["main_loop_detect"]),
-    ("intervention", "zero_tool_call_retry", "event", ["main_more"]),
-    ("context_trim", "truncate", "event", ["main_more"]),
+    ("loop_detected", "consecutive_tool_repeat", "event", ["main_done"]),
+    ("intervention", "zero_tool_call_retry", "event", ["main_done"]),
+    ("context_trim", "truncate", "event", ["main_done"]),
     ("synthesis", "final", "open",  ["post_synthesis"]),
-    ("synthesis", "final", "close", ["post_answer", "post_response"]),
+    ("synthesis", "final", "close", ["post_synthesis"]),
     ("agent_run", "ask", "close", ["post_evaluate", "post_lessons"]),
 ])
 def test_mapping(kind, name, phase, expected):
@@ -30,26 +30,26 @@ def test_mapping(kind, name, phase, expected):
 
 
 class TestToolsSplit:
-    def test_tools_a_traversal_lights_tools_a(self):
+    def test_traversal_tools_light_tool_call(self):
         for tool in ("FindNode", "FindResource", "GetResourceDetails"):
-            assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tools_a"]
+            assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tool_call"]
 
-    def test_tools_b_summary_lights_tools_b(self):
+    def test_summary_tools_light_tool_call(self):
         for tool in ("GetNodeSummary", "VerifyFact", "ManageJournal"):
-            assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tools_b"]
+            assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tool_call"]
 
-    def test_journal_snapshot_tool_lights_journal_state(self):
+    def test_journal_snapshot_tool_lights_scratchpad(self):
         assert span_to_node_ids("tool_call", "GetJournalStateJSON", phase="open") == [
-            "main_journal_state"
+            "main_scratchpad"
         ]
 
     def test_tools_a_and_b_are_disjoint(self):
         assert TOOLS_A.isdisjoint(TOOLS_B)
 
-    def test_unknown_tool_falls_back_to_journal_state(self):
+    def test_unknown_tool_falls_back_to_tool_call(self):
         # We never want the figure to go fully dark during an unknown tool call.
         assert span_to_node_ids("tool_call", "WeirdNewTool", phase="open") == [
-            "main_journal_state"
+            "main_tool_call"
         ]
 
 

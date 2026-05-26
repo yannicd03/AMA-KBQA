@@ -99,6 +99,13 @@ SHARED_CSS = """
     }
     .span-row:hover { background: #161b22; }
     .span-row.selected { background: #1f2933; outline: 1px solid #58a6ff; }
+    /* Clickable rows (query-param anchors): keep the row look, drop link chrome. */
+    a.span-row-link, a.span-row-link:hover, a.span-row-link:visited {
+        text-decoration: none;
+        color: #c9d1d9;
+        cursor: pointer;
+    }
+    a.span-row-link:hover { background: #161b22; }
     .span-pill {
         display: inline-block;
         font-size: 0.65rem;

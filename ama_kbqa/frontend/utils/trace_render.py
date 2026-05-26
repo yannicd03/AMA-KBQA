@@ -127,8 +127,15 @@ def render_span_row_html(
     event: dict,
     depth: int,
     selected_span_id: Optional[str],
+    *,
+    link_param: Optional[str] = None,
 ) -> str:
-    """Produce one row of HTML for the trace tree."""
+    """Produce one row of HTML for the trace tree.
+
+    When ``link_param`` is given, the row is rendered as an anchor pointing at
+    ``?{link_param}={span_id}`` (``target="_self"``) so a click selects the span
+    via a Streamlit query-param round-trip. Without it the row is a plain div.
+    """
     span_id = event["span_id"]
     kind = event.get("kind", "?")
     name = event.get("name", "")
@@ -162,33 +169,48 @@ def render_span_row_html(
         status_icon = '<span class="span-status-error">●</span>'
 
     name_label = html.escape(str(name))[:90]
-    return (
-        f'<div class="{" ".join(classes)}" style="padding-left: {indent_px}px"'
-        f' data-span-id="{html.escape(span_id)}">'
+    inner = (
         f'<span class="{pill_class}">{html.escape(kind)}</span>'
         f'<span class="span-name">{name_label}</span>'
         f"{status_icon}"
         f"{token_html}"
         f"{duration_html}"
-        f"</div>"
+    )
+    if link_param:
+        classes.append("span-row-link")
+        href = f"?{html.escape(link_param)}={html.escape(span_id)}"
+        return (
+            f'<a class="{" ".join(classes)}" style="padding-left: {indent_px}px"'
+            f' data-span-id="{html.escape(span_id)}" href="{href}" target="_self">'
+            f"{inner}</a>"
+        )
+    return (
+        f'<div class="{" ".join(classes)}" style="padding-left: {indent_px}px"'
+        f' data-span-id="{html.escape(span_id)}">'
+        f"{inner}</div>"
     )
 
 
 def render_tree_html(
     events: list[dict],
     selected_span_id: Optional[str] = None,
+    *,
+    link_param: Optional[str] = None,
 ) -> str:
     """Render the entire tree as an HTML string. Layout-only — no JS.
 
-    Selection is delivered separately (Streamlit-side via radio/buttons) since
-    the embedded HTML doesn't natively talk back to Python without a custom
-    component. The renderer just highlights the currently-selected row.
+    When ``link_param`` is supplied each row becomes a query-param anchor so the
+    tree itself is the selector (no separate widget). Without it the renderer
+    just highlights the currently-selected row and selection is delivered
+    Streamlit-side.
     """
     tree = build_tree(events)
     rows: list[str] = []
 
     def walk(node: dict, depth: int) -> None:
-        rows.append(render_span_row_html(node, depth, selected_span_id))
+        rows.append(
+            render_span_row_html(node, depth, selected_span_id, link_param=link_param)
+        )
         for child in tree["children"].get(node["span_id"], []):
             walk(child, depth + 1)
 
