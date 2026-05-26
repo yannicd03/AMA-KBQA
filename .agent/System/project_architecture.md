@@ -62,12 +62,12 @@ ama-kbqa/
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
 │   │   ├── pages/              # Streamlit pages
-│   │   │   ├── 1_Chat.py       # Interactive Q&A; background-thread run; live SVG lifecycle; Lifecycle/Trace/Graph tab panel; Simplified view toggle ✅ UPDATED
+│   │   │   ├── 1_Chat.py       # Interactive Q&A; background-thread run; live SVG lifecycle; Lifecycle/Trace tab panel (Graph removed); Simplified view toggle
 │   │   │   ├── 2_Batch_Processing.py # Batch runner: live progress, tqdm parsing, console auto-scroll
 │   │   │   ├── 3_Evaluation.py # Results dashboard (charts, metrics, per-question details)
 │   │   │   ├── 4_Settings.py   # config.toml editor
-│   │   │   ├── 5_Trace_Inspector.py  # Thin wrapper: trace selector + render_trace_panel() ✅ UPDATED
-│   │   │   └── 6_Graph_View.py       # Thin wrapper: trace selector + render_graph_panel() ✅ UPDATED
+│   │   │   ├── 5_Trace_Inspector.py  # Thin wrapper: trace selector + render_trace_panel()
+│   │   │   └── (6_Graph_View.py deleted — utils kept; see Decisions/live-trace-and-chat-unification.md v3)
 │   │   └── utils/              # Shared utilities
 │   │       ├── styling.py      # CSS, ansi_to_html, avatars, kind-coloured span pills
 │   │       ├── async_helpers.py # run_async() wrapper
@@ -87,7 +87,7 @@ ama-kbqa/
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
-├── tests/                      # Test suite (176 tests total)
+├── tests/                      # Test suite (182 tests total)
 │   ├── framework/              # Framework unit tests (138 tests)
 │   │   ├── test_types.py       # Response type tests
 │   │   ├── test_config.py      # Configuration tests
@@ -592,7 +592,7 @@ Configuration editor for `config.toml`:
 
 Langfuse-style hierarchical span view for a completed agent run:
 - Trace selector (from `st.session_state["traces"]`) + summary header
-- Two-pane layout (`st.columns([0.45, 0.55])`): left = hierarchical tree HTML + radio for span selection; right = tabbed detail keyed off span kind (Messages / Args+Result / Attributes / Payload / Raw)
+- Two-pane layout (`st.columns([0.45, 0.55])`): left = clickable span tree (native `st.button`s styled as dark tree rows via the `st-key-tracetree-*` container, select by websocket rerun — no page reload); right = tabbed detail keyed off span kind (Messages / Args+Result / Attributes / Payload / Raw)
 - JSONL export for offline analysis
 - Populated after each Chat page `ask()` call via `agent.recorder.to_dicts()`
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from ama_kbqa.frontend.utils.trace_render import (
     build_tree,
     format_duration,
+    span_button_label,
     summarise,
     render_summary_html,
     render_tree_html,
@@ -28,6 +29,33 @@ def _ev(span_id, parent, kind, name, duration_ms=10.0, is_event=False, attrs=Non
         "payload": {},
         "error": None,
     }
+
+
+class TestSpanButtonLabel:
+    def test_span_label_has_kind_badge_name_and_duration(self):
+        label = span_button_label(_ev("a", None, "tool_call", "FindNode", duration_ms=42.0), depth=0)
+        assert ":green-background[tool_call]" in label
+        assert "FindNode" in label
+        assert ":gray[42ms]" in label
+
+    def test_depth_indents_with_emspaces(self):
+        flat = span_button_label(_ev("a", None, "llm_call", "x"), depth=0)
+        nested = span_button_label(_ev("a", None, "llm_call", "x"), depth=2)
+        assert " " not in flat
+        assert nested.startswith("    ")  # 2 em-spaces per depth
+
+    def test_event_marker_and_no_duration(self):
+        label = span_button_label(_ev("a", None, "loop_detected", "x", is_event=True), depth=1)
+        assert "•" in label
+        assert "ms]" not in label  # events carry no duration badge
+
+    def test_error_status_appends_marker(self):
+        label = span_button_label(_ev("a", None, "tool_call", "x", status="error"), depth=0)
+        assert ":red[●]" in label
+
+    def test_unknown_kind_falls_back_to_gray(self):
+        label = span_button_label(_ev("a", None, "mystery_kind", "x"), depth=0)
+        assert ":gray-background[mystery_kind]" in label
 
 
 class TestBuildTree:

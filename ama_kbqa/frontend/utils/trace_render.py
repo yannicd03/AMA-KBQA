@@ -123,19 +123,53 @@ def format_token_badge(attrs: dict) -> str:
     return " ".join(parts)
 
 
+# Span kind → Streamlit badge colour (for the clickable button rows). Mirrors
+# the kind-pill palette in styling.py as closely as the badge colours allow.
+_KIND_BADGE_COLOR = {
+    "agent_run": "violet",
+    "classify": "blue",
+    "fast_path": "green",
+    "tool_loop_iter": "gray",
+    "llm_call": "red",
+    "tool_call": "green",
+    "synthesis": "orange",
+    "journal_refresh": "blue",
+    "loop_detected": "red",
+    "context_trim": "orange",
+    "intervention": "red",
+    "delegate": "violet",
+}
+
+
+def span_button_label(event: dict, depth: int) -> str:
+    """Markdown label for a clickable span row rendered as a Streamlit button.
+
+    Uses ``:colour-background[kind]`` badges plus em-space indentation so the
+    native button reads like a tree row. Intra-word underscores in kind names
+    (``tool_loop_iter``) are safe — CommonMark does not treat them as emphasis.
+    """
+    kind = event.get("kind", "?")
+    name = str(event.get("name", ""))[:60]
+    is_event = bool(event.get("is_event"))
+    color = _KIND_BADGE_COLOR.get(kind, "gray")
+    indent = "  " * depth  # em-spaces survive markdown space-collapsing
+    marker = "• " if is_event else ""
+    parts = [f"{indent}{marker}:{color}-background[{kind}]"]
+    if name:
+        parts.append(f" {name}")
+    if not is_event:
+        parts.append(f"  :gray[{format_duration(event.get('duration_ms', 0))}]")
+    if event.get("status") == "error":
+        parts.append(" :red[●]")
+    return "".join(parts)
+
+
 def render_span_row_html(
     event: dict,
     depth: int,
     selected_span_id: Optional[str],
-    *,
-    link_param: Optional[str] = None,
 ) -> str:
-    """Produce one row of HTML for the trace tree.
-
-    When ``link_param`` is given, the row is rendered as an anchor pointing at
-    ``?{link_param}={span_id}`` (``target="_self"``) so a click selects the span
-    via a Streamlit query-param round-trip. Without it the row is a plain div.
-    """
+    """Produce one row of HTML for the trace tree."""
     span_id = event["span_id"]
     kind = event.get("kind", "?")
     name = event.get("name", "")
@@ -169,48 +203,33 @@ def render_span_row_html(
         status_icon = '<span class="span-status-error">●</span>'
 
     name_label = html.escape(str(name))[:90]
-    inner = (
+    return (
+        f'<div class="{" ".join(classes)}" style="padding-left: {indent_px}px"'
+        f' data-span-id="{html.escape(span_id)}">'
         f'<span class="{pill_class}">{html.escape(kind)}</span>'
         f'<span class="span-name">{name_label}</span>'
         f"{status_icon}"
         f"{token_html}"
         f"{duration_html}"
-    )
-    if link_param:
-        classes.append("span-row-link")
-        href = f"?{html.escape(link_param)}={html.escape(span_id)}"
-        return (
-            f'<a class="{" ".join(classes)}" style="padding-left: {indent_px}px"'
-            f' data-span-id="{html.escape(span_id)}" href="{href}" target="_self">'
-            f"{inner}</a>"
-        )
-    return (
-        f'<div class="{" ".join(classes)}" style="padding-left: {indent_px}px"'
-        f' data-span-id="{html.escape(span_id)}">'
-        f"{inner}</div>"
+        f"</div>"
     )
 
 
 def render_tree_html(
     events: list[dict],
     selected_span_id: Optional[str] = None,
-    *,
-    link_param: Optional[str] = None,
 ) -> str:
     """Render the entire tree as an HTML string. Layout-only — no JS.
 
-    When ``link_param`` is supplied each row becomes a query-param anchor so the
-    tree itself is the selector (no separate widget). Without it the renderer
-    just highlights the currently-selected row and selection is delivered
-    Streamlit-side.
+    Used for read-only display (e.g. the live lifecycle view). Interactive
+    selection in the trace panel is handled by native Streamlit buttons, not by
+    this markup. The renderer just highlights the currently-selected row.
     """
     tree = build_tree(events)
     rows: list[str] = []
 
     def walk(node: dict, depth: int) -> None:
-        rows.append(
-            render_span_row_html(node, depth, selected_span_id, link_param=link_param)
-        )
+        rows.append(render_span_row_html(node, depth, selected_span_id))
         for child in tree["children"].get(node["span_id"], []):
             walk(child, depth + 1)
 

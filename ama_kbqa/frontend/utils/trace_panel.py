@@ -16,7 +16,7 @@ from ama_kbqa.frontend.utils.trace_render import (
     build_tree,
     format_duration,
     render_summary_html,
-    render_tree_html,
+    span_button_label,
 )
 
 
@@ -46,38 +46,41 @@ def render_trace_panel(trace: dict, *, key_prefix: str = "trace") -> None:
 
     selected_key = f"{key_prefix}:selected_span:{trace_id}"
     tree = build_tree(events)
-    valid_span_ids = set(tree["by_id"])
     if selected_key not in st.session_state:
         if tree["roots"]:
             st.session_state[selected_key] = tree["roots"][0]["span_id"]
         else:
             st.session_state[selected_key] = events[0]["span_id"]
 
-    # Rows in the dark tree are query-param anchors (see render_tree_html); a
-    # click reloads with ?<link_param>=<span_id>. Consume it here, persist the
-    # selection in session_state, then clear the param so the URL stays clean.
-    link_param = f"sp_{key_prefix}"
-    clicked = st.query_params.get(link_param)
-    if clicked and clicked in valid_span_ids:
-        del st.query_params[link_param]
-        if clicked != st.session_state.get(selected_key):
-            st.session_state[selected_key] = clicked
-            st.rerun()
-    elif clicked:
-        # Stale/foreign span id — drop it so it doesn't stick in the URL.
-        del st.query_params[link_param]
-
     selected_span_id: Optional[str] = st.session_state.get(selected_key)
+
+    # Depth-ordered flatten of the tree — drives the clickable button rows.
+    ordered: list[tuple[dict, int]] = []
+
+    def _walk(node: dict, depth: int) -> None:
+        ordered.append((node, depth))
+        for c in tree["children"].get(node["span_id"], []):
+            _walk(c, depth + 1)
+
+    for r in tree["roots"]:
+        _walk(r, 0)
 
     with left:
         st.markdown("##### Spans")
-        st.caption(":gray[Click a span to inspect it.]")
-        st.markdown(
-            render_tree_html(
-                events, selected_span_id=selected_span_id, link_param=link_param
-            ),
-            unsafe_allow_html=True,
-        )
+        # Each span is a full-width button styled (via styling.py) to read like a
+        # dark tree row. Selecting triggers a websocket rerun — no page reload —
+        # so tab/scroll state survives, unlike a query-param anchor link.
+        with st.container(key=f"tracetree-{key_prefix}"):
+            for ev, depth in ordered:
+                sid = ev["span_id"]
+                if st.button(
+                    span_button_label(ev, depth),
+                    key=f"{key_prefix}:span:{trace_id}:{sid}",
+                    use_container_width=True,
+                    type="primary" if sid == selected_span_id else "secondary",
+                ):
+                    st.session_state[selected_key] = sid
+                    st.rerun()
 
     # ── Right pane ──────────────────────────────────────────────────────────
     with right:
