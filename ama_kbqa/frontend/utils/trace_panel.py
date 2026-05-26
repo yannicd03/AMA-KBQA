@@ -32,11 +32,6 @@ def render_trace_panel(trace: dict, *, key_prefix: str = "trace") -> None:
     # ── Top summary ─────────────────────────────────────────────────────────
     st.markdown(render_summary_html(events), unsafe_allow_html=True)
 
-    with st.expander("Question & answer", expanded=False):
-        st.markdown(f"**Question:** {trace.get('query', '?')}")
-        st.markdown("**Answer:**")
-        st.markdown(trace.get("answer", "_(empty)_"))
-
     if not events:
         st.warning("This trace has no recorded events.")
         return
