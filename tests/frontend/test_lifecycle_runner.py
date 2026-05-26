@@ -59,12 +59,11 @@ class TestRunner:
 
         assert state.status == "done"
         assert state.answer == "answer to: hi"
-        # Both Tools A and Tools B should have been visited.
-        assert "main_tools_a" in state.visited_node_ids
-        assert "main_tools_b" in state.visited_node_ids
+        # Tool calls (traversal + summary) all light the single Tool Call box.
+        assert "main_tool_call" in state.visited_node_ids
         assert "main_llm_reason" in state.visited_node_ids
         assert "post_synthesis" in state.visited_node_ids
-        assert "user_query" in state.visited_node_ids
+        assert "agent_invocation" in state.visited_node_ids
         # No spans should be active after completion.
         assert state.active_node_ids == set()
 

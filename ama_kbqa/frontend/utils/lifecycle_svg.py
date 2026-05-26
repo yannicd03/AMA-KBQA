@@ -1,7 +1,14 @@
 """Inline SVG of the agent-lifecycle figure (`fig:agent_flow` in the paper).
 
-Coordinates ported from the TikZ source: ``svg_x = (tikz_x + 5) * 40``,
-``svg_y = (4.2 - tikz_y) * 40`` (y flipped because SVG y grows downward).
+The layout mirrors the paper figure: a left-hand *Agent Invocation*, then three
+phase bands left-to-right — the deterministic **Pre-Agent Hook** (Question Type
+Classification → Entity Extraction → Strategy Injection), the **Main-Agent
+Loop** (LLM Reasoning → Tool Call → Scratchpad → Done?, looping on "no" and
+exiting on "yes"), and the **Post-Agent Hook** (Answer Synthesis → Trace
+Evaluation → Lessons Learned). A dashed feedback edge carries Lessons Learned
+back to Strategy Injection.
+
+Coordinates are authored directly in SVG space (px, y grows downward).
 
 The renderer is pure-Python and Streamlit-free so it can be unit-tested in
 isolation. Each node carries ``data-id`` and ``data-state`` (``idle`` /
@@ -19,12 +26,10 @@ from xml.sax.saxutils import escape
 # Layout
 # ---------------------------------------------------------------------------
 
-# Box sizes (in px). Match TikZ minimums: box 2.5×1.1cm, smallbox 2.0×0.8cm,
-# diamond 2.5×1.8cm at 40 px/cm.
-BOX_W, BOX_H = 100, 44
-SMALL_W, SMALL_H = 80, 32
-DIAMOND_W, DIAMOND_H = 100, 72
-DIAMOND_TALL_H = 56  # for "More?" which used minimum_height=1.3cm
+# Box sizes (in px).
+BOX_W, BOX_H = 132, 46
+SMALL_W, SMALL_H = 96, 34
+DIAMOND_W, DIAMOND_H = 112, 66
 
 Shape = Literal["box", "smallbox", "diamond", "textlabel"]
 Phase = Literal["pre", "main", "post", "input"]
@@ -58,25 +63,21 @@ def _tl(id: str, label: str, phase: Phase, cx: float, cy: float) -> Node:
     return Node(id, label, phase, "textlabel", cx, cy, 0, 0)
 
 
-# Centers come from the TikZ transform documented at the module top.
 LIFECYCLE_NODES: list[Node] = [
-    _b("user_query",          "User\nQuery",        "input", 72,  168),
-    _b("pre_classifier",      "Classifier",         "pre",   200, 96),
-    _b("pre_extractor",       "Extractor",          "pre",   200, 240),
-    _tl("pre_class_out",      "Count\nQueryAttr\n…","pre",   288, 56),
-    _tl("pre_extr_out",       "Entity\nRelation\n…","pre",   288, 272),
-    _b("pre_strategy_inject", "Strategy\nInject",   "pre",   380, 168),
-    _sb("main_loop_detect",   "Loop\nDetect",       "main",  452, 48),
-    _b("main_journal_state",  "Journal\nState",     "main",  580, 48),
-    _d("main_llm_reason",     "LLM\nReason",        "main",  580, 168),
-    _tl("main_tools_b",       "Tools B\nGetSumm\nVerify",  "main", 720, 128),
-    _tl("main_tools_a",       "Tools A\nFindNode\nGetAttr","main", 720, 208),
-    _d("main_more",           "More?",              "main",  580, 280, h=DIAMOND_TALL_H),
-    _b("post_synthesis",      "Synthesis",          "post",  860, 48),
-    _b("post_answer",         "Answer",             "post",  860, 128),
-    _b("post_response",       "Response",           "post",  860, 200),
-    _b("post_evaluate",       "Evaluate",           "post",  860, 264),
-    _sb("post_lessons",       "Lessons\nLearned",   "post",  860, 316),
+    _b("agent_invocation",    "Agent\nInvocation",          "input", 70,  58),
+    # Pre-Agent Hook (vertical chain)
+    _b("pre_classifier",      "Question Type\nClassification", "pre", 266, 58),
+    _b("pre_extractor",       "Entity\nExtraction",         "pre",   266, 150),
+    _b("pre_strategy_inject", "Strategy\nInjection",        "pre",   266, 242),
+    # Main-Agent Loop (vertical chain + decision)
+    _b("main_llm_reason",     "LLM\nReasoning",             "main",  520, 50),
+    _b("main_tool_call",      "Tool\nCall",                 "main",  520, 118),
+    _b("main_scratchpad",     "Scratchpad",                 "main",  520, 184),
+    _d("main_done",           "Done?",                      "main",  520, 254),
+    # Post-Agent Hook (vertical chain)
+    _b("post_synthesis",      "Answer\nSynthesis",          "post",  780, 58),
+    _b("post_evaluate",       "Trace\nEvaluation",          "post",  780, 150),
+    _b("post_lessons",        "Lessons\nLearned",           "post",  780, 242),
 ]
 
 NODES_BY_ID: dict[str, Node] = {n.id: n for n in LIFECYCLE_NODES}
@@ -84,9 +85,9 @@ NODES_BY_ID: dict[str, Node] = {n.id: n for n in LIFECYCLE_NODES}
 
 # Phase background bands. (x, y, w, h, title, css-class)
 PHASE_BANDS: list[tuple[float, float, float, float, str, str]] = [
-    (152, 0,   240, 336, "Pre-Agent Hook",       "phase-pre"),
-    (416, 0,   328, 336, "Main-Agent Loop",      "phase-main"),
-    (760, 0,   200, 336, "Post-Agent Synthesis", "phase-post"),
+    (172, 0,   188, 300, "Pre-Agent Hook",  "phase-pre"),
+    (420, 0,   200, 300, "Main-Agent Loop", "phase-main"),
+    (686, 0,   188, 300, "Post-Agent Hook", "phase-post"),
 ]
 
 
@@ -114,76 +115,44 @@ class Edge:
 
 
 LIFECYCLE_EDGES: list[Edge] = [
-    # User → Classifier / Extractor (two L-shapes branching from a midpoint)
-    Edge("user_query", "pre_classifier", from_side="e", to_side="w",
-         routing="custom",
-         waypoints=((146, 168), (146, 96))),
-    Edge("user_query", "pre_extractor", from_side="e", to_side="w",
-         routing="custom",
-         waypoints=((146, 168), (146, 240))),
-
-    # Classifier / Extractor → Strategy Inject (L-shapes)
-    Edge("pre_classifier", "pre_strategy_inject", from_side="e", to_side="nw",
-         routing="custom",
-         waypoints=((342, 96), (342, 158))),
-    Edge("pre_extractor", "pre_strategy_inject", from_side="e", to_side="sw",
-         routing="custom",
-         waypoints=((342, 240), (342, 178))),
-
-    # Strategy Inject → LLM Reason
-    Edge("pre_strategy_inject", "main_llm_reason", from_side="e", to_side="w",
+    # Agent Invocation → Question Type Classification (straight, into Pre band)
+    Edge("agent_invocation", "pre_classifier", from_side="e", to_side="w",
          routing="straight"),
 
-    # LLM north-west → Loop Detect south-east (dashed, diagonal)
-    Edge("main_llm_reason", "main_loop_detect",
-         from_side="nw", to_side="se", style="dashed", routing="straight"),
+    # Pre-Agent Hook vertical chain
+    Edge("pre_classifier", "pre_extractor", from_side="s", to_side="n", routing="straight"),
+    Edge("pre_extractor", "pre_strategy_inject", from_side="s", to_side="n", routing="straight"),
 
-    # Loop Detect → Journal State (straight, east → west)
-    Edge("main_loop_detect", "main_journal_state",
-         from_side="e", to_side="w", routing="straight"),
-
-    # Journal State → LLM (vertical, south → north)
-    Edge("main_journal_state", "main_llm_reason",
-         from_side="s", to_side="n", routing="straight"),
-
-    # Tools B ↔ LLM (bidir, dashed, diagonal)
-    Edge("main_tools_b", "main_llm_reason",
-         from_side="w", to_side="ne", style="bidir-dashed", routing="straight"),
-
-    # Tools A ↔ LLM (bidir, dashed, diagonal)
-    Edge("main_tools_a", "main_llm_reason",
-         from_side="w", to_side="se", style="bidir-dashed", routing="straight"),
-
-    # LLM south → More? north
-    Edge("main_llm_reason", "main_more",
-         from_side="s", to_side="n", routing="straight"),
-
-    # More? west → loop back to LLM west (yes branch)
-    Edge("main_more", "main_llm_reason", from_side="w", to_side="w",
+    # Strategy Injection → LLM Reasoning (left bracket entering the loop)
+    Edge("pre_strategy_inject", "main_llm_reason", from_side="e", to_side="w",
          routing="custom",
-         waypoints=((460, 280), (460, 168)),
-         label="yes", label_pos=(442, 295)),
+         waypoints=((390, 242), (390, 50))),
 
-    # More? east → Synthesis west (done branch, going right then up)
-    Edge("main_more", "post_synthesis", from_side="e", to_side="w",
+    # Main-Agent Loop vertical chain
+    Edge("main_llm_reason", "main_tool_call", from_side="s", to_side="n", routing="straight"),
+    Edge("main_tool_call", "main_scratchpad", from_side="s", to_side="n", routing="straight"),
+    Edge("main_scratchpad", "main_done", from_side="s", to_side="n", routing="straight"),
+
+    # Done? "no" → loop back up to LLM Reasoning (left bracket)
+    Edge("main_done", "main_llm_reason", from_side="w", to_side="w",
          routing="custom",
-         waypoints=((760, 280), (760, 48)),
-         label="done", label_pos=(640, 295)),
+         waypoints=((400, 254), (400, 50)),
+         label="no", label_pos=(430, 248)),
 
-    # Journal State east → Synthesis west (dashed, mostly straight)
-    Edge("main_journal_state", "post_synthesis",
-         from_side="e", to_side="w", style="dashed", routing="straight"),
+    # Done? "yes" → Answer Synthesis (right then up, into Post band)
+    Edge("main_done", "post_synthesis", from_side="e", to_side="w",
+         routing="custom",
+         waypoints=((650, 254), (650, 58)),
+         label="yes", label_pos=(606, 248)),
 
-    # Synthesis → Answer → Response → Evaluate → Lessons (vertical chain)
-    Edge("post_synthesis", "post_answer", from_side="s", to_side="n", routing="straight"),
-    Edge("post_answer",    "post_response", from_side="s", to_side="n", routing="straight"),
-    Edge("post_response",  "post_evaluate", from_side="s", to_side="n", routing="straight"),
-    Edge("post_evaluate",  "post_lessons",  from_side="s", to_side="n", routing="straight"),
+    # Post-Agent Hook vertical chain
+    Edge("post_synthesis", "post_evaluate", from_side="s", to_side="n", routing="straight"),
+    Edge("post_evaluate", "post_lessons", from_side="s", to_side="n", routing="straight"),
 
-    # Lessons → Strategy (dashed feedback loop, goes way left then up)
-    Edge("post_lessons", "pre_strategy_inject", from_side="w", to_side="s",
+    # Lessons Learned → Strategy Injection (dashed feedback along the bottom)
+    Edge("post_lessons", "pre_strategy_inject", from_side="s", to_side="s",
          style="dashed", routing="custom",
-         waypoints=((380, 316),)),
+         waypoints=((780, 330), (266, 330))),
 ]
 
 

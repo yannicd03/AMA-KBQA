@@ -29,7 +29,7 @@ class TestRenderSkeleton:
 
     def test_phase_titles_present(self):
         out = render_lifecycle_svg()
-        for title in ("Pre-Agent Hook", "Main-Agent Loop", "Post-Agent Synthesis"):
+        for title in ("Pre-Agent Hook", "Main-Agent Loop", "Post-Agent Hook"):
             assert title in out
 
 

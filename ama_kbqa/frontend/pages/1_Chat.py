@@ -3,8 +3,8 @@
 While the agent is running, an inline SVG of the paper's agent-lifecycle
 figure (`fig:agent_flow`) is rendered live and highlights the stage the agent
 is currently in. Below the conversation, a tabbed panel hosts the same
-content as the dedicated Trace Inspector / Graph View pages so the user can
-inspect spans and the discovered subgraph without leaving the chat.
+content as the dedicated Trace Inspector page so the user can inspect spans
+without leaving the chat.
 
 A sidebar **Simplified view** toggle hides all of the inspector chrome,
 leaving only the chat bubbles and input.
@@ -24,7 +24,6 @@ from ama_kbqa.frontend.utils.agent_factory import (
     AGENT_SUGGESTIONS,
     create_agent,
 )
-from ama_kbqa.frontend.utils.graph_panel import render_graph_panel
 from ama_kbqa.frontend.utils.lifecycle_runner import (
     LiveLifecycleState,
     drain_into,
@@ -301,9 +300,7 @@ if not simplified and (live_run is not None or traces_registry):
                 key="chat_panel_trace_selector",
             )
 
-    lifecycle_tab, trace_tab, graph_tab = st.tabs(
-        ["🔁 Lifecycle", "🔍 Trace", "🕸️ Graph"]
-    )
+    lifecycle_tab, trace_tab = st.tabs(["🔁 Lifecycle", "🔍 Trace"])
 
     with lifecycle_tab:
         if live_run is not None:
@@ -397,20 +394,6 @@ if not simplified and (live_run is not None or traces_registry):
         elif panel_trace_id:
             render_trace_panel(
                 traces_registry[panel_trace_id], key_prefix="chat"
-            )
-        else:
-            st.caption("No trace selected.")
-
-    with graph_tab:
-        if live_run is not None:
-            st.caption(
-                ":gray[The discovered subgraph will appear here once the run completes.]"
-            )
-        elif panel_trace_id:
-            render_graph_panel(
-                traces_registry[panel_trace_id],
-                key_prefix="chat",
-                height_px=540,
             )
         else:
             st.caption("No trace selected.")
