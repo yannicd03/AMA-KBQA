@@ -13,12 +13,12 @@ AGENT_INFO = {
     "KQAPro": {
         "description": "Answers factual questions over the KQAPro knowledge graph (movies, geography, science facts).",
         "databases": "Qdrant (entities/relations) + Virtuoso (SPARQL)",
-        "tools": "21 MCP tools",
+        "tools": "29 MCP tools",
     },
     "SciQA": {
         "description": "Answers scientific research questions using the Open Research Knowledge Graph (ORKG).",
         "databases": "Qdrant (ORKG entities/relations) + Virtuoso (ORKG SPARQL)",
-        "tools": "15+ MCP tools",
+        "tools": "27 MCP tools",
     },
 }
 
