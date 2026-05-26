@@ -99,13 +99,56 @@ SHARED_CSS = """
     }
     .span-row:hover { background: #161b22; }
     .span-row.selected { background: #1f2933; outline: 1px solid #58a6ff; }
-    /* Clickable rows (query-param anchors): keep the row look, drop link chrome. */
-    a.span-row-link, a.span-row-link:hover, a.span-row-link:visited {
-        text-decoration: none;
-        color: #c9d1d9;
-        cursor: pointer;
+
+    /* Clickable span tree: native Streamlit buttons styled as dark rows so a
+       click reruns over the websocket (no page reload). Scoped to the keyed
+       container st.container(key="tracetree-<prefix>") in trace_panel.py. */
+    [class*="st-key-tracetree-"] {
+        background-color: #0d1117;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 0.5rem 0.4rem;
+        max-height: 70vh;
+        overflow-y: auto;
     }
-    a.span-row-link:hover { background: #161b22; }
+    [class*="st-key-tracetree-"] [data-testid="stVerticalBlock"] { gap: 0.08rem; }
+    [class*="st-key-tracetree-"] .stButton { margin: 0; }
+    [class*="st-key-tracetree-"] .stButton > button {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        color: #c9d1d9;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        font-size: 0.78rem;
+        text-align: left;
+        justify-content: flex-start;
+        padding: 0.14rem 0.4rem;
+        min-height: 0;
+        line-height: 1.5;
+        border-radius: 4px;
+        width: 100%;
+    }
+    [class*="st-key-tracetree-"] .stButton > button p {
+        margin: 0;
+        white-space: nowrap;
+    }
+    [class*="st-key-tracetree-"] .stButton > button:hover {
+        background: #161b22;
+        color: #ffffff;
+        border: none;
+    }
+    [class*="st-key-tracetree-"] .stButton > button:focus:not(:active) {
+        color: #c9d1d9;
+        border: none;
+        box-shadow: none;
+    }
+    /* Selected row = type="primary" (covers old `kind` attr + new testid). */
+    [class*="st-key-tracetree-"] .stButton > button[kind="primary"],
+    [class*="st-key-tracetree-"] .stButton > button[data-testid="stBaseButton-primary"] {
+        background: #1f2933;
+        outline: 1px solid #58a6ff;
+        color: #ffffff;
+    }
     .span-pill {
         display: inline-block;
         font-size: 0.65rem;

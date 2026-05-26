@@ -128,3 +128,51 @@ This ADR records the decisions made in v2.
 | `ama_kbqa/frontend/utils/styling.py` | New `.lifecycle-*` CSS block for `data-state` node colouring |
 
 **Tests:** 122 → 176. New: `tests/framework/test_trace.py::TestRecorderListeners` (4 tests), `tests/frontend/test_lifecycle_svg.py` (12), `tests/frontend/test_lifecycle_mapping.py` (19), `tests/frontend/test_lifecycle_runner.py` (3, stub agent + `threading.Event` for determinism).
+
+---
+
+## Status Update — v3 Shipped (commit `a1ca605`, 2026-05-26)
+
+Three changes landed together and were deployed to the Hetzner frontend container (healthy).
+
+### 1. Agent-lifecycle SVG redesigned to match `fig:agent_flow`
+
+`utils/lifecycle_svg.py` was restructured to align precisely with the paper's `fig:agent_flow` layout. The previous flat-ish node list was replaced with three explicit phase bands:
+
+| Band | Nodes |
+|------|-------|
+| Pre-Agent Hook | Question Type Classification → Entity Extraction → Strategy Injection |
+| Main-Agent Loop | LLM Reasoning → Tool Call → Scratchpad → Done? (diamond); "no" loops back to LLM Reasoning, "yes" exits to Post hook |
+| Post-Agent Hook | Answer Synthesis → Trace Evaluation → Lessons Learned |
+
+A dashed feedback edge runs from Lessons Learned back to Strategy Injection. The band formerly titled "Post-Agent Synthesis" is now "Post-Agent Hook".
+
+Old nodes that were collapsed: Classifier/Extractor text-label outputs, Loop Detect, Journal State, Tools A / Tools B, More?, Answer, Response.
+
+New node IDs (canonical, used in mapping and tests):
+`agent_invocation`, `pre_classifier`, `pre_extractor`, `pre_strategy_inject`, `main_llm_reason`, `main_tool_call`, `main_scratchpad`, `main_done`, `post_synthesis`, `post_evaluate`, `post_lessons`.
+
+`utils/lifecycle_mapping.py` was updated to the new IDs:
+- TOOLS_A (KQAPro traversal) and TOOLS_B (summary/verify) both light `main_tool_call`.
+- `GetJournalStateJSON` and journal refresh light `main_scratchpad`.
+- `loop_detected` / `intervention` / `context_trim` light `main_done`.
+- `agent_run open` lights `agent_invocation`.
+- `synthesis` lights `post_synthesis`.
+
+### 2. Trace Inspector span tree is now click-to-select (native buttons)
+
+The `st.radio` span selector was removed; the dark span tree itself is the selector.
+
+Implementation: `utils/trace_panel.py::render_trace_panel` renders the depth-ordered spans as full-width `st.button`s inside a keyed `st.container(key="tracetree-<key_prefix>")`. `styling.py` scopes CSS to `[class*="st-key-tracetree-"]` to make the container a dark scroll box and strip the buttons down to dark tree rows. `utils/trace_render.py::span_button_label(event, depth)` builds each label as `:colour-background[kind] name  duration` with em-space indentation per tree depth (the kind→badge-colour map mirrors the kind-pill palette). Selecting sets `st.session_state[selected_key]` and calls `st.rerun()`.
+
+> **History:** an earlier iteration used query-param anchor links (`render_tree_html(..., link_param=...)` → `<a href="?sp_…">`). That worked but every click was a full-page navigation, which reset the embedded Chat panel's active tab and felt broken. The button approach reruns over the websocket — **no page reload, no tab reset, URL unchanged** — verified with Playwright (click updates the detail pane, a `window` marker survives, URL stays clean). `render_tree_html` reverted to its original read-only signature (still used for the live lifecycle view).
+
+### 3. Graph View removed (broken/non-functional)
+
+`pages/6_Graph_View.py` was deleted. The Graph tab was removed from `pages/1_Chat.py`; the Chat panel now has two tabs: **Lifecycle** and **Trace**.
+
+`utils/graph_panel.py` and `utils/graph_html.py` were **intentionally kept** in the tree. The page can be restored by recreating `6_Graph_View.py` and adding a Graph tab entry in `1_Chat.py` — no utility code changes needed.
+
+The description of `6_Graph_View.py` in Decision 4 above now describes a deleted file. The `utils/graph_panel.py` / `utils/graph_html.py` helpers remain available for a future restoration.
+
+**Tests:** 176 → 182. Updated: `test_lifecycle_svg`, `test_lifecycle_mapping`, `test_lifecycle_runner`, `test_trace_render` to match the new node IDs, click-link rendering, and removed graph tab.
