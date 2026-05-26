@@ -5,7 +5,7 @@ import os
 import json
 import sys
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 from dotenv import load_dotenv, find_dotenv
 from pydantic import BaseModel, ConfigDict
 from fastmcp import FastMCP, Context
@@ -52,7 +52,10 @@ SCORE_THRESHOLD = get_score_threshold()
 
 class AppContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    qdrant: QdrantClient
+    # Qdrant is optional: the server boots in a degraded mode (routing
+    # defaults to KQAPro) when the vector DB is unreachable, instead of
+    # crashing the whole MCP server on startup.
+    qdrant: Optional[QdrantClient]
     openai: OpenAI
 
 
@@ -67,16 +70,33 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """
     logger.info("Starting up: Connecting to Qdrant & OpenAI...")
 
+    qdrant: Optional[QdrantClient] = None
     try:
-        # Initialize Clients using centralized config
-        qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
-
-        # Quick connectivity check
-        qdrant.get_collections()
-
-        # Use centralized config to get the chat client
+        # The chat client is required: without it we can neither extract
+        # semantics nor embed terms, so the orchestrator cannot route at
+        # all. A failure here is fatal and re-raised below.
         # (Note: This assumes chat and embedding providers are the same)
         openai = get_chat_client()
+
+        # Qdrant is best-effort. If it is unreachable we still boot so the
+        # MCP server stays alive; analyze_query_recommend_db then degrades
+        # to a KQAPro recommendation instead of crashing on startup with an
+        # opaque "Connection closed" seen by the client.
+        try:
+            qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+            qdrant.get_collections()  # Quick connectivity check
+            logger.info("Connected to Qdrant.")
+        except Exception as e:
+            logger.warning(
+                f"Qdrant unreachable at {QDRANT_HOST}:{QDRANT_PORT} ({e}); "
+                "starting in degraded mode (routing will default to KQAPro)."
+            )
+            if qdrant is not None:
+                try:
+                    qdrant.close()
+                except Exception:
+                    pass
+            qdrant = None
 
         # Yield the context so tools can access it
         yield AppContext(qdrant=qdrant, openai=openai)
@@ -88,7 +108,8 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     finally:
         # Cleanup code (runs on shutdown)
         logger.info("Shutting down: Closing connections...")
-        qdrant.close()
+        if qdrant is not None:
+            qdrant.close()
 
 
 # --- 3. Initialize FastMCP with Lifespan ---
@@ -299,6 +320,22 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
 
     logger.info(f"--- [Master Tool] Processing: '{question}' ---")
     start_time = time.time()
+
+    # Degraded mode: the vector DB is unavailable, so we cannot link
+    # entities or score collections. Skip the (now pointless) extraction +
+    # embedding LLM calls and return a clear KQAPro recommendation. The
+    # orchestrator parses 'recommendation' and routes to the KQAPro agent.
+    if app_context.qdrant is None:
+        logger.warning("Qdrant unavailable; returning degraded KQAPro recommendation.")
+        return json.dumps({
+            "recommendation": "Use KQAPro",
+            "reasoning": "Vector database (Qdrant) is unavailable; defaulting to "
+                         "KQAPro without entity linking.",
+            "metrics": {},
+            "linked_entities": {},
+            "semantics": {},
+            "degraded": True,
+        }, indent=2, ensure_ascii=False)
 
     # 2. Extract
     extract_start = time.time()
