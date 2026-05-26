@@ -8,6 +8,7 @@ from ama_kbqa.frontend.utils.config_editor import (
     load_config_raw,
     save_config,
 )
+from ama_kbqa.frontend.utils.settings_ui import model_field
 
 inject_css()
 
@@ -39,9 +40,11 @@ with col1:
 
     # Pre-fill model from the selected provider section
     provider_section = edited.get(chat_provider, {})
-    chat_model = st.text_input(
+    chat_model = model_field(
         "Chat Model",
-        value=provider_section.get("chat_model", ""),
+        chat_provider,
+        provider_section.get("chat_model", ""),
+        key="chat_model",
     )
     if chat_provider in edited:
         edited[chat_provider]["chat_model"] = chat_model
@@ -136,9 +139,11 @@ with syn_col1:
     synthesis["synthesis_provider"] = syn_provider
 
 with syn_col2:
-    syn_model = st.text_input(
+    syn_model = model_field(
         "Synthesis Model",
-        value=synthesis.get("synthesis_model", ""),
+        syn_provider,
+        synthesis.get("synthesis_model", ""),
+        key="syn_model",
     )
     synthesis["synthesis_model"] = syn_model
 
@@ -173,9 +178,11 @@ with judge_col1:
     postproc["judge_provider"] = judge_provider
 
 with judge_col2:
-    judge_model = st.text_input(
+    judge_model = model_field(
         "Judge Model",
-        value=postproc.get("judge_model", ""),
+        judge_provider,
+        postproc.get("judge_model", ""),
+        key="judge_model",
     )
     postproc["judge_model"] = judge_model
 

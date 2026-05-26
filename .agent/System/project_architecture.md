@@ -584,6 +584,7 @@ Configuration editor for `config.toml`:
 - Synthesis configuration (model, temperature, max_tokens)
 - Embedding configuration (provider, model, dimensions)
 - Search configuration (top_k limits)
+- **Model field** (chat/synthesis/judge): for "fetchable" providers (currently KIT) the model is a **dropdown populated live from the provider's `/models` endpoint** (`utils/settings_ui.py::model_field` → `config_editor.fetch_provider_models`, cached 5 min, with a 🔄 refresh button); other providers (OpenRouter, llamacpp) keep a free-text input. A failed fetch (no API key, network/HTTP error) falls back to free text with a warning so the page never blocks.
 - Two save modes:
   - **Session only** - Apply changes to current session without writing to disk
   - **Save to file** - Write to config.toml (creates .bak backup automatically)
