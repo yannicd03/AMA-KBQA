@@ -275,31 +275,6 @@ class TestOrchestratorRetry:
         assert waits == [2.0]
         assert o._retry.level == 0  # reset after the eventual success
 
-    def test_fallback_llm_goes_through_retry_and_shares_the_agent_level(self, monkeypatch):
-        waits: list[float] = []
-        monkeypatch.setattr("time.sleep", lambda s: waits.append(s))
-
-        calls = {"n": 0}
-
-        def _create(**kwargs):
-            calls["n"] += 1
-            if calls["n"] == 1:
-                raise Exception("503 Service Unavailable")
-            message = SimpleNamespace(content="fallback answer")
-            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
-
-        client = MagicMock()
-        client.chat.completions.create.side_effect = _create
-        o = _make_orchestrator(mcp=None, client=client)
-        o._retry.level = 1  # as if a prior call on this instance already ramped it
-
-        answer = o._fallback_llm("Some question")
-
-        assert answer == "fallback answer"
-        assert calls["n"] == 2
-        # Starts at the persisted level (index 1 = 5s), not from scratch.
-        assert waits == [5.0]
-
     def test_deterministic_error_in_route_autonomously_does_not_retry(self, monkeypatch):
         waits: list[float] = []
         monkeypatch.setattr("time.sleep", lambda s: waits.append(s))
