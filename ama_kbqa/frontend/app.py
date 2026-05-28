@@ -33,7 +33,6 @@ st.markdown("# Welcome to AMA KBQA Assistant")
 st.markdown(
     "Use the sidebar to navigate between pages:\n"
     "- **Chat** - Ask questions to the knowledge graph agents\n"
-    "- **Batch Processing** - Run benchmarks on question sets\n"
     "- **Evaluation** - View batch run results and charts\n"
     "- **Settings** - Configure LLM providers and parameters"
 )
