@@ -1,6 +1,6 @@
 [llm]
-chat_provider = "openrouter"
-embedding_provider = "openrouter"
+chat_provider = "kit"
+embedding_provider = "kit"
 chat_temperature = 1.0
 chat_max_tokens = 16000
 embedding_temperature = 0.0
@@ -26,8 +26,9 @@ chat_model_provider = ""
 
 [kit]
 base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
-chat_model = "azure.gpt-4.1-mini"
 
+chat_model = "kit.gemma4-31b-it"
+embedding_model = "kit.qwen3-embedding-8b"
 [llamacpp]
 base_url = "http://localhost:8080/v1"
 chat_model = "local-model"

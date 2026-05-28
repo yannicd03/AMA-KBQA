@@ -1,12 +1,12 @@
 [llm]
-chat_provider = "openrouter"
-embedding_provider = "openrouter"
+chat_provider = "kit"
+embedding_provider = "kit"
 chat_temperature = 1.0
 chat_max_tokens = 16000
 embedding_temperature = 0.0
 
 [agent]
-auto_inject_journal = false
+auto_inject_journal = true
 zero_tool_call_retry_max = 3
 
 [synthesis]
@@ -16,7 +16,7 @@ synthesis_model = "deepseek/deepseek-v3.2"
 synthesis_model_provider = ""
 synthesis_temperature = 0.7
 synthesis_max_tokens = 2048
-synthesis_mode = "benchmark"
+synthesis_mode = "conversational"
 
 [openrouter]
 base_url = "https://openrouter.ai/api/v1"
@@ -26,8 +26,9 @@ chat_model_provider = ""
 
 [kit]
 base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
-chat_model = "azure.gpt-4.1-mini"
 
+chat_model = "kit.gemma4-31b-it"
+embedding_model = "kit.qwen3-embedding-8b"
 [llamacpp]
 base_url = "http://localhost:8080/v1"
 chat_model = "local-model"
@@ -59,7 +60,26 @@ level = "INFO"
 
 [postprocessing]
 judge_provider = "openrouter"
-judge_model = "deepseek/deepseek-v3.2"
+judge_model = "deepseek/deepseek-v4-pro"
 chat_model_provider = ""
 judge_temperature = 0.7
 generate_fewshot = false
+
+[fewshot_generator]
+# LLM that analyzes benchmark traces and emits new fewshot examples / tool tips.
+# Reads provider base_url + api_key_env from the matching [<provider>] section above.
+provider = "openrouter"
+model = "deepseek/deepseek-v4-pro"
+temperature = 1.0
+max_tokens = 16000
+# When true, the agent's MCP tool catalog (names + signatures + descriptions) is
+# injected into the generator prompt so it can judge whether the chosen tool path
+# was the most direct one available.
+include_tool_descriptions = true
+# When true, the FULL conversation (all messages, untruncated tool results) is
+# sent to the generator rather than the tail-window summary. Costs more tokens
+# but lets the generator critique path optimality.
+include_full_conversation = true
+# Fallback truncation knobs — only used when include_full_conversation = false.
+max_messages = 20
+max_result_chars = 500
