@@ -324,7 +324,10 @@ YOUR FINAL ANSWER:"""
                 "context from the data. Do not invent facts beyond the journal and "
                 "never use outside or remembered knowledge. If the journal data does "
                 "not contain the answer, do not guess: say plainly that you don't know "
-                "because the knowledge graph does not contain that information."
+                "because the knowledge graph does not contain that information. After "
+                "the answer, add a short \"How I found this:\" section with 1-3 concise "
+                "bullets summarising the key steps taken to reach it, based only on the "
+                "journal data."
             )
         return (
             "You are a precise question-answering system. Answer based strictly "

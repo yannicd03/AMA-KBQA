@@ -532,15 +532,15 @@ def get_synthesis_mode() -> str:
 
     Returns:
         "benchmark" (short exact-match answers) or
-        "conversational" (verbose, user-friendly answers). Default: "benchmark".
+        "conversational" (verbose, user-friendly answers). Default: "conversational".
     """
     config = load_config()
-    mode = config.get("synthesis", {}).get("synthesis_mode", "benchmark")
+    mode = config.get("synthesis", {}).get("synthesis_mode", "conversational")
     if mode not in ("benchmark", "conversational"):
         logger.warning(
-            f"Unknown synthesis_mode '{mode}', falling back to 'benchmark'"
+            f"Unknown synthesis_mode '{mode}', falling back to 'conversational'"
         )
-        return "benchmark"
+        return "conversational"
     return mode
 
 

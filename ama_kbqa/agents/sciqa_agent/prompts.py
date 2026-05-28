@@ -1205,7 +1205,10 @@ Guidelines:
 - If the journal does not actually contain the answer, do not guess: tell the user
   plainly that you don't know because the knowledge graph does not contain that
   information.
-- Do not describe your tool-calling process; answer as if speaking to the user.
+- After the answer, add a short section titled "How I found this:" with 1–3 concise
+  bullet points summarising the key steps that led to it — which resources/entities
+  you looked up and which lookups/queries produced the answer — based only on the
+  journal above. If you don't know the answer, briefly note what you searched for instead.
 
 YOUR FINAL ANSWER:"""
 
@@ -1244,6 +1247,18 @@ YOUR FINAL ANSWER:"""
 # ==============================================================================
 
 JOURNAL_SUMMARY_ANSWER_PROMPT = """You have reviewed everything you discovered in your journal. Now provide your final answer to the original question as clear, direct text. Do NOT call any more tools."""
+
+# Conversational variant: answer + brief "How I found this" step summary.
+JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
+    "You have reviewed everything you discovered in your journal. Now provide your "
+    "final answer to the original question as clear, direct text. Do NOT call any "
+    "more tools.\n\n"
+    "Then add a short section titled \"How I found this:\" with 1–3 concise bullet "
+    "points summarising the key steps you took to reach the answer — which "
+    "resources/entities you looked up and which tools/queries produced it. Keep it "
+    "brief and base it only on what you actually did. If you could not find the "
+    "answer, say so and briefly note what you searched for."
+)
 
 # ==============================================================================
 # Loop Recovery Guidance
