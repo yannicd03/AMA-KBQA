@@ -29,6 +29,7 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
     SYNTHESIS_PROMPT_TEMPLATE,
     SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL,
     JOURNAL_SUMMARY_ANSWER_PROMPT,
+    JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL,
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
@@ -217,7 +218,15 @@ class KQAProAgent(BaseKBQAAgent):
         return LOOP_INTERVENTION_TEMPLATE
 
     def _get_journal_summary_answer_prompt(self) -> str:
-        """Get the prompt to inject after GetJournalSummary."""
+        """Get the prompt to inject after GetJournalSummary.
+
+        In conversational mode the user-facing answer also asks for a brief
+        "How I found this" step summary; benchmark mode stays terse so exact
+        string matching is unaffected.
+        """
+        from ama_kbqa.config import get_synthesis_mode
+        if get_synthesis_mode() == "conversational":
+            return JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL
         return JOURNAL_SUMMARY_ANSWER_PROMPT
 
     def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
