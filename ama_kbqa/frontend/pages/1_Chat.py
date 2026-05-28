@@ -10,12 +10,17 @@ A sidebar **Simplified view** toggle hides all of the inspector chrome,
 leaving only the chat bubbles and input.
 """
 
+import os
 import queue
 import time
 from datetime import datetime
 from typing import Any
 
 import streamlit as st
+
+DEMO_MODE = os.environ.get("DEMO_MODE", "0") == "1"
+DEMO_MAX_QUERIES_PER_SESSION = int(os.environ.get("DEMO_MAX_QUERIES_PER_SESSION", "20"))
+DEMO_MIN_SECONDS_BETWEEN_QUERIES = float(os.environ.get("DEMO_MIN_SECONDS_BETWEEN_QUERIES", "3"))
 from htbuilder import div, styles
 from htbuilder.units import rem
 
@@ -232,6 +237,23 @@ class _SilentPlaceholder:
 
 
 if user_message and live_run is None:
+    if DEMO_MODE:
+        st.session_state.setdefault("demo_query_count", 0)
+        if st.session_state.demo_query_count >= DEMO_MAX_QUERIES_PER_SESSION:
+            st.error(
+                f"Demo limit reached: {DEMO_MAX_QUERIES_PER_SESSION} queries per session. "
+                "Refresh the page to start a new session."
+            )
+            st.stop()
+        elapsed = time.time() - st.session_state.get("demo_last_query_time", 0.0)
+        if elapsed < DEMO_MIN_SECONDS_BETWEEN_QUERIES:
+            st.warning(
+                f"Please wait {DEMO_MIN_SECONDS_BETWEEN_QUERIES - elapsed:.1f}s before the next query."
+            )
+            st.stop()
+        st.session_state.demo_query_count += 1
+        st.session_state.demo_last_query_time = time.time()
+
     with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(user_message)
     st.session_state.messages.append({"role": "user", "content": user_message})
