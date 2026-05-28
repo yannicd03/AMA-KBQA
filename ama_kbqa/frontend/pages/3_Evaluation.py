@@ -21,7 +21,7 @@ st.title("Evaluation Dashboard")
 batches = list_batches()
 
 if not batches:
-    st.info("No batch results found. Run a batch from the Batch Processing page first.")
+    st.info("No batch results found.")
     st.stop()
 
 # batches are now dicts with "label" key
