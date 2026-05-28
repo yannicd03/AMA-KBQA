@@ -69,7 +69,14 @@ class MCPClient:
             raise FileNotFoundError(f"MCP server not found: {self.server_path}")
 
         try:
-            client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=None))
+            # Pass the parent environment through to the MCP subprocess. With
+            # env=None the MCP SDK hands the child only a minimal default
+            # environment, dropping API keys (OPENROUTER_API_KEY / KIT_API_KEY)
+            # that are injected into the container at runtime (docker-compose
+            # env_file) rather than present in an on-disk .env. Without them the
+            # server's startup get_chat_client() raises and the child exits,
+            # surfacing as an opaque "Connection closed" on the client side.
+            client_gen = stdio_client(StdioServerParameters(command=sys.executable, args=[str(self.server_path)], env=os.environ.copy()))
             read, write = await self.exit_stack.enter_async_context(client_gen)
 
             self.session = await self.exit_stack.enter_async_context(ClientSession(read, write))
