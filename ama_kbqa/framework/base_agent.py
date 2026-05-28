@@ -319,13 +319,18 @@ YOUR FINAL ANSWER:"""
         if mode == "conversational":
             return (
                 "You are a helpful assistant answering a user's question using "
-                "the provided journal data. Write a clear, friendly, human-readable "
+                "ONLY the provided journal data. Write a clear, friendly, human-readable "
                 "response. Lead with the direct answer, then add brief supporting "
-                "context from the data. Do not invent facts beyond the journal."
+                "context from the data. Do not invent facts beyond the journal and "
+                "never use outside or remembered knowledge. If the journal data does "
+                "not contain the answer, do not guess: say plainly that you don't know "
+                "because the knowledge graph does not contain that information."
             )
         return (
             "You are a precise question-answering system. Answer based strictly "
-            "on the provided journal data. Give only the answer value."
+            "on the provided journal data; never use outside or remembered knowledge. "
+            "Give only the answer value. If the journal data does not contain the "
+            "answer, reply exactly: I don't know."
         )
 
     def _get_journal_refresh_template(self) -> str:
@@ -1882,7 +1887,8 @@ Change strategy or acknowledge the data doesn't exist."""
         if final_answer and final_answer.strip():
             # Verification pass: if synthesis indicates failure but journal has data, re-prompt
             failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
-                               "unable to determine", "could not find", "no information"]
+                               "unable to determine", "could not find", "no information",
+                               "i don't know", "i do not know", "don't know"]
             answer_lower = final_answer.lower()
             if any(phrase in answer_lower for phrase in failure_phrases):
                 # Check if journal actually has useful data. Key off markers
