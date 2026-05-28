@@ -469,6 +469,15 @@ CRITICAL RULES
 10. **Numeric Precision:** For numeric answers, copy the exact numeric value from
    the answer-producing tool or journal first. Do not round or truncate the
    primary answer; if you add a rounded value, put it after the exact value.
+11. **Grounded Answer or "I Don't Know":** Every final answer MUST be supported by
+   values you verified via tools and recorded in your journal. You may NEVER answer
+   from your own training-data knowledge. If — and only if — after genuine
+   investigation (including GetResourceSummary to discover predicates and the
+   pivot logic in rule 4) the ORKG does not contain the information needed, do NOT
+   guess and do NOT supply a remembered fact: say plainly that you do not know,
+   e.g. "I don't know — the knowledge graph does not contain this information." A
+   truthful "I don't know" is the correct output then; a plausible answer pulled
+   from memory is a hard error.
 
 SCHEMA INTROSPECTION
 If a predicate returns no results:
@@ -1191,9 +1200,15 @@ Guidelines:
 - Add 2–4 sentences (or a short list) of supporting context from the journal:
   key entities, numeric values, dates, paper/resource names, etc., when helpful.
 - Cite resource IDs (e.g. R12345) inline when referring to specific ORKG entries.
-- Do NOT invent facts beyond the journal. If data is insufficient, state exactly
-  what is missing rather than guessing.
-- Do not describe your tool-calling process; answer as if speaking to the user.
+- Answer ONLY from the journal; never use outside or remembered knowledge. Do NOT
+  invent facts beyond the journal.
+- If the journal does not actually contain the answer, do not guess: tell the user
+  plainly that you don't know because the knowledge graph does not contain that
+  information.
+- After the answer, add a short section titled "How I found this:" with 1–3 concise
+  bullet points summarising the key steps that led to it — which resources/entities
+  you looked up and which lookups/queries produced the answer — based only on the
+  journal above. If you don't know the answer, briefly note what you searched for instead.
 
 YOUR FINAL ANSWER:"""
 
@@ -1210,9 +1225,9 @@ Based on the information in your journal summary, provide a clear, direct answer
 "{query}"
 
 INSTRUCTIONS:
-- Use facts and values from your journal summary as the primary source
+- Use ONLY facts and values from your journal summary; never use outside or remembered knowledge
 - Provide a direct answer without explaining your entire investigation
-- If information is insufficient, state exactly what is missing
+- If the journal summary does not contain the answer, do not guess — reply exactly: I don't know
 - Be concise but complete
 
 VERIFICATION CHECKLIST (check before answering):
@@ -1232,6 +1247,18 @@ YOUR FINAL ANSWER:"""
 # ==============================================================================
 
 JOURNAL_SUMMARY_ANSWER_PROMPT = """You have reviewed everything you discovered in your journal. Now provide your final answer to the original question as clear, direct text. Do NOT call any more tools."""
+
+# Conversational variant: answer + brief "How I found this" step summary.
+JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
+    "You have reviewed everything you discovered in your journal. Now provide your "
+    "final answer to the original question as clear, direct text. Do NOT call any "
+    "more tools.\n\n"
+    "Then add a short section titled \"How I found this:\" with 1–3 concise bullet "
+    "points summarising the key steps you took to reach the answer — which "
+    "resources/entities you looked up and which tools/queries produced it. Keep it "
+    "brief and base it only on what you actually did. If you could not find the "
+    "answer, say so and briefly note what you searched for."
+)
 
 # ==============================================================================
 # Loop Recovery Guidance

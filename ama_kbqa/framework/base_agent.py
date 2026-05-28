@@ -121,11 +121,17 @@ class BaseKBQAAgent(ABC):
         except (FileNotFoundError, ValueError, KeyError) as e:
             raise RuntimeError(f"Failed to initialize LLM client from config.toml: {e}")
 
-        try:
-            self.synthesis_client = get_synthesis_client()
-            self.synthesis_model = get_synthesis_model_name()
-        except (FileNotFoundError, ValueError, KeyError) as e:
-            raise RuntimeError(f"Failed to initialize synthesis LLM client from config.toml: {e}")
+        # The synthesis client is initialised lazily (see the synthesis_client /
+        # synthesis_model properties below). Synthesis can be disabled entirely
+        # via config (synthesis.synthesis_enabled = false), and the synthesis
+        # provider can differ from the chat provider. Initialising it eagerly
+        # here meant an agent could not even be constructed when synthesis was
+        # off but the synthesis provider's API key happened to be unset — e.g.
+        # chat_provider = "kit" works while synthesis_provider = "openrouter"
+        # has no OPENROUTER_API_KEY. Deferring construction until synthesis
+        # actually runs keeps the agent loadable in that (valid) configuration.
+        self._synthesis_client = None
+        self._synthesis_model = None
 
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
@@ -161,6 +167,31 @@ class BaseKBQAAgent(ABC):
         self._text_tool_call_mode = needs_text_tool_calls(self.model)
         if self._text_tool_call_mode:
             self._messages.append({"role": "system", "content": TEXT_TOOL_CALL_INSTRUCTION})
+
+    def _ensure_synthesis_client(self) -> None:
+        """Lazily build the synthesis LLM client on first use.
+
+        Kept out of __init__ so an agent stays constructible when synthesis is
+        disabled or its provider's API key is absent; the cost (and the
+        config/key requirement) is only paid if synthesis actually runs.
+        """
+        if self._synthesis_client is not None:
+            return
+        try:
+            self._synthesis_client = get_synthesis_client()
+            self._synthesis_model = get_synthesis_model_name()
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise RuntimeError(f"Failed to initialize synthesis LLM client from config.toml: {e}")
+
+    @property
+    def synthesis_client(self):
+        self._ensure_synthesis_client()
+        return self._synthesis_client
+
+    @property
+    def synthesis_model(self):
+        self._ensure_synthesis_client()
+        return self._synthesis_model
 
     # =========================================================================
     # ABSTRACT METHODS - Must be implemented by subclasses
@@ -288,13 +319,21 @@ YOUR FINAL ANSWER:"""
         if mode == "conversational":
             return (
                 "You are a helpful assistant answering a user's question using "
-                "the provided journal data. Write a clear, friendly, human-readable "
+                "ONLY the provided journal data. Write a clear, friendly, human-readable "
                 "response. Lead with the direct answer, then add brief supporting "
-                "context from the data. Do not invent facts beyond the journal."
+                "context from the data. Do not invent facts beyond the journal and "
+                "never use outside or remembered knowledge. If the journal data does "
+                "not contain the answer, do not guess: say plainly that you don't know "
+                "because the knowledge graph does not contain that information. After "
+                "the answer, add a short \"How I found this:\" section with 1-3 concise "
+                "bullets summarising the key steps taken to reach it, based only on the "
+                "journal data."
             )
         return (
             "You are a precise question-answering system. Answer based strictly "
-            "on the provided journal data. Give only the answer value."
+            "on the provided journal data; never use outside or remembered knowledge. "
+            "Give only the answer value. If the journal data does not contain the "
+            "answer, reply exactly: I don't know."
         )
 
     def _get_journal_refresh_template(self) -> str:
@@ -1851,7 +1890,8 @@ Change strategy or acknowledge the data doesn't exist."""
         if final_answer and final_answer.strip():
             # Verification pass: if synthesis indicates failure but journal has data, re-prompt
             failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
-                               "unable to determine", "could not find", "no information"]
+                               "unable to determine", "could not find", "no information",
+                               "i don't know", "i do not know", "don't know"]
             answer_lower = final_answer.lower()
             if any(phrase in answer_lower for phrase in failure_phrases):
                 # Check if journal actually has useful data. Key off markers
