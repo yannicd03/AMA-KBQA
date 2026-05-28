@@ -67,6 +67,7 @@ def start_run(
     question: str,
     q: queue.Queue,
     capture_io=None,
+    is_continuation: bool = False,
 ) -> threading.Thread:
     """Spawn a daemon thread that runs the agent and streams notifications.
 
@@ -74,8 +75,15 @@ def start_run(
     from ``styling.py``). When provided, the worker wraps ``ask()`` in
     ``redirect_stdout(capture_io)`` so the existing live-log strip keeps
     working.
+
+    ``is_continuation`` marks a follow-up turn on a reused agent instance
+    (multiturn). When set, the worker first runs ``reset(keep_history=True)``
+    so the agent keeps its accumulated message stack but gets a fresh trace,
+    fresh token counts, and a freshly re-initialised MCP connection on *this*
+    worker's event loop. The reset runs before the recorder is captured so the
+    live-trace listener attaches to the new turn's recorder, not the previous
+    turn's.
     """
-    recorder = getattr(agent, "recorder", None)
 
     def listener(phase: str, info: dict) -> None:
         # Only the bits we need on the consumer side. Strip large payloads.
@@ -96,10 +104,34 @@ def start_run(
             _LOG.exception("Failed to enqueue trace notification")
 
     def worker() -> None:
-        if recorder is not None:
-            recorder.add_listener(listener)
         loop = asyncio.new_event_loop()
+        recorder = None
         try:
+            # Follow-up turn: reset per-turn state (fresh trace/tokens) while
+            # preserving the conversation stack. The previous turn's MCP
+            # connection is bound to a now-closed event loop, so we orphan it
+            # (its loop is dead; awaiting close() on it from this new loop can
+            # error) and reset with keep_mcp_open=True. agent.ask() then calls
+            # _init_mcp, which rebuilds a fresh MCP connection on THIS loop.
+            if is_continuation:
+                agent.mcp = None
+                loop.run_until_complete(
+                    agent.reset(keep_history=True, keep_mcp_open=True)
+                )
+
+            # Capture the recorder AFTER any reset so the listener binds to the
+            # live recorder. Tell the main thread the new trace_id so the live
+            # panel does not point at the previous turn's trace.
+            recorder = getattr(agent, "recorder", None)
+            if recorder is not None:
+                recorder.add_listener(listener)
+                tid = getattr(recorder, "trace_id", None)
+                if tid is not None:
+                    try:
+                        q.put_nowait(("__trace_id__", {"trace_id": tid}))
+                    except Exception:
+                        pass
+
             if capture_io is not None:
                 with redirect_stdout(capture_io):
                     answer = loop.run_until_complete(agent.ask(question))
@@ -162,6 +194,14 @@ def drain_into(
             phase, info = q.get_nowait()
         except queue.Empty:
             break
+
+        if phase == "__trace_id__":
+            # The worker (re)created the recorder for this turn; adopt its
+            # trace_id so the live panel tracks the correct trace.
+            tid = info.get("trace_id")
+            if tid:
+                state.trace_id = tid
+            continue
 
         if phase == "__done__":
             state.status = "done"

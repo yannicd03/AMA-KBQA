@@ -115,6 +115,9 @@ with title_row:
         st.session_state.messages = []
         st.session_state.initial_question = None
         st.session_state.selected_suggestion = None
+        # Drop the persisted multiturn agent so the next question starts a
+        # brand-new conversation with no carried-over message stack.
+        st.session_state.pop("persistent_agent", None)
         st.rerun()
 
 
@@ -236,14 +239,47 @@ if user_message and live_run is None:
         st.markdown(user_message)
     st.session_state.messages.append({"role": "user", "content": user_message})
 
-    agent = create_agent(selected_agent)
+    # Multiturn: for a directly-selected sub-agent we keep ONE agent instance
+    # alive across the conversation so its message stack accumulates and
+    # follow-ups can resolve against prior turns (the agent self-resolves
+    # coreference from the preserved tool results + answers). The Orchestrator
+    # path stays stateless (fresh agent per turn), so the router is unaffected.
+    multiturn_enabled = selected_agent != "Orchestrator"
+    stored = st.session_state.get("persistent_agent")
+    if (
+        multiturn_enabled
+        and stored is not None
+        and stored.get("agent_name") == selected_agent
+    ):
+        # Reuse the existing instance: this is a follow-up turn.
+        agent = stored["agent"]
+        is_continuation = True
+    else:
+        # First turn of a conversation, an agent switch, or the Orchestrator:
+        # start fresh. Persist the new instance only for direct sub-agents.
+        agent = create_agent(selected_agent)
+        is_continuation = False
+        if multiturn_enabled:
+            st.session_state["persistent_agent"] = {
+                "agent": agent,
+                "agent_name": selected_agent,
+            }
+        else:
+            st.session_state.pop("persistent_agent", None)
+
     capture_io = StreamlitHTMLCapture(_SilentPlaceholder())
     q: queue.Queue = queue.Queue()
     state = LiveLifecycleState(
         trace_id=getattr(getattr(agent, "recorder", None), "trace_id", None),
         started_at=time.time(),
     )
-    start_run(agent=agent, question=user_message, q=q, capture_io=capture_io)
+    start_run(
+        agent=agent,
+        question=user_message,
+        q=q,
+        capture_io=capture_io,
+        is_continuation=is_continuation,
+    )
 
     st.session_state["live_run"] = {
         "agent": agent,
