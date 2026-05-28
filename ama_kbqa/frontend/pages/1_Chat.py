@@ -102,7 +102,19 @@ if not user_first_interaction and not has_message_history and not live_run:
     st.stop()
 
 # ── Chat interface ───────────────────────────────────────────────────────────
-user_message = st.chat_input("Follow up...", disabled=live_run is not None)
+# Multiturn follow-ups are only implemented for directly-selected sub-agents.
+# The Orchestrator is stateless, so a "Follow up..." box wrongly implies it
+# remembers context. Hide it for the Orchestrator and explain instead.
+if selected_agent == "Orchestrator":
+    user_message = None
+    if not simplified:
+        st.caption(
+            "The Orchestrator answers one question at a time. Use "
+            ":material/refresh: Restart for a new question, or pick a specific "
+            "agent (KQAPro / SciQA) for a follow-up conversation."
+        )
+else:
+    user_message = st.chat_input("Follow up...", disabled=live_run is not None)
 
 if not user_message:
     if "initial_question" in st.session_state and st.session_state.initial_question:
