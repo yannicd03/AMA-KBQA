@@ -24,6 +24,33 @@ CONFIG_PATH = REPO_ROOT / "config.toml"
 # Global config cache
 _config_cache: Optional[dict] = None
 
+# Provider API keys the system can authenticate with. No single one is
+# mandatory (a deployment may run exclusively against KIT, or exclusively
+# against OpenRouter); we only require that *at least one* is present so the
+# system can talk to some LLM provider. The per-provider check in
+# _get_api_key() still enforces that the specific configured provider's key
+# exists when a client is built.
+_PROVIDER_API_KEY_ENV_VARS = ("KIT_API_KEY", "OPENROUTER_API_KEY")
+
+
+def assert_provider_api_key_present() -> None:
+    """Fail fast if no LLM provider API key is configured.
+
+    Call this at application startup. We deliberately do not require any one
+    key (notably not OPENROUTER_API_KEY): asserting that at least one of the
+    supported keys is set is enough to guarantee the system can authenticate
+    with a provider, while leaving the choice of provider to config.toml.
+
+    Raises:
+        RuntimeError: If none of the supported provider API keys are set.
+    """
+    if not any(os.getenv(var) for var in _PROVIDER_API_KEY_ENV_VARS):
+        raise RuntimeError(
+            "No LLM provider API key found. Set at least one of "
+            f"{', '.join(_PROVIDER_API_KEY_ENV_VARS)} in your environment "
+            "or .env file."
+        )
+
 
 def load_config() -> dict:
     """Load configuration from config.toml file.
