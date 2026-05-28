@@ -38,6 +38,40 @@ class _StubAgent:
         return f"answer to: {question}"
 
 
+class _StubMultiturnAgent:
+    """Agent double that mimics the real history-preserving reset + ask so the
+    multiturn continuation path can be driven end-to-end through start_run."""
+
+    def __init__(self) -> None:
+        self.recorder = TraceRecorder()
+        self._messages = [{"role": "system", "content": "sys"}]
+        self._catalog_injected = False
+        self.mcp = object()  # pretend an MCP connection is open
+        self.reset_calls: list[dict] = []
+
+    async def reset(self, keep_mcp_open: bool = False, keep_history: bool = False) -> None:
+        self.reset_calls.append({"keep_mcp_open": keep_mcp_open, "keep_history": keep_history})
+        if not keep_history:
+            self._messages = [{"role": "system", "content": "sys"}]
+            self._catalog_injected = False
+        self.recorder = TraceRecorder()  # fresh trace each turn
+        if not keep_mcp_open and self.mcp is not None:
+            self.mcp = None
+
+    async def ask(self, question: str) -> str:
+        if self.mcp is None:  # mimic _init_mcp rebuilding on this loop
+            self.mcp = object()
+        if not self._catalog_injected:  # one-time catalog injection
+            self._messages.append({"role": "system", "content": "CATALOG"})
+            self._catalog_injected = True
+        self._messages.append({"role": "user", "content": question})
+        async with self.recorder.span("agent_run", "ask"):
+            pass
+        answer = f"answer to: {question}"
+        self._messages.append({"role": "assistant", "content": answer})
+        return answer
+
+
 def _wait_until_terminal(q: queue.Queue, state: LiveLifecycleState, timeout: float = 5.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -78,6 +112,54 @@ class TestRunner:
         assert state.status == "error"
         assert state.error is not None and "boom" in state.error
         assert state.active_node_ids == set()
+
+    def test_continuation_preserves_and_accumulates_history(self):
+        agent = _StubMultiturnAgent()
+
+        # Turn 1: fresh conversation, no reset.
+        q1: queue.Queue = queue.Queue()
+        s1 = LiveLifecycleState()
+        start_run(
+            agent=agent,
+            question="Who directed Inception?",
+            q=q1,
+            is_continuation=False,
+        )
+        _wait_until_terminal(q1, s1)
+
+        assert s1.status == "done"
+        rec_after_t1 = agent.recorder
+        # Live trace_id was emitted to the main thread via the queue.
+        assert s1.trace_id == rec_after_t1.trace_id
+        assert agent.reset_calls == []  # first turn never resets
+        assert sum(1 for m in agent._messages if m["content"] == "CATALOG") == 1
+
+        # Turn 2: continuation on the SAME instance.
+        q2: queue.Queue = queue.Queue()
+        s2 = LiveLifecycleState()
+        start_run(
+            agent=agent,
+            question="Where was he born?",
+            q=q2,
+            is_continuation=True,
+        )
+        _wait_until_terminal(q2, s2)
+
+        assert s2.status == "done"
+        # Reset ran once, preserving history and not closing MCP across loops.
+        assert agent.reset_calls == [{"keep_mcp_open": True, "keep_history": True}]
+        # MCP was orphaned then rebuilt.
+        assert agent.mcp is not None
+        # Fresh recorder + trace_id propagated to the live panel.
+        assert agent.recorder is not rec_after_t1
+        assert s2.trace_id == agent.recorder.trace_id
+        assert s2.trace_id != s1.trace_id
+        # History ACCUMULATED across turns.
+        contents = [m["content"] for m in agent._messages]
+        assert "Who directed Inception?" in contents
+        assert "Where was he born?" in contents
+        # Catalog was NOT duplicated onto the preserved stack.
+        assert sum(1 for m in agent._messages if m["content"] == "CATALOG") == 1
 
     def test_drain_into_is_idempotent_after_terminal(self):
         agent = _StubAgent()
