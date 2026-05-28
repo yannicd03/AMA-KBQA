@@ -268,6 +268,13 @@ RULES:
 4. COMPLETE RETRIEVAL: After FindNode, always call GetAttributeDetails/GetRelationDetails for actual values.
 5. VERIFY ALL CONSTRAINTS: Check ALL identifying details (duration, year, color) before answering.
 6. TRUST VERIFIED DATA: Once in found_values/verified_facts, treat as ground truth. Don't second-guess.
+7. GROUNDED ANSWER OR "I DON'T KNOW" (HARD RULE): Every final answer MUST be supported by values
+   in your journal (found_values / verified_facts). You may NEVER answer from your own training-data
+   knowledge. If — and only if — after genuine investigation (including the GetNodeSummary requirement
+   in rule 0a and the PIVOT/INVERSE attempts in rule 3) the KG does not contain the information needed,
+   do NOT guess and do NOT supply a remembered fact: say plainly that you do not know, e.g.
+   "I don't know — the knowledge graph does not contain this information." A truthful "I don't know"
+   is the correct output in that case; a plausible-sounding answer pulled from memory is a hard error.
 
 KG PREFIXES (auto-injected in SPARQL, don't redefine):
 ex:=Entities, prop:=Properties, attr:=Attributes, qual:=Qualifiers, unit:=Units
@@ -355,7 +362,9 @@ SYNTHESIS_PROMPT_TEMPLATE = """DISCOVERED DATA:
 
 QUESTION: "{query}"
 
-Answer directly using the discovered data above. Be concise. If data is missing, say what's missing."""
+Answer directly using ONLY the discovered data above. Be concise. Do not use any outside or
+remembered knowledge. If the discovered data does not contain the answer, do not guess — reply
+exactly: I don't know."""
 
 # Synthesis prompt template - CONVERSATIONAL (user-facing)
 SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL = """DISCOVERED DATA:
@@ -370,12 +379,30 @@ Guidelines:
 - Add 1–3 sentences of helpful supporting context drawn from the discovered data
   (e.g., related entities, dates, categories) when it aids understanding.
 - You may use short lists or paragraphs; keep it tight — no filler.
-- Do NOT invent facts beyond the discovered data. If something is missing or
-  uncertain, say so plainly.
-- Do not describe your tool-calling process; speak to the user about the answer."""
+- Answer ONLY from the discovered data above; never use outside or remembered
+  knowledge. Do NOT invent facts beyond the discovered data.
+- If the discovered data does not actually contain the answer, do not guess: tell
+  the user plainly that you don't know because the knowledge graph does not contain
+  that information.
+- After the answer, add a short section titled "How I found this:" with 1–3 concise
+  bullet points summarising the key steps that led to it — which entities you looked
+  up and which lookups/queries produced the answer — based only on the discovered
+  data above. If you don't know the answer, briefly note what you searched for instead."""
 
-# GetJournalSummary follow-up prompt
+# GetJournalSummary follow-up prompt (benchmark: terse, answer only)
 JOURNAL_SUMMARY_ANSWER_PROMPT = "You have reviewed everything you discovered in your journal. Now you MUST provide your final answer to the original question as clear, direct text. Do NOT call any more tools."
+
+# GetJournalSummary follow-up prompt (conversational: answer + brief step summary)
+JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
+    "You have reviewed everything you discovered in your journal. Now provide your "
+    "final answer to the original question as clear, direct text. Do NOT call any "
+    "more tools.\n\n"
+    "Then add a short section titled \"How I found this:\" with 1–3 concise bullet "
+    "points summarising the key steps you took to reach the answer — which entities "
+    "you looked up and which tools/queries produced it. Keep it brief and base it "
+    "only on what you actually did. If you could not find the answer, say so and "
+    "briefly note what you searched for."
+)
 
 # Tool-specific loop recovery guidance - COMPACT
 TOOL_LOOP_GUIDANCE = {

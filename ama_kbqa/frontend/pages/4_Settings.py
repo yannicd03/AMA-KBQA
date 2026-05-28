@@ -107,9 +107,9 @@ syn_enabled = st.toggle(
 synthesis["synthesis_enabled"] = syn_enabled
 
 SYNTHESIS_MODES = ["benchmark", "conversational"]
-current_mode = synthesis.get("synthesis_mode", "benchmark")
+current_mode = synthesis.get("synthesis_mode", "conversational")
 if current_mode not in SYNTHESIS_MODES:
-    current_mode = "benchmark"
+    current_mode = "conversational"
 mode_labels = {
     "benchmark": "Benchmark — short exact-match answers (for evaluation)",
     "conversational": "Conversational — verbose, human-friendly answers",
