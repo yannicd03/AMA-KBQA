@@ -53,6 +53,7 @@
 | [Decisions/sciqa-cross-resource-aggregation.md](Decisions/sciqa-cross-resource-aggregation.md) | New tool `FindFrequentValues` (tool 21) + `comparison_ids` extension to `AggregateComparisonValues`; closes 12-failure global-scope superlative/aggregation class; SCOPE decision tree in Superlative/Aggregation strategies; 25-call hard-stop in NO_PROGRESS_TEMPLATE |
 | [Decisions/multi-label-fewshot-tolerance.md](Decisions/multi-label-fewshot-tolerance.md) | Split-and-merge fewshot lookup in `SciQAAgent._classify_question()`: handles compound classifier outputs like `"Factoid\nSuperlative"` that silently yielded empty fewshots and hid `FindFrequentValues` traces from the agent |
 | [Decisions/root-cause-tool-generalization-2026-05-14.md](Decisions/root-cause-tool-generalization-2026-05-14.md) | Root-cause fixes from the seed-43 trace audit: answer cleanup, branch-local `CountUnion` relations, qualifier aliases, `QueryComparisonRows`, multi-predicate aggregation, and subject-scope frequencies |
+| [Decisions/multiturn-direct-agent-conversation.md](Decisions/multiturn-direct-agent-conversation.md) | Multiturn conversation for directly-selected sub-agents: persistent agent instance + `reset(keep_history=True)`; skip pre-agent hook on follow-ups; fast-path answer recording; asyncio event-loop safety; Orchestrator stays stateless |
 
 ---
 

@@ -857,10 +857,14 @@ Change strategy or acknowledge the data doesn't exist."""
             # passing OpenAI-style `tools=...` on the API call (which makes
             # some endpoints expect native function-call output and silently
             # revert to prose when the model can't comply).
-            if self._text_tool_call_mode:
+            # Guard against duplication: on a follow-up turn (reset with
+            # keep_history=True) the catalog is already present in the preserved
+            # stack, so injecting again would stack N copies.
+            if self._text_tool_call_mode and not getattr(self, "_catalog_injected", False):
                 from ama_kbqa.framework.text_tool_calls import build_text_mode_tool_catalog
                 catalog = build_text_mode_tool_catalog(openai_tools)
                 self._messages.append({"role": "system", "content": catalog})
+                self._catalog_injected = True
                 self._trace("Injected text-mode tool catalog", COLOR_CYAN)
 
             # Read per-agent config for tool caps
@@ -870,65 +874,94 @@ Change strategy or acknowledge the data doesn't exist."""
             self._context_limit = config.domain_settings.get("context_limit", 100000)
             self._max_tool_calls = config.domain_settings.get("max_tool_calls", 0)
 
+            # Detect a follow-up turn BEFORE appending the new query. In a
+            # multiturn continuation the prior turn's messages were preserved
+            # (reset(keep_history=True)), so the stack already holds earlier
+            # user turns. A fresh turn's stack has only system/catalog messages.
+            is_followup = any(m.get("role") == "user" for m in self._messages)
+
             # Add query to messages
             self._messages.append({"role": "user", "content": query})
 
-            # Run pre-agent hooks (combined classification + extraction = 1 LLM call)
-            self._trace("Starting pre-agent classification hook", COLOR_CYAN)
-
-            # Call _classify_question (overrideable by subclasses for fewshot loading etc.)
-            qtype_data = self._classify_question(query)
-            qtype = qtype_data.get("question_type", "Query")
-            fewshot_examples = qtype_data.get("fewshot_examples", "")
-            entities = qtype_data.get("entities", [])
-            relations = qtype_data.get("relations", [])
-
-            self._trace(
-                f"Classification: {qtype} | "
-                f"Entities: {len(entities)}, Relations: {len(relations)}",
-                COLOR_GREEN
-            )
-
-            analysis_context = self._build_analysis_context(
-                qtype, entities, relations, fewshot_examples, query=query
-            )
-            self._messages.append({"role": "user", "content": analysis_context})
-
-            self._trace(f"Pre-agent hook complete - Type: {qtype}", COLOR_GREEN)
-
-            # === FAST PATH: Skip agent loop for simple 1-hop questions ===
-            fast_path_types = {"QueryAttr", "QueryRelation", "QueryName"}
-            if (qtype in fast_path_types
-                    and len(entities) == 1
-                    and len(relations) <= 1
-                    and not self._should_skip_fast_path(query, qtype, entities, relations)
-                    and config.domain_settings.get("enable_fast_path", True)):
-                self._trace(f"FAST PATH: Simple {qtype} with 1 entity", COLOR_GREEN)
-                async with self.recorder.span(
-                    "fast_path",
-                    qtype,
-                    attributes={
-                        "qtype": qtype,
-                        "entity": entities[0] if entities else None,
-                        "relation": relations[0] if relations else None,
-                    },
-                ) as _fp_span:
-                    fast_answer = await self._try_fast_path(query, qtype, entities, relations)
-                    _fp_span.set_attribute("succeeded", fast_answer is not None)
-                if fast_answer is not None:
-                    self._trace(f"Fast path succeeded ({len(fast_answer)} chars)", COLOR_GREEN)
-                    return self._finalize_answer_text(fast_answer, qtype)
-                self._trace("Fast path failed - falling back to full loop", COLOR_YELLOW)
-
-            # Filter tools by question type (saves ~2-3k tokens per iteration)
-            allowed_tools = self._get_allowed_tools_for_qtype(qtype)
-            if allowed_tools is not None:
-                filtered_tools = [t for t in openai_tools if t["function"]["name"] in allowed_tools]
+            if is_followup:
+                # Skip the pre-agent hook on follow-ups. Classifying a bare
+                # elliptical question ("where was he born?") in isolation yields
+                # low-confidence output that would mislead the fast path and
+                # tool filtering. The preserved stack already carries the topic,
+                # entities, and prior reasoning, so we run the full tool loop
+                # with ALL tools and let the model resolve references from
+                # context. (No classify LLM call, no fast path, no filtering.)
                 self._trace(
-                    f"Tool filtering: {len(openai_tools)} → {len(filtered_tools)} tools for {qtype}",
+                    "Follow-up turn: skipping classification/fast-path, "
+                    "running full loop with all tools",
+                    COLOR_CYAN,
+                )
+                qtype = "Query"
+            else:
+                # Run pre-agent hooks (combined classification + extraction = 1 LLM call)
+                self._trace("Starting pre-agent classification hook", COLOR_CYAN)
+
+                # Call _classify_question (overrideable by subclasses for fewshot loading etc.)
+                qtype_data = self._classify_question(query)
+                qtype = qtype_data.get("question_type", "Query")
+                fewshot_examples = qtype_data.get("fewshot_examples", "")
+                entities = qtype_data.get("entities", [])
+                relations = qtype_data.get("relations", [])
+
+                self._trace(
+                    f"Classification: {qtype} | "
+                    f"Entities: {len(entities)}, Relations: {len(relations)}",
                     COLOR_GREEN
                 )
-                openai_tools = filtered_tools
+
+                analysis_context = self._build_analysis_context(
+                    qtype, entities, relations, fewshot_examples, query=query
+                )
+                self._messages.append({"role": "user", "content": analysis_context})
+
+                self._trace(f"Pre-agent hook complete - Type: {qtype}", COLOR_GREEN)
+
+                # === FAST PATH: Skip agent loop for simple 1-hop questions ===
+                fast_path_types = {"QueryAttr", "QueryRelation", "QueryName"}
+                if (qtype in fast_path_types
+                        and len(entities) == 1
+                        and len(relations) <= 1
+                        and not self._should_skip_fast_path(query, qtype, entities, relations)
+                        and config.domain_settings.get("enable_fast_path", True)):
+                    self._trace(f"FAST PATH: Simple {qtype} with 1 entity", COLOR_GREEN)
+                    async with self.recorder.span(
+                        "fast_path",
+                        qtype,
+                        attributes={
+                            "qtype": qtype,
+                            "entity": entities[0] if entities else None,
+                            "relation": relations[0] if relations else None,
+                        },
+                    ) as _fp_span:
+                        fast_answer = await self._try_fast_path(query, qtype, entities, relations)
+                        _fp_span.set_attribute("succeeded", fast_answer is not None)
+                    if fast_answer is not None:
+                        self._trace(f"Fast path succeeded ({len(fast_answer)} chars)", COLOR_GREEN)
+                        final = self._finalize_answer_text(fast_answer, qtype)
+                        # Record the answer in the message stack. The fast path
+                        # builds its answer from tool results without a final LLM
+                        # turn, so (unlike the full loop) nothing else appends it.
+                        # A multiturn follow-up replays this stack, so the answer
+                        # must be present. No effect on single-turn (stack discarded).
+                        self._messages.append({"role": "assistant", "content": final})
+                        return final
+                    self._trace("Fast path failed - falling back to full loop", COLOR_YELLOW)
+
+                # Filter tools by question type (saves ~2-3k tokens per iteration).
+                # Skipped for follow-ups, which keep the full tool set.
+                allowed_tools = self._get_allowed_tools_for_qtype(qtype)
+                if allowed_tools is not None:
+                    filtered_tools = [t for t in openai_tools if t["function"]["name"] in allowed_tools]
+                    self._trace(
+                        f"Tool filtering: {len(openai_tools)} → {len(filtered_tools)} tools for {qtype}",
+                        COLOR_GREEN
+                    )
+                    openai_tools = filtered_tools
 
             # Run tool loop (config already loaded above)
             max_iterations = config.domain_settings.get("max_iterations", 50)
@@ -2163,14 +2196,23 @@ Change strategy or acknowledge the data doesn't exist."""
             self.mcp = None
             raise
 
-    async def reset(self, keep_mcp_open: bool = False) -> None:
+    async def reset(self, keep_mcp_open: bool = False, keep_history: bool = False) -> None:
         """
         Reset the agent state for a new question.
 
         Args:
             keep_mcp_open: If True, keep MCP connection open
+            keep_history: If True, preserve ``self._messages`` (the accumulated
+                conversation stack) so a reused agent instance can answer a
+                follow-up turn with full memory of prior turns. All other state
+                (tokens, tool counters, loop detection, recorder, journal) still
+                resets, giving each turn a fresh trace and per-turn token totals.
         """
-        self._messages = [{"role": "system", "content": self._get_system_prompt()}]
+        if not keep_history:
+            self._messages = [{"role": "system", "content": self._get_system_prompt()}]
+            # The message stack was wiped, so the text-mode tool catalog (injected
+            # in _ask_impl) must be re-added on the next ask.
+            self._catalog_injected = False
         self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.tool_call_counts = {}
         self.tool_call_durations = []
