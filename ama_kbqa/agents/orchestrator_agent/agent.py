@@ -17,7 +17,11 @@ from mcp.client.stdio import stdio_client
 from mcp.types import Tool as McpTool
 from asyncio.exceptions import CancelledError
 
-from ama_kbqa.config import get_chat_client, get_chat_model_name
+from ama_kbqa.config import (
+    assert_provider_api_key_present,
+    get_chat_client,
+    get_chat_model_name,
+)
 
 load_dotenv(find_dotenv())
 
@@ -130,6 +134,9 @@ class Orchestrator:
     def __init__(self, session_id: str = "default"):
         self.name = "ORCHESTRATOR"
         self.session_id = session_id
+        # Fail fast with a clear message if no provider key is configured at
+        # all, rather than deep inside client construction.
+        assert_provider_api_key_present()
         self.client = get_chat_client()
         self.model = get_chat_model_name()
         self.mcp: Optional[MCPClient] = None
@@ -485,29 +492,22 @@ class Orchestrator:
             return answer
 
     async def _fallback_kqapro(self, query: str) -> str:
-        """Fallback to KQAPro agent for knowledge base queries."""
-        try:
-            self._trace("Loading KQAPro agent as fallback...", COLOR_CYAN)
-            agent = self._load_agent("kqapro_agent")
+        """Route to the KQAPro agent for knowledge base queries.
 
-            if agent:
-                if inspect.iscoroutinefunction(agent.ask):
-                    return await agent.ask(query)
-                else:
-                    return agent.ask(query)
-            else:
-                self._trace(f"{COLOR_RED}KQAPro agent failed to load. Using LLM fallback.{COLOR_END}", COLOR_RED)
-                return self._fallback_llm(query)
-        except Exception as e:
-            self._trace(f"{COLOR_RED}KQAPro fallback error: {e}. Using LLM fallback.{COLOR_END}", COLOR_RED)
-            return self._fallback_llm(query)
+        There is no further LLM-only fallback: if the KQAPro agent cannot be
+        loaded, or raises while answering, the error propagates to the caller.
+        A degraded, knowledge-base-free LLM answer would silently mask internal
+        issues (missing API key, unreachable MCP server, ...) behind a
+        plausible-looking response, so we surface the failure instead.
+        """
+        self._trace("Loading KQAPro agent...", COLOR_CYAN)
+        agent = self._load_agent("kqapro_agent")
+        if not agent:
+            raise RuntimeError("KQAPro agent could not be loaded.")
 
-    def _fallback_llm(self, query: str) -> str:
-        """Last resort: Use LLM directly without knowledge base."""
-        return self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": query}]
-        ).choices[0].message.content
+        if inspect.iscoroutinefunction(agent.ask):
+            return await agent.ask(query)
+        return agent.ask(query)
 
 
 async def main():
