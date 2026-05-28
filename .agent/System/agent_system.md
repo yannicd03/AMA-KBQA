@@ -921,9 +921,9 @@ class AnswerJudgment:
 
 ## Agent Reset Pattern
 
-**Three reset methods available:**
+**Four reset variants available:**
 
-### 1. `reset(keep_mcp_open=False)` - Full Reset (Default)
+### 1. `reset(keep_mcp_open=False, keep_history=False)` - Full Reset (Default)
 
 ```python
 await agent.reset()
@@ -936,11 +936,35 @@ await agent.reset()
 # - MCP server connection (closed and reopened)
 # - recorder (new TraceRecorder with fresh trace_id)
 # - journal_snapshots (cleared)
+# - _catalog_injected flag (text-mode tool catalog re-injectible)
 
 # What persists:
 # - LLM client configuration
 # - System prompt
 ```
+
+### 1b. `reset(keep_history=True, keep_mcp_open=True)` - Multiturn Continuation
+
+Used by `lifecycle_runner` on follow-up turns in the Chat UI:
+
+```python
+await agent.reset(keep_history=True, keep_mcp_open=True)
+
+# What gets reset (same as full reset except history):
+# - Token usage counters
+# - Tool call duration tracking
+# - Loop detection tracking
+# - recorder (new TraceRecorder with fresh trace_id for this turn)
+# - journal_snapshots (cleared)
+
+# What persists:
+# - self._messages (full accumulated conversation stack)
+# - _catalog_injected flag (catalog already in stack; not re-injected)
+# - LLM client configuration
+# - System prompt
+```
+
+Note: `keep_mcp_open=True` is required because the previous turn's MCP connection was bound to a now-closed asyncio event loop. The caller orphans it (`agent.mcp = None`) before calling reset; `ask()` → `_init_mcp` rebuilds a fresh connection on the current loop. See `Decisions/multiturn-direct-agent-conversation.md`.
 
 ### 2. `soft_reset()` - Batch Processing (MCP Preserved)
 
