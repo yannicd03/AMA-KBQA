@@ -62,7 +62,7 @@ ama-kbqa/
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
 │   │   ├── pages/              # Streamlit pages
-│   │   │   ├── 1_Chat.py       # Interactive Q&A; background-thread run; live SVG lifecycle; Lifecycle/Trace tab panel (Graph removed); Simplified view toggle
+│   │   │   ├── 1_Chat.py       # Interactive Q&A; background-thread run; live SVG lifecycle; Lifecycle/Trace tab panel (Graph removed); Simplified view toggle; persists sub-agent in session_state["persistent_agent"] for multiturn
 │   │   │   ├── 2_Batch_Processing.py # Batch runner: live progress, tqdm parsing, console auto-scroll
 │   │   │   ├── 3_Evaluation.py # Results dashboard (charts, metrics, per-question details)
 │   │   │   ├── 4_Settings.py   # config.toml editor
@@ -76,7 +76,7 @@ ama-kbqa/
 │   │       ├── config_editor.py # config.toml loading/saving
 │   │       ├── trace_render.py  # Pure-Python trace helpers: build_tree, summarise, render_tree_html
 │   │       ├── graph_html.py    # journal_to_graph, build_graph_html (vis-network HTML template)
-│   │       ├── lifecycle_runner.py # LiveLifecycleState, start_run(), drain_into() — background thread + queue ✅ NEW
+│   │       ├── lifecycle_runner.py # LiveLifecycleState, start_run(is_continuation=), drain_into() — background thread + queue; propagates trace_id on continuation ✅ NEW
 │   │       ├── lifecycle_svg.py    # Inline-SVG agent-lifecycle figure (ported from paper TikZ, data-state nodes) ✅ NEW
 │   │       ├── lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/TOOLS_B frozensets ✅ NEW
 │   │       ├── trace_panel.py   # render_trace_panel() — extracted panel helper shared by Chat + page 5 ✅ NEW
@@ -87,18 +87,19 @@ ama-kbqa/
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
-├── tests/                      # Test suite (182 tests total)
-│   ├── framework/              # Framework unit tests (138 tests)
+├── tests/                      # Test suite (206 tests total)
+│   ├── framework/              # Framework unit tests (155 tests)
 │   │   ├── test_types.py       # Response type tests
 │   │   ├── test_config.py      # Configuration tests
 │   │   ├── test_state.py       # State management tests
 │   │   ├── test_adapters.py    # Adapter tests
 │   │   ├── test_trace.py       # TraceRecorder: nesting, contextvar isolation, sync/async parity, JSONL roundtrip; TestRecorderListeners (4 new)
-│   │   └── test_trace_render.py # trace_render helpers: tree-building, HTML, journal→graph
-│   └── frontend/               # Frontend unit tests (38 tests) ✅ NEW
+│   │   ├── test_trace_render.py # trace_render helpers: tree-building, HTML, journal→graph
+│   │   └── test_base_agent_multiturn.py # reset semantics + first-turn vs follow-up hook skipping (221 lines, multiturn)
+│   └── frontend/               # Frontend unit tests (51 tests)
 │       ├── test_lifecycle_svg.py    # SVG generation, node state transitions (12 tests)
 │       ├── test_lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/B coverage (19 tests)
-│       └── test_lifecycle_runner.py  # start_run/drain_into with stub agent + threading.Event (3 tests)
+│       └── test_lifecycle_runner.py  # start_run/drain_into with stub agent + threading.Event; continuation through real worker (extended +82 lines)
 ├── db/                         # Database utilities
 │   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
 │   ├── populate_vector_db.py   # KQAPro Qdrant initialization
@@ -183,7 +184,7 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 
 **BaseKBQAAgent provides:**
 - MCP client management
-- Pre-agent hooks (classification, entity extraction)
+- Pre-agent hooks (classification, entity extraction) — **skipped on follow-up turns** in multiturn mode
 - KG-specific exact-attribute constraint hook (`_extract_exact_attribute_constraints`) and pre-analysis constraint injection
 - 6-layer loop detection (includes FindResource cap and RunORKGSPARQL cap)
 - Scratchpad-enforced tool-calling loop:
@@ -193,6 +194,7 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 - Post-agent synthesis
 - Token and tool call tracking
 - `soft_reset()` for batch processing
+- **Multiturn conversation:** `reset(keep_history=True)` preserves `self._messages` across turns so follow-up questions resolve via the accumulated context (tool results + prior answers). A `_catalog_injected` flag prevents re-injecting the text-mode tool catalog on a reused stack. See `Decisions/multiturn-direct-agent-conversation.md`.
 - `self.recorder: TraceRecorder` — OTel-shaped span instrumentation (spans: `agent_run`, `classify`, `fast_path`, `llm_call`, `tool_call`, `synthesis`, `delegate`; events: `tool_loop_iter`, `journal_refresh`, `loop_detected`, `context_trim`, `intervention`)
 - `self.journal_snapshots: list` — structured KG snapshots captured after journal-mutating tool calls (bounds extra MCP RPCs to ~mutation count, not per-iteration)
 - `parent_recorder` + `parent_span_id` kwargs for sub-agent nesting under Orchestrator
