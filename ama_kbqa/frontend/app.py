@@ -14,7 +14,6 @@ from ama_kbqa.frontend.utils.styling import inject_css
 
 st.set_page_config(
     page_title="AMA KBQA Assistant",
-    page_icon="✨",
     layout="centered",
 )
 
