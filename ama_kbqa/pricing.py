@@ -27,6 +27,11 @@ def _load() -> dict:
         return {"models": {}}
 
 
+def known_models() -> list[str]:
+    """Sorted list of KIT model ids present in the pricing table."""
+    return sorted(_load().get("models", {}).keys())
+
+
 def get_model_pricing(model: Optional[str]) -> Optional[dict]:
     """Return the pricing entry for ``model`` if it has usable prices, else None."""
     if not model:

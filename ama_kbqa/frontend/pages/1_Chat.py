@@ -43,6 +43,12 @@ from ama_kbqa.frontend.utils.styling import (
     inject_css,
 )
 from ama_kbqa.frontend.utils.trace_panel import render_trace_panel
+from ama_kbqa.frontend.utils.chat_controls import (
+    apply_chat_settings,
+    available_models,
+    price_caption,
+)
+from ama_kbqa.config import get_chat_model_name, get_chat_temperature
 from ama_kbqa.pricing import estimate_cost_usd, format_cost_usd
 
 inject_css()
@@ -62,6 +68,42 @@ with st.sidebar:
         f"Databases: {info['databases']}\n\n"
         f"Tools: {info['tools']}"
     )
+
+    # ── Model & temperature (demo build: KIT endpoint only) ──────────────────
+    st.divider()
+    _models = available_models()
+    _current_model = get_chat_model_name()
+    _model_idx = _models.index(_current_model) if _current_model in _models else 0
+    selected_model = st.selectbox(
+        "Model",
+        options=_models,
+        index=_model_idx,
+        key="chat_model_select",
+        help="KIT-hosted chat model. The demo always uses the KIT endpoint.",
+    )
+    _cap = price_caption(selected_model)
+    if _cap:
+        st.caption(
+            f"💵 {_cap}  \n"
+            ":gray[Illustrative OpenRouter prices — the KIT endpoint is free.]"
+        )
+    temperature = st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=2.0,
+        value=float(get_chat_temperature()),
+        step=0.05,
+        key="chat_temperature_slider",
+        help="Sampling temperature for the agent's LLM calls. Defaults to 1.0.",
+    )
+    # Apply to the in-memory config so the next run uses them (session only,
+    # never written to disk). Switching models starts a fresh conversation,
+    # since a persisted multiturn agent is bound to the model it was built with.
+    apply_chat_settings(selected_model, temperature)
+    if st.session_state.get("_active_chat_model") not in (None, selected_model):
+        st.session_state.pop("persistent_agent", None)
+    st.session_state["_active_chat_model"] = selected_model
+
     simplified = st.toggle(
         "Simplified view",
         value=False,
