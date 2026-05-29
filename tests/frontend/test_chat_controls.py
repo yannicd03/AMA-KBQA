@@ -50,6 +50,10 @@ def test_price_caption_for_known_model():
     # gemma-4-31b: 1.2e-7 * 1e6 = $0.120 input, 3.7e-7 * 1e6 = $0.370 output
     assert "$0.120" in cap
     assert "$0.370" in cap
+    # Dollar signs must be escaped so Streamlit markdown does not render the
+    # text between them as LaTeX math.
+    assert r"\$0.120" in cap
+    assert r"\$0.370" in cap
 
 
 def test_filter_drops_standard_routing_aliases():
