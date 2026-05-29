@@ -20,7 +20,7 @@ st.set_page_config(
 inject_css()
 
 ABOUT_MD = """
-### AMA KBQA: Ask Me Anything about Knowledge Graphs
+### AMA KBQA: Ask Me Anything Knowledgebase Question Answering
 
 This is a research demo of a **Knowledge Base Question Answering** system. It
 answers natural-language questions by *grounding* every answer in a structured
