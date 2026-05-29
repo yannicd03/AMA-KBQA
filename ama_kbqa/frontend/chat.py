@@ -53,24 +53,44 @@ from ama_kbqa.pricing import estimate_cost_usd, format_cost_usd
 
 inject_css()
 
-# ── Sidebar: agent selector + view toggle ────────────────────────────────────
-with st.sidebar:
-    selected_agent = st.radio(
-        "Agent",
-        options=list(AGENT_INFO.keys()),
-        index=0,
-        key="agent_selection",
-    )
-    info = AGENT_INFO[selected_agent]
-    st.info(
-        f"**{selected_agent}**\n\n"
-        f"{info['description']}\n\n"
-        f"Databases: {info['databases']}\n\n"
-        f"Tools: {info['tools']}"
-    )
+AGENT_ICONS = {"Orchestrator": "🧭", "KQAPro": "🎬", "SciQA": "🔬"}
 
+
+def render_agent_picker(*, disabled: bool = False) -> str:
+    """Agent selector shown as a pill next to the chat bar, like a model picker.
+
+    Lists each agent with a one-line description of what it does and when to use
+    it. On change it updates the selection in session_state, drops any persisted
+    multiturn conversation (a new agent handles the next turn), and reruns.
+    """
+    current = st.session_state.get("agent_selection", "Orchestrator")
+    label = f"{AGENT_ICONS.get(current, '')} {current}".strip()
+    with st.popover(label, disabled=disabled, use_container_width=False):
+        st.caption("Choose an agent")
+        for name, meta in AGENT_INFO.items():
+            is_sel = name == current
+            btn = f"{AGENT_ICONS.get(name, '')} {name}".strip() + ("  ✓" if is_sel else "")
+            if st.button(
+                btn,
+                key=f"agentpick_{name}",
+                use_container_width=True,
+                type="secondary" if is_sel else "tertiary",
+            ):
+                if name != current:
+                    st.session_state["agent_selection"] = name
+                    st.session_state.pop("persistent_agent", None)
+                    st.rerun()
+            st.caption(meta.get("tagline", meta.get("description", "")))
+    return st.session_state.get("agent_selection", "Orchestrator")
+
+
+# Current agent selection. The picker itself is rendered next to the chat bar
+# (below); this just reads the persisted choice for the rest of the page logic.
+selected_agent = st.session_state.setdefault("agent_selection", "Orchestrator")
+
+# ── Sidebar: model, temperature, view toggle ─────────────────────────────────
+with st.sidebar:
     # ── Model & temperature (demo build: KIT endpoint only) ──────────────────
-    st.divider()
     _models = available_models()
     _current_model = get_chat_model_name()
     _model_idx = _models.index(_current_model) if _current_model in _models else 0
@@ -139,6 +159,7 @@ if not user_first_interaction and not has_message_history and not live_run:
     if not simplified:
         st.markdown("#### :gray[Explore the Knowledge Graph.]")
     with st.container():
+        render_agent_picker()
         st.chat_input("Ask a question...", key="initial_question")
         if not simplified:
             st.pills(
@@ -149,26 +170,15 @@ if not user_first_interaction and not has_message_history and not live_run:
             )
     st.stop()
 
-# ── Chat interface ───────────────────────────────────────────────────────────
-# Multiturn follow-ups are only implemented for directly-selected sub-agents.
-# The Orchestrator is stateless, so a "Follow up..." box wrongly implies it
-# remembers context. Hide it for the Orchestrator and explain instead.
-if selected_agent == "Orchestrator":
-    user_message = None
-    if not simplified:
-        st.caption(
-            "The Orchestrator answers one question at a time. Use "
-            ":material/refresh: Restart for a new question, or pick a specific "
-            "agent (KQAPro / SciQA) for a follow-up conversation."
-        )
-else:
-    user_message = st.chat_input("Follow up...", disabled=live_run is not None)
-
-if not user_message:
-    if "initial_question" in st.session_state and st.session_state.initial_question:
-        user_message = st.session_state.initial_question
-    if "selected_suggestion" in st.session_state and st.session_state.selected_suggestion:
-        user_message = suggestions[st.session_state.selected_suggestion]
+# ── Pending question carried over from the initial view ─────────────────────
+# The composer (agent picker + input) is rendered lower down, attached to the
+# conversation. Here we only resolve a question carried over from the landing
+# page (typed or an example pill) so the run can kick off below.
+pending_question = None
+if st.session_state.get("initial_question"):
+    pending_question = st.session_state.initial_question
+if st.session_state.get("selected_suggestion"):
+    pending_question = suggestions[st.session_state.selected_suggestion]
 
 with title_row:
     if st.button("Restart", icon=":material/refresh:", disabled=live_run is not None):
@@ -294,6 +304,26 @@ for message in st.session_state.messages:
 
         if not simplified:
             _render_message_footer(message)
+
+
+# ── Composer: agent picker + input, attached like a model picker ─────────────
+# Multiturn follow-ups are only implemented for directly-selected sub-agents.
+# The Orchestrator is stateless, so a "Follow up..." box would wrongly imply it
+# remembers context: hide the input for it and point to the picker instead.
+with st.container():
+    render_agent_picker(disabled=live_run is not None)
+    if selected_agent == "Orchestrator":
+        typed = None
+        if not simplified:
+            st.caption(
+                "The Orchestrator answers one question at a time. Use "
+                ":material/refresh: Restart for a new question, or pick KQAPro / "
+                "SciQA above for a follow-up conversation."
+            )
+    else:
+        typed = st.chat_input("Follow up...", disabled=live_run is not None)
+
+user_message = typed or pending_question
 
 
 # ── Kick off a new live run ──────────────────────────────────────────────────
