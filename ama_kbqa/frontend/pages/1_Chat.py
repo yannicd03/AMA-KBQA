@@ -43,6 +43,7 @@ from ama_kbqa.frontend.utils.styling import (
     inject_css,
 )
 from ama_kbqa.frontend.utils.trace_panel import render_trace_panel
+from ama_kbqa.pricing import estimate_cost_usd, format_cost_usd
 
 inject_css()
 
@@ -153,6 +154,16 @@ def _render_message_footer(message: dict) -> None:
             f'{t["prompt"]:,} prompt + {t["completion"]:,} completion = '
             f'{t["total"]:,} tokens'
         )
+        cost_str = format_cost_usd(
+            estimate_cost_usd(message.get("model"), t["prompt"], t["completion"])
+        )
+        if cost_str:
+            parts.append(
+                f'<span style="vertical-align: middle;" '
+                f'title="Illustrative only — the KIT endpoint is free. Derived '
+                f'from OpenRouter list prices for the equivalent model.">💵</span> '
+                f'~{cost_str} est.'
+            )
     if parts:
         st.markdown(
             f'<div class="execution-time">{" &nbsp;|&nbsp; ".join(parts)}</div>',
@@ -196,6 +207,7 @@ def _persist_completed_run(
         "trace": ansi_to_html(capture_io.raw_buffer),
         "duration": duration,
         "tokens": tokens_dict,
+        "model": getattr(agent, "model", None),
         "trace_events": trace_events,
         "journal_snapshots": journal_snapshots,
         "trace_id": trace_id,
