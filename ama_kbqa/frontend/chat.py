@@ -53,8 +53,6 @@ from ama_kbqa.pricing import estimate_cost_usd, format_cost_usd
 
 inject_css()
 
-AGENT_ICONS = {"Orchestrator": "🧭", "KQAPro": "🎬", "SciQA": "🔬"}
-
 
 def render_agent_picker(*, disabled: bool = False) -> str:
     """Agent selector shown as a pill next to the chat bar, like a model picker.
@@ -64,12 +62,11 @@ def render_agent_picker(*, disabled: bool = False) -> str:
     multiturn conversation (a new agent handles the next turn), and reruns.
     """
     current = st.session_state.get("agent_selection", "Orchestrator")
-    label = f"{AGENT_ICONS.get(current, '')} {current}".strip()
-    with st.popover(label, disabled=disabled, use_container_width=False):
+    with st.popover(current, disabled=disabled, use_container_width=False):
         st.caption("Choose an agent")
         for name, meta in AGENT_INFO.items():
             is_sel = name == current
-            btn = f"{AGENT_ICONS.get(name, '')} {name}".strip() + ("  ✓" if is_sel else "")
+            btn = name + ("  ✓" if is_sel else "")
             if st.button(
                 btn,
                 key=f"agentpick_{name}",
