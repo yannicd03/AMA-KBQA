@@ -73,7 +73,10 @@ def price_caption(model: Optional[str]) -> Optional[str]:
         return None
     per_in = format_cost_usd(entry["prompt_usd_per_token"] * 1_000_000)
     per_out = format_cost_usd(entry["completion_usd_per_token"] * 1_000_000)
-    return f"{per_in} per 1M in and {per_out} per 1M out"
+    # Escape the ``$`` so Streamlit markdown does not treat the two dollar
+    # signs as LaTeX math delimiters (which italicises the text between them).
+    caption = f"{per_in} per 1M in and {per_out} per 1M out"
+    return caption.replace("$", r"\$")
 
 
 def apply_chat_settings(model: str, temperature: float) -> None:
