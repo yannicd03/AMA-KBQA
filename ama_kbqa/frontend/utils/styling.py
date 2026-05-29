@@ -305,6 +305,25 @@ SHARED_CSS = """
         0%, 100% { opacity: 1; }
         50%      { opacity: 0.78; }
     }
+
+    /* ── Floating "About" help button (demo) ──────────────────────────── */
+    .st-key-about_help_btn {
+        position: fixed;
+        bottom: 1.25rem;
+        right: 1.25rem;
+        z-index: 1000;
+        width: auto;
+    }
+    .st-key-about_help_btn button {
+        border-radius: 50%;
+        width: 2.5rem;
+        min-width: 2.5rem;
+        height: 2.5rem;
+        padding: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    }
 </style>
 """
 
