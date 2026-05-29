@@ -46,10 +46,27 @@ def test_filter_dedupes_and_sorts():
 def test_price_caption_for_known_model():
     cap = chat_controls.price_caption("kit.gemma4-31b-it")
     assert cap is not None
-    assert "/ M input" in cap and "/ M output" in cap
+    assert "per 1M in" in cap and "per 1M out" in cap
     # gemma-4-31b: 1.2e-7 * 1e6 = $0.120 input, 3.7e-7 * 1e6 = $0.370 output
     assert "$0.120" in cap
     assert "$0.370" in cap
+
+
+def test_filter_drops_standard_routing_aliases():
+    raw = [
+        "kit.standard-extern",
+        "kit.standard-local",
+        "standard_local",
+        "kit.gemma4-31b-it",
+    ]
+    out = chat_controls.filter_selectable_models(raw)
+    assert out == ["kit.gemma4-31b-it"]
+
+
+def test_display_model_name_strips_kit_prefix():
+    assert chat_controls.display_model_name("kit.gemma4-31b-it") == "gemma4-31b-it"
+    # Non-kit names are shown verbatim.
+    assert chat_controls.display_model_name("azure.gpt-oss-120b") == "azure.gpt-oss-120b"
 
 
 def test_price_caption_unknown_model_is_none():

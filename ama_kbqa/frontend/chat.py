@@ -21,8 +21,6 @@ import streamlit as st
 DEMO_MODE = os.environ.get("DEMO_MODE", "0") == "1"
 DEMO_MAX_QUERIES_PER_SESSION = int(os.environ.get("DEMO_MAX_QUERIES_PER_SESSION", "20"))
 DEMO_MIN_SECONDS_BETWEEN_QUERIES = float(os.environ.get("DEMO_MIN_SECONDS_BETWEEN_QUERIES", "3"))
-from htbuilder import div, styles
-from htbuilder.units import rem
 
 from ama_kbqa.frontend.utils.agent_factory import (
     AGENT_INFO,
@@ -46,6 +44,7 @@ from ama_kbqa.frontend.utils.trace_panel import render_trace_panel
 from ama_kbqa.frontend.utils.chat_controls import (
     apply_chat_settings,
     available_models,
+    display_model_name,
     price_caption,
 )
 from ama_kbqa.config import get_chat_model_name, get_chat_temperature
@@ -66,9 +65,8 @@ def render_agent_picker(*, disabled: bool = False) -> str:
         st.caption("Choose an agent")
         for name, meta in AGENT_INFO.items():
             is_sel = name == current
-            btn = name + ("  ✓" if is_sel else "")
             if st.button(
-                btn,
+                name,
                 key=f"agentpick_{name}",
                 use_container_width=True,
                 type="secondary" if is_sel else "tertiary",
@@ -95,15 +93,13 @@ with st.sidebar:
         "Model",
         options=_models,
         index=_model_idx,
+        format_func=display_model_name,
         key="chat_model_select",
         help="KIT-hosted chat model. The demo always uses the KIT endpoint.",
     )
     _cap = price_caption(selected_model)
     if _cap:
-        st.caption(
-            f"💵 {_cap}  \n"
-            ":gray[Illustrative OpenRouter prices — the KIT endpoint is free.]"
-        )
+        st.caption(_cap)
     temperature = st.slider(
         "Temperature",
         min_value=0.0,
@@ -134,8 +130,6 @@ with st.sidebar:
 suggestions = AGENT_SUGGESTIONS.get(selected_agent, {})
 
 # ── Header ───────────────────────────────────────────────────────────────────
-if not simplified:
-    st.html(div(style=styles(font_size=rem(5), line_height=1))["❉"])
 title_row = st.container(horizontal=True, vertical_alignment="bottom")
 with title_row:
     st.title("AMA KBQA Assistant", anchor=False)
@@ -192,14 +186,10 @@ with title_row:
 def _render_message_footer(message: dict) -> None:
     parts: list[str] = []
     if "duration" in message:
-        parts.append(
-            f'<span style="vertical-align: middle;">⏱️</span> '
-            f'{message["duration"]:.2f}s'
-        )
+        parts.append(f'{message["duration"]:.2f}s')
     if message.get("tokens"):
         t = message["tokens"]
         parts.append(
-            f'<span style="vertical-align: middle;">🔤</span> '
             f'{t["prompt"]:,} prompt + {t["completion"]:,} completion = '
             f'{t["total"]:,} tokens'
         )
@@ -207,12 +197,7 @@ def _render_message_footer(message: dict) -> None:
             estimate_cost_usd(message.get("model"), t["prompt"], t["completion"])
         )
         if cost_str:
-            parts.append(
-                f'<span style="vertical-align: middle;" '
-                f'title="Illustrative only — the KIT endpoint is free. Derived '
-                f'from OpenRouter list prices for the equivalent model.">💵</span> '
-                f'~{cost_str} est.'
-            )
+            parts.append(f'~{cost_str} est.')
     if parts:
         st.markdown(
             f'<div class="execution-time">{" &nbsp;|&nbsp; ".join(parts)}</div>',
@@ -451,7 +436,7 @@ if not simplified and (live_run is not None or traces_registry):
                 key="chat_panel_trace_selector",
             )
 
-    lifecycle_tab, trace_tab = st.tabs(["🔁 Lifecycle", "🔍 Trace"])
+    lifecycle_tab, trace_tab = st.tabs(["Lifecycle", "Trace"])
 
     with lifecycle_tab:
         if live_run is not None:
@@ -514,7 +499,7 @@ if not simplified and (live_run is not None or traces_registry):
                         st.error(f"Execution error: {err}")
                         st.session_state.messages.append({
                             "role": "assistant",
-                            "content": f"⚠️ {err}",
+                            "content": err,
                             "trace": ansi_to_html(capture_io.raw_buffer),
                         })
                     st.session_state["live_run"] = None
@@ -574,7 +559,7 @@ elif simplified and live_run is not None:
                 err = state.error or "Unknown error"
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": f"⚠️ {err}",
+                    "content": err,
                     "trace": ansi_to_html(capture_io.raw_buffer),
                 })
             st.session_state["live_run"] = None

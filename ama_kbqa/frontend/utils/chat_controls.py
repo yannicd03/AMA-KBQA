@@ -19,8 +19,10 @@ from ama_kbqa.pricing import format_cost_usd, get_model_pricing, known_models
 def filter_selectable_models(models: list[str]) -> list[str]:
     """Keep only KIT chat models worth offering in the demo dropdown.
 
-    Drops embedding models (not valid chat models) and Azure OpenAI models,
-    with a carve-out for the open-source ``gpt-oss`` model which the demo keeps.
+    Drops embedding models (not valid chat models), Azure OpenAI models (with a
+    carve-out for the open-source ``gpt-oss`` model which the demo keeps), and
+    the generic ``standard extern`` / ``standard local`` KIT routing aliases,
+    which are not concrete models worth offering in the picker.
     """
     out: list[str] = []
     for m in models:
@@ -28,6 +30,11 @@ def filter_selectable_models(models: list[str]) -> list[str]:
         if "embedding" in ml:
             continue
         if ml.startswith("azure.") and "gpt-oss" not in ml:
+            continue
+        # Normalise away the provider prefix and separators so we catch
+        # ``kit.standard-extern``, ``standard_local``, etc.
+        norm = ml.split(".", 1)[-1].replace("-", " ").replace("_", " ")
+        if norm in ("standard extern", "standard local"):
             continue
         out.append(m)
     return sorted(set(out))
@@ -54,6 +61,11 @@ def available_models() -> list[str]:
     return selectable or filter_selectable_models(known_models())
 
 
+def display_model_name(model: str) -> str:
+    """Name shown in the model dropdown: drop the ``kit.`` provider prefix."""
+    return model[len("kit."):] if model.startswith("kit.") else model
+
+
 def price_caption(model: Optional[str]) -> Optional[str]:
     """One-line per-million-token price for ``model`` (illustrative), or None."""
     entry = get_model_pricing(model)
@@ -61,7 +73,7 @@ def price_caption(model: Optional[str]) -> Optional[str]:
         return None
     per_in = format_cost_usd(entry["prompt_usd_per_token"] * 1_000_000)
     per_out = format_cost_usd(entry["completion_usd_per_token"] * 1_000_000)
-    return f"{per_in} / M input · {per_out} / M output"
+    return f"{per_in} per 1M in and {per_out} per 1M out"
 
 
 def apply_chat_settings(model: str, temperature: float) -> None:
