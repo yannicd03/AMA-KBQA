@@ -76,3 +76,26 @@ class TestEdgesAndStructure:
         out = render_lifecycle_svg()
         # The Lessons-Learned → Strategy-Inject feedback loop is dashed.
         assert "edge dashed" in out
+
+    def test_loop_back_edge_is_addressable(self):
+        out = render_lifecycle_svg()
+        assert 'data-edge-id="loop_back"' in out
+
+    def test_active_edge_gets_state_and_blue_arrowhead(self):
+        # Idle render: no edge references the active marker or carries the
+        # active state, even though the marker itself is always defined.
+        idle = render_lifecycle_svg()
+        assert 'marker-end="url(#lifecycle-arrowhead-active)"' not in idle
+        assert 'data-state="active"' not in idle
+
+        out = render_lifecycle_svg(active_edge_ids={"loop_back"})
+        # The active arrowhead marker is defined and referenced.
+        assert 'id="lifecycle-arrowhead-active"' in out
+        assert 'marker-end="url(#lifecycle-arrowhead-active)"' in out
+        # The loop-back path itself is flagged active.
+        assert 'data-state="active"' in out
+
+    def test_inactive_edges_have_no_active_state(self):
+        # Lighting only the loop-back edge must not flag any other edge active.
+        out = render_lifecycle_svg(active_edge_ids={"loop_back"})
+        assert out.count('marker-end="url(#lifecycle-arrowhead-active)"') == 1

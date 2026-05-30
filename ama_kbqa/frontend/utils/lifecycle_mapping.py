@@ -106,3 +106,33 @@ def span_to_node_ids(
         return []
 
     return []
+
+
+# Edge id of the ReAct loop-back arrow (Done? → LLM Reasoning) in the figure.
+# Must match the ``id=`` set on that edge in ``lifecycle_svg.py``.
+LOOP_BACK_EDGE_ID = "loop_back"
+
+
+def span_to_edge_ids(
+    kind: str,
+    name: str,
+    phase: str = "close",
+    attributes: Optional[dict] = None,
+) -> list[str]:
+    """Return lifecycle-figure *edge* ids that should light up for a span/event.
+
+    Today only the ReAct loop-back arrow (Done? → LLM Reasoning) is
+    addressable. It lights when the agent starts a *new* loop iteration — the
+    ``tool_loop_iter`` event with ``iteration >= 2``. Iteration 1 is the
+    initial entry into the loop (via the Strategy Injection bracket), not a
+    loop-back, so it doesn't light the arrow.
+    """
+    attributes = attributes or {}
+    if kind == "tool_loop_iter":
+        try:
+            iteration = int(attributes.get("iteration", 0))
+        except (TypeError, ValueError):
+            iteration = 0
+        if iteration >= 2:
+            return [LOOP_BACK_EDGE_ID]
+    return []

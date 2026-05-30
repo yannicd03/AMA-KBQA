@@ -112,6 +112,10 @@ class Edge:
     to_side:   Literal["n", "s", "e", "w", "ne", "nw", "se", "sw"] = "w"
     label: Optional[str] = None
     label_pos: Optional[tuple[float, float]] = None
+    # Stable id used to address this edge for live highlighting. Defaults to
+    # ``"{from_id}__{to_id}"`` (see ``_edge_id``); set it explicitly when the
+    # edge needs to be looked up by name (e.g. the ReAct loop-back arrow).
+    id: Optional[str] = None
 
 
 LIFECYCLE_EDGES: list[Edge] = [
@@ -133,11 +137,12 @@ LIFECYCLE_EDGES: list[Edge] = [
     Edge("main_tool_call", "main_scratchpad", from_side="s", to_side="n", routing="straight"),
     Edge("main_scratchpad", "main_done", from_side="s", to_side="n", routing="straight"),
 
-    # Done? "no" → loop back up to LLM Reasoning (left bracket)
+    # Done? "no" → loop back up to LLM Reasoning (left bracket). Named so the
+    # live view can highlight it at the start of each new ReAct cycle.
     Edge("main_done", "main_llm_reason", from_side="w", to_side="w",
          routing="custom",
          waypoints=((400, 254), (400, 50)),
-         label="no", label_pos=(430, 248)),
+         label="no", label_pos=(430, 248), id="loop_back"),
 
     # Done? "yes" → Answer Synthesis (right then up, into Post band)
     Edge("main_done", "post_synthesis", from_side="e", to_side="w",
@@ -286,16 +291,29 @@ def _node_svg(n: Node, state: str) -> str:
     return f'<g data-id="{n.id}" data-state="{state}">{shape}{text}</g>'
 
 
-def _edge_svg(e: Edge) -> str:
+def _edge_id(e: Edge) -> str:
+    """Stable id for an edge — explicit ``id`` if set, else from its endpoints."""
+    return e.id or f"{e.from_id}__{e.to_id}"
+
+
+def _edge_svg(e: Edge, active_edge_ids: frozenset[str] = frozenset()) -> str:
+    eid = _edge_id(e)
+    is_active = eid in active_edge_ids
     classes = ["edge"]
     if e.style in ("dashed", "bidir-dashed"):
         classes.append("dashed")
-    marker_attr = ' marker-end="url(#lifecycle-arrowhead)"'
+    # An active edge uses the blue arrowhead so the head matches the line.
+    head = "lifecycle-arrowhead-active" if is_active else "lifecycle-arrowhead"
+    marker_attr = f' marker-end="url(#{head})"'
     if e.style == "bidir-dashed":
         marker_attr += ' marker-start="url(#lifecycle-arrowhead-rev)"'
     cls = " ".join(classes)
+    state_attr = ' data-state="active"' if is_active else ""
     path_d = _edge_path(e)
-    out = f'<path class="{cls}" d="{path_d}"{marker_attr} />'
+    out = (
+        f'<path class="{cls}" data-edge-id="{escape(eid)}"'
+        f'{state_attr} d="{path_d}"{marker_attr} />'
+    )
     if e.label and e.label_pos:
         lx, ly = e.label_pos
         out += (
@@ -310,6 +328,7 @@ def render_lifecycle_svg(
     visited_node_ids: Iterable[str] = (),
     current_label: Optional[str] = None,
     *,
+    active_edge_ids: Iterable[str] = (),
     width: int = 1000,
     height: int = 360,
 ) -> str:
@@ -317,9 +336,12 @@ def render_lifecycle_svg(
 
     Nodes carry ``data-state`` (``idle``/``visited``/``active``) so the CSS
     in ``styling.py`` can highlight whichever stage is currently in flight.
+    Edges in ``active_edge_ids`` carry ``data-state="active"`` and a blue
+    arrowhead — used to flag the ReAct loop-back arrow on a new cycle.
     """
     active = set(active_node_ids)
     visited = set(visited_node_ids) | active
+    active_edges = frozenset(active_edge_ids)
 
     # Phase background bands (and titles above each band).
     bands_svg: list[str] = []
@@ -333,7 +355,7 @@ def render_lifecycle_svg(
             f' text-anchor="middle">{escape(title)}</text>'
         )
 
-    edges_svg = [_edge_svg(e) for e in LIFECYCLE_EDGES]
+    edges_svg = [_edge_svg(e, active_edges) for e in LIFECYCLE_EDGES]
     nodes_svg = [
         _node_svg(n, _state_for(n.id, active, visited))
         for n in LIFECYCLE_NODES
@@ -348,6 +370,10 @@ def render_lifecycle_svg(
         '<marker id="lifecycle-arrowhead-rev" viewBox="0 0 10 10" refX="1" refY="5"'
         ' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
         '<path d="M 10 0 L 0 5 L 10 10 z" class="edge-arrow" />'
+        '</marker>'
+        '<marker id="lifecycle-arrowhead-active" viewBox="0 0 10 10" refX="9" refY="5"'
+        ' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        '<path d="M 0 0 L 10 5 L 0 10 z" class="edge-arrow-active" />'
         '</marker>'
         '</defs>'
     )

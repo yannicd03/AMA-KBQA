@@ -25,12 +25,23 @@ import threading
 import time
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
-from ama_kbqa.frontend.utils.lifecycle_mapping import span_to_node_ids
+from ama_kbqa.frontend.utils.lifecycle_mapping import (
+    span_to_edge_ids,
+    span_to_node_ids,
+)
 
 
 _LOG = logging.getLogger(__name__)
+
+
+# Minimum time (seconds) a node/edge stays lit once it becomes active. Spans
+# can open and close faster than the UI polls (every ~0.4s), so without a floor
+# a stage would flash for a single frame — or be skipped entirely when its
+# whole span lands between two ticks. Holding each activation for at least this
+# long makes the figure step cleanly through every stage.
+MIN_LIGHTUP_SECONDS = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -53,8 +64,33 @@ class LiveLifecycleState:
     # Active interval-span stack: list of (span_id, node_ids). When a span
     # closes we pop it and recompute ``active_node_ids`` as the union of the
     # remaining entries. Point-in-time events (``is_event=True``) don't push
-    # onto the stack; they get a brief flash via ``transient_event_nodes``.
+    # onto the stack; they get a brief flash via the minimum-lightup hold.
     _active_stack: list[tuple[str, list[str]]] = field(default_factory=list)
+
+    # Minimum-lightup bookkeeping: node-id / edge-id → wall-clock time until
+    # which it must keep rendering as *active*, even after its span has closed.
+    # See ``render_active_node_ids`` / ``render_active_edge_ids``.
+    _node_lit_until: dict[str, float] = field(default_factory=dict)
+    _edge_lit_until: dict[str, float] = field(default_factory=dict)
+
+    def render_active_node_ids(self, now: Optional[float] = None) -> set[str]:
+        """Node ids to render as *active* right now.
+
+        The union of nodes currently on the live span stack and nodes whose
+        minimum-lightup window has not yet elapsed. The hold lets fast spans
+        (which open and close between UI ticks) stay visibly lit for at least
+        ``MIN_LIGHTUP_SECONDS`` so the figure walks cleanly through each stage.
+        """
+        if now is None:
+            now = time.time()
+        held = {nid for nid, until in self._node_lit_until.items() if until > now}
+        return self.active_node_ids | held
+
+    def render_active_edge_ids(self, now: Optional[float] = None) -> set[str]:
+        """Edge ids to render as *active* right now (held for the same floor)."""
+        if now is None:
+            now = time.time()
+        return {eid for eid, until in self._edge_lit_until.items() if until > now}
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +204,14 @@ def _recompute_active(state: LiveLifecycleState) -> None:
     state.active_node_ids = active
 
 
+def _hold(store: dict[str, float], ids: Iterable[str], now: float) -> None:
+    """Extend the minimum-lightup window for ``ids`` to at least ``now + floor``."""
+    until = now + MIN_LIGHTUP_SECONDS
+    for i in ids:
+        if until > store.get(i, 0.0):
+            store[i] = until
+
+
 def _describe(kind: str, name: str) -> str:
     if not name or name == kind:
         return kind
@@ -178,6 +222,7 @@ def drain_into(
     q: queue.Queue,
     state: LiveLifecycleState,
     mapping_fn: Callable[..., list[str]] = span_to_node_ids,
+    edge_mapping_fn: Callable[..., list[str]] = span_to_edge_ids,
 ) -> bool:
     """Drain queued notifications into ``state``. Returns True when terminal.
 
@@ -188,6 +233,10 @@ def drain_into(
         state.started_at = state.started_at or time.time()
 
     terminal = state.status in ("done", "error")
+
+    # One timestamp for the whole drain: every activation seen this tick holds
+    # for at least MIN_LIGHTUP_SECONDS from now, so nothing flashes sub-frame.
+    now = time.time()
 
     while True:
         try:
@@ -229,6 +278,18 @@ def drain_into(
         node_ids = mapping_fn(kind, name, phase=phase, attributes=attrs)
         if node_ids:
             state.visited_node_ids.update(node_ids)
+            # Hold every activated node lit for the minimum window, even the
+            # close-time / event-time ones that never join the live stack
+            # (e.g. classify-close → Strategy Injection, a loop-iter event →
+            # LLM Reasoning). Without this they would only ever show as the
+            # dimmer "visited" colour.
+            _hold(state._node_lit_until, node_ids, now)
+
+        # Edges that should light for this span/event (currently the ReAct
+        # loop-back arrow on a new cycle). Held under the same floor.
+        edge_ids = edge_mapping_fn(kind, name, phase=phase, attributes=attrs)
+        if edge_ids:
+            _hold(state._edge_lit_until, edge_ids, now)
 
         state.span_count += 1
 

@@ -453,10 +453,14 @@ if not simplified and (live_run is not None or traces_registry):
                 terminal = drain_into(q, state)
 
                 elapsed = time.time() - (state.started_at or time.time())
+                # Use the held active sets so each stage stays lit for at least
+                # MIN_LIGHTUP_SECONDS even when its span closed between ticks.
+                now = time.time()
                 svg = render_lifecycle_svg(
-                    state.active_node_ids,
+                    state.render_active_node_ids(now),
                     state.visited_node_ids,
                     current_label=state.current_label or "starting…",
+                    active_edge_ids=state.render_active_edge_ids(now),
                 )
                 st.markdown(
                     f'<div class="lifecycle-wrap">{svg}'
