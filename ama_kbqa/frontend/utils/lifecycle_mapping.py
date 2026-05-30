@@ -108,6 +108,90 @@ def span_to_node_ids(
     return []
 
 
+# ---------------------------------------------------------------------------
+# Orchestrator figure
+# ---------------------------------------------------------------------------
+
+# The orchestrator dispatches to a fixed set of specialist sub-agents. Each maps
+# to a sub-agent *container* node id in the orchestrator figure (see
+# ``orchestrator_svg.py``). Identifiers are the sub-agent names carried on the
+# ``delegate`` span's ``sub_agent`` attribute (and the sub-agent's own
+# ``agent_run`` span name). ``display`` is the human label shown in the figure.
+ORCH_SUBAGENTS: dict[str, tuple[str, str]] = {
+    # agent_id        -> (display label, container node id)
+    "kqapro_agent": ("KQAPro", "sub_kqapro"),
+    "sciqa_agent":  ("SciQA",  "sub_sciqa"),
+}
+
+
+def orchestrator_span_to_node_ids(
+    kind: str,
+    name: str,
+    phase: str = "close",
+    attributes: Optional[dict] = None,
+) -> list[str]:
+    """Return *orchestrator-figure* node ids that should light for a span/event.
+
+    Only orchestrator-LEVEL spans map here (the orchestrator's own
+    ``agent_run``, its ``route`` classification, and each ``delegate``). The
+    dispatched sub-agent's own internal lifecycle spans are attributed to that
+    sub-agent and drive its separate detail figure instead — see
+    ``lifecycle_runner``.
+    """
+    attributes = attributes or {}
+
+    # Orchestrator root: the User Query box lights for the whole run; on close
+    # the Answer Combination box flashes as the merged answer is returned.
+    if kind == "agent_run" and name == "ORCHESTRATOR":
+        if phase == "open":
+            return ["orch_user"]
+        if phase == "close":
+            return ["orch_combine"]
+        return []
+
+    # Autonomous routing == datasource probing + async dispatch decision.
+    if kind == "classify" and name == "route":
+        if phase == "open":
+            return ["orch_probe", "orch_dispatch"]
+        return []
+
+    # Dispatch to a specialist: light its container box while the delegate span
+    # is open (the runner keeps it active until the span closes).
+    if kind == "delegate":
+        if phase == "open":
+            sub = attributes.get("sub_agent") or ""
+            mapped = ORCH_SUBAGENTS.get(sub)
+            if mapped:
+                return [mapped[1]]
+        return []
+
+    return []
+
+
+# Phase a single agent-lifecycle (Fig. 1) node belongs to. Used to drive the
+# coarse Pre/Main/Post mini-boxes inside an orchestrator sub-agent container
+# from that sub-agent's detailed lifecycle state. ``agent_invocation`` (the
+# sub-agent's entry) folds into "pre".
+_NODE_PHASE: dict[str, str] = {
+    "agent_invocation": "pre",
+    "pre_classifier": "pre",
+    "pre_extractor": "pre",
+    "pre_strategy_inject": "pre",
+    "main_llm_reason": "main",
+    "main_tool_call": "main",
+    "main_scratchpad": "main",
+    "main_done": "main",
+    "post_synthesis": "post",
+    "post_evaluate": "post",
+    "post_lessons": "post",
+}
+
+
+def lifecycle_node_phase(node_id: str) -> Optional[str]:
+    """Map an agent-lifecycle node id to its phase (``pre``/``main``/``post``)."""
+    return _NODE_PHASE.get(node_id)
+
+
 # Edge id of the ReAct loop-back arrow (Done? → LLM Reasoning) in the figure.
 # Must match the ``id=`` set on that edge in ``lifecycle_svg.py``.
 LOOP_BACK_EDGE_ID = "loop_back"

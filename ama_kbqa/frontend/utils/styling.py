@@ -322,6 +322,45 @@ SHARED_CSS = """
         50%      { opacity: 0.55; }
     }
 
+    /* ── Orchestrator (multi-agent) figure ───────────────────────────────── */
+    .lifecycle-svg.orchestrator-svg {
+        max-height: 460px;
+    }
+    .orchestrator-svg .node-container {
+        fill: #f8fafc;
+        stroke: #cbd5e1;
+        stroke-width: 1.6;
+    }
+    .orchestrator-svg [data-state="visited"] .node-container {
+        fill: #ffffff;
+        stroke: #475569;
+    }
+    .orchestrator-svg [data-state="active"] .node-container {
+        fill: #eff6ff;
+        stroke: #2563eb;
+    }
+    .orchestrator-svg .subagent-label {
+        font-size: 12px;
+        font-weight: 700;
+        fill: #475569;
+        letter-spacing: 0.01em;
+    }
+    .orchestrator-svg [data-state="active"] .subagent-label {
+        fill: #1d4ed8;
+    }
+    /* The specialist that is not dispatched stays "inactive": dimmed + dashed,
+       echoing the inactive sub-agent in the paper figure. */
+    .orchestrator-svg [data-state="idle"] .node-container {
+        opacity: 0.6;
+        stroke-dasharray: 5 4;
+    }
+    .orchestrator-svg [data-state="idle"] .subagent-label {
+        opacity: 0.5;
+    }
+    .orchestrator-svg [data-state="idle"] .node-smallbox {
+        opacity: 0.65;
+    }
+
     /* ── Floating "About" help button (demo) ──────────────────────────── */
     .st-key-about_help_btn {
         position: fixed;

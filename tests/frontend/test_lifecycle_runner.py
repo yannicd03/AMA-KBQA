@@ -10,6 +10,8 @@ from ama_kbqa.framework.trace import TraceRecorder
 from ama_kbqa.frontend.utils.lifecycle_runner import (
     LiveLifecycleState,
     drain_into,
+    orchestrator_visited_node_ids,
+    reconstruct_orchestrator,
     start_run,
 )
 
@@ -218,6 +220,133 @@ class TestRunner:
         until = state._edge_lit_until["loop_back"]
         assert "loop_back" in state.render_active_edge_ids(until - 0.01)
         assert "loop_back" not in state.render_active_edge_ids(until + 0.01)
+
+    def _put(self, q, phase, kind, name, span_id, parent=None,
+             attrs=None, is_event=False, status="ok"):
+        q.put((phase, {
+            "kind": kind, "name": name, "span_id": span_id,
+            "parent_span_id": parent, "status": status,
+            "is_event": is_event, "attributes": attrs or {},
+        }))
+
+    def _drive_orchestrator_until_delegate_open(self, q, state):
+        """Emit the orchestrator span prefix up to (and including) the open of
+        the kqapro delegate + sub-agent root + an llm_call — i.e. mid-run."""
+        self._put(q, "open", "agent_run", "ORCHESTRATOR", "root")
+        self._put(q, "open", "classify", "route", "route1", "root")
+        self._put(q, "close", "classify", "route", "route1", "root")
+        self._put(q, "open", "delegate", "kqapro_agent", "deleg", "root",
+                  attrs={"sub_agent": "kqapro_agent"})
+        self._put(q, "open", "agent_run", "kqapro_agent", "subroot", "deleg")
+        self._put(q, "open", "llm_call", "gpt-4o", "llm", "subroot")
+        drain_into(q, state)
+
+    def test_delegate_lights_container_and_creates_subagent(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+
+        # The dispatched specialist is registered and running.
+        assert "kqapro_agent" in state.subagents
+        sub = state.subagents["kqapro_agent"]
+        assert sub.status == "running"
+        assert sub.display == "KQAPro" and sub.container_id == "sub_kqapro"
+        # Its container is on the orchestrator stack → active while delegating.
+        assert "sub_kqapro" in state.orch.active_node_ids
+        # User Query stays lit for the whole run (root span still open).
+        assert "orch_user" in state.orch.active_node_ids
+
+    def test_subagent_internal_spans_drive_detail_figure_not_orchestrator(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+        sub = state.subagents["kqapro_agent"]
+
+        # The sub-agent's own spans light ITS detail figure …
+        assert "agent_invocation" in sub.visited_node_ids   # its agent_run open
+        assert "main_llm_reason" in sub.visited_node_ids     # its llm_call
+        # … and never leak into the orchestrator figure's node set.
+        assert "main_llm_reason" not in state.orch.visited_node_ids
+        assert "agent_invocation" not in state.orch.visited_node_ids
+
+    def test_running_subagent_mini_tracks_current_phase(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+        # llm_call is open → main phase in flight → the Main mini lights.
+        active = state.render_orchestrator_active_node_ids()
+        assert "sub_kqapro_main" in active
+        assert "sub_kqapro" in active
+
+    def test_only_dispatched_specialist_appears(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+        # SciQA was never dispatched: no detail figure, container stays idle.
+        assert "sciqa_agent" not in state.subagents
+        assert "sub_sciqa" not in state.render_orchestrator_visited_node_ids()
+
+    def test_delegate_close_marks_subagent_done(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+        # Close the sub-agent and the delegate.
+        self._put(q, "close", "llm_call", "gpt-4o", "llm", "subroot")
+        self._put(q, "close", "agent_run", "kqapro_agent", "subroot", "deleg")
+        self._put(q, "close", "delegate", "kqapro_agent", "deleg", "root")
+        drain_into(q, state)
+
+        sub = state.subagents["kqapro_agent"]
+        assert sub.status == "done"
+        # Container is no longer on the orchestrator stack (delegate closed).
+        assert "sub_kqapro" not in state.orch.active_node_ids
+        # But it remains in the visited set for the figure.
+        assert "sub_kqapro" in state.render_orchestrator_visited_node_ids()
+
+    def test_error_marks_running_subagents_error(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+        q.put(("__error__", {"message": "RuntimeError: boom"}))
+        assert drain_into(q, state) is True
+        assert state.status == "error"
+        assert state.subagents["kqapro_agent"].status == "error"
+
+    def test_reconstruct_orchestrator_from_events(self):
+        events = [
+            {"kind": "agent_run", "name": "ORCHESTRATOR", "span_id": "root",
+             "parent_span_id": None, "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "classify", "name": "route", "span_id": "r1",
+             "parent_span_id": "root", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "delegate", "name": "sciqa_agent", "span_id": "d1",
+             "parent_span_id": "root", "is_event": False,
+             "attributes": {"sub_agent": "sciqa_agent"}, "status": "ok"},
+            {"kind": "agent_run", "name": "sciqa_agent", "span_id": "sr",
+             "parent_span_id": "d1", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "llm_call", "name": "gpt-4o", "span_id": "l1",
+             "parent_span_id": "sr", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "tool_call", "name": "FindResource", "span_id": "t1",
+             "parent_span_id": "l1", "is_event": False, "attributes": {}, "status": "ok"},
+        ]
+        orch_visited, subs = reconstruct_orchestrator(events)
+
+        # Orchestrator-level nodes reconstructed.
+        assert {"orch_user", "orch_probe", "orch_dispatch", "orch_combine",
+                "sub_sciqa"} <= orch_visited
+        # The dispatched specialist (SciQA) reconstructed with its lifecycle.
+        assert list(subs.keys()) == ["sciqa_agent"]
+        sub = subs["sciqa_agent"]
+        assert sub.display == "SciQA"
+        assert {"agent_invocation", "main_llm_reason", "main_tool_call"} <= sub.visited_node_ids
+
+        # The combined figure visited set includes the container + minis.
+        full = orchestrator_visited_node_ids(orch_visited, subs)
+        assert "sub_sciqa" in full and "sub_sciqa_main" in full
+
+    def test_reconstruct_empty_trace_is_safe(self):
+        orch_visited, subs = reconstruct_orchestrator([])
+        assert orch_visited == set()
+        assert subs == {}
 
     def test_drain_into_is_idempotent_after_terminal(self):
         agent = _StubAgent()

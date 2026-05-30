@@ -30,9 +30,12 @@ from ama_kbqa.frontend.utils.agent_factory import (
 from ama_kbqa.frontend.utils.lifecycle_runner import (
     LiveLifecycleState,
     drain_into,
+    orchestrator_visited_node_ids,
+    reconstruct_orchestrator,
     start_run,
 )
 from ama_kbqa.frontend.utils.lifecycle_svg import LIFECYCLE_NODES, render_lifecycle_svg
+from ama_kbqa.frontend.utils.orchestrator_svg import render_orchestrator_svg
 from ama_kbqa.frontend.utils.styling import (
     BOT_AVATAR,
     USER_AVATAR,
@@ -270,6 +273,25 @@ def _persist_completed_run(
         st.session_state["latest_trace_id"] = trace_id
 
 
+def _render_subagent_pane(sub: Any, *, live: bool, now: float) -> None:
+    """Render one dispatched sub-agent's detailed lifecycle figure in a pane.
+
+    While the sub-agent is running the pane is expanded and live; once it
+    finishes (or in the frozen completed view) it collapses into an expander.
+    """
+    with st.expander(f"{sub.display} — {sub.status}", expanded=live and sub.status == "running"):
+        if live:
+            svg = render_lifecycle_svg(
+                sub.render_active_node_ids(now),
+                sub.visited_node_ids,
+                current_label=sub.current_label or None,
+                active_edge_ids=sub.render_active_edge_ids(now),
+            )
+        else:
+            svg = render_lifecycle_svg(set(), sub.visited_node_ids)
+        st.markdown(f'<div class="lifecycle-wrap">{svg}</div>', unsafe_allow_html=True)
+
+
 # ── Render past history ──────────────────────────────────────────────────────
 for message in st.session_state.messages:
     avatar = BOT_AVATAR if message["role"] == "assistant" else USER_AVATAR
@@ -456,14 +478,7 @@ if not simplified and (live_run is not None or traces_registry):
                 # Use the held active sets so each stage stays lit for at least
                 # MIN_LIGHTUP_SECONDS even when its span closed between ticks.
                 now = time.time()
-                svg = render_lifecycle_svg(
-                    state.render_active_node_ids(now),
-                    state.visited_node_ids,
-                    current_label=state.current_label or "starting…",
-                    active_edge_ids=state.render_active_edge_ids(now),
-                )
-                st.markdown(
-                    f'<div class="lifecycle-wrap">{svg}'
+                status_html = (
                     f'<div class="lifecycle-status">'
                     f'<span><span class="label">stage:</span> '
                     f'{state.current_label or "—"}</span>'
@@ -471,9 +486,33 @@ if not simplified and (live_run is not None or traces_registry):
                     f'{elapsed:.1f}s</span>'
                     f'<span><span class="label">spans:</span> '
                     f'{state.span_count}</span>'
-                    f"</div></div>",
-                    unsafe_allow_html=True,
+                    f"</div>"
                 )
+                if live_run["agent_name"] == "Orchestrator":
+                    # Multi-agent view: orchestrator figure + a live pane per
+                    # dispatched specialist showing its own Fig.1 lifecycle.
+                    osvg = render_orchestrator_svg(
+                        state.render_orchestrator_active_node_ids(now),
+                        state.render_orchestrator_visited_node_ids(),
+                        current_label=state.current_label or "starting…",
+                    )
+                    st.markdown(
+                        f'<div class="lifecycle-wrap">{osvg}{status_html}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    for sub in state.subagents.values():
+                        _render_subagent_pane(sub, live=True, now=now)
+                else:
+                    svg = render_lifecycle_svg(
+                        state.render_active_node_ids(now),
+                        state.visited_node_ids,
+                        current_label=state.current_label or "starting…",
+                        active_edge_ids=state.render_active_edge_ids(now),
+                    )
+                    st.markdown(
+                        f'<div class="lifecycle-wrap">{svg}{status_html}</div>',
+                        unsafe_allow_html=True,
+                    )
                 if capture_io.raw_buffer:
                     console_placeholder.markdown(
                         f'<div class="console-container">'
@@ -511,18 +550,35 @@ if not simplified and (live_run is not None or traces_registry):
 
             _live_tick()
         elif panel_trace_id:
-            # Frozen "all visited" view of the most recent completed trace.
-            visited = {n.id for n in LIFECYCLE_NODES}
+            # Frozen view of a completed trace. Orchestrator runs get the
+            # multi-agent figure (reconstructed from the trace) + collapsed
+            # per-specialist panes; single-agent runs get the lifecycle figure.
             t = traces_registry[panel_trace_id]
-            svg = render_lifecycle_svg(
-                set(),
-                visited,
-                current_label=f"completed in {t.get('duration_s', 0):.1f}s",
-            )
-            st.markdown(
-                f'<div class="lifecycle-wrap">{svg}</div>',
-                unsafe_allow_html=True,
-            )
+            caption = f"completed in {t.get('duration_s', 0):.1f}s"
+            if t.get("agent") == "Orchestrator":
+                orch_visited, subs = reconstruct_orchestrator(t.get("events") or [])
+                osvg = render_orchestrator_svg(
+                    set(),
+                    orchestrator_visited_node_ids(orch_visited, subs),
+                    current_label=caption,
+                )
+                st.markdown(
+                    f'<div class="lifecycle-wrap">{osvg}</div>',
+                    unsafe_allow_html=True,
+                )
+                for sub in subs.values():
+                    _render_subagent_pane(sub, live=False, now=0.0)
+            else:
+                visited = {n.id for n in LIFECYCLE_NODES}
+                svg = render_lifecycle_svg(
+                    set(),
+                    visited,
+                    current_label=caption,
+                )
+                st.markdown(
+                    f'<div class="lifecycle-wrap">{svg}</div>',
+                    unsafe_allow_html=True,
+                )
         else:
             st.caption("No trace selected.")
 
