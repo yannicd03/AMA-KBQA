@@ -161,6 +161,64 @@ class TestRunner:
         # Catalog was NOT duplicated onto the preserved stack.
         assert sum(1 for m in agent._messages if m["content"] == "CATALOG") == 1
 
+    def _emit(self, q, phase, kind, name, *, span_id="s1", is_event=False, attributes=None):
+        q.put((phase, {
+            "kind": kind,
+            "name": name,
+            "span_id": span_id,
+            "parent_span_id": None,
+            "status": "ok",
+            "is_event": is_event,
+            "attributes": attributes or {},
+        }))
+
+    def test_minimum_lightup_holds_node_after_span_closes(self):
+        # A span that opens and closes within a single drain (faster than the
+        # ~0.4s UI tick) must still render active for at least the hold window.
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._emit(q, "open", "llm_call", "gpt-4o", span_id="s1")
+        self._emit(q, "close", "llm_call", "gpt-4o", span_id="s1")
+        drain_into(q, state)
+
+        # The span is off the live stack immediately...
+        assert "main_llm_reason" not in state.active_node_ids
+        # ...but the hold keeps it in the *rendered* active set.
+        until = state._node_lit_until["main_llm_reason"]
+        assert "main_llm_reason" in state.render_active_node_ids(until - 0.01)
+        # Once the window elapses it drops out.
+        assert "main_llm_reason" not in state.render_active_node_ids(until + 0.01)
+
+    def test_held_node_unions_with_live_stack(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        # A still-open span (agent_invocation) plus a closed-but-held one.
+        self._emit(q, "open", "agent_run", "ask", span_id="root")
+        self._emit(q, "open", "llm_call", "gpt-4o", span_id="s1")
+        self._emit(q, "close", "llm_call", "gpt-4o", span_id="s1")
+        drain_into(q, state)
+
+        rendered = state.render_active_node_ids(state._node_lit_until["main_llm_reason"] - 0.01)
+        assert "agent_invocation" in rendered  # live on the stack
+        assert "main_llm_reason" in rendered    # held after close
+
+    def test_new_cycle_lights_loop_back_edge(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        # First iteration: no loop-back.
+        self._emit(q, "event", "tool_loop_iter", "iter:1", is_event=True,
+                   attributes={"iteration": 1})
+        drain_into(q, state)
+        assert state.render_active_edge_ids() == set()
+
+        # Second iteration: a new ReAct cycle lights the loop-back arrow.
+        self._emit(q, "event", "tool_loop_iter", "iter:2", is_event=True,
+                   attributes={"iteration": 2})
+        drain_into(q, state)
+        until = state._edge_lit_until["loop_back"]
+        assert "loop_back" in state.render_active_edge_ids(until - 0.01)
+        assert "loop_back" not in state.render_active_edge_ids(until + 0.01)
+
     def test_drain_into_is_idempotent_after_terminal(self):
         agent = _StubAgent()
         q: queue.Queue = queue.Queue()

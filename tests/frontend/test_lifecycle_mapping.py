@@ -5,8 +5,10 @@ from __future__ import annotations
 import pytest
 
 from ama_kbqa.frontend.utils.lifecycle_mapping import (
+    LOOP_BACK_EDGE_ID,
     TOOLS_A,
     TOOLS_B,
+    span_to_edge_ids,
     span_to_node_ids,
 )
 
@@ -60,3 +62,29 @@ class TestDelegateAndUnknowns:
 
     def test_completely_unknown_kind_is_noop(self):
         assert span_to_node_ids("brand_new_kind", "x", phase="open") == []
+
+
+class TestEdgeMapping:
+    def test_loop_back_lights_only_from_second_iteration(self):
+        # Iteration 1 is the initial entry into the loop, not a loop-back.
+        assert span_to_edge_ids(
+            "tool_loop_iter", "iter:1", phase="event", attributes={"iteration": 1}
+        ) == []
+        # Iteration 2+ is a genuine new ReAct cycle → light the loop-back arrow.
+        assert span_to_edge_ids(
+            "tool_loop_iter", "iter:2", phase="event", attributes={"iteration": 2}
+        ) == [LOOP_BACK_EDGE_ID]
+        assert span_to_edge_ids(
+            "tool_loop_iter", "iter:7", phase="event", attributes={"iteration": 7}
+        ) == [LOOP_BACK_EDGE_ID]
+
+    def test_loop_back_tolerates_missing_or_bad_iteration(self):
+        assert span_to_edge_ids("tool_loop_iter", "iter", phase="event") == []
+        assert span_to_edge_ids(
+            "tool_loop_iter", "iter", phase="event", attributes={"iteration": "nope"}
+        ) == []
+
+    def test_other_kinds_light_no_edges(self):
+        assert span_to_edge_ids("llm_call", "gpt-4o", phase="open") == []
+        assert span_to_edge_ids("tool_call", "FindNode", phase="open") == []
+        assert span_to_edge_ids("agent_run", "ask", phase="close") == []

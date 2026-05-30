@@ -288,8 +288,20 @@ SHARED_CSS = """
         stroke-dasharray: 5 4;
         stroke: #94a3b8;
     }
+    .lifecycle-svg .edge[data-state="active"] {
+        stroke: #2563eb;
+        stroke-width: 2.8;
+        filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.5));
+        animation: lifecycle-edge-pulse 1.2s ease-in-out infinite;
+    }
+    .lifecycle-svg .edge.dashed[data-state="active"] {
+        stroke: #2563eb;
+    }
     .lifecycle-svg .edge-arrow {
         fill: #64748b;
+    }
+    .lifecycle-svg .edge-arrow-active {
+        fill: #2563eb;
     }
     .lifecycle-svg .edge-label {
         font-size: 10.5px;
@@ -304,6 +316,10 @@ SHARED_CSS = """
     @keyframes lifecycle-pulse {
         0%, 100% { opacity: 1; }
         50%      { opacity: 0.78; }
+    }
+    @keyframes lifecycle-edge-pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.55; }
     }
 
     /* ── Floating "About" help button (demo) ──────────────────────────── */
