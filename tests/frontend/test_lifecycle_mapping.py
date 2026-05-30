@@ -6,8 +6,11 @@ import pytest
 
 from ama_kbqa.frontend.utils.lifecycle_mapping import (
     LOOP_BACK_EDGE_ID,
+    ORCH_SUBAGENTS,
     TOOLS_A,
     TOOLS_B,
+    lifecycle_node_phase,
+    orchestrator_span_to_node_ids,
     span_to_edge_ids,
     span_to_node_ids,
 )
@@ -88,3 +91,60 @@ class TestEdgeMapping:
         assert span_to_edge_ids("llm_call", "gpt-4o", phase="open") == []
         assert span_to_edge_ids("tool_call", "FindNode", phase="open") == []
         assert span_to_edge_ids("agent_run", "ask", phase="close") == []
+
+
+class TestOrchestratorMapping:
+    def test_orchestrator_root_lights_user_then_combine(self):
+        assert orchestrator_span_to_node_ids(
+            "agent_run", "ORCHESTRATOR", phase="open"
+        ) == ["orch_user"]
+        assert orchestrator_span_to_node_ids(
+            "agent_run", "ORCHESTRATOR", phase="close"
+        ) == ["orch_combine"]
+
+    def test_route_lights_probe_and_dispatch(self):
+        assert orchestrator_span_to_node_ids(
+            "classify", "route", phase="open"
+        ) == ["orch_probe", "orch_dispatch"]
+        # Closing the route span re-lights nothing (the boxes settle to visited).
+        assert orchestrator_span_to_node_ids("classify", "route", phase="close") == []
+
+    def test_delegate_lights_its_container_on_open(self):
+        assert orchestrator_span_to_node_ids(
+            "delegate", "kqapro_agent", phase="open",
+            attributes={"sub_agent": "kqapro_agent"},
+        ) == ["sub_kqapro"]
+        assert orchestrator_span_to_node_ids(
+            "delegate", "sciqa_agent", phase="open",
+            attributes={"sub_agent": "sciqa_agent"},
+        ) == ["sub_sciqa"]
+        # On close the container settles (the runner pops it off the stack).
+        assert orchestrator_span_to_node_ids(
+            "delegate", "kqapro_agent", phase="close",
+            attributes={"sub_agent": "kqapro_agent"},
+        ) == []
+
+    def test_unknown_delegate_target_lights_nothing(self):
+        assert orchestrator_span_to_node_ids(
+            "delegate", "mystery_agent", phase="open",
+            attributes={"sub_agent": "mystery_agent"},
+        ) == []
+
+    def test_sub_agent_internal_spans_do_not_light_orchestrator_figure(self):
+        # A sub-agent's own classify/llm/tool spans drive its detail figure,
+        # not the orchestrator figure.
+        assert orchestrator_span_to_node_ids("classify", "classify", phase="open") == []
+        assert orchestrator_span_to_node_ids("llm_call", "gpt-4o", phase="open") == []
+        assert orchestrator_span_to_node_ids("tool_call", "FindNode", phase="open") == []
+
+    def test_subagent_registry_matches_container_ids(self):
+        assert ORCH_SUBAGENTS["kqapro_agent"] == ("KQAPro", "sub_kqapro")
+        assert ORCH_SUBAGENTS["sciqa_agent"] == ("SciQA", "sub_sciqa")
+
+    def test_node_phase_mapping(self):
+        assert lifecycle_node_phase("agent_invocation") == "pre"
+        assert lifecycle_node_phase("pre_strategy_inject") == "pre"
+        assert lifecycle_node_phase("main_llm_reason") == "main"
+        assert lifecycle_node_phase("main_done") == "main"
+        assert lifecycle_node_phase("post_synthesis") == "post"
+        assert lifecycle_node_phase("nonexistent") is None
