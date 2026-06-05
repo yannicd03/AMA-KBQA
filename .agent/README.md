@@ -54,6 +54,7 @@
 | [Decisions/multi-label-fewshot-tolerance.md](Decisions/multi-label-fewshot-tolerance.md) | Split-and-merge fewshot lookup in `SciQAAgent._classify_question()`: handles compound classifier outputs like `"Factoid\nSuperlative"` that silently yielded empty fewshots and hid `FindFrequentValues` traces from the agent |
 | [Decisions/root-cause-tool-generalization-2026-05-14.md](Decisions/root-cause-tool-generalization-2026-05-14.md) | Root-cause fixes from the seed-43 trace audit: answer cleanup, branch-local `CountUnion` relations, qualifier aliases, `QueryComparisonRows`, multi-predicate aggregation, and subject-scope frequencies |
 | [Decisions/multiturn-direct-agent-conversation.md](Decisions/multiturn-direct-agent-conversation.md) | Multiturn conversation for directly-selected sub-agents: persistent agent instance + `reset(keep_history=True)`; skip pre-agent hook on follow-ups; fast-path answer recording; asyncio event-loop safety; Orchestrator stays stateless |
+| [Decisions/orchestrator-evidence-based-routing.md](Decisions/orchestrator-evidence-based-routing.md) | Orchestrator routing reworked from collapsed heuristic verdict (avg_confidence > 0.7) to evidence-based two-step LLM routing: tool returns raw JSON (terms_probed/matched/avg_score/labels); LLM calls `select_agent(agent, reason)`; `route_reason` on classify span; degraded paths no longer silently KQAPro |
 
 ---
 
