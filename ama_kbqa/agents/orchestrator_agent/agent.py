@@ -150,18 +150,34 @@ class Orchestrator:
         self.journal_snapshots: list = []
         self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
+        # The descriptions are injected into the routing system prompt so the
+        # router LLM can judge a question's domain even when the probing
+        # tool's entity-linking evidence is weak or missing.
         self._agent_config = {
             "kqapro_agent": {
                 "module": "ama_kbqa.agents.kqapro_agent.agent",
                 "class": "KQAProAgent",
-                "description": "Factual knowledge, Knowledge Graph, Relationships"
+                "description": (
+                    "General world knowledge over a Wikidata-style knowledge "
+                    "graph (KQA Pro): people, places, films, organizations, "
+                    "dates, quantities, comparisons."
+                )
             },
             "sciqa_agent": {
                 "module": "ama_kbqa.agents.sciqa_agent.agent",
                 "class": "SciQAAgent",
-                "description": "Scientific papers, research contributions, ORKG"
+                "description": (
+                    "Scholarly knowledge over the Open Research Knowledge "
+                    "Graph (SciQA/ORKG): research papers, contributions, "
+                    "benchmarks, datasets, evaluation metrics, models and "
+                    "methods from the scientific literature."
+                )
             },
         }
+
+        # Set by _route_autonomously: the router LLM's one-sentence reason
+        # for its last decision (surfaced on the classify trace span).
+        self.last_routing_reason: Optional[str] = None
 
     def _trace(self, msg: str, color: str = COLOR_BLUE):
         trace(self.name, msg, color)
@@ -214,8 +230,63 @@ class Orchestrator:
                     pass
             self.mcp = None
 
+    def _routing_system_prompt(self) -> str:
+        agent_lines = "\n".join(
+            f"- {name}: {cfg['description']}" for name, cfg in self._agent_config.items()
+        )
+        return (
+            "You route user questions to one of these specialist agents:\n"
+            f"{agent_lines}\n\n"
+            "First call the probing tool with the user's question VERBATIM to "
+            "gather entity-linking evidence from both knowledge graphs. Strong, "
+            "on-topic matches in one graph are a good signal, but judge the "
+            "question's domain yourself: generic terms can match spuriously in "
+            "either graph, so check the matched labels, not just the scores. "
+            "If the evidence is weak, missing, or degraded, decide from the "
+            "question's domain alone. Prefer kqapro_agent only when the "
+            "question is genuinely ambiguous between the two."
+        )
+
+    def _select_agent_tool(self) -> Dict:
+        """Forced final tool call: an enum keeps the decision exact (no
+        substring matching on free text)."""
+        return {
+            "type": "function",
+            "function": {
+                "name": "select_agent",
+                "description": (
+                    "Commit to the specialist agent that should answer the "
+                    "user's question."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent": {
+                            "type": "string",
+                            "enum": list(self._agent_config.keys()),
+                            "description": "The agent to route the question to."
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining the routing decision."
+                        },
+                    },
+                    "required": ["agent", "reason"],
+                },
+            },
+        }
+
     async def _route_autonomously(self, query: str) -> Optional[str]:
-        """Uses LLM and MCP Tools for agent selection."""
+        """Two-step LLM routing: probe both KGs, then decide on the evidence.
+
+        Step 1 forces the LLM to call the MCP probing tool, which returns
+        raw entity-linking evidence for BOTH knowledge graphs (no collapsed
+        verdict). Step 2 feeds that evidence back and forces a structured
+        `select_agent` call, so the decision weighs the evidence against the
+        agents' domain descriptions instead of a hardcoded threshold gate.
+        Any failure returns None and the caller falls back to KQAPro.
+        """
+        self.last_routing_reason = None
         if not self.mcp:
             return None
 
@@ -223,68 +294,86 @@ class Orchestrator:
 
         try:
             mcp_tools = await self.mcp.list_tools()
-            openai_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
+            probe_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
         except Exception as e:
             self._trace(f"{COLOR_RED}Error listing tools: {e}{COLOR_END}", COLOR_RED)
             return None
 
-        if not openai_tools:
+        if not probe_tools:
             self._trace(f"{COLOR_YELLOW}No tools available.{COLOR_END}", COLOR_YELLOW)
             return None
 
-        # Updated system prompt to encourage reasoning process
         messages = [
-            {"role": "system", "content": (
-                "You are a router. Your task is to find the right sub-agent for a user request. "
-                "Think step by step. First analyze the request, then decide which tool to call. "
-                "Briefly state your reasoning in text before using the tool."
-            )},
+            {"role": "system", "content": self._routing_system_prompt()},
             {"role": "user", "content": f"Query: {query}"}
         ]
 
         try:
+            # Step 1: gather evidence (forced probe call).
             completion = self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=openai_tools, tool_choice="required"
+                model=self.model, messages=messages, tools=probe_tools, tool_choice="required"
             )
 
             message = completion.choices[0].message
 
-            # 1. Logging: Reasoning process
             if message.content:
-                self._trace(f"🤔 {message.content}", color=COLOR_CYAN)
+                self._trace(message.content, color=COLOR_CYAN)
 
-            if message.tool_calls:
-                tool_call = message.tool_calls[0]
-                func_name = tool_call.function.name
-                func_args_str = tool_call.function.arguments
-                func_args = json.loads(func_args_str)
-
-                # 2. Logging: Tool call and parameters
-                self._trace(f"🛠️ Calling tool: {func_name}", color=COLOR_YELLOW)
-                self._log_pretty("Arguments", func_args, COLOR_YELLOW)
-
-                tool_result = await self.mcp.call_tool(func_name, func_args)
-
-                # 3. Logging: Result
-                self._log_pretty("Result", tool_result, COLOR_MAGENTA)
-
-                # Parse the recommendation from the JSON result
-                try:
-                    result_data = json.loads(tool_result)
-                    recommendation = result_data.get("recommendation", "").lower()
-                except (json.JSONDecodeError, AttributeError):
-                    recommendation = tool_result.lower()
-
-                if "sciqa" in recommendation:
-                    return "sciqa_agent"
-                if "kqapro" in recommendation:
-                    return "kqapro_agent"
-
-                self._trace(f"{COLOR_YELLOW}Tool result unclear, defaulting to kqapro_agent{COLOR_END}", COLOR_YELLOW)
-                return "kqapro_agent"
-            else:
-                self._trace(f"{COLOR_YELLOW}LLM did not call any tool.{COLOR_END}", COLOR_YELLOW)
+            if not message.tool_calls:
+                self._trace(f"{COLOR_YELLOW}LLM did not call the probing tool.{COLOR_END}", COLOR_YELLOW)
                 return None
+
+            tool_call = message.tool_calls[0]
+            func_name = tool_call.function.name
+            func_args_str = tool_call.function.arguments
+            func_args = json.loads(func_args_str)
+
+            self._trace(f"Calling tool: {func_name}", color=COLOR_YELLOW)
+            self._log_pretty("Arguments", func_args, COLOR_YELLOW)
+
+            tool_result = await self.mcp.call_tool(func_name, func_args)
+
+            self._log_pretty("Evidence", tool_result, COLOR_MAGENTA)
+
+            # Step 2: decide (forced structured select_agent call).
+            messages.append({
+                "role": "assistant",
+                "content": message.content,
+                "tool_calls": [{
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {"name": func_name, "arguments": func_args_str},
+                }],
+            })
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": tool_result,
+            })
+
+            decision = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=[self._select_agent_tool()],
+                tool_choice={"type": "function", "function": {"name": "select_agent"}},
+            )
+
+            decision_msg = decision.choices[0].message
+            if not decision_msg.tool_calls:
+                self._trace(f"{COLOR_YELLOW}LLM did not commit to an agent.{COLOR_END}", COLOR_YELLOW)
+                return None
+
+            decision_args = json.loads(decision_msg.tool_calls[0].function.arguments)
+            agent_name = decision_args.get("agent")
+            reason = decision_args.get("reason", "")
+
+            if agent_name not in self._agent_config:
+                self._trace(f"{COLOR_YELLOW}Unknown agent '{agent_name}' selected.{COLOR_END}", COLOR_YELLOW)
+                return None
+
+            self.last_routing_reason = reason
+            self._trace(f"Decision: {agent_name} ({reason})", COLOR_CYAN)
+            return agent_name
 
         except Exception as e:
             self._trace(f"{COLOR_RED}Error in routing process: {e}{COLOR_END}", COLOR_RED)
@@ -328,6 +417,8 @@ class Orchestrator:
                 ) as _route_span:
                     selected_agent_name = await self._route_autonomously(query)
                     _route_span.set_attribute("selected_agent", selected_agent_name or "<none>")
+                    if self.last_routing_reason:
+                        _route_span.set_attribute("route_reason", self.last_routing_reason)
 
                 answer = ""
                 print("-" * 50)
