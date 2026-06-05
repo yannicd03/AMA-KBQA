@@ -44,6 +44,81 @@ All agents communicate with their MCP servers via **stdio protocol**.
 
 ---
 
+## Orchestrator Agent Deep Dive
+
+**Files:**
+- `ama_kbqa/agents/orchestrator_agent/agent.py` — `OrchestratorAgent` class, `_route_autonomously`, `_fallback_kqapro`, `_delegate`
+- `ama_kbqa/server/orchestrator_server.py` — MCP server with `analyze_query_recommend_db` tool
+
+### Routing Flow
+
+The Orchestrator routes each question in two LLM steps via `_route_autonomously`:
+
+```
+Step 1 — Probe
+  LLM receives: routing system prompt (includes agent domain descriptions)
+  Forced tool call (tool_choice=required): analyze_query_recommend_db(query)
+  Tool returns: raw evidence JSON (see below)
+
+Step 2 — Judge
+  LLM receives: evidence appended as tool-result message
+  Forced tool call (tool_choice=required): select_agent(agent: enum, reason: str)
+  enum values constructed from _agent_config keys at runtime
+  reason recorded on the classify span as route_reason attribute
+```
+
+If `_route_autonomously` raises or returns an unrecognised agent key, `_fallback_kqapro` delegates to KQAPro.
+
+### `analyze_query_recommend_db` Evidence Contract
+
+The tool returns structured JSON — never a verdict string:
+
+```json
+{
+  "semantics": {
+    "named_entities": ["entity name", ...],
+    "question_domain_hint": "scholarly publication | general knowledge | ambiguous"
+  },
+  "kg_evidence": {
+    "kqapro": {
+      "terms_probed": 2, "terms_matched": 1, "avg_score": 0.84,
+      "matches": [{"id": "Q12345", "label": "Ada Lovelace", "score": 0.84}]
+    },
+    "sciqa": {
+      "terms_probed": 2, "terms_matched": 2, "avg_score": 0.79,
+      "matches": [{"id": "R123456", "label": "Comparison of NLP benchmarks", "score": 0.82}]
+    }
+  },
+  "degraded": false,
+  "note": null
+}
+```
+
+When Qdrant is unreachable or NER fails, `"degraded": true` is set with an explanatory `note`; `kg_evidence` is empty. The LLM still calls `select_agent` in step 2, routing from question domain alone.
+
+### Agent Domain Descriptions (`_agent_config`)
+
+These are injected verbatim into the routing system prompt so the LLM can match evidence labels to KG domains:
+
+| Agent key | Domain description |
+|-----------|-------------------|
+| `kqapro` | Wikidata-style general knowledge (people, places, events, facts) |
+| `sciqa` | ORKG scholarly knowledge (papers, authors, comparisons, research fields) |
+
+### Trace Span: `route_reason`
+
+The `reason` string from the `select_agent` call is stored on the `classify` span as the `route_reason` attribute. Every routing decision is auditable in the Trace Inspector without re-running the question.
+
+### Key Design Invariants
+
+- Substring parsing of verdict text is gone. Routing is entirely determined by the `select_agent` structured call.
+- The Orchestrator stays stateless across turns. It does not maintain KG-specific session state; each turn creates a fresh routing context.
+- Multiturn conversation is scoped to directly-selected sub-agents only. When the user selects "Orchestrator" directly, each turn creates a fresh agent per the Orchestrator path. See `Decisions/multiturn-direct-agent-conversation.md`.
+
+See `Decisions/orchestrator-evidence-based-routing.md` for the full rationale, rejected alternatives, and trade-offs.
+
+---
+
 ## Generic KBQA Framework
 
 Both KQAProAgent and SciQAAgent inherit from `BaseKBQAAgent` in the framework package. This provides:

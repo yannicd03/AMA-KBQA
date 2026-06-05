@@ -56,6 +56,7 @@
 | [Decisions/root-cause-tool-generalization-2026-05-14.md](Decisions/root-cause-tool-generalization-2026-05-14.md) | Root-cause fixes from the seed-43 trace audit: answer cleanup, branch-local `CountUnion` relations, qualifier aliases, `QueryComparisonRows`, multi-predicate aggregation, and subject-scope frequencies |
 | [Decisions/multiturn-direct-agent-conversation.md](Decisions/multiturn-direct-agent-conversation.md) | Multiturn conversation for directly-selected sub-agents: persistent agent instance + `reset(keep_history=True)`; skip pre-agent hook on follow-ups; fast-path answer recording; asyncio event-loop safety; Orchestrator stays stateless |
 | [Decisions/demo-bwcloud-frontend-divergence.md](Decisions/demo-bwcloud-frontend-divergence.md) | **demo-bwcloud branch only.** Why the public demo is single-page, KIT-only, with illustrative cost display and in-chat agent/model controls instead of the full dashboard |
+| [Decisions/orchestrator-evidence-based-routing.md](Decisions/orchestrator-evidence-based-routing.md) | Orchestrator routing reworked from collapsed heuristic verdict (avg_confidence > 0.7) to evidence-based two-step LLM routing: tool returns raw JSON (terms_probed/matched/avg_score/labels); LLM calls `select_agent(agent, reason)`; `route_reason` on classify span; degraded paths no longer silently KQAPro |
 
 ---
 
