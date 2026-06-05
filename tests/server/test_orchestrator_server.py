@@ -2,8 +2,13 @@
 
 When Qdrant is unreachable, the server must still boot (so the MCP client
 does not see an opaque "Connection closed") and the routing tool must return
-a clear KQAPro recommendation instead of crashing. These tests are hermetic:
-the degraded path points at a dead port, so no live Qdrant is required.
+a evidence-free degraded payload instead of crashing. These tests are
+hermetic: the degraded path points at a dead port, so no live Qdrant or
+real LLM is required.
+
+New contract (analyze_query_recommend_db):
+  Normal: {"semantics": {...}, "kg_evidence": {"kqapro": {...}, "sciqa": {...}}, "degraded": false}
+  Degraded: {"semantics": {}, "kg_evidence": {}, "degraded": true, "note": "<reason>"}
 """
 import asyncio
 import json
@@ -65,11 +70,15 @@ class TestToolDegradation:
             )
         )
 
-    def test_returns_kqapro_recommendation(self):
+    def test_returns_evidence_free_degraded_payload_when_qdrant_none(self):
+        # Qdrant-None path: must return degraded=True, empty evidence, a note,
+        # and must NOT contain the old "recommendation" key.
         out = _tool_fn()(question="Who directed Inception?", context=self._degraded_context())
         data = json.loads(out)
-        assert "kqapro" in data["recommendation"].lower()
         assert data["degraded"] is True
+        assert data["kg_evidence"] == {}
+        assert data.get("note"), "degraded payload must include a non-empty note"
+        assert "recommendation" not in data, "old 'recommendation' key must not appear in new contract"
 
     def test_does_not_call_llm_in_degraded_mode(self, monkeypatch):
         # The short-circuit must happen before any semantic extraction /
@@ -80,3 +89,35 @@ class TestToolDegradation:
         monkeypatch.setattr(orch, "extract_semantics", _boom)
         out = _tool_fn()(question="anything", context=self._degraded_context())
         assert json.loads(out)["degraded"] is True
+
+    def test_ner_failure_returns_degraded_payload(self, monkeypatch):
+        # NER/extract_semantics failure path: even when Qdrant is reachable
+        # (non-None), an extraction error must produce a degraded evidence-free
+        # payload whose note mentions extraction failure.
+        from qdrant_client import QdrantClient
+
+        # Build a QdrantClient pointing at a dead port. We never actually
+        # use it (the NER failure short-circuits before any Qdrant call), but
+        # AppContext needs an instance to pass pydantic's type check.
+        dummy_qdrant = QdrantClient(host="localhost", port=59998)
+        dummy_openai = OpenAI(api_key="test-not-used", base_url="http://localhost:1")
+
+        ctx = SimpleNamespace(
+            request_context=SimpleNamespace(
+                lifespan_context=orch.AppContext(qdrant=dummy_qdrant, openai=dummy_openai)
+            )
+        )
+
+        # Monkeypatch extract_semantics to simulate NER failure.
+        monkeypatch.setattr(orch, "extract_semantics", lambda *a, **kw: {"error": "boom"})
+
+        out = _tool_fn()(question="What is dark matter?", context=ctx)
+        data = json.loads(out)
+
+        assert data["degraded"] is True
+        assert data["kg_evidence"] == {}
+        assert data.get("note"), "degraded NER-failure payload must include a note"
+        note_lower = data["note"].lower()
+        assert "extract" in note_lower or "entity" in note_lower or "ner" in note_lower, (
+            f"note should mention extraction/entity failure, got: {data['note']!r}"
+        )

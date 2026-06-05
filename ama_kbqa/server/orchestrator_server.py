@@ -45,6 +45,9 @@ QDRANT_PORT = get_qdrant_port()
 COLLECTION_KQAPRO = "kqapro-entities"
 COLLECTION_SCIQA = "sciqa-entities"
 TOP_N = get_top_n()
+# NOTE: score_threshold is a shared config knob, also used by kqapro_server's
+# entity search. Here it only filters which Qdrant hits appear as routing
+# evidence; the routing decision itself is made by the orchestrator's LLM.
 SCORE_THRESHOLD = get_score_threshold()
 
 
@@ -52,9 +55,10 @@ SCORE_THRESHOLD = get_score_threshold()
 
 class AppContext(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    # Qdrant is optional: the server boots in a degraded mode (routing
-    # defaults to KQAPro) when the vector DB is unreachable, instead of
-    # crashing the whole MCP server on startup.
+    # Qdrant is optional: the server boots in a degraded mode (the probing
+    # tool returns an evidence-free payload and the router LLM decides from
+    # the question's domain alone) when the vector DB is unreachable,
+    # instead of crashing the whole MCP server on startup.
     qdrant: Optional[QdrantClient]
     openai: OpenAI
 
@@ -296,22 +300,31 @@ def _search_qdrant(qdrant: QdrantClient, vectors_map: dict) -> dict:
 @mcp.tool()
 def analyze_query_recommend_db(question: str, context: Context) -> str:
     """
-    Analyzes a natural language question and recommends the best database strategy.
+    Probes both knowledge graphs (KQAPro and SciQA) with the entities of a
+    natural language question and returns the raw linking evidence so the
+    caller can decide which specialist agent to route to.
 
     It performs the following steps internally:
     1. Extracts semantic entities (NER).
     2. Embeds these entities into vectors.
-    3. Checks the Vector Database (Qdrant) for matches.
+    3. Searches BOTH Qdrant collections for matches.
 
     Args:
-        question: The natural language question to analyze.
+        question: The natural language question to analyze. Pass the user's
+            question verbatim.
         context: The FastMCP request context containing the active database connections.
 
     Returns:
         A JSON string containing:
-        - 'recommendation': Which DB to use ('vector_db' or 'text_search').
-        - 'confidence': Average match score.
-        - 'linked_entities': The identified IDs and Labels found in the DB.
+        - 'semantics': The extracted subject/predicate/objects.
+        - 'kg_evidence': Per knowledge graph ('kqapro', 'sciqa'): how many
+          probed terms matched, the average match score, and the best match
+          per term (id, label, score). Inspect the matched labels; a high
+          score on a semantically wrong entity is not real evidence.
+        - 'degraded': true when no evidence could be gathered (vector DB
+          down or entity extraction failed). Decide from the question's
+          domain alone in that case.
+        - 'note': Optional detail about why evidence is missing.
     """
     import time
 
@@ -321,20 +334,19 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
     logger.info(f"--- [Master Tool] Processing: '{question}' ---")
     start_time = time.time()
 
-    # Degraded mode: the vector DB is unavailable, so we cannot link
-    # entities or score collections. Skip the (now pointless) extraction +
-    # embedding LLM calls and return a clear KQAPro recommendation. The
-    # orchestrator parses 'recommendation' and routes to the KQAPro agent.
+    # Degraded mode: the vector DB is unavailable, so no entity linking is
+    # possible. Skip the (now pointless) extraction + embedding LLM calls
+    # and return an evidence-free payload; the orchestrator's router LLM
+    # then decides from the question's domain alone.
     if app_context.qdrant is None:
-        logger.warning("Qdrant unavailable; returning degraded KQAPro recommendation.")
+        logger.warning("Qdrant unavailable; returning evidence-free degraded payload.")
         return json.dumps({
-            "recommendation": "Use KQAPro",
-            "reasoning": "Vector database (Qdrant) is unavailable; defaulting to "
-                         "KQAPro without entity linking.",
-            "metrics": {},
-            "linked_entities": {},
             "semantics": {},
+            "kg_evidence": {},
             "degraded": True,
+            "note": "Vector database (Qdrant) is unavailable; no entity-linking "
+                    "evidence could be gathered. Decide from the question's "
+                    "domain alone.",
         }, indent=2, ensure_ascii=False)
 
     # 2. Extract
@@ -342,15 +354,20 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
     semantics = extract_semantics(app_context.openai, question)
     logger.debug(f"[TIMING] Semantic extraction took {time.time() - extract_start:.2f}s")
 
-    # Check for errors in semantic extraction
+    # Check for errors in semantic extraction. Still return the evidence
+    # shape (not a bare error) so the router LLM can fall back to deciding
+    # from the question's domain instead of silently defaulting.
     if not semantics or "error" in semantics:
         error_detail = semantics.get("error", "Unknown error") if semantics else "No response from LLM"
         logger.error(f"Semantic extraction failed: {error_detail}")
         return json.dumps({
-            "error": "Failed to extract semantics",
-            "details": error_detail,
-            "suggestion": "Check your LLM configuration and API key in config.toml"
-        })
+            "semantics": {},
+            "kg_evidence": {},
+            "degraded": True,
+            "note": f"Entity extraction failed ({error_detail}); no entity-linking "
+                    "evidence could be gathered. Decide from the question's "
+                    "domain alone.",
+        }, indent=2, ensure_ascii=False)
 
     # Only embed the object terms (nouns/entities) for routing decisions.
     # Subject (Who/What) and predicate (verbs) match broadly in any collection.
@@ -372,56 +389,42 @@ def analyze_query_recommend_db(question: str, context: Context) -> str:
     search_results = _search_qdrant(app_context.qdrant, vectors_map)
     logger.debug(f"[TIMING] Qdrant search took {time.time() - search_start:.2f}s")
 
-    # 5. Score each knowledge graph by its best matches
-    kg_scores = {}
-    kg_entities = {}
+    # 5. Summarize the linking evidence per knowledge graph. No verdict is
+    # computed here: the orchestrator's router LLM weighs this evidence
+    # against the agents' domain descriptions. The old collapsed
+    # recommendation was structurally biased toward KQAPro (its hardcoded
+    # > 0.7 gate also disagreed with the configured score_threshold of 0.6,
+    # so 0.6-0.7 hits counted as entities yet dragged the average below the
+    # gate) and hid the matched labels needed to spot spurious matches.
+    terms_probed = sum(1 for v in vectors_map.values() if v)
+    kg_evidence = {}
 
     for kg_name, kg_results in search_results.items():
-        total_matches = 0
-        sum_scores = 0
-        found_entities = {}
+        matches = {}
+        sum_scores = 0.0
 
         for term, candidates in kg_results.items():
             if candidates:
                 best_match = candidates[0]
-                total_matches += 1
                 sum_scores += best_match['score']
-                found_entities[term] = {
-                    "db_id": best_match['id'],
-                    "db_label": best_match['label'],
-                    "confidence": best_match['score']
+                matches[term] = {
+                    "id": best_match['id'],
+                    "label": best_match['label'],
+                    "score": best_match['score']
                 }
 
-        avg_confidence = (sum_scores / total_matches) if total_matches > 0 else 0.0
-        kg_scores[kg_name] = {
-            "avg_confidence": avg_confidence,
-            "entities_found_count": total_matches
+        kg_evidence[kg_name] = {
+            "terms_probed": terms_probed,
+            "terms_matched": len(matches),
+            "avg_score": round(sum_scores / len(matches), 4) if matches else 0.0,
+            "matches": matches
         }
-        kg_entities[kg_name] = found_entities
 
-    # 6. Pick the best knowledge graph (highest avg confidence on object terms).
-    # On ties, prefer KQAPro (general domain) over SciQA (scientific niche).
-    kg_priority = {"kqapro": 1, "sciqa": 0}
-    best_kg = max(kg_scores, key=lambda k: (kg_scores[k]["avg_confidence"], kg_priority.get(k, 0)))
-    best_metrics = kg_scores[best_kg]
-
-    if best_kg == "sciqa" and best_metrics["entities_found_count"] >= 1 and best_metrics["avg_confidence"] > 0.7:
-        recommendation = "Use SciQA"
-        reasoning = f"Found {best_metrics['entities_found_count']} entities in SciQA with high confidence ({best_metrics['avg_confidence']:.2f})."
-    elif best_metrics["entities_found_count"] >= 1 and best_metrics["avg_confidence"] > 0.7:
-        recommendation = "Use KQAPro"
-        reasoning = f"Found {best_metrics['entities_found_count']} entities in KQAPro with high confidence ({best_metrics['avg_confidence']:.2f})."
-    else:
-        recommendation = "Use KQAPro"
-        reasoning = "No strong entity matches found; defaulting to KQAPro for a diverse Knowledge Basis."
-
-    # 7. Construct Final Output
+    # 6. Construct Final Output
     final_output = {
-        "recommendation": recommendation,
-        "reasoning": reasoning,
-        "metrics": kg_scores,
-        "linked_entities": kg_entities.get(best_kg, {}),
-        "semantics": semantics
+        "semantics": semantics,
+        "kg_evidence": kg_evidence,
+        "degraded": False
     }
 
     logger.info(f"[TIMING] Total processing took {time.time() - start_time:.2f}s")
