@@ -35,7 +35,8 @@ ama-kbqa/
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
 │   ├── framework/              # ✅ Generic KBQA Framework
 │   │   ├── __init__.py         # Package exports
-│   │   ├── types.py            # Response types (EntityMatch, NodeDetails, etc.)
+│   │   ├── operations.py       # Abstract op contract: ATOMIC_OPERATIONS (11 req + 3 opt), CoverageReport, validate_bindings() ✅ NEW
+│   │   ├── deterministic.py    # Shared math core: parse_numeric, compare_numeric (servers wrap, not duplicate) ✅ NEW
 │   │   ├── config.py           # Configuration dataclasses
 │   │   ├── state.py            # JournalState and JournalManager
 │   │   ├── mcp_client.py       # Shared MCPClient class
@@ -43,9 +44,9 @@ ama-kbqa/
 │   │   ├── text_tool_calls.py  # Text-mode tool-call shim (minimax-m2.7 compat)
 │   │   ├── trace.py            # TraceEvent + TraceRecorder (OTel-shaped, ContextVar nesting)
 │   │   └── adapters/           # KG-specific adapters
-│   │       ├── base_adapter.py # BaseKGAdapter ABC
-│   │       ├── kqapro_adapter.py # KQAPro configuration
-│   │       └── sciqa_adapter.py  # SciQA/ORKG configuration
+│   │       ├── base_adapter.py # BaseKGAdapter ABC: _create_config, get_operation_bindings (abstract), validate_operation_coverage ✅ UPDATED
+│   │       ├── kqapro_adapter.py # KQAPro: 11 required + select_extreme; NS_*/SPARQL_PREFIXES sourced by kqapro_server.py ✅ UPDATED
+│   │       └── sciqa_adapter.py  # SciQA/ORKG: 11 required + aggregate/frequent_values; owl: prefix injected ✅ UPDATED
 │   ├── agents/                 # Agent implementations
 │   │   ├── kqapro_agent/       # KQAPro KBQA agent
 │   │   │   ├── agent.py        # KQAProAgent class (~290 lines, inherits BaseKBQAAgent)
@@ -87,9 +88,10 @@ ama-kbqa/
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
-├── tests/                      # Test suite (206 tests total)
-│   ├── framework/              # Framework unit tests (155 tests)
-│   │   ├── test_types.py       # Response type tests
+├── tests/                      # Test suite (219 tests total)
+│   ├── framework/              # Framework unit tests (168 tests)
+│   │   ├── test_operations.py  # Registry shape, two-level semantics, adapter coverage, binding-rot guard (source-level regex) ✅ NEW
+│   │   ├── test_deterministic.py # parse_numeric variants, compare_numeric correctness/error paths; pins byte-identical output ✅ NEW
 │   │   ├── test_config.py      # Configuration tests
 │   │   ├── test_state.py       # State management tests
 │   │   ├── test_adapters.py    # Adapter tests
@@ -171,16 +173,17 @@ The framework provides abstract base classes that both KQAProAgent and SciQAAgen
 
 | Module | Purpose | Lines |
 |--------|---------|-------|
-| `types.py` | Response dataclasses (EntityMatch, NodeDetails, etc.) | ~280 |
+| `operations.py` | Abstract operation contract: `AtomicOperation`, `ATOMIC_OPERATIONS` (11 required + 3 optional), `CoverageReport`, `validate_bindings()` | ~200 |
+| `deterministic.py` | Shared LLM-free math core: `parse_numeric`, `NumericComparison`, `compare_numeric`; both servers' `VerifyNumericCondition` tools wrap it (output strings byte-identical) | ~100 |
 | `config.py` | Configuration classes (NamespaceConfig, KnowledgeGraphConfig) | ~220 |
 | `state.py` | JournalState (Pydantic BaseModel, single source of truth with caps/helpers) and JournalManager | ~340 |
 | `mcp_client.py` | Shared MCPClient for MCP server communication | ~120 |
 | `base_agent.py` | BaseKBQAAgent ABC with full tool-calling loop + span instrumentation | ~600 |
 | `text_tool_calls.py` | Text-mode shim for models that can't emit native function calls | ~150 |
 | `trace.py` | `TraceEvent` (OTel-shaped dataclass) + `TraceRecorder` (ContextVar nesting, async/sync spans, point-in-time events, JSONL export, `add_listener`/`remove_listener` observer hooks for live streaming) | ~200 |
-| `adapters/base_adapter.py` | BaseKGAdapter ABC for KG configuration | ~200 |
-| `adapters/kqapro_adapter.py` | KQAPro-specific adapter | ~150 |
-| `adapters/sciqa_adapter.py` | SciQA/ORKG-specific adapter | ~180 |
+| `adapters/base_adapter.py` | BaseKGAdapter ABC: `_create_config()` (abstract), `get_operation_bindings()` (abstract — maps abstract op name to concrete MCP tool name), `validate_operation_coverage()` (calls `validate_bindings()`), URI/SPARQL utilities | ~340 |
+| `adapters/kqapro_adapter.py` | KQAPro adapter: binds 11 required ops + optional `select_extreme`; sources `NS_*` / `SPARQL_PREFIXES` used by `kqapro_server.py` | ~150 |
+| `adapters/sciqa_adapter.py` | SciQA/ORKG adapter: binds 11 required ops (`count` → `AggregateComparisonValues` via `agg="count"`) + optional `aggregate` and `frequent_values`; includes `owl:` prefix in `sparql_prefixes` (advertised to LLM in `RunORKGSPARQL` docstring) | ~200 |
 
 **BaseKBQAAgent provides:**
 - MCP client management
@@ -271,7 +274,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
-Provides 28 tools for knowledge graph interaction, organized by tier:
+Provides 28 tools for knowledge graph interaction, organized by tier. `NS_*` namespace constants and `SPARQL_PREFIXES` are sourced from `_ADAPTER = KQAProAdapter()` at module level (not hardcoded). The KQAPro adapter's `get_operation_bindings()` maps each of these tools to an abstract operation name; see `framework/operations.py` and `Decisions/abstract-operation-contract.md`.
 
 **T1 Discovery:**
 - `FindNode` - Semantic entity search (deduplicates via `visited_nodes` cache)
@@ -335,7 +338,7 @@ Provides 28 tools for knowledge graph interaction, organized by tier:
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
-Provides 27 registered tools for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, and 1 LLM-hidden journal snapshot tool.
+Provides 27 registered tools for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, and 1 LLM-hidden journal snapshot tool. `NS_*` constants and `SPARQL_PREFIXES` (including `owl:`) are sourced from `_ADAPTER = SciQAAdapter()` at module level. The SciQA adapter's `get_operation_bindings()` covers the 11 required abstract operations plus optional `aggregate` and `frequent_values`; see `Decisions/abstract-operation-contract.md`.
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource` - Semantic vector search for papers, authors, contributions, with high-confidence lexical label promotion when a query contains a resource title plus extra words; short title-like queries run strict token-coverage label lookup before broad token fallback

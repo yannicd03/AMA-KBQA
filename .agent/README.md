@@ -34,6 +34,7 @@
 
 | Document | Description |
 |----------|-------------|
+| [Decisions/abstract-operation-contract.md](Decisions/abstract-operation-contract.md) | Four linked decisions from the 2026-06-06 drift audit: KG-native property addressing, per-server envelopes, two-level count contract (11 req + 3 opt), KG-flavored tool names preserved with binding layer comparability |
 | [Decisions/kqapro-tool-surface-expansion.md](Decisions/kqapro-tool-surface-expansion.md) | Why CountEntities, SelectExtreme, VerifyFact were added + FilterEntities extensions (closes 42% coverage gap) |
 | [Decisions/text-mode-tool-calls.md](Decisions/text-mode-tool-calls.md) | Why and how a client-side `<tool_call>` parser was built for models that can't emit native function calls (minimax-m2.7) |
 | [Decisions/llm-judge-concept-extraction-rubric.md](Decisions/llm-judge-concept-extraction-rubric.md) | LLM judge rubric rewrite: concept-extraction first, per-type rules, hard-negatives for tool-call fragments and max-iteration errors (+~2 pp, removes verbose-answer bias) |
