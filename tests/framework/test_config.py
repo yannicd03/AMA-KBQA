@@ -8,9 +8,9 @@ from ama_kbqa.framework.config import (
     GraphConfig,
     PromptConfig,
     KnowledgeGraphConfig,
-    create_default_kqapro_config,
-    create_default_sciqa_config,
 )
+from ama_kbqa.framework.adapters.kqapro_adapter import KQAProAdapter
+from ama_kbqa.framework.adapters.sciqa_adapter import SciQAAdapter
 
 
 class TestNamespaceConfig:
@@ -256,7 +256,7 @@ class TestKnowledgeGraphConfig:
 
     def test_kg_config_to_json(self):
         """Test serializing KnowledgeGraphConfig to JSON."""
-        config = create_default_kqapro_config()
+        config = KQAProAdapter().config
         json_str = config.to_json()
         parsed = json.loads(json_str)
 
@@ -265,11 +265,11 @@ class TestKnowledgeGraphConfig:
 
 
 class TestDefaultConfigs:
-    """Tests for default configuration factories."""
+    """Tests for the shipped adapters' configurations."""
 
     def test_create_default_kqapro_config(self):
-        """Test creating default KQAPro config."""
-        config = create_default_kqapro_config()
+        """Test the KQAPro adapter config."""
+        config = KQAProAdapter().config
 
         assert config.name == "KQAPro"
         assert config.code == "kqapro"
@@ -280,8 +280,8 @@ class TestDefaultConfigs:
         assert "kqapro_entities" in config.vectors.entity_collection
 
     def test_create_default_sciqa_config(self):
-        """Test creating default SciQA config."""
-        config = create_default_sciqa_config()
+        """Test the SciQA adapter config."""
+        config = SciQAAdapter().config
 
         assert config.name == "SciQA/ORKG"
         assert config.code == "sciqa"
@@ -293,7 +293,7 @@ class TestDefaultConfigs:
 
     def test_kqapro_config_has_all_prefixes(self):
         """Test KQAPro config has all required SPARQL prefixes."""
-        config = create_default_kqapro_config()
+        config = KQAProAdapter().config
         prefixes = config.namespaces.sparql_prefixes
 
         assert "PREFIX ex:" in prefixes
@@ -304,7 +304,7 @@ class TestDefaultConfigs:
 
     def test_sciqa_config_has_all_prefixes(self):
         """Test SciQA config has all required SPARQL prefixes."""
-        config = create_default_sciqa_config()
+        config = SciQAAdapter().config
         prefixes = config.namespaces.sparql_prefixes
 
         assert "PREFIX orkgr:" in prefixes
