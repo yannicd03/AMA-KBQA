@@ -5,14 +5,6 @@ This package provides abstract base classes for KBQA agents and their tools,
 enabling code reuse across different knowledge graph implementations (KQAPro, SciQA/ORKG, etc.).
 """
 
-from ama_kbqa.framework.types import (
-    EntityMatch,
-    AttributeValue,
-    NodeDetails,
-    NavigationResult,
-    QualifierResult,
-    SPARQLResult,
-)
 from ama_kbqa.framework.config import (
     NamespaceConfig,
     VectorConfig,
@@ -23,15 +15,19 @@ from ama_kbqa.framework.config import (
 from ama_kbqa.framework.state import JournalState, JournalManager
 from ama_kbqa.framework.mcp_client import MCPClient
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
+from ama_kbqa.framework.operations import (
+    AtomicOperation,
+    ATOMIC_OPERATIONS,
+    CoverageReport,
+    validate_bindings,
+)
+from ama_kbqa.framework.deterministic import (
+    NumericComparison,
+    compare_numeric,
+    parse_numeric,
+)
 
 __all__ = [
-    # Types
-    "EntityMatch",
-    "AttributeValue",
-    "NodeDetails",
-    "NavigationResult",
-    "QualifierResult",
-    "SPARQLResult",
     # Config
     "NamespaceConfig",
     "VectorConfig",
@@ -45,4 +41,13 @@ __all__ = [
     "MCPClient",
     # Base Agent
     "BaseKBQAAgent",
+    # Abstract operation contract
+    "AtomicOperation",
+    "ATOMIC_OPERATIONS",
+    "CoverageReport",
+    "validate_bindings",
+    # Deterministic cores
+    "NumericComparison",
+    "compare_numeric",
+    "parse_numeric",
 ]

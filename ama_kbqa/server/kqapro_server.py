@@ -37,6 +37,8 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 from ama_kbqa.utils.sparql_results import compact_sparql_select_results
+from ama_kbqa.framework.deterministic import compare_numeric
+from ama_kbqa.framework.adapters.kqapro_adapter import KQAProAdapter
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FEWSHOT_EXAMPLES_DIR = REPO_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
@@ -70,21 +72,17 @@ SCORE_THRESHHOLD = get_score_threshold()
 
 # --- 1. Define a Context Class for Type Safety ---
 
-NS_ENTITY = "http://kqapro.org/entity/"
-NS_PROPERTY = "http://kqapro.org/property/"
-NS_QUALIFIER = "http://kqapro.org/qualifier/"
+# Namespaces and SPARQL prefixes are owned by the KG adapter (single source
+# of truth); the server only consumes them.
+_ADAPTER = KQAProAdapter()
+_NAMESPACES = _ADAPTER.config.namespaces
+
+NS_ENTITY = _NAMESPACES.entity_prefix
+NS_PROPERTY = _NAMESPACES.property_prefix
+NS_QUALIFIER = _NAMESPACES.qualifier_prefix
 
 # We inject these prefixes into every SPARQL query for convenience/safety
-SPARQL_PREFIXES = """
-PREFIX ex:   <http://kqapro.org/entity/>
-PREFIX prop: <http://kqapro.org/property/>
-PREFIX attr: <http://kqapro.org/attribute/>
-PREFIX qual: <http://kqapro.org/qualifier/>
-PREFIX unit: <http://kqapro.org/unit/>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
-"""
+SPARQL_PREFIXES = "\n" + _NAMESPACES.sparql_prefixes.rstrip() + "\n"
 
 
 class AppContext(BaseModel):
@@ -3446,91 +3444,39 @@ def VerifyNumericCondition(
 
     logger.info(f"VerifyNumericCondition: {value1} {operator} {value2} ({unit})")
 
-    def parse_numeric(val: str) -> float:
-        """Parse numeric value, handling common formats like '150 million', '1.5k', dates."""
-        val = val.strip().lower()
+    # Deterministic core lives in the framework (shared across KGs)
+    result = compare_numeric(value1, operator, value2, unit)
 
-        # Handle dates (convert to timestamp for comparison)
-        if "-" in val and len(val) >= 10:
-            try:
-                from datetime import datetime
-                dt = datetime.fromisoformat(val.split("T")[0])
-                return dt.timestamp()
-            except:
-                pass
-
-        # Handle multipliers
-        multipliers = {
-            "trillion": 1e12, "billion": 1e9, "million": 1e6,
-            "thousand": 1e3, "hundred": 1e2,
-            "k": 1e3, "m": 1e6, "b": 1e9, "t": 1e12
-        }
-
-        # Extract number and multiplier
-        import re
-        match = re.match(r"([+-]?[\d.,]+)\s*([a-z]+)?", val)
-        if match:
-            num_str = match.group(1).replace(",", "")
-            mult_str = match.group(2) or ""
-
-            num = float(num_str)
-            mult = multipliers.get(mult_str, 1.0)
-            return num * mult
-
-        # Fallback: try direct conversion
-        return float(val.replace(",", ""))
-
-    try:
-        # Parse both values
-        num1 = parse_numeric(value1)
-        num2 = parse_numeric(value2)
-
-        # Perform comparison
-        comparisons = {
-            "<": num1 < num2,
-            ">": num1 > num2,
-            "<=": num1 <= num2,
-            ">=": num1 >= num2,
-            "==": abs(num1 - num2) < 1e-9,  # Float equality tolerance
-            "!=": abs(num1 - num2) >= 1e-9
-        }
-
-        result = comparisons[operator]
-        verdict = "TRUE" if result else "FALSE"
-
-        # Build explanation
-        unit_str = f" {unit}" if unit else ""
-        explanation = f"{value1}{unit_str} {operator} {value2}{unit_str} → {num1} {operator} {num2} = {verdict}"
-
-        logger.info(f"VerifyNumericCondition result: {verdict}")
-
-        # Auto-update Journal (no `global` needed - only modifying attributes)
-        session_journal.verified_facts.append({
-            "fact": explanation,
-            "source": "VerifyNumericCondition"
-        })
-        session_journal.add_completed_step(f"Verified: {explanation}")
-
-        return NumericComparisonResponse(
-            verdict=verdict,
-            explanation=explanation,
-            value1=f"{num1}{unit_str}",
-            value2=f"{num2}{unit_str}",
-            operator=operator
-        )
-
-    except Exception as e:
-        logger.error(f"VerifyNumericCondition failed: {e}")
+    if result.is_error:
+        logger.error(f"VerifyNumericCondition failed: {result.error}")
         session_journal.add_failed_attempt(
-            f"VerifyNumericCondition({value1} {operator} {value2}): {str(e)[:100]}"
+            f"VerifyNumericCondition({value1} {operator} {value2}): {result.error[:100]}"
         )
         return NumericComparisonResponse(
             verdict="ERROR",
-            explanation=f"Could not compare values: {str(e)}",
+            explanation=result.explanation,
             value1=value1,
             value2=value2,
             operator=operator
         )
+
+    logger.info(f"VerifyNumericCondition result: {result.verdict}")
+
+    # Auto-update Journal (no `global` needed - only modifying attributes)
+    session_journal.verified_facts.append({
+        "fact": result.explanation,
+        "source": "VerifyNumericCondition"
+    })
+    session_journal.add_completed_step(f"Verified: {result.explanation}")
+
+    unit_str = f" {unit}" if unit else ""
+    return NumericComparisonResponse(
+        verdict=result.verdict,
+        explanation=result.explanation,
+        value1=f"{result.num1}{unit_str}",
+        value2=f"{result.num2}{unit_str}",
+        operator=operator
+    )
 
 
 @mcp.tool

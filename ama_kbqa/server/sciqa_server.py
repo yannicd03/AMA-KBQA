@@ -73,6 +73,8 @@ from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
 
 from ama_kbqa.utils.sparql_results import compact_sparql_select_results
+from ama_kbqa.framework.deterministic import compare_numeric
+from ama_kbqa.framework.adapters.sciqa_adapter import SciQAAdapter
 
 load_dotenv(find_dotenv())
 
@@ -108,20 +110,17 @@ ENTITY_THRESHOLD = get_sciqa_entity_threshold()
 RELATION_THRESHOLD = get_sciqa_relation_threshold()
 
 # --- ORKG Namespaces ---
-NS_RESOURCE = "http://orkg.org/orkg/resource/"
-NS_PREDICATE = "http://orkg.org/orkg/predicate/"
-NS_CLASS = "http://orkg.org/orkg/class/"
+# Namespaces and SPARQL prefixes are owned by the KG adapter (single source
+# of truth); the server only consumes them.
+_ADAPTER = SciQAAdapter()
+_NAMESPACES = _ADAPTER.config.namespaces
+
+NS_RESOURCE = _NAMESPACES.entity_prefix
+NS_PREDICATE = _NAMESPACES.property_prefix
+NS_CLASS = _NAMESPACES.class_prefix
 
 # SPARQL Prefixes for ORKG
-SPARQL_PREFIXES = """
-PREFIX orkgr: <http://orkg.org/orkg/resource/>
-PREFIX orkgp: <http://orkg.org/orkg/predicate/>
-PREFIX orkgc: <http://orkg.org/orkg/class/>
-PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
-PREFIX owl:   <http://www.w3.org/2002/07/owl#>
-"""
+SPARQL_PREFIXES = "\n" + _NAMESPACES.sparql_prefixes.rstrip() + "\n"
 
 
 # ==============================================================================
@@ -2015,88 +2014,40 @@ async def VerifyNumericCondition(
     """
     logger.info(f"VerifyNumericCondition: {value1} {operator} {value2} ({unit})")
 
-    def parse_numeric(val: str) -> float:
-        """Parse numeric value, handling common formats."""
-        val = val.strip().lower()
+    # Deterministic core lives in the framework (shared across KGs)
+    result = compare_numeric(value1, operator, value2, unit)
 
-        # Handle dates (convert to timestamp for comparison)
-        if "-" in val and len(val) >= 10:
-            try:
-                from datetime import datetime
-                dt = datetime.fromisoformat(val.split("T")[0])
-                return dt.timestamp()
-            except Exception:
-                pass
-
-        # Handle multipliers
-        multipliers = {
-            "trillion": 1e12, "billion": 1e9, "million": 1e6,
-            "thousand": 1e3, "hundred": 1e2,
-            "k": 1e3, "m": 1e6, "b": 1e9, "t": 1e12
-        }
-
-        # Extract number and multiplier
-        import re
-        match = re.match(r"([+-]?[\d.,]+)\s*([a-z]+)?", val)
-        if match:
-            num_str = match.group(1).replace(",", "")
-            mult_str = match.group(2) or ""
-            num = float(num_str)
-            mult = multipliers.get(mult_str, 1.0)
-            return num * mult
-
-        # Fallback: try direct conversion
-        return float(val.replace(",", ""))
-
-    try:
-        num1 = parse_numeric(value1)
-        num2 = parse_numeric(value2)
-
-        comparisons = {
-            "<": num1 < num2,
-            ">": num1 > num2,
-            "<=": num1 <= num2,
-            ">=": num1 >= num2,
-            "==": abs(num1 - num2) < 1e-9,
-            "!=": abs(num1 - num2) >= 1e-9
-        }
-
-        result = comparisons[operator]
-        verdict = "TRUE" if result else "FALSE"
-
-        unit_str = f" {unit}" if unit else ""
-        explanation = f"{value1}{unit_str} {operator} {value2}{unit_str} → {num1} {operator} {num2} = {verdict}"
-
-        logger.info(f"VerifyNumericCondition result: {verdict}")
-
-        session_journal.verified_facts.append({
-            "fact": explanation,
-            "source": "VerifyNumericCondition"
-        })
-        session_journal.completed_steps.append(f"Verified: {explanation}")
-
-        response = NumericComparisonResponse(
-            verdict=verdict,
-            explanation=explanation,
-            value1=f"{num1}{unit_str}",
-            value2=f"{num2}{unit_str}",
-            operator=operator
-        )
-        return response.model_dump_json(indent=2)
-
-    except Exception as e:
-        logger.error(f"VerifyNumericCondition failed: {e}")
+    if result.is_error:
+        logger.error(f"VerifyNumericCondition failed: {result.error}")
         session_journal.failed_attempts.append(
-            f"VerifyNumericCondition({value1} {operator} {value2}): {str(e)[:100]}"
+            f"VerifyNumericCondition({value1} {operator} {value2}): {result.error[:100]}"
         )
         response = NumericComparisonResponse(
             verdict="ERROR",
-            explanation=f"Could not compare values: {str(e)}",
+            explanation=result.explanation,
             value1=value1,
             value2=value2,
             operator=operator
         )
         return response.model_dump_json(indent=2)
+
+    logger.info(f"VerifyNumericCondition result: {result.verdict}")
+
+    session_journal.verified_facts.append({
+        "fact": result.explanation,
+        "source": "VerifyNumericCondition"
+    })
+    session_journal.completed_steps.append(f"Verified: {result.explanation}")
+
+    unit_str = f" {unit}" if unit else ""
+    response = NumericComparisonResponse(
+        verdict=result.verdict,
+        explanation=result.explanation,
+        value1=f"{result.num1}{unit_str}",
+        value2=f"{result.num2}{unit_str}",
+        operator=operator
+    )
+    return response.model_dump_json(indent=2)
 
 
 # ==============================================================================

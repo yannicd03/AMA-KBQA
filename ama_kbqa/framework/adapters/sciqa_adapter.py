@@ -55,6 +55,7 @@ PREFIX orkgc: <http://orkg.org/orkg/class/>
 PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
+PREFIX owl:   <http://www.w3.org/2002/07/owl#>
 """,
                 prefix_map={
                     "orkgr": "http://orkg.org/orkg/resource/",
@@ -63,6 +64,7 @@ PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
                     "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
                     "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
                     "xsd": "http://www.w3.org/2001/XMLSchema#",
+                    "owl": "http://www.w3.org/2002/07/owl#",
                 },
             ),
             vectors=VectorConfig(
@@ -99,6 +101,26 @@ PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
                 "max_tool_calls": 25,
             },
         )
+
+    def get_operation_bindings(self) -> dict:
+        """Map abstract atomic operations to SciQA/ORKG MCP tool names."""
+        return {
+            "find_entity": "FindResource",
+            "get_label": "GetResourceLabel",
+            "get_labels": "BatchGetResourceLabels",
+            "get_summary": "GetResourceSummary",
+            "get_relation_targets": "GetRelationTargets",
+            "reverse_lookup": "FindByPredicateValue",
+            "follow_path": "FollowRelationPath",
+            "compare": "CompareResources",
+            # Counting in ORKG goes through the aggregator's agg="count" mode
+            "count": "AggregateComparisonValues",
+            "verify_numeric": "VerifyNumericCondition",
+            "run_sparql": "RunORKGSPARQL",
+            # Optional tier (ORKG's comparison tables support group-by aggregation)
+            "aggregate": "AggregateComparisonValues",
+            "frequent_values": "FindFrequentValues",
+        }
 
     # =========================================================================
     # ORKG-Specific Validation

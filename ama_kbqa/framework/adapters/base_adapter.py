@@ -7,10 +7,11 @@ that all KG adapters share.
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Dict, Optional
 import re
 
 from ama_kbqa.framework.config import KnowledgeGraphConfig
+from ama_kbqa.framework.operations import CoverageReport, validate_bindings
 
 
 class BaseKGAdapter(ABC):
@@ -43,6 +44,32 @@ class BaseKGAdapter(ABC):
             KnowledgeGraphConfig for this KG
         """
         pass
+
+    @abstractmethod
+    def get_operation_bindings(self) -> Dict[str, str]:
+        """
+        Map abstract atomic operations to this KG's concrete MCP tool names.
+
+        Keys are operation names from ``framework.operations.ATOMIC_OPERATIONS``
+        (e.g. "find_entity", "get_label"); values are the tool names the KG's
+        MCP server registers (e.g. "FindNode", "GetResourceLabel"). Concrete
+        tool names stay KG-flavored because they appear in prompts, fewshots,
+        and recorded benchmark traces; this binding is what makes the tool
+        surfaces comparable across KGs.
+
+        Returns:
+            Dict mapping abstract operation name to concrete tool name
+        """
+        pass
+
+    def validate_operation_coverage(self) -> CoverageReport:
+        """
+        Check this adapter's bindings against the abstract operation contract.
+
+        Returns:
+            CoverageReport with any missing required operations or unknown bindings
+        """
+        return validate_bindings(self.get_operation_bindings())
 
     # =========================================================================
     # URI Formatting Utilities

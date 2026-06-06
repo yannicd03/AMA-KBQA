@@ -97,6 +97,24 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
             },
         )
 
+    def get_operation_bindings(self) -> dict:
+        """Map abstract atomic operations to KQAPro MCP tool names."""
+        return {
+            "find_entity": "FindNode",
+            "get_label": "GetNodeLabel",
+            "get_labels": "BatchGetNodeLabels",
+            "get_summary": "GetNodeSummary",
+            "get_relation_targets": "GetRelationDetails",
+            "reverse_lookup": "FindByAttribute",
+            "follow_path": "FindEntitiesByRelationPath",
+            "compare": "CompareEntities",
+            "count": "CountEntities",
+            "verify_numeric": "VerifyNumericCondition",
+            "run_sparql": "RunSPARQL",
+            # Optional tier (KQAPro's reified data model supports superlatives)
+            "select_extreme": "SelectExtreme",
+        }
+
     # =========================================================================
     # KQAPro-Specific Validation
     # =========================================================================
