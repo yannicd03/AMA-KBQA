@@ -24,7 +24,9 @@ services:
       - SPARQL_UPDATE=true
 
   qdrant:
-    image: qdrant/qdrant
+    # Pinned >= v1.15.2 for server-side BM25 sparse inference (hybrid search);
+    # v1.17.1 is the version the retrieval layer is tested against.
+    image: qdrant/qdrant:v1.17.1
     container_name: qdrant_ama_kbqa
     restart: unless-stopped
     ports:

@@ -21,6 +21,7 @@ from ama_kbqa.config import (
     get_top_n,
     get_score_threshold,
 )
+from ama_kbqa import retrieval
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -202,64 +203,36 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
 
 def generate_embeddings(client: OpenAI, terms: list[str]) -> dict:
     """
-    Internal: Generates vector embeddings for a list of terms using the Qwen model via OpenRouter.
+    Internal: Generates vector embeddings for a list of terms.
 
     Args:
         client: The OpenAI client instance.
         terms: A list of strings to embed (e.g., ["Earth", "Planet", "closest"]).
 
     Returns:
-        A JSON string mapping each term to its vector embedding.
+        A dict mapping each (newline-normalized) term to its vector embedding,
+        or None for terms that failed to embed.
         Example: {"Earth": [0.12, ...], "Planet": [0.99, ...]}
     """
-
-    # Input cleaning
-    clean_texts = []
     if not terms:
-        return json.dumps({})
+        return {}
 
+    # Input cleaning: LLM-extracted terms can contain nested lists / non-strings
+    clean_texts = []
     for t in terms:
         if isinstance(t, str):
-            clean_texts.append(t.replace("\n", " "))
+            clean_texts.append(t)
         elif isinstance(t, list):
             # If a list was accidentally passed inside the list
-            joined = " ".join([str(x) for x in t])
-            clean_texts.append(joined)
+            clean_texts.append(" ".join([str(x) for x in t]))
         else:
             clean_texts.append(str(t))
 
     logger.info(f"Generating embeddings for {len(clean_texts)} terms...")
-
-    results = {}
     logger.debug(f"Terms to embed: {clean_texts}")
 
-    # Try batch processing first (much faster)
-    try:
-        response = client.embeddings.create(
-            model=get_embedding_model_name(),
-            input=clean_texts  # Pass entire list at once
-        )
-
-        # Map results back to terms
-        for i, text in enumerate(clean_texts):
-            results[text] = response.data[i].embedding
-
-    except Exception as e:
-        logger.warning(f"Batch embedding failed ({e}), falling back to sequential processing...")
-
-        # Fallback: Process sequentially if batch fails
-        for text in clean_texts:
-            try:
-                response = client.embeddings.create(
-                    model=get_embedding_model_name(),
-                    input=text
-                )
-                results[text] = response.data[0].embedding
-            except Exception as e:
-                logger.error(f"Error embedding '{text}': {e}")
-                results[text] = None
-
-    return results
+    # Shared cached batch embedding (batch-then-sequential fallback inside)
+    return retrieval.embed_queries(client, clean_texts)
 
 
 def _search_qdrant(qdrant: QdrantClient, vectors_map: dict) -> dict:
@@ -276,29 +249,27 @@ def _search_qdrant(qdrant: QdrantClient, vectors_map: dict) -> dict:
     """
     results = {"kqapro": {}, "sciqa": {}}
 
+    # Routing probe: hybrid search per [retrieval] config, but never rerank
+    # (per-term cross-encoder latency is not worth it for coarse routing evidence).
+    params = retrieval.build_retrieval_params(
+        limit=TOP_N,
+        score_threshold=SCORE_THRESHOLD,
+        allow_rerank=False,
+    )
+
     for collection_key, collection_name in [("kqapro", COLLECTION_KQAPRO), ("sciqa", COLLECTION_SCIQA)]:
-        for word, vector in vectors_map.items():
-            if not vector:
-                continue
-            try:
-                hits = qdrant.query_points(
-                    collection_name=collection_name,
-                    query=vector,
-                    limit=TOP_N,
-                    with_payload=True,
-                    score_threshold=SCORE_THRESHOLD
-                ).points
-                candidates = []
-                for hit in hits:
-                    candidates.append({
-                        "id": hit.payload.get("original_id", hit.payload.get("id", "unknown")),
-                        "label": hit.payload.get("name", hit.payload.get("label", "unknown")),
-                        "score": round(hit.score, 4)
-                    })
-                results[collection_key][word] = candidates
-            except Exception as e:
-                logger.error(f"[_search_qdrant] Error for '{word}' in {collection_name}: {e}")
-                results[collection_key][word] = []
+        per_term = retrieval.search_terms(
+            qdrant, collection_name, vectors_map=vectors_map, params=params
+        )
+        for word, hits in per_term.items():
+            candidates = []
+            for hit in hits:
+                candidates.append({
+                    "id": hit.payload.get("original_id", hit.payload.get("id", "unknown")),
+                    "label": hit.payload.get("name", hit.payload.get("label", "unknown")),
+                    "score": round(hit.score, 4)
+                })
+            results[collection_key][word] = candidates
 
     return results
 

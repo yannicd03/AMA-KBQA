@@ -581,6 +581,97 @@ def get_synthesis_provider_preferences() -> Optional[dict]:
 
 
 # ==============================================================================
+# Retrieval (hybrid search + reranker) Configuration Functions
+# ==============================================================================
+
+def get_retrieval_config() -> dict:
+    """Get the [retrieval] configuration section.
+
+    Returns:
+        dict: Hybrid-search and reranker settings (empty dict if absent).
+    """
+    config = load_config()
+    return config.get("retrieval", {})
+
+
+def get_hybrid_enabled() -> bool:
+    """Whether hybrid (dense + BM25) retrieval is enabled.
+
+    When False (default), retrieval runs pure dense vector search,
+    matching the legacy behavior exactly.
+
+    Returns:
+        bool: True to query both the dense and BM25 prefetch branches.
+    """
+    return bool(get_retrieval_config().get("hybrid_enabled", False))
+
+
+def get_fusion() -> str:
+    """Get the score-fusion method for hybrid retrieval.
+
+    Returns:
+        "rrf" (Reciprocal Rank Fusion, default) or "dbsf"
+        (Distribution-Based Score Fusion).
+    """
+    fusion = get_retrieval_config().get("fusion", "rrf")
+    if fusion not in ("rrf", "dbsf"):
+        logger.warning(f"Unknown fusion method '{fusion}', falling back to 'rrf'")
+        return "rrf"
+    return fusion
+
+
+def get_prefetch_limit() -> int:
+    """Per-branch candidate count fetched before fusion in hybrid mode.
+
+    Returns:
+        int: prefetch limit (default 20).
+    """
+    return int(get_retrieval_config().get("prefetch_limit", 20))
+
+
+def get_reranker_enabled() -> bool:
+    """Whether the cross-encoder reranker stage is enabled.
+
+    Independent of the hybrid toggle: when True the reranker also
+    re-scores pure-dense results.
+
+    Returns:
+        bool: True to rerank retrieval candidates (default False).
+    """
+    return bool(get_retrieval_config().get("reranker_enabled", False))
+
+
+def get_reranker_model() -> str:
+    """Get the cross-encoder reranker model name.
+
+    Returns:
+        str: HuggingFace model id (default Alibaba-NLP/gte-reranker-modernbert-base).
+    """
+    return get_retrieval_config().get(
+        "reranker_model", "Alibaba-NLP/gte-reranker-modernbert-base"
+    )
+
+
+def get_rerank_candidates() -> int:
+    """How many fused/dense hits are fed to the cross-encoder.
+
+    Returns:
+        int: rerank candidate pool size (default 20).
+    """
+    return int(get_retrieval_config().get("rerank_candidates", 20))
+
+
+def get_rerank_threshold() -> Optional[float]:
+    """Optional gate on cross-encoder scores.
+
+    Returns:
+        Optional[float]: minimum rerank score to keep a hit, or None for no gate.
+    """
+    value = get_retrieval_config().get("rerank_threshold")
+    return float(value) if value is not None else None
+
+
+# ==============================================================================
 # SciQA / ORKG Configuration Functions
 # ==============================================================================
 

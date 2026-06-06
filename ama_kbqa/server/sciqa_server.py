@@ -52,6 +52,7 @@ from ama_kbqa.config import (
     get_sciqa_entity_threshold,
     get_sciqa_relation_threshold,
 )
+from ama_kbqa import retrieval
 import os
 import re
 import sys
@@ -953,15 +954,9 @@ def _build_comparison_aggregation_diagnostics(
     }
 
 
-def get_embedding(client: OpenAI, text: str) -> List[float]:
-    """Get embedding for text."""
-    text = text.replace("\n", " ")
-    response = client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=[text],
-        encoding_format="float"
-    )
-    return response.data[0].embedding
+# Embedding + vector search now live in the shared ama_kbqa.retrieval module
+# (embed_query with a shared LRU cache; search with optional BM25 hybrid +
+# reranker stages controlled by the [retrieval] config section).
 
 
 def log_tool_duration(func):
@@ -1070,17 +1065,21 @@ async def FindResource(
     app = app_context.request_context.lifespan_context
 
     try:
-        query_vector = get_embedding(app.embedding_client, semantic_query)
+        query_vector = retrieval.embed_query(app.embedding_client, semantic_query)
 
         # When filtering by class, over-fetch and prune so we still return
         # roughly top_n hits of the desired type.
         candidate_limit = max(top_n * 4, 20) if node_type_filter else top_n
-        search_results = app.qdrant.query_points(
-            collection_name=COLLECTION_ENTITIES,
-            query=query_vector,
-            limit=candidate_limit,
-            score_threshold=ENTITY_THRESHOLD
-        ).points
+        search_results = retrieval.search(
+            app.qdrant,
+            COLLECTION_ENTITIES,
+            query_text=semantic_query,
+            query_vector=query_vector,
+            params=retrieval.build_retrieval_params(
+                limit=candidate_limit,
+                score_threshold=ENTITY_THRESHOLD,
+            ),
+        )
         unfiltered_search_results = list(search_results)
         filter_source = ""
 
@@ -1228,14 +1227,18 @@ async def FindPredicate(
     app = app_context.request_context.lifespan_context
 
     try:
-        query_vector = get_embedding(app.embedding_client, semantic_query)
+        query_vector = retrieval.embed_query(app.embedding_client, semantic_query)
 
-        search_results = app.qdrant.query_points(
-            collection_name=COLLECTION_RELATIONS,
-            query=query_vector,
-            limit=top_n,
-            score_threshold=RELATION_THRESHOLD
-        ).points
+        search_results = retrieval.search(
+            app.qdrant,
+            COLLECTION_RELATIONS,
+            query_text=semantic_query,
+            query_vector=query_vector,
+            params=retrieval.build_retrieval_params(
+                limit=top_n,
+                score_threshold=RELATION_THRESHOLD,
+            ),
+        )
 
         matches = []
         for hit in search_results:

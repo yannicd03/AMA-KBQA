@@ -38,6 +38,13 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODEL = "qwen/qwen3-embedding-8b"
 VECTOR_DIMENSION = 4096
 DISTANCE_MEASURE = models.Distance.COSINE
+# BM25 sparse index for hybrid search. Collections are always created
+# hybrid-capable; the runtime [retrieval].hybrid_enabled toggle decides
+# whether the sparse branch is actually queried. Sparse vectors are computed
+# SERVER-SIDE by Qdrant (>=1.15.2) from the Document objects in the upserts.
+# Names must match ama_kbqa/retrieval/search.py.
+BM25_SPARSE_VECTOR_NAME = "bm25"
+BM25_MODEL = "Qdrant/bm25"
 
 # Get API Key
 try:
@@ -96,7 +103,12 @@ def setup_collections(client: QdrantClient) -> bool:
             vectors_config=models.VectorParams(
                 size=VECTOR_DIMENSION,
                 distance=DISTANCE_MEASURE
-            )
+            ),
+            sparse_vectors_config={
+                BM25_SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                    modifier=models.Modifier.IDF
+                )
+            }
         )
     print("Collections created successfully.")
     return True
@@ -281,7 +293,14 @@ def process_entities(client: QdrantClient, entities: List[dict]):
         points.append(
             models.PointStruct(
                 id=i,
-                vector=vectors[i],
+                # "" addresses the unnamed default dense vector; the BM25
+                # sparse vector is inferred server-side from the name text.
+                vector={
+                    "": vectors[i],
+                    BM25_SPARSE_VECTOR_NAME: models.Document(
+                        text=entity["name"], model=BM25_MODEL
+                    ),
+                },
                 payload={
                     "uri": entity["uri"],
                     "name": entity["name"],
@@ -318,7 +337,14 @@ def process_relations(client: QdrantClient, relations: List[dict]):
         points.append(
             models.PointStruct(
                 id=i,
-                vector=vectors[i],
+                # "" addresses the unnamed default dense vector; the BM25
+                # sparse vector is inferred server-side from the predicate.
+                vector={
+                    "": vectors[i],
+                    BM25_SPARSE_VECTOR_NAME: models.Document(
+                        text=rel["name"], model=BM25_MODEL
+                    ),
+                },
                 payload={
                     "uri": rel["uri"],
                     "predicate": rel["name"],
