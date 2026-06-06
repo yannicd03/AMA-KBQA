@@ -26,6 +26,7 @@
 | [SOP/running_batch_processing.md](SOP/running_batch_processing.md) | Run single-model or multi-model benchmarks; LLM judge; fewshot generation; CSV export; resume |
 | [SOP/adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) | Checklist for adding KQAPro MCP tools that produce answer values (journal write invariants) |
 | [SOP/hetzner_deployment.md](SOP/hetzner_deployment.md) | Hetzner VPS deployment runbook: 3-service compose stack, Qdrant port, frontend container, RDF bootstrap, SSH tunnel |
+| [SOP/bm25_collection_migration.md](SOP/bm25_collection_migration.md) | Run `migrate_add_bm25.py` to upgrade existing dense-only collections for BM25 hybrid search (idempotent, crash-safe) |
 
 > `SOP/database_setup.md` and `SOP/changing_llm_provider.md` — referenced in earlier docs but files are absent; Virtuoso/Qdrant setup is in the root `README.md`; LLM provider config is in `docs/guides/dataset_integration.md` and `config.toml`.
 
@@ -57,6 +58,7 @@
 | [Decisions/multiturn-direct-agent-conversation.md](Decisions/multiturn-direct-agent-conversation.md) | Multiturn conversation for directly-selected sub-agents: persistent agent instance + `reset(keep_history=True)`; skip pre-agent hook on follow-ups; fast-path answer recording; asyncio event-loop safety; Orchestrator stays stateless |
 | [Decisions/demo-bwcloud-frontend-divergence.md](Decisions/demo-bwcloud-frontend-divergence.md) | **demo-bwcloud branch only.** Why the public demo is single-page, KIT-only, with illustrative cost display and in-chat agent/model controls instead of the full dashboard |
 | [Decisions/orchestrator-evidence-based-routing.md](Decisions/orchestrator-evidence-based-routing.md) | Orchestrator routing reworked from collapsed heuristic verdict (avg_confidence > 0.7) to evidence-based two-step LLM routing: tool returns raw JSON (terms_probed/matched/avg_score/labels); LLM calls `select_agent(agent, reason)`; `route_reason` on classify span; degraded paths no longer silently KQAPro |
+| [Decisions/bm25-hybrid-retrieval-architecture.md](Decisions/bm25-hybrid-retrieval-architecture.md) | New shared `ama_kbqa/retrieval/` module: dense embedding cache, optional BM25 hybrid (Qdrant FusionQuery), optional cross-encoder reranking. Key trade-offs: threshold semantics, reranker score scale change, capability-check caching, orchestrator probe opts out |
 
 ---
 

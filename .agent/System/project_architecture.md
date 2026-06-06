@@ -81,13 +81,21 @@ ama-kbqa/
 │   │       ├── lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/TOOLS_B frozensets ✅ NEW
 │   │       ├── trace_panel.py   # render_trace_panel() — extracted panel helper shared by Chat + page 5 ✅ NEW
 │   │       └── graph_panel.py   # render_graph_panel() — extracted panel helper shared by Chat + page 6 ✅ NEW
+│   ├── retrieval/              # ✅ Shared retrieval layer (NEW — commit 7b1b108)
+│   │   ├── __init__.py         # Public exports: embed_query, embed_queries, search, search_terms, RetrievalParams, build_retrieval_params
+│   │   ├── embeddings.py       # Dense embedding with shared 256-entry LRU cache (replaces 3 divergent per-server copies)
+│   │   ├── search.py           # Unified search(): dense-only or BM25 hybrid (Qdrant FusionQuery), optional reranking; search_terms() for orchestrator probe
+│   │   └── reranker.py         # Lazy CrossEncoder singleton (optional extra: uv sync --extra rerank)
 │   ├── config.py               # Configuration loader
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
 │   ├── postprocessing.py       # Postprocessing modes (choice, sparql, llm_judge, simple)
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
-├── tests/                      # Test suite (206 tests total)
+├── tests/                      # Test suite (316 tests total)
+│   ├── retrieval/              # Retrieval layer tests (30 hermetic tests) ✅ NEW
+│   │   ├── test_embeddings.py  # embed_query/embed_queries cache hit/miss/batch/sequential-fallback
+│   │   └── test_search.py      # Dense vs hybrid request shapes, fusion toggle, capability-fallback, rerank reorder/threshold/failure, toggle matrix
 │   ├── framework/              # Framework unit tests (155 tests)
 │   │   ├── test_types.py       # Response type tests
 │   │   ├── test_config.py      # Configuration tests
@@ -101,9 +109,10 @@ ama-kbqa/
 │       ├── test_lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/B coverage (19 tests)
 │       └── test_lifecycle_runner.py  # start_run/drain_into with stub agent + threading.Event; continuation through real worker (extended +82 lines)
 ├── db/                         # Database utilities
-│   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
-│   ├── populate_vector_db.py   # KQAPro Qdrant initialization
-│   ├── populate_sciqa_vectors.py # SciQA Qdrant initialization
+│   ├── docker-compose.yml      # Virtuoso + Qdrant (v1.17.1) + frontend (3 services on Hetzner)
+│   ├── populate_vector_db.py   # KQAPro Qdrant initialization (creates hybrid-capable collections)
+│   ├── populate_sciqa_vectors.py # SciQA Qdrant initialization (creates hybrid-capable collections)
+│   ├── migrate_add_bm25.py     # ✅ NEW: Upgrades existing dense-only collections to BM25 hybrid (crash-safe 2-stage copy; idempotent)
 │   └── datasets/
 │       ├── kqapro/
 │       │   ├── kb.json         # KQAPro knowledge base
@@ -151,7 +160,7 @@ ama-kbqa/
 |-----------|------------|---------|
 | **Language** | Python 3.12+ | Primary implementation |
 | **Agent Framework** | openai-agents, FastMCP | Tool-calling agents with MCP |
-| **Vector DB** | Qdrant (`qdrant-client>=1.17.0`) | Semantic entity/relation search via `query_points` API |
+| **Vector DB** | Qdrant (`qdrant-client>=1.17.0`, image pinned to `v1.17.1`) | Semantic entity/relation search; dense or BM25-hybrid via `query_points` / `FusionQuery` API |
 | **Graph DB** | Virtuoso 7 | RDF triple store, SPARQL queries |
 | **LLM Access** | OpenAI SDK | Compatible with OpenRouter, LMStudio, etc. |
 | **Embedding** | qwen/qwen3-embedding-8b (4096 dim) | Entity/relation embeddings |
@@ -392,6 +401,14 @@ from ama_kbqa.config import (
     get_auto_inject_journal,   # bool — whether to auto-push journal into tool loop (default True)
     get_qdrant_host,           # Database connection
     get_virtuoso_endpoint,     # SPARQL endpoint
+    # Retrieval config ([retrieval] section):
+    get_hybrid_enabled,        # bool — dense + BM25 hybrid (default False)
+    get_fusion,                # str — "rrf" | "dbsf" (default "rrf")
+    get_prefetch_limit,        # int — per-branch candidates before fusion (default 20)
+    get_reranker_enabled,      # bool — cross-encoder reranking (default False)
+    get_reranker_model,        # str — HuggingFace model name
+    get_rerank_candidates,     # int — hits fed to cross-encoder (default 20)
+    get_rerank_threshold,      # Optional[float] — cross-encoder score gate (default None)
 )
 ```
 
@@ -404,6 +421,41 @@ from ama_kbqa.config import (
 - `true` (default) — `_run_tool_loop` periodically injects a journal refresh every N iterations and appends an "answer now" prompt whenever the agent calls `GetJournalSummary`
 - `false` — both automatic injections are suppressed; `GetJournalSummary` remains available as a tool the agent can call voluntarily
 - Exposed as a toggle in the Settings UI (`pages/4_Settings.py`, "Auto-inject journal into context", under Agent Configuration)
+
+### 3.1 Shared Retrieval Layer (`ama_kbqa/retrieval/`) ✅ NEW
+
+All MCP servers use a single retrieval entrypoint. The three modules replace five divergent per-server embedding and search implementations:
+
+**`embeddings.py`**
+- `embed_query(client, text, *, model=None)` — single text, shared 256-entry LRU cache
+- `embed_queries(client, texts, *, model=None)` — batch; cache hits served locally, misses batched in one API call, sequential fallback on batch failure
+
+**`search.py`**
+- `RetrievalParams` — frozen dataclass (limit, score_threshold, hybrid_enabled, fusion, prefetch_limit, reranker_enabled, reranker_model, rerank_candidates, rerank_threshold)
+- `build_retrieval_params(*, limit, score_threshold, allow_rerank=True)` — constructs `RetrievalParams` from config; `allow_rerank=False` hard-disables reranking for a call site regardless of config (used by orchestrator probe)
+- `search(qdrant, collection, *, query_text, query_vector, params, query_filter=None)` — unified entrypoint returning `List[ScoredPoint]`
+- `search_terms(qdrant, collection, *, vectors_map, params)` — orchestrator multi-term probe wrapper
+
+**Retrieval modes (controlled by `[retrieval]` section of `config.toml`):**
+
+| Mode | Config | Behavior |
+|------|--------|----------|
+| Dense-only (default) | `hybrid_enabled = false` | Single `query_points` call; `score_threshold` applied |
+| BM25 hybrid | `hybrid_enabled = true` | Dense prefetch + BM25 prefetch (`models.Document`) fused server-side (RRF or DBSF); `score_threshold` gates dense branch only; no threshold on BM25 branch |
+| + Reranker | `reranker_enabled = true` | Cross-encoder rescores candidates; `point.score` overwritten with rerank score (scale changes) |
+
+**`reranker.py`**
+- Lazy `CrossEncoder` singleton; loaded on first use (~17s, ~600 MB download from HuggingFace)
+- `get_reranker(model_name)` — cached per model name; raises clear `ImportError` if `sentence-transformers` not installed
+- Install: `uv sync --extra rerank` (keeps torch out of default/frontend image)
+
+**Key invariants:**
+- `score_threshold` from config gates only the dense branch; fused RRF/DBSF scores are rank-based and never gated
+- After reranking, `point.score` reflects the cross-encoder output, not a cosine similarity
+- Collections without a `"bm25"` sparse index fall back to dense with a one-time warning (capability checked via `get_collection()`, cached per collection per process)
+- Capability cache is process-lifetime: restart servers after migrating a collection
+
+See [Decisions/bm25-hybrid-retrieval-architecture.md](../Decisions/bm25-hybrid-retrieval-architecture.md) for full design rationale.
 
 ### 4. Orchestrator Agent (`ama_kbqa/agents/orchestrator_agent/agent.py`)
 
@@ -754,12 +806,14 @@ Uses LLM with structured JSON output to classify into 9 types:
 3. **Tool Spam** - Same tool 5/6 times (different params)
 4. **No Progress** - Journal unchanged for 5 iterations
 
-### 3. Hybrid Search
+### 3. Retrieval (Dense / Hybrid / Rerank)
 
-FindNode uses two-phase search:
+All MCP server search calls flow through `ama_kbqa/retrieval/search.py`:
 
-1. **Exact Filter** - Try exact ID match in Qdrant payload
-2. **Vector Search** - Fallback to semantic similarity
+1. **Exact Filter** (FindNode only) — try exact ID match in Qdrant payload first
+2. **Dense** — single `query_points` call (legacy; default when `hybrid_enabled = false`)
+3. **BM25 Hybrid** — two `Prefetch` branches (dense + server-side BM25) fused via RRF or DBSF (`hybrid_enabled = true`; requires migrated collections)
+4. **Cross-Encoder Rerank** — optional final stage; overwrites `point.score` (`reranker_enabled = true`; requires `uv sync --extra rerank`)
 
 ### 4. Deterministic Synthesis
 
