@@ -90,3 +90,42 @@ def test_apply_chat_settings_updates_config_cache(monkeypatch):
     assert cfg_module._config_cache["llm"]["chat_provider"] == "kit"
     assert cfg_module._config_cache["kit"]["chat_model"] == "kit.gemma4-31b-it"
     assert cfg_module._config_cache["llm"]["chat_temperature"] == pytest.approx(1.0)
+
+
+def test_apply_retrieval_settings_updates_cache_and_env(monkeypatch):
+    import os
+
+    import ama_kbqa.config as cfg_module
+
+    base = {"retrieval": {"hybrid_enabled": False, "fusion": "rrf"}}
+    monkeypatch.setattr(cfg_module, "_config_cache", base)
+    monkeypatch.setattr(cfg_module, "load_config", lambda: cfg_module._config_cache)
+    # Register the env vars with monkeypatch so they are restored after the
+    # test even though the helper writes os.environ directly.
+    for suffix in ("HYBRID_ENABLED", "FUSION", "RERANKER_ENABLED"):
+        monkeypatch.delenv(cfg_module.RETRIEVAL_ENV_PREFIX + suffix, raising=False)
+
+    chat_controls.apply_retrieval_settings(True, "dbsf", True)
+
+    # In-process channel: cached config dict.
+    retrieval = cfg_module._config_cache["retrieval"]
+    assert retrieval["hybrid_enabled"] is True
+    assert retrieval["fusion"] == "dbsf"
+    assert retrieval["reranker_enabled"] is True
+    # Cross-process channel: env vars inherited by MCP server subprocesses.
+    prefix = cfg_module.RETRIEVAL_ENV_PREFIX
+    assert os.environ[prefix + "HYBRID_ENABLED"] == "true"
+    assert os.environ[prefix + "FUSION"] == "dbsf"
+    assert os.environ[prefix + "RERANKER_ENABLED"] == "true"
+
+    chat_controls.apply_retrieval_settings(False, "rrf", False)
+
+    assert os.environ[prefix + "HYBRID_ENABLED"] == "false"
+    assert os.environ[prefix + "RERANKER_ENABLED"] == "false"
+
+
+def test_reranker_available_matches_import(monkeypatch):
+    import importlib.util
+
+    expected = importlib.util.find_spec("sentence_transformers") is not None
+    assert chat_controls.reranker_available() is expected

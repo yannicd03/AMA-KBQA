@@ -46,11 +46,19 @@ from ama_kbqa.frontend.utils.styling import (
 from ama_kbqa.frontend.utils.trace_panel import render_trace_panel
 from ama_kbqa.frontend.utils.chat_controls import (
     apply_chat_settings,
+    apply_retrieval_settings,
     available_models,
     display_model_name,
     price_caption,
+    reranker_available,
 )
-from ama_kbqa.config import get_chat_model_name, get_chat_temperature
+from ama_kbqa.config import (
+    get_chat_model_name,
+    get_chat_temperature,
+    get_fusion,
+    get_hybrid_enabled,
+    get_reranker_enabled,
+)
 from ama_kbqa.pricing import estimate_cost_usd, format_cost_usd
 
 inject_css()
@@ -119,6 +127,57 @@ with st.sidebar:
     if st.session_state.get("_active_chat_model") not in (None, selected_model):
         st.session_state.pop("persistent_agent", None)
     st.session_state["_active_chat_model"] = selected_model
+
+    # ── Retrieval (RAG) options ───────────────────────────────────────────────
+    # These run inside the MCP server subprocesses, so they propagate via
+    # AMA_RETRIEVAL_* environment variables (inherited at server launch).
+    # Changing them drops the persisted multiturn agent, like a model switch,
+    # so the next question starts a fresh server with the new settings.
+    st.divider()
+    st.markdown("**Retrieval**")
+    hybrid_enabled = st.toggle(
+        "Hybrid search (BM25 + dense)",
+        value=get_hybrid_enabled(),
+        key="retrieval_hybrid_toggle",
+        help=(
+            "Combine dense vector search with BM25 keyword search and fuse "
+            "the two result lists. Off = pure dense vector search."
+        ),
+    )
+    fusion = st.selectbox(
+        "Score fusion",
+        options=("rrf", "dbsf"),
+        index=0 if get_fusion() == "rrf" else 1,
+        format_func=lambda f: {
+            "rrf": "RRF (rank-based)",
+            "dbsf": "DBSF (score-based)",
+        }[f],
+        key="retrieval_fusion_select",
+        disabled=not hybrid_enabled,
+        help="How the dense and BM25 result lists are merged in hybrid mode.",
+    )
+    _rerank_installed = reranker_available()
+    reranker_enabled = st.toggle(
+        "Rerank results (cross-encoder)",
+        value=get_reranker_enabled() and _rerank_installed,
+        key="retrieval_reranker_toggle",
+        disabled=not _rerank_installed,
+        help=(
+            "Re-score retrieval candidates with a local cross-encoder for "
+            "higher precision. Adds CPU latency per retrieval tool call; the "
+            "first use downloads and loads the model (one-time)."
+        ),
+    )
+    if not _rerank_installed:
+        st.caption(
+            ":gray[Reranker unavailable: install with `uv sync --extra rerank`.]"
+        )
+    apply_retrieval_settings(hybrid_enabled, fusion, reranker_enabled)
+    _retrieval_fp = (hybrid_enabled, fusion, reranker_enabled)
+    if st.session_state.get("_active_retrieval_settings") not in (None, _retrieval_fp):
+        st.session_state.pop("persistent_agent", None)
+    st.session_state["_active_retrieval_settings"] = _retrieval_fp
+    st.divider()
 
     simplified = st.toggle(
         "Simplified view",

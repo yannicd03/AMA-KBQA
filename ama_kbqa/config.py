@@ -584,14 +584,53 @@ def get_synthesis_provider_preferences() -> Optional[dict]:
 # Retrieval (hybrid search + reranker) Configuration Functions
 # ==============================================================================
 
+def _parse_env_bool(raw: str) -> bool:
+    """Parse a boolean from an environment-variable string."""
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Environment-variable overrides for the [retrieval] section. The frontend
+# sets these (AMA_RETRIEVAL_<KEY>) so the settings cross the process boundary
+# into the MCP server subprocesses, which inherit the parent environment at
+# launch. Env always wins over config.toml; unset vars leave the toml value.
+_RETRIEVAL_ENV_PARSERS = {
+    "hybrid_enabled": _parse_env_bool,
+    "fusion": str,
+    "prefetch_limit": int,
+    "reranker_enabled": _parse_env_bool,
+    "reranker_model": str,
+    "rerank_candidates": int,
+    "rerank_threshold": float,
+}
+
+RETRIEVAL_ENV_PREFIX = "AMA_RETRIEVAL_"
+
+
 def get_retrieval_config() -> dict:
     """Get the [retrieval] configuration section.
+
+    Values from config.toml are overlaid with ``AMA_RETRIEVAL_<KEY>``
+    environment variables (e.g. ``AMA_RETRIEVAL_HYBRID_ENABLED=true``).
+    The env channel exists so per-session frontend toggles reach the MCP
+    server subprocesses, which inherit the environment when spawned.
 
     Returns:
         dict: Hybrid-search and reranker settings (empty dict if absent).
     """
     config = load_config()
-    return config.get("retrieval", {})
+    section = dict(config.get("retrieval", {}))
+    for key, parse in _RETRIEVAL_ENV_PARSERS.items():
+        raw = os.environ.get(RETRIEVAL_ENV_PREFIX + key.upper())
+        if raw is None:
+            continue
+        try:
+            section[key] = parse(raw)
+        except ValueError:
+            logger.warning(
+                f"Invalid value {raw!r} for {RETRIEVAL_ENV_PREFIX + key.upper()}; "
+                f"keeping config.toml value"
+            )
+    return section
 
 
 def get_hybrid_enabled() -> bool:

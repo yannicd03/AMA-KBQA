@@ -93,3 +93,46 @@ def apply_chat_settings(model: str, temperature: float) -> None:
     cfg.setdefault("kit", {})["chat_model"] = model
     cfg["llm"]["chat_temperature"] = float(temperature)
     cfg_module._config_cache = cfg
+
+
+def reranker_available() -> bool:
+    """Whether the optional ``rerank`` extra (sentence-transformers) is installed.
+
+    Used to disable the reranker toggle in builds without the extra, instead
+    of letting the server fall back with a per-call warning.
+    """
+    import importlib.util
+
+    return importlib.util.find_spec("sentence_transformers") is not None
+
+
+def apply_retrieval_settings(
+    hybrid_enabled: bool, fusion: str, reranker_enabled: bool
+) -> None:
+    """Apply the sidebar retrieval (RAG) settings for this session.
+
+    Two channels, never written to disk:
+
+    1. The in-memory config cache, so any retrieval code running in *this*
+       process sees the new values (same pattern as ``apply_chat_settings``).
+    2. ``AMA_RETRIEVAL_*`` environment variables, because the actual retrieval
+       runs inside the MCP server subprocesses, which inherit the parent
+       environment when spawned. Changes therefore only reach a server
+       subprocess started *after* this call; the chat page drops the persisted
+       agent on change so the next question launches a fresh server.
+    """
+    import os
+
+    import ama_kbqa.config as cfg_module
+
+    cfg = cfg_module.load_config()
+    retrieval = cfg.setdefault("retrieval", {})
+    retrieval["hybrid_enabled"] = bool(hybrid_enabled)
+    retrieval["fusion"] = fusion
+    retrieval["reranker_enabled"] = bool(reranker_enabled)
+    cfg_module._config_cache = cfg
+
+    prefix = cfg_module.RETRIEVAL_ENV_PREFIX
+    os.environ[prefix + "HYBRID_ENABLED"] = "true" if hybrid_enabled else "false"
+    os.environ[prefix + "FUSION"] = fusion
+    os.environ[prefix + "RERANKER_ENABLED"] = "true" if reranker_enabled else "false"
