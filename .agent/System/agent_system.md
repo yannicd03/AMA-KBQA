@@ -59,15 +59,22 @@ Step 1 — Probe
   LLM receives: routing system prompt (includes agent domain descriptions)
   Forced tool call (tool_choice=required): analyze_query_recommend_db(query)
   Tool returns: raw evidence JSON (see below)
+  Evidence stored as self.last_routing_evidence (used as fusion prior)
 
 Step 2 — Judge
   LLM receives: evidence appended as tool-result message
-  Forced tool call (tool_choice=required): select_agent(agent: enum, reason: str)
-  enum values constructed from _agent_config keys at runtime
-  reason recorded on the classify span as route_reason attribute
+  Forced tool call (tool_choice=required): select_agents(agents: array[enum], reason: str)
+  array minItems=1, maxItems=get_federation_max_specialists()
+  With federation disabled (default): maxItems=1 — degenerates to single-dispatch
+  reason recorded on classify span as route_reason
+  len(agents) recorded on classify span as route_mode ("single" | "federated")
 ```
 
-If `_route_autonomously` raises or returns an unrecognised agent key, `_fallback_kqapro` delegates to KQAPro.
+**Single-dispatch path (default):** one agent selected → `_run_specialist(agent, query)` → answer returned directly.
+
+**Federated path:** two or more agents selected → `_federate(agent_names, query)` runs specialists concurrently via `asyncio.gather` → `_fuse_answers(answers, query)` synthesises.
+
+If `_route_autonomously` raises or returns unrecognised agent keys, `_fallback_kqapro` delegates to KQAPro.
 
 ### `analyze_query_recommend_db` Evidence Contract
 
@@ -109,13 +116,28 @@ These are injected verbatim into the routing system prompt so the LLM can match 
 
 The `reason` string from the `select_agent` call is stored on the `classify` span as the `route_reason` attribute. Every routing decision is auditable in the Trace Inspector without re-running the question.
 
+### `_run_specialist`, `_federate`, `_fuse_answers`
+
+**`_run_specialist(agent_name, query, fallback=False)`** — shared primitive used by single-dispatch, federated fan-out, and `_fallback_kqapro`. Opens a `delegate` span, shares the recorder with the sub-agent, tags every journal snapshot with `source_agent = agent_name`, and returns `(agent_name, answer_text)` on success or `(agent_name, None)` on exception.
+
+**`_federate(agent_names, query)`** — calls `asyncio.gather(*[_run_specialist(n, query) for n in agent_names])`. Because `TraceRecorder` uses a `ContextVar`, each gathered task gets a task-local contextvar copy; `delegate` spans from parallel specialists emerge as siblings under the root `agent_run` span. Failure isolation: one failing specialist degrades to the surviving answer; all failing falls back to KQAPro.
+
+**`_fuse_answers(answers, query)`** — single LLM call under a `synthesis` span. Injects per-agent answer blocks (with domain description) and `last_routing_evidence` as a conflict-resolution prior. Conflict policy: agreement → single answer; complementary → merged with per-source attribution; conflict → present both, name sources, judge by evidence scores; neither has the fact → acknowledge gap, do not invent. Degrade: empty or failed fusion returns the first answer in router order.
+
+### `_fallback_kqapro` — now traced under a `delegate` span
+
+Previously `_fallback_kqapro` ran its sub-agent call outside any `delegate` span, causing fallback child spans to land as invisible siblings of the root. It now routes through `_run_specialist("kqapro", query, fallback=True)`, gaining proper nesting with no behaviour change.
+
 ### Key Design Invariants
 
-- Substring parsing of verdict text is gone. Routing is entirely determined by the `select_agent` structured call.
+- Substring parsing of verdict text is gone. Routing is entirely determined by the `select_agents` structured call.
+- With `federation.enabled = false` (default), `maxItems = 1` on `select_agents` — the schema enforces single-dispatch; benchmark numbers are unaffected.
 - The Orchestrator stays stateless across turns. It does not maintain KG-specific session state; each turn creates a fresh routing context.
 - Multiturn conversation is scoped to directly-selected sub-agents only. When the user selects "Orchestrator" directly, each turn creates a fresh agent per the Orchestrator path. See `Decisions/multiturn-direct-agent-conversation.md`.
+- `source_agent` is tagged on every journal snapshot after a federated merge, preserving per-KG attribution in the Trace Inspector.
 
-See `Decisions/orchestrator-evidence-based-routing.md` for the full rationale, rejected alternatives, and trade-offs.
+See `Decisions/orchestrator-evidence-based-routing.md` for the original two-step routing rationale.
+See `Decisions/federated-dispatch-and-fusion.md` for federated dispatch, fusion, and side-fix rationale.
 
 ---
 
@@ -209,10 +231,11 @@ OTel-compatible dataclass fields: `trace_id`, `span_id`, `parent_span_id`, `kind
 | Span/event kind | Location |
 |-----------------|---------|
 | `agent_run` (span) | Root span in `ask()` |
-| `classify` (span) | `_route_autonomously` |
-| `delegate` (span) | `_delegate(agent_name, query)` — one per sub-agent call |
+| `classify` (span) | `_route_autonomously`; attributes: `route_reason` (str), `route_mode` ("single"\|"federated") |
+| `delegate` (span) | `_run_specialist(agent_name, ...)` — one per specialist (including fallback); siblings under `asyncio.gather` in federated mode |
+| `synthesis` (span) | `_fuse_answers(...)` — only in federated mode when ≥2 answers are available; lights `post_synthesis` in lifecycle view |
 
-The Orchestrator shares its `recorder` with sub-agents before calling them, so sub-agent spans nest as children of the `delegate` span.
+The Orchestrator shares its `recorder` with sub-agents before calling them, so sub-agent spans nest as children of the `delegate` span. In federated mode, `asyncio.gather` task-local contextvar copies ensure parallel specialists produce sibling `delegate` spans rather than incorrectly cross-parenting.
 
 #### Journal Snapshots
 
