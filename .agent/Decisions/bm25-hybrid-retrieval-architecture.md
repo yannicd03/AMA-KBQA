@@ -130,3 +130,39 @@ BM25 hybrid mode uses Qdrant's `models.Document(text=..., model="Qdrant/bm25")` 
 ## Qdrant Version Requirement
 
 Server-side BM25 inference (`models.Document` in `Prefetch`) requires **Qdrant ≥ 1.15.2**. The `docker-compose.yml` now pins `qdrant/qdrant:v1.17.1`.
+
+---
+
+## Amendment: Frontend Exposure + Env-Var Propagation (commit `286490f`)
+
+**Status:** Merged (branch `demo-bwcloud`)
+
+### What was added
+
+`ama_kbqa/frontend/chat.py` gained a **Retrieval** sidebar section:
+- Hybrid search toggle (`hybrid_enabled`)
+- RRF/DBSF fusion selectbox (disabled when hybrid is off)
+- Reranker toggle (disabled with a `uv sync --extra rerank` hint when `sentence-transformers` is not importable, probed via `importlib.util.find_spec`)
+
+`ama_kbqa/frontend/utils/chat_controls.py` gained two helpers:
+- `apply_retrieval_settings(hybrid, fusion, reranker)` — writes settings to `os.environ`
+- `reranker_available()` — `find_spec("sentence_transformers") is not None`
+
+`ama_kbqa/config.py` — `get_retrieval_config()` now overlays `AMA_RETRIEVAL_<KEY>` env vars (typed parsing; invalid numerics warn and fall back to the `[retrieval]` toml value) onto the TOML section. New constant `RETRIEVAL_ENV_PREFIX = "AMA_RETRIEVAL_"`.
+
+### Key decision: env vars as the cross-process channel
+
+**Problem:** MCP servers run as subprocesses spawned in `ama_kbqa/framework/mcp_client.py` (~line 100) with `env=os.environ.copy()`. The existing `apply_chat_settings` pattern (mutating `_config_cache` in the Streamlit process) cannot cross that boundary — the cache lives only in the parent process.
+
+**Chosen channel:** Retrieval settings are written to `os.environ` in the Streamlit process. Subprocesses inherit the environment at launch and read the overrides via `get_retrieval_config()`. Settings are session-only and never written to disk.
+
+**Trade-off — propagation timing:** `os.environ` mutations only apply to subprocesses started *after* the change.
+- **Orchestrator agent per question** — created fresh each turn → always picks up the current env → immediate effect, no special handling needed.
+- **Persistent multiturn agents** (KQAPro/SciQA with `persistent_agent` in `session_state`) — their MCP server stays alive across turns, so the subprocess was launched before the env change. Resolution: `chat.py` drops `st.session_state["persistent_agent"]` when retrieval settings change, forcing a fresh server on the next turn. This mirrors the existing precedent for model switches.
+
+**Trade-off — concurrency:** `os.environ` and `_config_cache` are process-global. Concurrent browser sessions share retrieval settings. This is the same pre-existing limitation as the model/temperature controls and is accepted for the demo context.
+
+### Tests
+
+- `tests/retrieval/test_config_env.py` — env overlay parsing, precedence, cache non-mutation
+- `tests/frontend/test_chat_controls.py` — extended with `apply_retrieval_settings` and `reranker_available` coverage

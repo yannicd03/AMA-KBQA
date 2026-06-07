@@ -80,6 +80,11 @@ The main interactive page. Differences from the full-build `pages/1_Chat.py`:
   active agent. Switching agents clears `st.session_state["persistent_agent"]`.
 - **Model/temperature controls** are in the sidebar via `render_chat_sidebar()` from
   `chat_controls.py`. These are KIT-only and session-only.
+- **Retrieval controls** occupy a second sidebar section: hybrid search toggle, RRF/DBSF
+  fusion selectbox (disabled when hybrid is off), and a reranker toggle (disabled with an
+  install hint when `sentence-transformers` is absent). Changes call
+  `apply_retrieval_settings()` and drop `st.session_state["persistent_agent"]` so the
+  next turn spawns a fresh MCP server inheriting the updated env.
 - **Cost footer** renders `~$X est.` after each answer using `estimate_cost_usd` /
   `format_cost_usd` from `ama_kbqa/pricing.py`.
 - **No Trace Inspector button** (standalone page removed).
@@ -99,9 +104,17 @@ are unit-tested in `tests/frontend/test_chat_controls.py`.
 | `available_models` | `() -> list[str]` | Fetch KIT `/models` (5-min cache), fall back to `known_models()` from `pricing.py` |
 | `price_caption` | `(model: str | None) -> str | None` | One-line `$/M input · $/M output` string for the sidebar |
 | `apply_chat_settings` | `(model: str, temperature: float) -> None` | Mutate `cfg_module._config_cache` in-memory; never writes to disk |
+| `apply_retrieval_settings` | `(hybrid: bool, fusion: str, reranker: bool) -> None` | Write `AMA_RETRIEVAL_*` env vars into `os.environ`; inherited by MCP server subprocesses at launch |
+| `reranker_available` | `() -> bool` | `importlib.util.find_spec("sentence_transformers") is not None` |
 
 `apply_chat_settings` always sets `chat_provider = "kit"`, enforcing the KIT-only
 constraint at the config level.
+
+`apply_retrieval_settings` uses `os.environ` (not `_config_cache`) because MCP servers
+are subprocesses spawned with `env=os.environ.copy()` — see
+[ADR: BM25 Hybrid Retrieval Architecture](../Decisions/bm25-hybrid-retrieval-architecture.md)
+(Amendment section) for the full propagation-timing rationale and the persistent-agent
+reset behaviour.
 
 ---
 
@@ -168,7 +181,7 @@ branch, used as the one-liner shown inside the agent popover picker:
 | File | What it tests |
 |------|--------------|
 | `tests/test_pricing.py` | `estimate_cost_usd`, `format_cost_usd`, `get_model_pricing`, `known_models` |
-| `tests/frontend/test_chat_controls.py` | `filter_selectable_models`, `available_models` (mocked fetch), `price_caption`, `apply_chat_settings` |
+| `tests/frontend/test_chat_controls.py` | `filter_selectable_models`, `available_models` (mocked fetch), `price_caption`, `apply_chat_settings`, `apply_retrieval_settings`, `reranker_available` |
 
 ---
 

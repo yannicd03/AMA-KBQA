@@ -412,6 +412,12 @@ from ama_kbqa.config import (
 )
 ```
 
+**Env-var overlay for retrieval settings:** `get_retrieval_config()` checks for
+`AMA_RETRIEVAL_<KEY>` env vars (e.g. `AMA_RETRIEVAL_HYBRID_ENABLED`) before reading the
+`[retrieval]` TOML section. Invalid numeric values warn and fall back to TOML. Constant:
+`RETRIEVAL_ENV_PREFIX = "AMA_RETRIEVAL_"`. This is the propagation channel for the
+frontend sidebar controls (see §7 and `System/demo_bwcloud_frontend.md`).
+
 **`synthesis_enabled` config key** (`[synthesis]` section in `config.toml`):
 - `true` (default) — run the dedicated synthesis LLM call after the tool loop
 - `false` — return the agent's own last assistant message directly; saves one LLM call but loses deterministic answer shaping
