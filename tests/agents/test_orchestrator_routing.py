@@ -1,4 +1,8 @@
-"""Hermetic unit tests for Orchestrator._route_autonomously.
+"""Hermetic unit tests for the Orchestrator's routing and dispatch.
+
+Covers _route_autonomously (probe -> select_agents), _federate (concurrent
+fan-out with per-specialist failure isolation) and _fuse_answers (answer
+fusion with degrade paths).
 
 No network calls, no API keys, no MCP subprocess. The Orchestrator is
 constructed via __new__ so __init__ (which calls assert_provider_api_key_present
@@ -16,6 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
+from ama_kbqa.framework.trace import TraceRecorder
 
 
 # ---------------------------------------------------------------------------
@@ -80,13 +85,22 @@ _EVIDENCE_JSON = json.dumps({
 
 
 def _make_orchestrator(mcp, client, agent_config=None):
-    """Instantiate Orchestrator without running __init__."""
+    """Instantiate Orchestrator without running __init__.
+
+    Federation flags fall back to the class-level defaults (disabled);
+    federated tests flip o._federation_enabled per instance.
+    """
     o = Orchestrator.__new__(Orchestrator)
     o.name = "TEST_ORCHESTRATOR"
     o.mcp = mcp
     o.client = client
     o.model = "test-model"
     o.last_routing_reason = None
+    o.last_routing_evidence = None
+    o.recorder = TraceRecorder()
+    o.journal_snapshots = []
+    o.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    o._agents = {}
     o._agent_config = agent_config or {
         "kqapro_agent": {
             "module": "ama_kbqa.agents.kqapro_agent.agent",
@@ -100,6 +114,27 @@ def _make_orchestrator(mcp, client, agent_config=None):
         },
     }
     return o
+
+
+class _FakeAgent:
+    """Minimal sub-agent stub matching the surface _run_specialist touches."""
+
+    def __init__(self, name, answer="", error=None, delay=0.0):
+        self.name = name
+        self._answer = answer
+        self._error = error
+        self._delay = delay
+        self.journal_snapshots = [{"ts": 1.0, "trigger": "test", "state": {"agent": name}}]
+        self.token_usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        self.recorder = None
+        self._parent_span_id_override = None
+
+    async def ask(self, query):
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        if self._error is not None:
+            raise self._error
+        return self._answer
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +174,8 @@ class TestRouteAutonomouslyHappyPath:
         step1_tc = [_make_tool_call()]
         step2_tc = [_make_tool_call(
             id_="tc_002",
-            name="select_agent",
-            arguments='{"agent": "sciqa_agent", "reason": "scholarly"}',
+            name="select_agents",
+            arguments='{"agents": ["sciqa_agent"], "reason": "scholarly"}',
         )]
         mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
         client = _two_call_client(step1_tc, step2_tc)
@@ -148,16 +183,17 @@ class TestRouteAutonomouslyHappyPath:
 
         result = _run(o._route_autonomously("Who invented quantum computing?"))
 
-        assert result == "sciqa_agent"
+        assert result == ["sciqa_agent"]
         assert o.last_routing_reason == "scholarly"
+        assert o.last_routing_evidence == _EVIDENCE_JSON
 
-    def test_second_call_receives_tool_result_and_forced_select_agent(self):
+    def test_second_call_receives_tool_result_and_forced_select_agents(self):
         """Step-2 messages must include the tool result and use forced tool_choice."""
         step1_tc = [_make_tool_call(id_="tc_abc")]
         step2_tc = [_make_tool_call(
             id_="tc_def",
-            name="select_agent",
-            arguments='{"agent": "kqapro_agent", "reason": "world knowledge"}',
+            name="select_agents",
+            arguments='{"agents": ["kqapro_agent"], "reason": "world knowledge"}',
         )]
         captured = []
         mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
@@ -166,7 +202,7 @@ class TestRouteAutonomouslyHappyPath:
 
         result = _run(o._route_autonomously("Some question"))
 
-        assert result == "kqapro_agent"
+        assert result == ["kqapro_agent"]
         assert len(captured) == 2, "client should be called exactly twice"
 
         # Second call must include the tool result message.
@@ -176,9 +212,19 @@ class TestRouteAutonomouslyHappyPath:
         assert tool_result_msgs[0]["content"] == _EVIDENCE_JSON
         assert tool_result_msgs[0]["tool_call_id"] == "tc_abc"
 
-        # Second call must force select_agent via tool_choice.
+        # Second call must force select_agents via tool_choice.
         tc = captured[1]["tool_choice"]
-        assert tc == {"type": "function", "function": {"name": "select_agent"}}
+        assert tc == {"type": "function", "function": {"name": "select_agents"}}
+
+    def test_single_dispatch_schema_caps_agents_at_one(self):
+        """With federation disabled the select_agents schema must cap maxItems at 1."""
+        o = _make_orchestrator(mcp=None, client=MagicMock())
+
+        schema = o._select_agents_tool()["function"]["parameters"]["properties"]["agents"]
+
+        assert schema["maxItems"] == 1
+        assert schema["minItems"] == 1
+        assert set(schema["items"]["enum"]) == {"kqapro_agent", "sciqa_agent"}
 
 
 class TestRouteAutonomouslyFailurePaths:
@@ -241,8 +287,8 @@ class TestRouteAutonomouslyFailurePaths:
         step1_tc = [_make_tool_call()]
         step2_tc = [_make_tool_call(
             id_="tc_x",
-            name="select_agent",
-            arguments='{"agent": "ghost_agent", "reason": "unknown"}',
+            name="select_agents",
+            arguments='{"agents": ["ghost_agent"], "reason": "unknown"}',
         )]
         mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
         client = _two_call_client(step1_tc, step2_tc)
@@ -252,6 +298,21 @@ class TestRouteAutonomouslyFailurePaths:
 
         assert result is None
         assert o.last_routing_reason is None
+
+    def test_returns_none_when_agents_list_is_empty(self):
+        step1_tc = [_make_tool_call()]
+        step2_tc = [_make_tool_call(
+            id_="tc_x",
+            name="select_agents",
+            arguments='{"agents": [], "reason": "indecisive"}',
+        )]
+        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
+        client = _two_call_client(step1_tc, step2_tc)
+
+        o = _make_orchestrator(mcp, client)
+        result = _run(o._route_autonomously("Anything"))
+
+        assert result is None
 
     def test_returns_none_when_client_raises(self):
         mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
@@ -263,3 +324,214 @@ class TestRouteAutonomouslyFailurePaths:
         result = _run(o._route_autonomously("Anything"))
 
         assert result is None
+
+
+class TestRouteAutonomouslyFederated:
+
+    def test_federated_selection_returns_both_agents(self):
+        step1_tc = [_make_tool_call()]
+        step2_tc = [_make_tool_call(
+            id_="tc_fed",
+            name="select_agents",
+            arguments='{"agents": ["kqapro_agent", "sciqa_agent"], "reason": "spans both domains"}',
+        )]
+        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
+        client = _two_call_client(step1_tc, step2_tc)
+        o = _make_orchestrator(mcp, client)
+        o._federation_enabled = True
+
+        result = _run(o._route_autonomously("Papers about the city of Berlin?"))
+
+        assert result == ["kqapro_agent", "sciqa_agent"]
+        assert o.last_routing_reason == "spans both domains"
+
+    def test_multi_selection_is_capped_to_one_when_federation_disabled(self):
+        """Defense in depth: even if the provider ignores maxItems, a
+        multi-agent selection must degrade to single dispatch when
+        federation is off."""
+        step1_tc = [_make_tool_call()]
+        step2_tc = [_make_tool_call(
+            id_="tc_fed",
+            name="select_agents",
+            arguments='{"agents": ["sciqa_agent", "kqapro_agent"], "reason": "greedy"}',
+        )]
+        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
+        client = _two_call_client(step1_tc, step2_tc)
+        o = _make_orchestrator(mcp, client)
+        assert o._federation_enabled is False  # class default
+
+        result = _run(o._route_autonomously("Anything"))
+
+        assert result == ["sciqa_agent"]
+
+    def test_duplicate_agents_are_deduped_in_router_order(self):
+        step1_tc = [_make_tool_call()]
+        step2_tc = [_make_tool_call(
+            id_="tc_fed",
+            name="select_agents",
+            arguments='{"agents": ["sciqa_agent", "sciqa_agent"], "reason": "stutter"}',
+        )]
+        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
+        client = _two_call_client(step1_tc, step2_tc)
+        o = _make_orchestrator(mcp, client)
+        o._federation_enabled = True
+
+        result = _run(o._route_autonomously("Anything"))
+
+        assert result == ["sciqa_agent"]
+
+    def test_federated_schema_allows_max_specialists(self):
+        o = _make_orchestrator(mcp=None, client=MagicMock())
+        o._federation_enabled = True
+        o._federation_max_specialists = 2
+
+        schema = o._select_agents_tool()["function"]["parameters"]["properties"]["agents"]
+
+        assert schema["maxItems"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Federated dispatch (_federate) and fusion (_fuse_answers)
+# ---------------------------------------------------------------------------
+
+def _fusion_client(content="fused answer", captured_kwargs=None, error=None):
+    """Client stub for the single fusion LLM call."""
+    def _create(**kwargs):
+        if captured_kwargs is not None:
+            captured_kwargs.append(kwargs)
+        if error is not None:
+            raise error
+        return _make_completion(tool_calls=None, content=content)
+
+    client = MagicMock()
+    client.chat.completions.create.side_effect = _create
+    return client
+
+
+class TestFederate:
+
+    def test_runs_both_specialists_and_fuses(self):
+        captured = []
+        o = _make_orchestrator(mcp=None, client=_fusion_client(captured_kwargs=captured))
+        o._agents = {
+            "kqapro_agent": _FakeAgent("kqapro_agent", answer="42 films"),
+            "sciqa_agent": _FakeAgent("sciqa_agent", answer="3 papers"),
+        }
+
+        answer = _run(o._federate(["kqapro_agent", "sciqa_agent"], "Q?"))
+
+        assert answer == "fused answer"
+        # Fusion prompt must carry both specialist answers.
+        user_msg = captured[0]["messages"][-1]["content"]
+        assert "42 films" in user_msg
+        assert "3 papers" in user_msg
+        # Both sub-agents' token usage is hoisted (fusion adds none: stub
+        # completion has no usage attribute).
+        assert o.token_usage["total_tokens"] == 30
+
+    def test_concurrent_delegate_spans_nest_as_siblings(self):
+        """Each specialist gets its own delegate span; neither parents
+        under the other despite running concurrently."""
+        o = _make_orchestrator(mcp=None, client=_fusion_client())
+        o._agents = {
+            "kqapro_agent": _FakeAgent("kqapro_agent", answer="a", delay=0.01),
+            "sciqa_agent": _FakeAgent("sciqa_agent", answer="b", delay=0.01),
+        }
+
+        _run(o._federate(["kqapro_agent", "sciqa_agent"], "Q?"))
+
+        delegates = [e for e in o.recorder.events if e.kind == "delegate"]
+        assert len(delegates) == 2
+        assert {d.name for d in delegates} == {"kqapro_agent", "sciqa_agent"}
+        delegate_ids = {d.span_id for d in delegates}
+        assert all(d.parent_span_id not in delegate_ids for d in delegates)
+
+    def test_journal_snapshots_are_tagged_with_source_agent(self):
+        o = _make_orchestrator(mcp=None, client=_fusion_client())
+        o._agents = {
+            "kqapro_agent": _FakeAgent("kqapro_agent", answer="a"),
+            "sciqa_agent": _FakeAgent("sciqa_agent", answer="b"),
+        }
+
+        _run(o._federate(["kqapro_agent", "sciqa_agent"], "Q?"))
+
+        sources = sorted(s["source_agent"] for s in o.journal_snapshots)
+        assert sources == ["kqapro_agent", "sciqa_agent"]
+
+    def test_one_failure_degrades_to_surviving_answer_without_fusion(self):
+        client = _fusion_client()
+        o = _make_orchestrator(mcp=None, client=client)
+        o._agents = {
+            "kqapro_agent": _FakeAgent("kqapro_agent", error=RuntimeError("boom")),
+            "sciqa_agent": _FakeAgent("sciqa_agent", answer="3 papers"),
+        }
+
+        answer = _run(o._federate(["kqapro_agent", "sciqa_agent"], "Q?"))
+
+        assert answer == "3 papers"
+        client.chat.completions.create.assert_not_called()
+
+    def test_all_failures_fall_back_to_kqapro(self):
+        o = _make_orchestrator(mcp=None, client=_fusion_client())
+        o._agents = {
+            "kqapro_agent": _FakeAgent("kqapro_agent", error=RuntimeError("boom")),
+            "sciqa_agent": _FakeAgent("sciqa_agent", error=RuntimeError("crash")),
+        }
+        fallback_calls = []
+
+        async def _fake_fallback(query):
+            fallback_calls.append(query)
+            return "fallback answer"
+
+        o._fallback_kqapro = _fake_fallback
+
+        answer = _run(o._federate(["kqapro_agent", "sciqa_agent"], "Q?"))
+
+        assert answer == "fallback answer"
+        assert fallback_calls == ["Q?"]
+
+
+class TestFuseAnswers:
+
+    _ANSWERS = [
+        {"agent": "kqapro_agent", "answer": "Born in 1879."},
+        {"agent": "sciqa_agent", "answer": "Cited in 12 papers."},
+    ]
+
+    def test_forwards_routing_evidence_to_fusion_prompt(self):
+        captured = []
+        o = _make_orchestrator(mcp=None, client=_fusion_client(captured_kwargs=captured))
+        o.last_routing_evidence = _EVIDENCE_JSON
+
+        _run(o._fuse_answers("Q?", self._ANSWERS))
+
+        user_msg = captured[0]["messages"][-1]["content"]
+        assert _EVIDENCE_JSON in user_msg
+        # System prompt carries the conflict policy.
+        system_msg = captured[0]["messages"][0]["content"]
+        assert "CONFLICT" in system_msg
+
+    def test_empty_fusion_degrades_to_first_answer(self):
+        o = _make_orchestrator(mcp=None, client=_fusion_client(content=""))
+
+        answer = _run(o._fuse_answers("Q?", self._ANSWERS))
+
+        assert answer == "Born in 1879."
+
+    def test_fusion_error_degrades_to_first_answer(self):
+        o = _make_orchestrator(
+            mcp=None, client=_fusion_client(error=Exception("API down"))
+        )
+
+        answer = _run(o._fuse_answers("Q?", self._ANSWERS))
+
+        assert answer == "Born in 1879."
+
+    def test_records_synthesis_span_with_agents(self):
+        o = _make_orchestrator(mcp=None, client=_fusion_client())
+
+        _run(o._fuse_answers("Q?", self._ANSWERS))
+
+        spans = [e for e in o.recorder.events if e.kind == "synthesis"]
+        assert len(spans) == 1
+        assert spans[0].attributes["agents"] == "kqapro_agent, sciqa_agent"

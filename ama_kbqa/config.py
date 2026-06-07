@@ -711,6 +711,39 @@ def get_rerank_threshold() -> Optional[float]:
 
 
 # ==============================================================================
+# Federation Configuration Functions
+# ==============================================================================
+
+def get_federation_enabled() -> bool:
+    """Whether the orchestrator may dispatch a question to MULTIPLE
+    specialist agents concurrently and fuse their answers.
+
+    When False (default), the router commits to exactly one specialist per
+    question, preserving the single-dispatch behaviour the benchmark numbers
+    were measured with. Federation doubles token spend on questions where it
+    triggers, so it is opt-in per deployment.
+
+    Returns:
+        bool: True to allow federated multi-agent dispatch (default: False).
+    """
+    config = load_config()
+    return bool(config.get("federation", {}).get("enabled", False))
+
+
+def get_federation_max_specialists() -> int:
+    """Maximum number of specialists the router may select for one question.
+
+    Caps the fan-out (and therefore the token cost) of a federated dispatch.
+    Selections beyond the cap are truncated in router order.
+
+    Returns:
+        int: max concurrent specialists (default: 2).
+    """
+    config = load_config()
+    return int(config.get("federation", {}).get("max_specialists", 2))
+
+
+# ==============================================================================
 # SciQA / ORKG Configuration Functions
 # ==============================================================================
 

@@ -64,6 +64,14 @@ reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
 rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # rerank_threshold = 0.0      # optional gate on cross-encoder scores; unset = no gate
 
+[federation]
+# Allow the orchestrator to dispatch a question to multiple specialists
+# concurrently and fuse their answers. Off by default: federation doubles
+# token spend where it triggers, and the benchmark numbers were measured
+# with single dispatch.
+enabled = false
+max_specialists = 2
+
 [sciqa]
 entity_threshold = 0.7
 relation_threshold = 0.65

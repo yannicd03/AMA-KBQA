@@ -55,7 +55,11 @@ async def run(samples: list[dict]) -> list[dict]:
         sys.exit("MCP server failed to start; cannot benchmark routing.")
     try:
         for i, sample in enumerate(samples, 1):
-            routed = await orch._route_autonomously(sample["question"])
+            routed_names = await orch._route_autonomously(sample["question"])
+            # _route_autonomously returns a list (federated dispatch support);
+            # the benchmark scores single-dispatch routing, so a multi-agent
+            # selection is recorded as a joined label and counts as a miss.
+            routed = "+".join(routed_names) if routed_names else None
             records.append({
                 **sample,
                 "routed": routed,  # None => router failed, runtime falls back to KQAPro
