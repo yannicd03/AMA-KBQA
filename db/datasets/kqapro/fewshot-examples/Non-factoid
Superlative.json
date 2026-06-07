@@ -1,0 +1,37 @@
+[
+  {
+    "question": "Which are 3 the most common variables for the atmosphere models in \"Comparison of prognostic atmospheric variables of CMIP5 GCMs\"?",
+    "answer": "\"Wind components\", \"Surface pressure\", \"Vapour/solid/liquid\"",
+    "qtype": "Non-factoid\nSuperlative",
+    "trace": [
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Comparison of prognostic atmospheric va",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R68871\",       \"name\": \"Comparison "
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?var (COUNT(?var) AS ?count) WHERE { orkgr",
+        "result": "{   \"vars\": [     \"var\",     \"count\"   ],   \"bindings\": [     {       \"var\": \"co"
+      },
+      {
+        "tool": "InspectComparisonSchema",
+        "args": "{'comparison_id': 'R68871'}",
+        "result": "{   \"comparison_id\": \"R68871\",   \"n_contributions\": 14,   \"direct_predicates\": ["
+      },
+      {
+        "tool": "AggregateComparisonValues",
+        "args": "{'agg': 'mode_top', 'comparison_id': 'R68871', 'intermediate",
+        "result": "{   \"comparison_id\": \"R68871\",   \"value_predicate\": \"P26032\",   \"value_predicate"
+      },
+      {
+        "tool": "ManageJournal",
+        "args": "set_answer: The 3 most common variables for the atmo",
+        "result": "Set partial answer: The 3 most common variables for the atmosphere models in \"Co"
+      }
+    ],
+    "lesson": "Solved via: FindResource -> RunORKGSPARQL -> InspectComparisonSchema -> AggregateComparisonValues",
+    "tool_count": 6,
+    "collected_at": "2026-05-22T15:33:05.283652"
+  }
+]

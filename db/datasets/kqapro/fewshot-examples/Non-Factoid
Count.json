@@ -1,0 +1,87 @@
+[
+  {
+    "question": "What is the average installed capacity of all energy sources considered in \"Greenhouse Gas Reduction Scenarios for Germany\"?",
+    "answer": "367.570798339843756",
+    "qtype": "Non-Factoid\nCount",
+    "trace": [
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Greenhouse Gas Reduction Scenarios for ",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R153799\",       \"name\": \"Greenhouse"
+      },
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Greenhouse Gas Reduction Scenarios for ",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R153799\",       \"name\": \"Greenhouse"
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?p rdfs:label ?label WHERE { ?p rdfs:label",
+        "result": "{   \"vars\": [     \"p\",     \"callret-1\",     \"label\"   ],   \"bindings\": [     {  "
+      },
+      {
+        "tool": "InspectComparisonSchema",
+        "args": "{'comparison_id': 'R153799'}",
+        "result": "{   \"comparison_id\": \"R153799\",   \"n_contributions\": 25,   \"direct_predicates\": "
+      },
+      {
+        "tool": "AggregateComparisonValues",
+        "args": "{'agg': 'avg', 'comparison_id': 'R153799', 'intermediate_pre",
+        "result": "{   \"comparison_id\": \"R153799\",   \"value_predicate\": \"P43133\",   \"value_predicat"
+      },
+      {
+        "tool": "AggregateComparisonValues",
+        "args": "{'agg': 'avg', 'comparison_id': 'R153799', 'intermediate_fil",
+        "result": "{   \"comparison_id\": \"R153799\",   \"value_predicate\": \"P43133\",   \"value_predicat"
+      }
+    ],
+    "lesson": "Solved via: FindResource -> RunORKGSPARQL -> InspectComparisonSchema -> AggregateComparisonValues",
+    "tool_count": 7,
+    "collected_at": "2026-05-22T15:33:05.283662"
+  },
+  {
+    "question": "What is the average energy generation of all energy sources considered in \"Greenhouse Gas Reduction Scenarios for Germany\"?",
+    "answer": "767.37200439453124",
+    "qtype": "Non-Factoid\nCount",
+    "trace": [
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Greenhouse Gas Reduction Scenarios for ",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R153799\",       \"name\": \"Greenhouse"
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?energy_generation WHERE { orkgr:R153799 o",
+        "result": "{   \"vars\": [     \"energy_generation\"   ],   \"bindings\": [],   \"raw_json\": {    "
+      },
+      {
+        "tool": "InspectComparisonSchema",
+        "args": "{'comparison_id': 'R153799'}",
+        "result": "{   \"comparison_id\": \"R153799\",   \"n_contributions\": 25,   \"direct_predicates\": "
+      },
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Greenhouse Gas Reduction Scenarios for ",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R153799\",       \"name\": \"Greenhouse"
+      },
+      {
+        "tool": "InspectComparisonSchema",
+        "args": "{'comparison_id': 'R153799'}",
+        "result": "{   \"comparison_id\": \"R153799\",   \"n_contributions\": 25,   \"direct_predicates\": "
+      },
+      {
+        "tool": "AggregateComparisonValues",
+        "args": "{'agg': 'avg', 'comparison_ids': 'R153799', 'intermediate_fi",
+        "result": "{   \"error\": \"value_predicate is required\" }"
+      },
+      {
+        "tool": "AggregateComparisonValues",
+        "args": "{'agg': 'avg', 'comparison_id': 'R153799', 'intermediate_fil",
+        "result": "{   \"comparison_id\": \"R153799\",   \"value_predicate\": \"P43134\",   \"value_predicat"
+      }
+    ],
+    "lesson": "Solved via: FindResource -> RunORKGSPARQL -> InspectComparisonSchema -> AggregateComparisonValues",
+    "tool_count": 8,
+    "collected_at": "2026-05-23T13:31:29.614091"
+  }
+]

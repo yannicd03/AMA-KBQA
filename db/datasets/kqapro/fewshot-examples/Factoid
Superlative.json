@@ -1,0 +1,92 @@
+[
+  {
+    "question": "What was the most common type of approach in \"summarization before 2002\"?",
+    "answer": "\"http://orkg.org/orkg/resource/R6549\", \"Algebraic\"",
+    "qtype": "Factoid\nSuperlative",
+    "trace": [
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"summarization before 2002\"', 'node_type",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R6948\",       \"name\": \"Summarizatio"
+      },
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"summarization before 2002\"', 'node_type",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R6948\",       \"name\": \"Summarizatio"
+      },
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"summarization before 2002\"', 'node_type",
+        "result": "INFINITE LOOP DETECTED  **Detected Pattern:** Identical call repeated 3 times: F"
+      },
+      {
+        "tool": "InspectComparisonSchema",
+        "args": "{'comparison_id': 'R6948'}",
+        "result": "{   \"comparison_id\": \"R6948\",   \"n_contributions\": 16,   \"direct_predicates\": [ "
+      },
+      {
+        "tool": "AggregateComparisonValues",
+        "args": "{'agg': 'mode_top', 'comparison_id': 'R6948', 'intermediate_",
+        "result": "{   \"comparison_id\": \"R6948\",   \"value_predicate\": \"P5043\",   \"value_predicates\""
+      },
+      {
+        "tool": "ManageJournal",
+        "args": "add_fact: {\"fact\": \"The most common type of approa",
+        "result": "Added verified fact: {\"fact\": \"The most common type of approach in the 'Summariz"
+      }
+    ],
+    "lesson": "Solved via: FindResource -> InspectComparisonSchema -> AggregateComparisonValues",
+    "tool_count": 6,
+    "collected_at": "2026-05-22T15:33:05.283635"
+  },
+  {
+    "question": "Which sector is the most commonly modeled energy sector in \"Comparison of Scenario Factsheets from the Open Energy Platform\"?",
+    "answer": "Heat sector\t8",
+    "qtype": "Factoid\nSuperlative",
+    "trace": [
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Comparison of Scenario Factsheets from ",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R150337\",       \"name\": \"Comparison"
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?label (COUNT(?c) AS ?count) WHERE { ?comp",
+        "result": "{   \"vars\": [     \"label\",     \"count\"   ],   \"bindings\": [],   \"raw_json\": {   "
+      },
+      {
+        "tool": "FindResource",
+        "args": "{'semantic_query': '\"Comparison of Scenario Factsheets from ",
+        "result": "{   \"matches\": [     {       \"original_id\": \"R150337\",       \"name\": \"Comparison"
+      },
+      {
+        "tool": "InspectComparisonSchema",
+        "args": "{'comparison_id': 'R150337'}",
+        "result": "{   \"comparison_id\": \"R150337\",   \"n_contributions\": 14,   \"direct_predicates\": "
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?sectorLabel (COUNT(?c) AS ?count) WHERE {",
+        "result": "{   \"vars\": [     \"sectorLabel\",     \"count\"   ],   \"bindings\": [],   \"raw_json\""
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?sectorLabel (COUNT(?c) AS ?count) WHERE {",
+        "result": "{   \"vars\": [     \"sectorLabel\",     \"count\"   ],   \"bindings\": [],   \"raw_json\""
+      },
+      {
+        "tool": "RunORKGSPARQL",
+        "args": "{'query': 'SELECT ?sectorLabel (COUNT(?c) AS ?count) WHERE {",
+        "result": "INFINITE LOOP DETECTED  **Detected Pattern:** Identical call repeated 3 times: R"
+      },
+      {
+        "tool": "GetComparisonContributions",
+        "args": "{'comparison_id': 'R150337'}",
+        "result": "{   \"comparison_id\": \"R150337\",   \"mode\": \"schema_discovery\",   \"contributions\":"
+      }
+    ],
+    "lesson": "Solved via: FindResource -> RunORKGSPARQL -> InspectComparisonSchema -> GetComparisonContributions",
+    "tool_count": 13,
+    "collected_at": "2026-05-22T15:33:05.283671"
+  }
+]
