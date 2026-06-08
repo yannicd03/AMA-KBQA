@@ -25,6 +25,7 @@
 | [SOP/running_batch_processing.md](SOP/running_batch_processing.md) | Run single-model or multi-model benchmarks; LLM judge; fewshot generation; CSV export; resume |
 | [SOP/adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) | Checklist for adding KQAPro MCP tools that produce answer values (journal write invariants) |
 | [SOP/hetzner_deployment.md](SOP/hetzner_deployment.md) | Hetzner VPS deployment runbook: 3-service compose stack, Qdrant port, frontend container, RDF bootstrap, SSH tunnel |
+| [SOP/migrate_add_bm25.md](SOP/migrate_add_bm25.md) | Runbook for `db/migrate_add_bm25.py`: adds BM25 sparse index to existing Qdrant collections (dry-run, then --yes); enable hybrid in config afterward |
 
 > `SOP/database_setup.md` and `SOP/changing_llm_provider.md` — referenced in earlier docs but files are absent; Virtuoso/Qdrant setup is in the root `README.md`; LLM provider config is in `docs/guides/dataset_integration.md` and `config.toml`.
 
@@ -34,6 +35,7 @@
 
 | Document | Description |
 |----------|-------------|
+| [Decisions/hybrid-retrieval-architecture.md](Decisions/hybrid-retrieval-architecture.md) | Hybrid BM25+dense retrieval via Qdrant Query API (RRF/DBSF), cross-encoder reranker, `[retrieval]` config section, AMA_RETRIEVAL_* env overlay, Settings page persistence |
 | [Decisions/abstract-operation-contract.md](Decisions/abstract-operation-contract.md) | Four linked decisions from the 2026-06-06 drift audit: KG-native property addressing, per-server envelopes, two-level count contract (11 req + 3 opt), KG-flavored tool names preserved with binding layer comparability |
 | [Decisions/kqapro-tool-surface-expansion.md](Decisions/kqapro-tool-surface-expansion.md) | Why CountEntities, SelectExtreme, VerifyFact were added + FilterEntities extensions (closes 42% coverage gap) |
 | [Decisions/text-mode-tool-calls.md](Decisions/text-mode-tool-calls.md) | Why and how a client-side `<tool_call>` parser was built for models that can't emit native function calls (minimax-m2.7) |

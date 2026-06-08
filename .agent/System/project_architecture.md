@@ -82,6 +82,11 @@ ama-kbqa/
 │   │       ├── lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/TOOLS_B frozensets ✅ NEW
 │   │       ├── trace_panel.py   # render_trace_panel() — extracted panel helper shared by Chat + page 5 ✅ NEW
 │   │       └── graph_panel.py   # render_graph_panel() — extracted panel helper shared by Chat + page 6 ✅ NEW
+│   ├── retrieval/              # ✅ Centralised retrieval module (BM25 hybrid + reranker)
+│   │   ├── __init__.py
+│   │   ├── embeddings.py       # get_query_embedding() — cached lru_cache query embedding
+│   │   ├── search.py           # RetrievalParams, build_retrieval_params, search(), search_terms() — dense + hybrid dispatch
+│   │   └── reranker.py         # Lazy CrossEncoder singleton; rerank() overwrites point.score
 │   ├── config.py               # Configuration loader
 │   ├── benchmark_agents.py     # Unified batch processing & multi-model benchmarking (includes tool trace export)
 │   ├── postprocessing.py       # Postprocessing modes (choice, sparql, llm_judge, simple)
@@ -106,6 +111,7 @@ ama-kbqa/
 │   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
 │   ├── populate_vector_db.py   # KQAPro Qdrant initialization
 │   ├── populate_sciqa_vectors.py # SciQA Qdrant initialization
+│   ├── migrate_add_bm25.py     # Crash-safe 2-stage migration: adds BM25 sparse index to existing collections without re-embedding
 │   └── datasets/
 │       ├── kqapro/
 │       │   ├── kb.json         # KQAPro knowledge base
@@ -153,7 +159,7 @@ ama-kbqa/
 |-----------|------------|---------|
 | **Language** | Python 3.12+ | Primary implementation |
 | **Agent Framework** | openai-agents, FastMCP | Tool-calling agents with MCP |
-| **Vector DB** | Qdrant (`qdrant-client>=1.17.0`) | Semantic entity/relation search via `query_points` API |
+| **Vector DB** | Qdrant (`qdrant-client>=1.17.0`; image `v1.17.1`) | Semantic entity/relation search; hybrid BM25+dense via Query API (RRF/DBSF); server-side BM25 inference requires >= 1.15.2 |
 | **Graph DB** | Virtuoso 7 | RDF triple store, SPARQL queries |
 | **LLM Access** | OpenAI SDK | Compatible with OpenRouter, LMStudio, etc. |
 | **Embedding** | qwen/qwen3-embedding-8b (4096 dim) | Entity/relation embeddings |
@@ -395,8 +401,30 @@ from ama_kbqa.config import (
     get_auto_inject_journal,   # bool — whether to auto-push journal into tool loop (default True)
     get_qdrant_host,           # Database connection
     get_virtuoso_endpoint,     # SPARQL endpoint
+    get_retrieval_config,      # Returns the full [retrieval] section as a dict
+    get_hybrid_enabled,        # bool — enable BM25 hybrid search (default False)
+    get_fusion,                # str — "rrf" or "dbsf" (default "rrf")
+    get_prefetch_limit,        # int — candidates per branch in hybrid prefetch (default 20)
+    get_reranker_enabled,      # bool — enable cross-encoder reranking (default False)
+    get_reranker_model,        # str — HuggingFace model id for cross-encoder
+    get_rerank_candidates,     # int — number of candidates to rerank (default 20)
+    get_rerank_threshold,      # float | None — minimum cross-encoder score filter
 )
 ```
+
+**`[retrieval]` config section** — controls the `ama_kbqa/retrieval/` module:
+
+```toml
+[retrieval]
+hybrid_enabled = false          # off by default; requires BM25 migration first
+fusion = "rrf"                  # "rrf" (Reciprocal Rank Fusion) or "dbsf" (Distribution-Based Score Fusion)
+prefetch_limit = 20             # candidates fetched per branch (dense + BM25) before fusion
+reranker_enabled = false        # requires uv sync --extra rerank
+reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
+rerank_candidates = 20
+```
+
+Environment variable overlay: `AMA_RETRIEVAL_<KEY>` (upper-cased key, typed) overrides the TOML value. Env vars are the secondary channel for headless/benchmark use; the Settings page uses the disk/session-cache path. `RETRIEVAL_ENV_PREFIX = "AMA_RETRIEVAL_"`.
 
 **`synthesis_enabled` config key** (`[synthesis]` section in `config.toml`):
 - `true` (default) — run the dedicated synthesis LLM call after the tool loop
@@ -589,10 +617,11 @@ Configuration editor for `config.toml`:
 - Synthesis configuration (model, temperature, max_tokens)
 - Embedding configuration (provider, model, dimensions)
 - Search configuration (top_k limits)
+- **Retrieval Configuration** — controls the `[retrieval]` config section: hybrid toggle, RRF/DBSF fusion selectbox (shown when hybrid is on), prefetch limit, reranker toggle (disabled with a `uv sync --extra rerank` hint when `sentence_transformers` is not importable), reranker model, rerank candidates. Mutates `edited["retrieval"]`; persisted via the same save flow as all other sections.
 - **Model field** (chat/synthesis/judge): for "fetchable" providers (currently KIT) the model is a **dropdown populated live from the provider's `/models` endpoint** (`utils/settings_ui.py::model_field` → `config_editor.fetch_provider_models`, cached 5 min, with a 🔄 refresh button); other providers (OpenRouter, llamacpp) keep a free-text input. A failed fetch (no API key, network/HTTP error) falls back to free text with a warning so the page never blocks.
 - Two save modes:
-  - **Session only** - Apply changes to current session without writing to disk
-  - **Save to file** - Write to config.toml (creates .bak backup automatically)
+  - **Session only** — `config_editor.apply_to_session` sets `_config_cache` for the running process; no disk write. MCP subprocesses (spawned per question turn) will not see the change until saved to disk.
+  - **Save to file** — `config_editor.save_config` writes the full config (including `[retrieval]`) to `config.toml`; creates `.bak` backup. MCP subprocesses pick it up on the next spawn.
 
 **5. Trace Inspector (`pages/5_Trace_Inspector.py`)** ✅ NEW
 
