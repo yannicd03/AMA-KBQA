@@ -33,6 +33,15 @@ dependencies = [
     "pytest>=9.0.2",
 ]
 
+[project.optional-dependencies]
+# Cross-encoder reranker for the retrieval pipeline (pulls torch, ~GB of
+# wheels). Only needed when [retrieval].reranker_enabled = true:
+#   uv sync --extra rerank
+rerank = [
+    "sentence-transformers>=3.0.0",
+    "transformers>=4.48",  # native ModernBERT support for the default reranker
+]
+
 [project.scripts]
 ama-kbqa = "ama_kbqa.cli:main"
 ama-kbqa-frontend = "ama_kbqa.cli:frontend"

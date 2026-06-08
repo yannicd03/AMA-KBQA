@@ -24,6 +24,13 @@ VECTOR_DIMENSION = 4096
 # Can also be models.Distance.EUCLID or models.Distance.DOT. This is defined in the beginning, when setting up the collection and cannot be changed without recreating the collection.
 # The Distance Measure has to fir the Embedding Model used, in most modern models like Qwen3-Embedding Cosine Similarity is the standard.
 DISTANCE_MEASURE = models.Distance.COSINE
+# BM25 sparse index for hybrid search. Collections are always created
+# hybrid-capable; the runtime [retrieval].hybrid_enabled toggle decides
+# whether the sparse branch is actually queried. Sparse vectors are computed
+# SERVER-SIDE by Qdrant (>=1.15.2) from the Document objects in the upserts.
+# Names must match ama_kbqa/retrieval/search.py.
+BM25_SPARSE_VECTOR_NAME = "bm25"
+BM25_MODEL = "Qdrant/bm25"
 
 # TODO: Modify this seeding script to no longer add all of the metadata to the payload, only the available keys to save storage space.
 
@@ -83,7 +90,12 @@ def setup_collections(client: QdrantClient) -> bool:
             vectors_config=models.VectorParams(
                 size=VECTOR_DIMENSION,
                 distance=DISTANCE_MEASURE
-            )
+            ),
+            sparse_vectors_config={
+                BM25_SPARSE_VECTOR_NAME: models.SparseVectorParams(
+                    modifier=models.Modifier.IDF
+                )
+            }
         )
     print("Collections created successfully.")
     return True
@@ -185,7 +197,14 @@ def process_entities_and_concepts(client: QdrantClient, kb_data: Dict):
         points.append(
             models.PointStruct(
                 id=json_id_to_int_id[json_id],
-                vector=vectors[i],
+                # "" addresses the unnamed default dense vector; the BM25
+                # sparse vector is inferred server-side from the name text.
+                vector={
+                    "": vectors[i],
+                    BM25_SPARSE_VECTOR_NAME: models.Document(
+                        text=data['name'], model=BM25_MODEL
+                    ),
+                },
                 payload=payload
             )
         )
@@ -232,7 +251,14 @@ def process_unique_relations(client: QdrantClient, kb_data: Dict):
         points.append(
             models.PointStruct(
                 id=i,  # Simple incremental ID
-                vector=vectors[i],
+                # "" addresses the unnamed default dense vector; the BM25
+                # sparse vector is inferred server-side from the predicate.
+                vector={
+                    "": vectors[i],
+                    BM25_SPARSE_VECTOR_NAME: models.Document(
+                        text=predicate, model=BM25_MODEL
+                    ),
+                },
                 payload={
                     "predicate": predicate,
                     "type": "relation_schema"

@@ -212,6 +212,107 @@ score_threshold = st.slider(
 search["score_threshold"] = score_threshold
 edited["search"] = search
 
+# ── Retrieval Configuration (hybrid search + reranker) ───────────────────────
+st.markdown("### Retrieval Configuration")
+
+retrieval = edited.get("retrieval", {})
+
+hybrid_enabled = st.toggle(
+    "Hybrid search (BM25 + dense)",
+    value=bool(retrieval.get("hybrid_enabled", False)),
+    help=(
+        "Combine dense vector search with BM25 keyword search and fuse the two "
+        "result lists server-side. Off = pure dense vector search (legacy). "
+        "Requires the collections to carry a BM25 sparse index "
+        "(db/migrate_add_bm25.py); falls back to dense with a warning otherwise."
+    ),
+    key="retrieval_hybrid_enabled",
+)
+retrieval["hybrid_enabled"] = hybrid_enabled
+
+ret_col1, ret_col2 = st.columns(2)
+
+with ret_col1:
+    FUSION_MODES = ["rrf", "dbsf"]
+    current_fusion = retrieval.get("fusion", "rrf")
+    if current_fusion not in FUSION_MODES:
+        current_fusion = "rrf"
+    fusion = st.selectbox(
+        "Score fusion",
+        options=FUSION_MODES,
+        index=FUSION_MODES.index(current_fusion),
+        format_func=lambda f: {
+            "rrf": "RRF — rank-based",
+            "dbsf": "DBSF — score-based",
+        }[f],
+        disabled=not hybrid_enabled,
+        help="How the dense and BM25 result lists are merged in hybrid mode.",
+        key="retrieval_fusion",
+    )
+    retrieval["fusion"] = fusion
+
+with ret_col2:
+    prefetch_limit = st.number_input(
+        "Prefetch limit (per branch)",
+        min_value=1,
+        max_value=200,
+        value=int(retrieval.get("prefetch_limit", 20)),
+        step=5,
+        disabled=not hybrid_enabled,
+        help="Candidates fetched from each branch (dense, BM25) before fusion.",
+        key="retrieval_prefetch_limit",
+    )
+    retrieval["prefetch_limit"] = int(prefetch_limit)
+
+import importlib.util as _ilu
+
+_rerank_installed = _ilu.find_spec("sentence_transformers") is not None
+
+reranker_enabled = st.toggle(
+    "Rerank results (cross-encoder)",
+    value=bool(retrieval.get("reranker_enabled", False)) and _rerank_installed,
+    disabled=not _rerank_installed,
+    help=(
+        "Re-score retrieval candidates with a local cross-encoder for higher "
+        "precision (independent of hybrid; also reranks pure-dense results). "
+        "Adds CPU latency per retrieval call; the first use loads the model."
+    ),
+    key="retrieval_reranker_enabled",
+)
+retrieval["reranker_enabled"] = reranker_enabled
+if not _rerank_installed:
+    st.caption(
+        ":gray[Reranker unavailable: install the optional extra with "
+        "`uv sync --extra rerank`.]"
+    )
+
+rer_col1, rer_col2 = st.columns(2)
+
+with rer_col1:
+    reranker_model = st.text_input(
+        "Reranker model",
+        value=retrieval.get("reranker_model", "Alibaba-NLP/gte-reranker-modernbert-base"),
+        disabled=not (reranker_enabled and _rerank_installed),
+        help="HuggingFace cross-encoder model id used when reranking is enabled.",
+        key="retrieval_reranker_model",
+    )
+    retrieval["reranker_model"] = reranker_model
+
+with rer_col2:
+    rerank_candidates = st.number_input(
+        "Rerank candidates",
+        min_value=1,
+        max_value=200,
+        value=int(retrieval.get("rerank_candidates", 20)),
+        step=5,
+        disabled=not (reranker_enabled and _rerank_installed),
+        help="How many fused/dense hits are fed to the cross-encoder.",
+        key="retrieval_rerank_candidates",
+    )
+    retrieval["rerank_candidates"] = int(rerank_candidates)
+
+edited["retrieval"] = retrieval
+
 # ── Save buttons ─────────────────────────────────────────────────────────────
 st.markdown("---")
 save_col1, save_col2 = st.columns(2)

@@ -13,6 +13,7 @@ from ama_kbqa.config import (
     get_top_n,
     get_score_threshold,
 )
+from ama_kbqa import retrieval
 import os
 import re
 import sys
@@ -441,35 +442,10 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
 # --- 3. Initialize FastMCP with Lifespan ---
 mcp = FastMCP("KG-Search-Server", lifespan=server_lifespan)
 
-# --- 4. Helper Function (now needs the client passed in) ---
-
-
-# LRU cache for embeddings to avoid redundant API calls
-_embedding_cache: Dict[str, list] = {}
-_EMBEDDING_CACHE_MAX = 256
-
-
-def get_embedding(client: OpenAI, text: str) -> list[float]:
-    text = text.replace("\n", " ")
-    cache_key = text.strip().lower()
-
-    if cache_key in _embedding_cache:
-        return _embedding_cache[cache_key]
-
-    response = client.embeddings.create(
-        model=EMBEDDING_MODEL,
-        input=[text],
-        encoding_format="float"
-    )
-    embedding = response.data[0].embedding
-
-    # Evict oldest entry if cache is full
-    if len(_embedding_cache) >= _EMBEDDING_CACHE_MAX:
-        oldest_key = next(iter(_embedding_cache))
-        del _embedding_cache[oldest_key]
-
-    _embedding_cache[cache_key] = embedding
-    return embedding
+# --- 4. Helper Function ---
+# Embedding + vector search now live in the shared ama_kbqa.retrieval module
+# (embed_query with a shared LRU cache; search with optional BM25 hybrid +
+# reranker stages controlled by the [retrieval] config section).
 
 
 def log_tool_duration(func):
@@ -1768,18 +1744,21 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
     except Exception as e:
         logger.warning(f"FindNode: Phase 1 failed: {e}")
 
-    # --- PHASE 2: Semantic Search ---
-    vector = get_embedding(app_context.embedding_client, semantic_node_name)
+    # --- PHASE 2: Semantic Search (dense or BM25-hybrid per [retrieval] config) ---
+    vector = retrieval.embed_query(app_context.embedding_client, semantic_node_name)
     search_results = []
 
     try:
-        search_results = app_context.qdrant.query_points(
-            collection_name=COLLECTION_ENTITIES,
-            query=vector,
-            limit=TOP_N,
-            with_payload=True,
-            score_threshold=SCORE_THRESHHOLD
-        ).points
+        search_results = retrieval.search(
+            app_context.qdrant,
+            COLLECTION_ENTITIES,
+            query_text=semantic_node_name,
+            query_vector=vector,
+            params=retrieval.build_retrieval_params(
+                limit=TOP_N,
+                score_threshold=SCORE_THRESHHOLD,
+            ),
+        )
     except Exception as e:
         logger.error(f"FindNode: Semantic search failed: {e}")
         search_results = []
@@ -2823,16 +2802,20 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
     # --- DEBUGGING END ---
 
     # 1. Embed the relation query
-    vector = get_embedding(app_context.embedding_client, semantic_relation_name)  # ✅ Using 'app_context'
+    vector = retrieval.embed_query(app_context.embedding_client, semantic_relation_name)  # ✅ Using 'app_context'
 
-    # 2. Find candidates in Qdrant
+    # 2. Find candidates in Qdrant (dense or BM25-hybrid per [retrieval] config)
     # HINWEIS: Wenn dies fehlschlägt, ist app_context.qdrant falsch initialisiert (siehe unten).
-    candidates = app_context.qdrant.query_points(
-        collection_name=COLLECTION_RELATIONS,
-        query=vector,
-        limit=TOP_N,
-        with_payload=True
-    ).points
+    candidates = retrieval.search(
+        app_context.qdrant,
+        COLLECTION_RELATIONS,
+        query_text=semantic_relation_name,
+        query_vector=vector,
+        params=retrieval.build_retrieval_params(
+            limit=TOP_N,
+            score_threshold=None,  # legacy behavior: no threshold on relation search
+        ),
+    )
 
     checked_log = []
 

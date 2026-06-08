@@ -81,3 +81,34 @@ def test_fetch_raises_when_base_url_missing(monkeypatch):
     monkeypatch.setenv("KIT_API_KEY", "secret-key")
     with pytest.raises(RuntimeError, match="No base_url"):
         ce.fetch_provider_models("kit")
+
+
+def test_settings_retrieval_section_reaches_config_getters(monkeypatch):
+    """The [retrieval] keys written by the Settings page must match the keys
+    the config getters read, so 'Apply to Session' actually takes effect."""
+    import ama_kbqa.config as cfg
+
+    # Ensure the env overlay doesn't mask the session values under test.
+    for suffix in ("HYBRID_ENABLED", "FUSION", "RERANKER_ENABLED",
+                   "PREFETCH_LIMIT", "RERANK_CANDIDATES"):
+        monkeypatch.delenv(cfg.RETRIEVAL_ENV_PREFIX + suffix, raising=False)
+
+    edited = {
+        "retrieval": {
+            "hybrid_enabled": True,
+            "fusion": "dbsf",
+            "prefetch_limit": 33,
+            "reranker_enabled": True,
+            "reranker_model": "some/model",
+            "rerank_candidates": 12,
+        }
+    }
+    monkeypatch.setattr(cfg, "_config_cache", None)
+    ce.apply_to_session(edited)
+
+    assert cfg.get_hybrid_enabled() is True
+    assert cfg.get_fusion() == "dbsf"
+    assert cfg.get_prefetch_limit() == 33
+    assert cfg.get_reranker_enabled() is True
+    assert cfg.get_reranker_model() == "some/model"
+    assert cfg.get_rerank_candidates() == 12

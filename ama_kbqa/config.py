@@ -554,6 +554,136 @@ def get_synthesis_provider_preferences() -> Optional[dict]:
 
 
 # ==============================================================================
+# Retrieval (hybrid search + reranker) Configuration Functions
+# ==============================================================================
+
+def _parse_env_bool(raw: str) -> bool:
+    """Parse a boolean from an environment-variable string."""
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+# Environment-variable overrides for the [retrieval] section. The frontend
+# sets these (AMA_RETRIEVAL_<KEY>) so the settings cross the process boundary
+# into the MCP server subprocesses, which inherit the parent environment at
+# launch. Env always wins over config.toml; unset vars leave the toml value.
+_RETRIEVAL_ENV_PARSERS = {
+    "hybrid_enabled": _parse_env_bool,
+    "fusion": str,
+    "prefetch_limit": int,
+    "reranker_enabled": _parse_env_bool,
+    "reranker_model": str,
+    "rerank_candidates": int,
+    "rerank_threshold": float,
+}
+
+RETRIEVAL_ENV_PREFIX = "AMA_RETRIEVAL_"
+
+
+def get_retrieval_config() -> dict:
+    """Get the [retrieval] configuration section.
+
+    Values from config.toml are overlaid with ``AMA_RETRIEVAL_<KEY>``
+    environment variables (e.g. ``AMA_RETRIEVAL_HYBRID_ENABLED=true``).
+    The env channel exists so per-session frontend toggles reach the MCP
+    server subprocesses, which inherit the environment when spawned.
+
+    Returns:
+        dict: Hybrid-search and reranker settings (empty dict if absent).
+    """
+    config = load_config()
+    section = dict(config.get("retrieval", {}))
+    for key, parse in _RETRIEVAL_ENV_PARSERS.items():
+        raw = os.environ.get(RETRIEVAL_ENV_PREFIX + key.upper())
+        if raw is None:
+            continue
+        try:
+            section[key] = parse(raw)
+        except ValueError:
+            logger.warning(
+                f"Invalid value {raw!r} for {RETRIEVAL_ENV_PREFIX + key.upper()}; "
+                f"keeping config.toml value"
+            )
+    return section
+
+
+def get_hybrid_enabled() -> bool:
+    """Whether hybrid (dense + BM25) retrieval is enabled.
+
+    When False (default), retrieval runs pure dense vector search,
+    matching the legacy behavior exactly.
+
+    Returns:
+        bool: True to query both the dense and BM25 prefetch branches.
+    """
+    return bool(get_retrieval_config().get("hybrid_enabled", False))
+
+
+def get_fusion() -> str:
+    """Get the score-fusion method for hybrid retrieval.
+
+    Returns:
+        "rrf" (Reciprocal Rank Fusion, default) or "dbsf"
+        (Distribution-Based Score Fusion).
+    """
+    fusion = get_retrieval_config().get("fusion", "rrf")
+    if fusion not in ("rrf", "dbsf"):
+        logger.warning(f"Unknown fusion method '{fusion}', falling back to 'rrf'")
+        return "rrf"
+    return fusion
+
+
+def get_prefetch_limit() -> int:
+    """Per-branch candidate count fetched before fusion in hybrid mode.
+
+    Returns:
+        int: prefetch limit (default 20).
+    """
+    return int(get_retrieval_config().get("prefetch_limit", 20))
+
+
+def get_reranker_enabled() -> bool:
+    """Whether the cross-encoder reranker stage is enabled.
+
+    Independent of the hybrid toggle: when True the reranker also
+    re-scores pure-dense results.
+
+    Returns:
+        bool: True to rerank retrieval candidates (default False).
+    """
+    return bool(get_retrieval_config().get("reranker_enabled", False))
+
+
+def get_reranker_model() -> str:
+    """Get the cross-encoder reranker model name.
+
+    Returns:
+        str: HuggingFace model id (default Alibaba-NLP/gte-reranker-modernbert-base).
+    """
+    return get_retrieval_config().get(
+        "reranker_model", "Alibaba-NLP/gte-reranker-modernbert-base"
+    )
+
+
+def get_rerank_candidates() -> int:
+    """How many fused/dense hits are fed to the cross-encoder.
+
+    Returns:
+        int: rerank candidate pool size (default 20).
+    """
+    return int(get_retrieval_config().get("rerank_candidates", 20))
+
+
+def get_rerank_threshold() -> Optional[float]:
+    """Optional gate on cross-encoder scores.
+
+    Returns:
+        Optional[float]: minimum rerank score to keep a hit, or None for no gate.
+    """
+    value = get_retrieval_config().get("rerank_threshold")
+    return float(value) if value is not None else None
+
+
+# ==============================================================================
 # SciQA / ORKG Configuration Functions
 # ==============================================================================
 
