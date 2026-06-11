@@ -29,6 +29,7 @@ from ama_kbqa.config import (
     get_chat_model_name,
     get_provider_preferences,
 )
+from ama_kbqa.utils.artifact_golds import materialize_artifact_gold
 
 # Project root
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -538,6 +539,11 @@ def execute_llm_judge_postprocessing(
     chat_model_provider: str = ""
 ) -> tuple[Optional[AnswerJudgment], bool]:
     """Use an LLM with structured output to judge answer correctness and quality."""
+    materialized_gold = materialize_artifact_gold(gold_answer)
+    if materialized_gold:
+        print("[JUDGE] Gold answer is a URL artifact; judging against its dereferenced result table")
+        gold_answer = materialized_gold
+
     reasoning_steps = []
     for msg in agent_messages:
         if isinstance(msg, dict):
