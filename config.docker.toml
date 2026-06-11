@@ -51,11 +51,12 @@ sciqa_virtuoso_graph = "http://sciqa.org/kg"
 [retrieval]
 # Hybrid retrieval pipeline: dense + BM25 prefetch branches fused server-side
 # (Qdrant Query API), optionally followed by a cross-encoder reranker.
-# Defaults reproduce the legacy behavior exactly (pure dense search, no rerank).
+# Dense + rerank is the validated default: rag-rerank-100q-2026-06-07 measured
+# SciQA 77% vs 73% dense-only and KQAPro 81% vs 79% at equal token cost.
 hybrid_enabled = false        # false = pure dense vector search (legacy behavior)
 fusion = "rrf"                # "rrf" | "dbsf"
 prefetch_limit = 20           # per-branch candidates before fusion
-reranker_enabled = false      # independent of hybrid; also reranks dense-only results
+reranker_enabled = true       # independent of hybrid; also reranks dense-only results
 reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
 rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # rerank_threshold = 0.0      # optional gate on cross-encoder scores; unset = no gate
