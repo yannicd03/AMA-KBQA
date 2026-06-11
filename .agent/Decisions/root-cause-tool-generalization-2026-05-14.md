@@ -485,3 +485,39 @@ Validation:
   test files.
 - `uv run pytest tests/framework/test_base_agent_tool_loop.py tests/framework/test_sparql_results.py tests/framework/test_exact_constraints.py -q` = 22 passed.
 - `uv run pytest tests/framework -q` = 148 passed.
+
+## 2026-06-11 Artifact Gold Dereferencing
+
+Implemented the evaluation-layer fix deferred on 2026-05-23 for opaque TinyURL
+gold answers (commit `7098acb`):
+
+- `ama_kbqa/utils/artifact_golds.py` detects TinyURL / ORKG-embed golds,
+  resolves the redirect without dropping the URL fragment (the fragment holds
+  the gold SPARQL query), executes the query against the configured Virtuoso
+  endpoint, and renders a bounded result table. Per-process cache keyed by
+  artifact URL; every step fails soft to the raw gold.
+- `execute_llm_judge_postprocessing` swaps in the materialized table before
+  building the judge prompt, so judge, numeric guard, and string fallbacks all
+  see the same gold.
+
+Validation:
+
+- 11 hermetic tests in `tests/framework/test_artifact_golds.py`; full suite
+  276 passed.
+- All three artifact golds in the benchmark materialize correctly against the
+  Hetzner Virtuoso store (e.g. `y4v8w5vb` becomes the 24-row avg installed
+  capacity per source per 5-year interval table).
+- Post-hoc re-judge (deepseek-v4-pro) of the affected rows in
+  `rag-compare-100q-2026-06-07` (Gemma) and the seed-43 headline run (both
+  models): 0/9 verdicts flip. The judge now rules on substance and confirms
+  these traces were genuinely wrong, so the fix recovers no points on past
+  runs; it removes the structural auto-fail for future runs.
+
+New root-cause signal from the substantive verdicts: all six seed-43/June-7
+failures on the two interval questions share one gap. The agents never bin
+years into the requested 5-year intervals (they answer for scenario target
+years 2040/2050 or aggregate without interval breakdown), even though grouped
+path aggregation has existed since 2026-05-23. The gold queries express the
+binning as a SPARQL `VALUES (?rangeId ?min ?max)` clause; the wrapped
+aggregation surface has no equivalent of range-bucketed grouping. That is the
+next generic capability gap for this question family.
