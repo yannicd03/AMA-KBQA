@@ -151,6 +151,8 @@ class BaseKBQAAgent(ABC):
         self.tool_sequence: List[str] = []
         self.empty_result_count = 0
         self.last_journal_state: Optional[str] = None
+        # Raw-SPARQL distress intervention fires at most once per question.
+        self._raw_sparql_intervention_done = False
 
         # Message history
         self._messages: List[Dict[str, Any]] = [
@@ -406,6 +408,42 @@ Change strategy or acknowledge the data doesn't exist."""
         Override in subclass for qtype-specific tool filtering.
         """
         return None
+
+    def _raw_sparql_tool_names(self) -> set:
+        """
+        Tool names that count as raw SPARQL escape hatches.
+        Override in subclass if the agent exposes a different raw-query tool.
+        """
+        return {"RunSPARQL", "RunORKGSPARQL"}
+
+    def _get_raw_sparql_distress_template(self) -> str:
+        """
+        Template injected once per question when raw-SPARQL usage crosses the
+        distress threshold. Placeholders: {raw_calls}, {tool_names}.
+
+        Benchmark evidence (2026-06 runs): failed traces carry a 16-20pp
+        higher share of raw SPARQL calls than passing traces; agents fall
+        back to hand-written queries when a wrapped tool call disappointed,
+        then thrash on unknown predicate URIs and value-wrapper indirection
+        the wrapped tools already encapsulate.
+        """
+        return """RAW SPARQL DISTRESS SIGNAL
+
+You have issued {raw_calls} raw SPARQL queries ({tool_names}) on this question. \
+Heavy raw-SPARQL use strongly correlates with WRONG answers: hand-written queries \
+typically fail on unknown predicate URIs, value-wrapper indirection, or graph shapes \
+the wrapped tools already handle for you.
+
+Before any further raw SPARQL:
+1. State the exact sub-goal you are trying to satisfy.
+2. Find the wrapped tool that covers it (lookup, filtering, counting, aggregation, \
+qualifiers, comparison rows) and call it instead.
+3. If you wrote raw SPARQL because a wrapped tool returned nothing, retry that tool \
+with relaxed arguments (alternate label, no type filter, transitive flag) rather than \
+re-deriving the query by hand.
+
+Only fall back to raw SPARQL if you can name a concrete reason no wrapped tool fits. \
+If you already have relevant evidence, call GetJournalSummary and answer from it."""
 
     @staticmethod
     def _strip_think_blocks(text: str) -> str:
@@ -1445,6 +1483,12 @@ Change strategy or acknowledge the data doesn't exist."""
                     "content": self._get_journal_summary_answer_prompt()
                 })
 
+            # Raw-SPARQL distress intervention: fires once per question when
+            # the agent leans on hand-written SPARQL instead of wrapped tools.
+            # This triggers well before the hard per-tool loop caps (8-10
+            # calls) so the agent can still recover within its budget.
+            self._maybe_inject_raw_sparql_distress(iteration_count)
+
             max_tool_calls = getattr(self, "_max_tool_calls", 0) or 0
             if max_tool_calls and total_tool_calls_made >= max_tool_calls:
                 self.recorder.event(
@@ -1490,6 +1534,46 @@ Change strategy or acknowledge the data doesn't exist."""
 
         # Run synthesis
         return await self._run_synthesis(query, qtype=qtype)
+
+    def _maybe_inject_raw_sparql_distress(self, iteration_count: int) -> bool:
+        """
+        Inject the raw-SPARQL distress intervention once per question when the
+        share of hand-written SPARQL calls crosses the distress threshold
+        (default 4; override via ``self._raw_sparql_distress_threshold``).
+
+        Returns True if the intervention message was injected this call.
+        """
+        if getattr(self, "_raw_sparql_intervention_done", False):
+            return False
+        raw_names = self._raw_sparql_tool_names()
+        raw_calls = sum(self.tool_call_counts.get(n, 0) for n in raw_names)
+        distress_threshold = getattr(self, "_raw_sparql_distress_threshold", 4)
+        if raw_calls < distress_threshold:
+            return False
+        self._raw_sparql_intervention_done = True
+        used = sorted(n for n in raw_names if self.tool_call_counts.get(n, 0))
+        self.recorder.event(
+            "intervention",
+            "raw_sparql_distress",
+            attributes={
+                "raw_calls": raw_calls,
+                "threshold": distress_threshold,
+                "iteration": iteration_count,
+            },
+        )
+        self._trace(
+            f"Raw-SPARQL distress: {raw_calls} raw queries "
+            f"(threshold {distress_threshold}) - injecting intervention",
+            COLOR_RED,
+        )
+        self._messages.append({
+            "role": "user",
+            "content": self._get_raw_sparql_distress_template().format(
+                raw_calls=raw_calls,
+                tool_names=", ".join(used) or "raw SPARQL",
+            ),
+        })
+        return True
 
     async def _execute_tool_calls(self, tool_calls: List, as_user_messages: bool = False) -> bool:
         """
@@ -2211,6 +2295,7 @@ Change strategy or acknowledge the data doesn't exist."""
         self.tool_sequence = []
         self.empty_result_count = 0
         self.last_journal_state = None
+        self._raw_sparql_intervention_done = False
         # Reset trace + snapshots so a reused agent starts a clean trace.
         # When this agent shares a parent recorder, only clear our snapshots
         # and let the parent keep its events.
