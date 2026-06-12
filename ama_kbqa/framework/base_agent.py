@@ -154,6 +154,9 @@ class BaseKBQAAgent(ABC):
         self.last_journal_state: Optional[str] = None
         # Raw-SPARQL distress intervention fires at most once per question.
         self._raw_sparql_intervention_done = False
+        # Context compaction hysteresis: armed trigger as a fraction of the
+        # context limit. See _manage_context_window.
+        self._next_trim_trigger = 0.5
 
         # Message history
         self._messages: List[Dict[str, Any]] = [
@@ -1851,11 +1854,17 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
 
     async def _inject_journal_refresh(self, iteration_count: int) -> None:
         """
-        Inject a journal refresh message, replacing any previous refresh.
+        Append a journal refresh message (append-only, prefix-cache friendly).
 
-        Uses replace-not-append strategy: removes all prior journal refresh
-        messages from self._messages before adding the new one, so only one
-        (current) refresh exists at any time.
+        Earlier versions removed prior refresh messages before appending
+        (replace-not-append). That kept exactly one refresh in context but
+        shifted every message after the removal point, invalidating the
+        provider's prompt-prefix cache every 5 iterations — and prompt resend
+        is ~99% of benchmark token cost. Refreshes are now appended and prior
+        ones left in place; the newest refresh (highest iteration number)
+        supersedes the rest, and stale refreshes are stubbed out during the
+        next context compaction (see _manage_context_window) rather than on
+        every refresh.
 
         Args:
             iteration_count: Current iteration number
@@ -1891,14 +1900,6 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             if not no_progress:
                 await self._snapshot_journal(trigger=f"refresh:iter{iteration_count}")
 
-            # Remove all previous journal refresh messages (replace-not-append)
-            self._messages = [
-                msg for msg in self._messages
-                if not (msg.get("role") == "user"
-                        and isinstance(msg.get("content"), str)
-                        and msg["content"].startswith(self._JOURNAL_REFRESH_MARKER))
-            ]
-
             self._messages.append({
                 "role": "user",
                 "content": self._JOURNAL_REFRESH_MARKER + template.format(
@@ -1914,11 +1915,25 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
 
     def _manage_context_window(self) -> None:
         """
-        Manage context window by truncating old tool results.
+        Manage context window via discrete COMPACTION events with hysteresis.
 
-        Two-tier approach:
-        - At 50% capacity: truncate old tool results to 150 chars
-        - At 75% capacity: truncate aggressively to 80 chars and drop old user injection messages
+        Prompt resend is ~99% of benchmark token cost, and provider prompt
+        caching only pays off while the message history is an append-only
+        extension of what the provider last saw. Mutating interior messages
+        every iteration (the old behavior once past 50% capacity: the sliding
+        protected tail re-trimmed newly unprotected messages each turn)
+        invalidated the cache on every single LLM call.
+
+        Compaction model:
+        - Below the armed trigger (starts at 50% of the context limit):
+          do nothing. History stays append-only and fully cacheable.
+        - Crossing the trigger: one compaction pass — truncate old tool
+          results, stub out superseded journal-refresh messages, and (at
+          aggressive tier, >= 75%) shorten verbose user injections. This
+          breaks the cache ONCE, then the prefix is stable again.
+        - After compacting, arm the next trigger one step higher (50% -> 62.5%
+          -> 75% -> 82.5% -> 90%, capped), so the history must genuinely
+          regrow before the next cache-breaking pass.
         """
         context_limit = getattr(self, '_context_limit', 100000)
 
@@ -1928,30 +1943,57 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         )
         estimated_tokens = total_chars / 3.5
 
-        if estimated_tokens < context_limit * 0.5:
-            return  # Under threshold
+        trigger = getattr(self, '_next_trim_trigger', 0.5)
+        if estimated_tokens < context_limit * trigger:
+            return  # Under armed threshold — keep the prefix stable.
 
         self._trace(
-            f"Context management: ~{int(estimated_tokens)} tokens "
-            f"({int(estimated_tokens / context_limit * 100)}% of {context_limit} limit)",
+            f"Context compaction: ~{int(estimated_tokens)} tokens "
+            f"({int(estimated_tokens / context_limit * 100)}% of {context_limit} limit, "
+            f"trigger {int(trigger * 100)}%)",
             COLOR_YELLOW
         )
 
-        # Tier 1: Moderate trimming at 50%
-        truncate_len = 150
-        # Tier 2: Aggressive at 75%
-        if estimated_tokens >= context_limit * 0.75:
-            truncate_len = 80
+        # Moderate tier below 75% capacity, aggressive at/above it.
+        aggressive = estimated_tokens >= context_limit * 0.75
+        truncate_len = 80 if aggressive else 150
 
         # Never touch system message (index 0) or last 8 messages (~4 pairs)
         protected_tail = 8
         if len(self._messages) <= protected_tail + 1:
             return
 
+        # The newest journal refresh stays; older ones are superseded stubs.
+        last_refresh_idx = max(
+            (
+                i for i, m in enumerate(self._messages)
+                if m.get("role") == "user"
+                and isinstance(m.get("content"), str)
+                and m["content"].startswith(self._JOURNAL_REFRESH_MARKER)
+            ),
+            default=None,
+        )
+
         trimmed_count = 0
         for i in range(1, len(self._messages) - protected_tail):
             msg = self._messages[i]
             content = msg.get("content", "") or ""
+
+            # Stub superseded journal refreshes (append-only injection keeps
+            # them in place between compactions; compaction reclaims them).
+            is_refresh = (
+                msg.get("role") == "user"
+                and isinstance(content, str)
+                and content.startswith(self._JOURNAL_REFRESH_MARKER)
+            )
+            if is_refresh and i != last_refresh_idx and "[superseded" not in content:
+                self._messages[i] = {
+                    **msg,
+                    "content": self._JOURNAL_REFRESH_MARKER
+                    + "[superseded by a later WORKING MEMORY REFRESH]",
+                }
+                trimmed_count += 1
+                continue
 
             # Trim tool results (largest messages)
             is_tool_result = msg.get("role") == "tool"
@@ -1967,17 +2009,29 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 }
                 trimmed_count += 1
 
-            # At tier 2, also trim verbose user injection messages (journal refreshes, etc.)
-            if estimated_tokens >= context_limit * 0.75:
-                if msg.get("role") == "user" and len(content) > 500 and i > 2:
-                    self._messages[i] = {
-                        **msg,
-                        "content": content[:200] + "...[trimmed]"
-                    }
-                    trimmed_count += 1
+            # At the aggressive tier, also trim verbose user injection messages
+            elif aggressive and msg.get("role") == "user" and len(content) > 500 and i > 2:
+                self._messages[i] = {
+                    **msg,
+                    "content": content[:200] + "...[trimmed]"
+                }
+                trimmed_count += 1
+
+        # Arm the next compaction at the smallest step above the
+        # POST-compaction usage, so the history must genuinely regrow before
+        # the cache is broken again. At the 0.9 ceiling, compaction runs
+        # every iteration — correct at the brink of the context limit.
+        post_chars = sum(
+            len(msg.get("content", "") or "") for msg in self._messages
+        )
+        post_ratio = (post_chars / 3.5) / context_limit
+        steps = (0.5, 0.625, 0.75, 0.825, 0.9)
+        self._next_trim_trigger = next(
+            (s for s in steps if s > post_ratio), 0.9
+        )
 
         if trimmed_count > 0:
-            self._trace(f"Trimmed {trimmed_count} messages to {truncate_len} chars", COLOR_YELLOW)
+            self._trace(f"Compacted {trimmed_count} messages (truncate {truncate_len} chars)", COLOR_YELLOW)
             self.recorder.event(
                 "context_trim",
                 f"trimmed_{trimmed_count}",
@@ -1986,6 +2040,8 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     "truncate_len": truncate_len,
                     "estimated_tokens": int(estimated_tokens),
                     "context_limit": context_limit,
+                    "trigger": trigger,
+                    "next_trigger": self._next_trim_trigger,
                 },
             )
 
@@ -2338,6 +2394,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         self.empty_result_count = 0
         self.last_journal_state = None
         self._raw_sparql_intervention_done = False
+        self._next_trim_trigger = 0.5
         # Reset trace + snapshots so a reused agent starts a clean trace.
         # When this agent shares a parent recorder, only clear our snapshots
         # and let the parent keep its events.
