@@ -759,3 +759,69 @@ next run.
 **Artifact-gold dereferencing.** Worked as designed in the judge (tables not
 URLs). The three affected questions remain genuinely wrong; no verdicts
 flipped (consistent with the post-hoc re-judge on 2026-06-11).
+
+## 2026-06-12 Retrieval Caches Validation + Interval-Axis Fix
+
+### Validation run: dev-caches-100q-2026-06-12
+
+Commit `71ddd61` (per-question retrieval caches, scoped to a single question,
+full search results cached) was validated on Hetzner with model
+`kit.gemma4-31b-it`, seed 42, n=100 per dataset, judge `llm_judge`
+(deepseek-v4-pro). Run directory:
+`benchmark_results/dev-caches-100q-2026-06-12`.
+
+Three-way comparison (caches run / morning agent-improvements run / baseline
+`rag-rerank-100q-2026-06-07/dense_rerank`):
+
+**KQAPro: 84 / 83 / 81.**
+
+Runtime: 3079s / 4326s / 3050s. Tokens: 6.94M / 7.12M / 6.93M.
+
+The runtime regression visible in the morning run is fully recovered with
+hybrid+rerank on. FindNode avg per call: 1.52s baseline, 3.61s morning, 2.70s
+caches run. The KIT API was slower on the June 12 morning run than on June 7;
+the caches compensated. Tool time KQAPro 840s vs morning 1129s.
+
+Accuracy trend 81 to 83 to 84 with gains concentrated in targeted types (Count
+0.50 to 0.67, QueryAttrQualifier 0.57 to 0.64, Select 0.84 to 0.89 vs baseline)
+looks like a real small gain rather than noise.
+
+**SciQA: 73 / 76 / 77.**
+
+Runtime: 3749s / 4135s / 3729s. Tokens: 12.97M / 12.25M / 13.54M.
+
+The score of 73 reads as temperature-1.0 sampling noise: by-type movement is
+incoherent in direction (Non-factoid Ranking 0.5 to 1.0 and Non-Factoid Count
+0.33 to 0.67 up, Factoid Superlative 0.89 to 0.78 and Non-factoid 0.64 to 0.50
+down). A persistent weak spot across both new runs: Non-factoid Count 1/5
+(baseline 2/5). A seed-43 run would separate variance from trend.
+
+### group_bucket_size adoption after commit 6e93b9c
+
+Commit `6e93b9c` advertised `group_bucket_size` in the SciQA aggregation
+decision tree. In the caches run, 2 of 4 interval-phrased questions now call
+`group_bucket_size` (was 0 of 6 in the morning run). Both calls are still wrong
+because the agents bucketed the wrong axis: the scenarios involved GHG-goal
+percentages and bucket labels like "80-84", missing the intended grouping by
+paper publication year.
+
+Decoding the gold SPARQL (tinyurl `yynlf9h4`) showed the gold queries group by
+each contribution's paper publication year, reached via the inverse-hop path
+`contribution <- P31 -- paper -> P29 -> year` with `VALUES` ranges starting from
+2001 and an anchor comparison of `R153801`. Agents consistently pick the adjacent
+`R153799` instead (known adjacent-comparison problem, still open).
+
+### Interval-axis fix: commit 6e30da5
+
+`AggregateComparisonValues` `group_by_path` and `intermediate_path` now support
+leading-`^` inverse hops. The path `^P31,P29` reaches the paper year from a
+contribution node by traversing backward along `P31` then forward along `P29`.
+
+The decision tree was updated to name the paper-year time axis for 5-year
+interval questions, add a bucket-label sanity check (labels must look like years
+rather than percentages), and enforce `group_bucket_start` alignment to the
+lowest year in the `VALUES` clause.
+
+The pattern was validated against the live KG on `R153801`: year 2009 rows bind
+correctly. Suite 333 passed. The fix is deployed to Hetzner (dev @ `6e30da5`).
+Re-validation is pending the next n=100 run.
