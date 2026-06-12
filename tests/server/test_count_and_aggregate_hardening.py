@@ -189,6 +189,44 @@ def test_system_prompt_advertises_bucketing():
     assert SYSTEM_PROMPT.count("group_bucket_size") >= 2
 
 
+def test_inverse_group_path_walks_backward_to_paper_year():
+    """group_by_path='^P31,P29' must emit paper --P31--> contrib and
+    paper --P29--> year (the gold pattern for interval questions)."""
+    sparql = FakeSPARQL(AGG_BINDINGS)
+    coro = _fn(sci.AggregateComparisonValues)(
+        _context(sparql),
+        comparison_id="R1",
+        value_predicate="P1",
+        group_by_path="^P31,P29",
+        group_bucket_size=5,
+    )
+    payload = json.loads(asyncio.run(coro))
+    query = sparql.last_query
+    assert "?groupPath0 orkgp:P31 ?contrib ." in query
+    assert "?groupPath0 orkgp:P29 ?group ." in query
+    # Bucketing still applies on the path-derived group values.
+    assert payload["group_bucket"] == {"size": 5, "start": 2006}
+
+
+def test_forward_group_path_unchanged():
+    sparql = FakeSPARQL(AGG_BINDINGS)
+    coro = _fn(sci.AggregateComparisonValues)(
+        _context(sparql),
+        comparison_id="R1",
+        value_predicate="P1",
+        group_by_path="P37581,P43139",
+    )
+    asyncio.run(coro)
+    query = sparql.last_query
+    assert "?contrib orkgp:P37581 ?groupPath0 ." in query
+    assert "?groupPath0 orkgp:P43139 ?group ." in query
+
+
+def test_prompt_advertises_inverse_year_path():
+    from ama_kbqa.agents.sciqa_agent.prompts import SYSTEM_PROMPT
+    assert '^P31,P29' in SYSTEM_PROMPT
+
+
 def test_non_numeric_group_values_keep_label():
     bindings = AGG_BINDINGS + [
         {

@@ -3634,7 +3634,12 @@ async def AggregateComparisonValues(
         group_by_path: Optional comma-separated predicate path from each
             contribution to the grouping value. Use when the group key is not a
             direct contribution predicate, e.g. contribution -> scenario -> goal
-            -> time frame.
+            -> time frame. A leading '^' on a step walks the hop INVERSELY
+            (SPARQL inverse path). The most important inverse pattern:
+            group_by_path="^P31,P29" reaches each contribution's PAPER and its
+            publication year (paper --P31--> contribution, paper --P29--> year),
+            which is the correct time axis for "per year" / "in N-year
+            intervals" questions; combine with group_bucket_size.
         group_by_intermediate: If True and using intermediate_predicate or
             intermediate_path, include the nested row label itself as a grouping
             axis. Use this for table questions such as "average installed
@@ -3673,6 +3678,8 @@ async def AggregateComparisonValues(
             nested row objects. Use when the value lives at
             ``contribution -> P1 -> node -> P2 -> row -> value_predicate``.
             When set, it takes precedence over ``intermediate_predicate``.
+            Steps support the same leading-'^' inverse-hop syntax as
+            group_by_path.
         intermediate_filter_value: Optional label/ID filter applied to the
             intermediate row object. Use this for nested rows where only one
             component/category should contribute, e.g. Contribution -> Earth
@@ -3708,6 +3715,16 @@ async def AggregateComparisonValues(
         if p.startswith("http"):
             return f"<{p}>"
         return f"orkgp:{p}"
+
+    def _norm_path_step(p: str) -> str:
+        """Normalize one path step; a leading '^' marks an INVERSE hop
+        (SPARQL inverse-path semantics), e.g. '^P31' walks from the
+        contribution backward to its paper."""
+        p = p.strip()
+        if p.startswith("^"):
+            inner = _norm_pred(p[1:])
+            return f"^{inner}" if inner else ""
+        return _norm_pred(p)
 
     # Resolve scope: list of comparisons takes precedence
     cmp_id_list = [c.strip() for c in (comparison_ids or "").split(",") if c.strip()]
@@ -3746,7 +3763,7 @@ async def AggregateComparisonValues(
             for p in (group_by_path or "").split(",")
             if p and p.strip()
         ]
-        group_path_predicates = [_norm_pred(p) for p in raw_group_by_path]
+        group_path_predicates = [_norm_path_step(p) for p in raw_group_by_path]
         if group_pred and group_path_predicates:
             return json.dumps(
                 {"error": "Use either group_by_predicate or group_by_path, not both."},
@@ -3762,7 +3779,7 @@ async def AggregateComparisonValues(
             for p in (intermediate_path or "").split(",")
             if p and p.strip()
         ]
-        intermediate_path_predicates = [_norm_pred(p) for p in raw_intermediate_path]
+        intermediate_path_predicates = [_norm_path_step(p) for p in raw_intermediate_path]
         intermediate_chain = intermediate_path_predicates or ([intermediate_pred] if intermediate_pred else [])
         if intermediate_filter_value and not intermediate_chain:
             return json.dumps(
@@ -3839,7 +3856,11 @@ async def AggregateComparisonValues(
             lines = []
             for index, path_predicate in enumerate(predicates):
                 next_node = terminal_var if index == len(predicates) - 1 else f"?{prefix}{index}"
-                lines.append(f"{current_node} {path_predicate} {next_node} .")
+                if path_predicate.startswith("^"):
+                    # Inverse hop: the next node points AT the current one.
+                    lines.append(f"{next_node} {path_predicate[1:]} {current_node} .")
+                else:
+                    lines.append(f"{current_node} {path_predicate} {next_node} .")
                 current_node = next_node
             return "\n        ".join(lines)
 

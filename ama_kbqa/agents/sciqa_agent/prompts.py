@@ -686,6 +686,13 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
   year intervals", "per 5-year period"), ALSO pass group_bucket_size=N: the tool
   bins the numeric group values into inclusive ranges like 2006-2010 for you.
   Never bin intervals by hand or with raw SPARQL.
+  CRITICAL: pick the TIME axis for the buckets. Unless the question names another
+  time source, the axis is each contribution's PAPER publication year, reached
+  with the inverse path group_by_path="^P31,P29" (paper --P31--> contribution,
+  paper --P29--> year). Do NOT bucket scenario goals or percentage values; if
+  the bucket labels do not look like years, you grouped the wrong axis. For
+  calendar years, pass group_bucket_start aligned like "2001" (giving 2001-2005,
+  2006-2010, ...) when the data starts mid-decade.
 - Nested rollup rows ("all sources", "total", "overall"):
   if InspectComparisonSchema shows rollup_intermediate_values, or AggregateComparisonValues
   returns denominator_hints.rollup_intermediate_candidates, use that
