@@ -7,6 +7,7 @@ synthesis functionality that all KBQA agents share.
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
+import asyncio
 import os
 import sys
 import json
@@ -1605,9 +1606,17 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     "content": content,
                 })
 
+        # Phase 1 — validate, parse, and run loop detection SEQUENTIALLY.
+        # The loop detector mutates shared call history and must see the
+        # calls in emission order; validation failures and loop interventions
+        # resolve to a result immediately (no MCP call needed).
+        planned: List[Dict[str, Any]] = []
         for tool_call in tool_calls:
             if not tool_call.function or not tool_call.function.name:
-                _append_tool_result(tool_call, "invalid_tool", "Error: Invalid tool call.")
+                planned.append({
+                    "tc": tool_call, "name": "invalid_tool",
+                    "result": "Error: Invalid tool call.", "args": None,
+                })
                 continue
 
             func_name = tool_call.function.name
@@ -1620,7 +1629,10 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     f"Available tools: {', '.join(sorted(known_tools))}"
                 )
                 self._trace(f"Unknown tool called: {func_name}", COLOR_RED)
-                _append_tool_result(tool_call, func_name, tool_result)
+                planned.append({
+                    "tc": tool_call, "name": func_name,
+                    "result": tool_result, "args": None,
+                })
                 continue
 
             # Parse arguments
@@ -1650,10 +1662,40 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 tool_result = await self._handle_loop_detected(
                     func_name, loop_reason
                 )
+                planned.append({
+                    "tc": tool_call, "name": func_name,
+                    "result": tool_result, "args": None,
+                })
             else:
-                tool_result = await self._execute_single_tool(func_name, func_args)
+                planned.append({
+                    "tc": tool_call, "name": func_name,
+                    "result": None, "args": func_args,
+                })
 
-            _append_tool_result(tool_call, func_name, tool_result)
+        # Phase 2 — execute the remaining calls CONCURRENTLY. MCP multiplexes
+        # requests over the stdio session, the trace recorder parents spans
+        # via contextvars (task-safe), and _execute_single_tool catches its
+        # own exceptions, so gather never raises. Counter updates happen on
+        # the single event-loop thread between awaits and stay consistent.
+        pending = [p for p in planned if p["result"] is None]
+        if len(pending) == 1:
+            p = pending[0]
+            p["result"] = await self._execute_single_tool(p["name"], p["args"])
+        elif pending:
+            self._trace(
+                f"Executing {len(pending)} independent tool calls concurrently",
+                COLOR_YELLOW,
+            )
+            results = await asyncio.gather(
+                *(self._execute_single_tool(p["name"], p["args"]) for p in pending)
+            )
+            for p, result in zip(pending, results):
+                p["result"] = result
+
+        # Phase 3 — append results in the original emission order so each
+        # tool_call_id pairs with its result deterministically.
+        for p in planned:
+            _append_tool_result(p["tc"], p["name"], p["result"])
 
         return called_get_journal_summary
 

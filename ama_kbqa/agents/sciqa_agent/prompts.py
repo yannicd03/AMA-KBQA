@@ -623,6 +623,12 @@ STATE MANAGEMENT:
 - GetJournalSummary(): Get formatted summary of all findings. Takes no arguments;
   do not pass action/content.
 
+BATCH INDEPENDENT CALLS: When your next steps need several lookups that do not depend
+on each other's results (e.g. FindResource on two candidate titles, GetResourceSummary
+on several resources, labels for a list of IDs), emit them as MULTIPLE tool calls in
+ONE turn. They run concurrently; one batched turn is far cheaper than one round-trip
+per call. Only sequence calls whose arguments need a previous result.
+
 EXECUTION STRATEGY
 1. **Analyze:** Read the pre-analysis (question type, entities)
 2. **Complexity Check:** Simple (one entity, one fact) -> direct. Complex -> decompose.
