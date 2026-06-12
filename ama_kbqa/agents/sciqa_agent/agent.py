@@ -40,7 +40,8 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
 
 # Tools always included regardless of question type
 CORE_TOOLS = {
-    "FindResource", "FindPredicate", "GetResourceDetails", "GetResourceSummary",
+    "FindResource", "FindPredicate", "GetPredicateReference",
+    "GetResourceDetails", "GetResourceSummary",
     "GetResourceLabel", "BatchGetResourceLabels", "GetRelationTargets",
     "FollowRelationPath", "FindByPredicateValue", "RunORKGSPARQL",
     "ManageJournal", "GetJournalSummary", "GetJournalStateJSON",

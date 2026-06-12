@@ -1265,6 +1265,105 @@ async def FindPredicate(
 
 
 # ==============================================================================
+# TOOL 2b: GetPredicateReference
+# ==============================================================================
+
+# Curated predicate mappings, formerly embedded in the SciQA system prompt.
+# Served on demand so only the relevant domain slice enters the agent context.
+PREDICATE_REFERENCE: Dict[str, str] = {
+    "core": """CORE NAVIGATION PREDICATES:
+- P0: addresses (problem)           Paper/Contribution -> Problem
+- P1: yields (result)               Contribution -> Result
+- P2: employs (method)              Contribution -> Method
+- P6/P27: has author                Paper -> Author
+- P7: affiliation                   Author -> Organization
+- P10/P26: DOI                      Paper -> DOI string
+- P29: publication year             Paper -> Year
+- P30: research field               Paper -> ResearchField
+- P31: has contribution             Paper -> Contribution (CRITICAL PATH)
+- P32: research problem             Paper -> Problem
+
+NAVIGATION PATTERN (Paper -> Domain Data):
+  Paper --P31--> Contribution --domain_predicate--> Value""",
+    "energy": """Energy domain:
+- P43133: installed capacity
+- P43135: energy sources
+- P43247: has upper limit
+- P43248: has lower limit
+- P43156: efficiency
+- P43134: electricity generation
+
+Note: Energy SOURCES (P43135) and Energy SECTORS are different predicates.
+Use GetResourceSummary to distinguish.""",
+    "chemistry": """Chemistry/Materials:
+- P35147: Bisphenol A analogue
+- P35194: SAME_AS (alternative names)
+- P41740: nanocarrier type
+- P41743: therapeutic effects of carrier""",
+    "agriculture": """Agriculture/Food:
+- P35148: vegetable source""",
+    "benchmarks": """Benchmarks/NLP:
+- P41923: amount of questions
+- P15585: has benchmark""",
+    "biology": """Biology/Medicine:
+- P37458: major anion type
+- P37586: study type
+- P37675: demographic info
+- P37668: lead compound
+- P41333: integrity constraints (e.g., OWLMAP)
+- P23161: population/sample size""",
+    "comparison": """Comparison predicates:
+- P5038: Aggregation
+- P5039: other tool capabilities
+- compareContribution: links Comparison resources to their Contributions
+- HAS_VALUE: generic value wrapper on Contributions (check via GetResourceSummary)""",
+}
+
+
+@mcp.tool()
+async def GetPredicateReference(
+    domain: str = "",
+) -> str:
+    """
+    Curated ORKG predicate reference: known-good predicate IDs per domain.
+
+    Use this BEFORE guessing predicate IDs and before raw SPARQL when the
+    question touches a known domain (energy, chemistry, benchmarks, biology,
+    agriculture, comparisons). Complements FindPredicate: this returns the
+    curated common mappings, FindPredicate searches all predicates
+    semantically.
+
+    Args:
+        domain: Optional section filter. One of: core, energy, chemistry,
+            agriculture, benchmarks, biology, comparison. Substring matches
+            on the question's topic also work (e.g. "energy sources").
+            Empty returns the full reference.
+
+    Returns:
+        The matching reference section(s) as plain text.
+    """
+    requested = (domain or "").strip().lower()
+    if not requested:
+        sections = list(PREDICATE_REFERENCE.values())
+    else:
+        sections = [
+            text for key, text in PREDICATE_REFERENCE.items()
+            if key in requested or requested in key
+        ]
+        if not sections:
+            available = ", ".join(PREDICATE_REFERENCE.keys())
+            return (
+                f"No predicate reference section matches '{domain}'. "
+                f"Available sections: {available}. "
+                f"For anything else use FindPredicate(semantic_query=...)."
+            )
+    session_journal.completed_steps.append(
+        f"GetPredicateReference('{requested or 'all'}') -> {len(sections)} section(s)"
+    )
+    return "\n\n".join(sections)
+
+
+# ==============================================================================
 # TOOL 3: GetResourceDetails
 # ==============================================================================
 

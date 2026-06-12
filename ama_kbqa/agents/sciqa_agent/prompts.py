@@ -475,7 +475,8 @@ If a predicate returns no results:
 1. Use GetResourceSummary to see ALL available predicates for the resource
 2. Look for semantic matches (e.g., "efficiency" might be P39158 not P47000)
 3. Use FindPredicate to search by description
-4. Check the ORKG Predicate Reference below for common mappings
+4. Call GetPredicateReference(domain="<topic>") for curated common mappings
+   (energy, chemistry, agriculture, benchmarks, biology, comparison)
 
 KNOWLEDGE GRAPH SPECIFICS (ORKG)
 You are operating on the Open Research Knowledge Graph. Use these prefixes in SPARQL:
@@ -508,6 +509,8 @@ KNOWLEDGE GRAPH ACCESS TOOLS (TWO-TIER PATTERN)
 TIER 1 - DISCOVERY (Lightweight):
 - FindResource(semantic_query): Semantic vector search for papers, authors, contributions
 - FindPredicate(semantic_query): Find predicate by description
+- GetPredicateReference(domain?): Curated known-good predicate IDs per domain
+  (core, energy, chemistry, agriculture, benchmarks, biology, comparison)
 - FindByPredicateValue(predicate_id, value, match_type): Reverse lookup by value
   match_type: "exact", "contains", "greater", "less"
 
@@ -689,7 +692,7 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
   per requested metric.
 - Negation/set-difference ("without", "not") remains a raw SPARQL FILTER NOT EXISTS case.
 
-ORKG PREDICATE REFERENCE
+ORKG PREDICATE REFERENCE (CORE)
 
 CORE NAVIGATION PREDICATES:
 - P0: addresses (problem)           Paper/Contribution -> Problem
@@ -712,44 +715,10 @@ NAVIGATION PATTERN (Paper -> Domain Data):
 - compareContribution: Links Comparison resources to their Contributions
 - HAS_VALUE: Generic value predicate on Contributions (check via GetResourceSummary)
 
-DOMAIN-SPECIFIC PREDICATES (via Contributions):
-Energy domain:
-- P43133: installed capacity
-- P43135: energy sources
-- P43247: has upper limit
-- P43248: has lower limit
-
-Chemistry/Materials:
-- P35147: Bisphenol A analogue
-- P35194: SAME_AS (alternative names)
-- P41740: nanocarrier type
-- P41743: therapeutic effects of carrier
-
-Note: Energy SOURCES (P43135) and Energy SECTORS are different predicates. Use GetResourceSummary to distinguish.
-
-Energy domain (extended):
-- P43156: efficiency
-- P43134: electricity generation
-
-Agriculture/Food:
-- P35148: vegetable source
-
-Benchmarks/NLP:
-- P41923: amount of questions
-- P15585: has benchmark
-
-Biology/Medicine:
-- P37458: major anion type
-- P37586: study type
-- P37675: demographic info
-- P37668: lead compound
-- P41333: integrity constraints (e.g., OWLMAP)
-- P23161: population/sample size
-
-Comparison predicates:
-- P5038: Aggregation
-- P5039: other tool capabilities
-- compareContribution: special resource linking contributions for comparison
+Domain-specific predicate IDs are NOT listed here: call
+GetPredicateReference(domain="<topic>") (energy, chemistry, agriculture,
+benchmarks, biology, comparison) before guessing IDs; FindPredicate covers
+the rest.
 """
 
 # ==============================================================================
