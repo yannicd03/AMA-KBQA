@@ -10,7 +10,7 @@ import asyncio
 import json
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from ama_kbqa.config import get_chat_temperature
 
@@ -36,6 +36,69 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
     LOOP_INTERVENTION_TEMPLATE,
     FEWSHOT_EXAMPLES,
 )
+
+
+# Tools always included regardless of question type
+CORE_TOOLS = {
+    "FindResource", "FindPredicate", "GetResourceDetails", "GetResourceSummary",
+    "GetResourceLabel", "BatchGetResourceLabels", "GetRelationTargets",
+    "FollowRelationPath", "FindByPredicateValue", "RunORKGSPARQL",
+    "ManageJournal", "GetJournalSummary", "GetJournalStateJSON",
+}
+
+# Extra tools per question type (on top of CORE_TOOLS). "General" is
+# deliberately absent: unknown/general questions keep the full tool set.
+QTYPE_TOOL_MAP: Dict[str, set] = {
+    "Factoid":     {"GetPaperContributions", "GetPaperAuthors", "GetContributionMethods",
+                    "GetResearchFieldPapers", "FindAuthorPapers", "FindCoAuthors",
+                    "GetComparisonContributions"},
+    "Count":       {"GetResearchFieldPapers", "FindAuthorPapers", "FindCoAuthors",
+                    "GetPaperAuthors", "FindFrequentValues", "GetComparisonContributions",
+                    "InspectComparisonSchema", "QueryComparisonRows"},
+    "List":        {"GetPaperContributions", "GetPaperAuthors", "GetResearchFieldPapers",
+                    "FindAuthorPapers", "FindCoAuthors", "GetComparisonContributions",
+                    "InspectComparisonSchema", "QueryComparisonRows"},
+    "Boolean":     {"VerifyNumericCondition", "CompareResources", "GetPaperAuthors",
+                    "GetPaperContributions", "FindAuthorPapers",
+                    "InspectComparisonSchema", "QueryComparisonRows"},
+    "Comparison":  {"InspectComparisonSchema", "QueryComparisonRows",
+                    "AggregateComparisonValues", "DiagnoseComparisonAggregation",
+                    "GetComparisonContributions", "CompareResources",
+                    "FindFrequentValues", "VerifyNumericCondition"},
+    "Superlative": {"InspectComparisonSchema", "QueryComparisonRows",
+                    "AggregateComparisonValues", "DiagnoseComparisonAggregation",
+                    "GetComparisonContributions", "CompareResources",
+                    "FindFrequentValues", "GetResearchFieldPapers"},
+    "Aggregation": {"InspectComparisonSchema", "QueryComparisonRows",
+                    "AggregateComparisonValues", "DiagnoseComparisonAggregation",
+                    "GetComparisonContributions", "FindFrequentValues",
+                    "VerifyNumericCondition"},
+}
+
+
+def allowed_tools_for_qtype(qtype: str) -> Optional[set]:
+    """
+    Resolve a (possibly multi-label) SciQA qtype to its allowed tool set.
+
+    The classifier sometimes emits multi-label strings such as
+    "Factoid\\nSuperlative" or "Factoid, Count"; tools from EVERY matching
+    label are unioned so the specific operation labels always land.
+    Returns None (all tools) when no label matches, including "General".
+    """
+    if not qtype:
+        return None
+    labels = [c.strip() for c in re.split(r"[\n,/+|;]+", qtype) if c.strip()]
+    extra: set = set()
+    matched = False
+    for label in labels:
+        norm = label[:1].upper() + label[1:]
+        tools = QTYPE_TOOL_MAP.get(norm)
+        if tools is not None:
+            matched = True
+            extra |= tools
+    if not matched:
+        return None
+    return CORE_TOOLS | extra
 
 
 class SciQAAgent(BaseKBQAAgent):
@@ -126,6 +189,10 @@ class SciQAAgent(BaseKBQAAgent):
     def _get_journal_summary_answer_prompt(self) -> str:
         """Get the prompt to inject after GetJournalSummary."""
         return JOURNAL_SUMMARY_ANSWER_PROMPT
+
+    def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
+        """Return set of tool names allowed for this question type, or None for all."""
+        return allowed_tools_for_qtype(qtype)
 
     def _classify_question(self, question: str) -> Dict[str, str]:
         """
