@@ -525,9 +525,15 @@ next generic capability gap for this question family.
 ## 2026-06-12 Agent Improvement Batch (branch agent-improvements)
 
 Seven fixes implemented on branch `agent-improvements` (based on `yannic-dev`
-@ `7400065`). All validated by unit tests only; no n=100 benchmark run yet.
+@ `7400065`). All validated by unit tests only; no n=100 benchmark run at
+batch-write time.
 Deploy to Hetzner is blocked pending a user decision. The hybrid retrieval
 flip noted below was merged on `yannic-dev` prior to this batch.
+
+Branch note: `yannic-dev/agent-improvements` was later consolidated into `dev`
+(history rewritten, identical trees). Hetzner currently runs the
+agent-improvements content at the `ace7302`-equivalent commit. The
+`6e93b9c` prompt fix (see validation section below) is not yet deployed there.
 
 ### Hybrid retrieval flipped on by default (yannic-dev @ 7400065)
 
@@ -549,7 +555,9 @@ Evidence basis: each SciQA iteration was sending the full 27-tool catalog
 regardless of question type, costing approximately 2,000-3,000 extra prompt
 tokens per iteration.
 
-Benchmark validation: pending.
+Benchmark validation: SciQA tokens fell 9.5% vs baseline (12.25M vs 13.54M),
+consistent with the expected prompt-token reduction. No accuracy regression on
+SciQA overall (76 vs 77 baseline; within noise). See validation run below.
 
 ### Fix 2: Count tool hardening and range-bucketed grouping (commit 23f0b23)
 
@@ -574,7 +582,14 @@ Two changes:
 Evidence basis: 2026-06-11 artifact-gold section above; six interval
 failures confirmed.
 
-Benchmark validation: pending.
+Benchmark validation: an adoption gap was found after the n=100 run (see
+validation run below). The model never used `group_bucket_size` on the six
+interval questions because only the tool docstring mentioned it; the prompt
+decision tree still described the old recipe. Fixed in commit `6e93b9c`
+"Advertise group_bucket_size in the SciQA aggregation decision tree" (prompt
+bullet now names the parameter, plus an adoption-guard test; suite 321
+passed). Re-validation of interval questions pending the next n=100 run.
+KQAPro Count accuracy improved: 0.50 to 0.667.
 
 ### Fix 3: Raw-SPARQL distress intervention (commit 5cfea93)
 
@@ -589,7 +604,9 @@ Evidence basis: failed traces from the seed-43 and June-7 runs show a
 pattern survived all post-May fixes and is the clearest remaining
 model-behavior gap.
 
-Benchmark validation: pending.
+Benchmark validation: effect not individually isolable from the combined run.
+Overall accuracy neutral vs baseline (see validation run below). Distress
+intervention effect remains pending a dedicated ablation or next run.
 
 ### Fix 4: One-round-trip orchestrator routing (commit 19fa2d5)
 
@@ -606,7 +623,9 @@ whose only purpose was to emit a tool call. The ADR evidence contract and
 `select_agent` structured call are unchanged; only the step-1 LLM call is
 removed.
 
-Benchmark validation: pending.
+Benchmark validation: routing fix reduces per-question latency by one
+round-trip; not directly reflected in n=100 accuracy numbers. The dominant
+runtime contribution is KIT API latency variance (see runtime analysis below).
 
 ### Fix 5: GetPredicateReference tool for SciQA (commit 13bc6a8)
 
@@ -621,7 +640,9 @@ shrank from 19,527 to ~19,200 characters, offset by the tool catalog entry).
 The structural value is that the curated reference grows server-side without
 inflating the static prompt.
 
-Benchmark validation: pending.
+Benchmark validation: SciQA token reduction (-9.5%) is dominated by Fix 1
+(qtype filtering). This fix's token contribution is structural and not
+separately isolable in current token counts.
 
 ### Fix 6: Batched concurrent tool calls (commit 00c7612)
 
@@ -636,7 +657,14 @@ Evidence basis: profiling on the Hetzner stack shows ~83% of per-question
 wall time is LLM round-trips. Parallelising independent tool calls within a
 turn reduces wait time proportionally to the number of parallel calls.
 
-Benchmark validation: pending.
+Benchmark validation: per-call FindNode latency increased from 1.5s to 3.6s
+between the baseline run (2026-06-07) and this run (2026-06-12). A controlled
+server microbenchmark showed hybrid retrieval adds only ~140ms/search (494ms
+vs 355ms) and a warm reranker adds ~0ms. The bulk of the runtime regression
+(KQAPro 4326s vs 3050s, SciQA 4135s vs 3729s) is KIT API latency variance
+between run days, not the retrieval code. The accuracy signal is insufficient
+to measure concurrency benefit on this run; it should reduce latency when the
+model emits batched calls.
 
 ### Fix 7: Prefix-cache-friendly message history (commit 9bb1086)
 
@@ -660,7 +688,10 @@ benchmark tokens are prompt resends (existing context reinjected each turn).
 Any prefix cache hit on those resent tokens eliminates the majority of the
 per-turn prompt cost.
 
-Benchmark validation: pending.
+Benchmark validation: prefix caching is a cost-side saving; its effect does
+not appear in token counts (which measure tokens sent, not cache hits). The
+cost-side measurement remains open and requires provider-level cache-hit
+telemetry.
 
 ### Test coverage added
 
@@ -675,3 +706,56 @@ Suite went from 276 to 320 passed (44 new tests):
 | `tests/server/test_predicate_reference.py` | New | Fix 5: GetPredicateReference |
 | `tests/framework/test_concurrent_tool_calls.py` | New | Fix 6: concurrent execution |
 | `tests/framework/test_prefix_cache_history.py` | New | Fix 7: append-only refresh + hysteresis |
+
+### 2026-06-12 Validation Run Results
+
+Run: `benchmark_results/agent-improvements-100q-2026-06-12` on Hetzner.
+Branch: `agent-improvements` (now `dev`). Model: `kit.gemma4-31b-it`. Seed: 42.
+N: 100 per dataset. Judge: `llm_judge` (deepseek-v4-pro).
+Baseline: `rag-rerank-100q-2026-06-07/dense_rerank`, same model/seed/judge.
+
+**KQAPro: 83/100 vs 81/100 baseline.**
+
+| Question type | Baseline | This run |
+|---|---|---|
+| Count | 0.50 | 0.667 |
+| QueryRelationQualifier | 0.778 | 0.889 |
+| Select | 0.842 | 0.895 |
+| Query | 0.808 | 0.769 |
+| QueryAttrQualifier | 0.571 | 0.571 (unchanged) |
+
+Tokens: 7.12M vs 6.93M (+2.8%). Runtime: 4326s vs 3050s.
+
+**SciQA: 76/100 vs 77/100 baseline.**
+
+| Question type | Baseline | This run |
+|---|---|---|
+| Non-factoid | 0.545 | 0.636 |
+| Factoid Superlative | 0.833 | 0.889 |
+| Non-factoid Count | 0.4 | 0.2 (n=5) |
+| Non-Factoid Count | 0.667 | 0.333 (n=3) |
+| Non-factoid Ranking | 1.0 | 0.5 (n=2) |
+
+Tokens: 12.25M vs 13.54M (-9.5%). Runtime: 4135s vs 3729s.
+
+**Verdict.** Accuracy neutral within noise (combined 159 vs 158). Targeted
+KQAPro types (Count, QueryRelationQualifier, Select) moved up. SciQA
+count-flavored subtypes regressed (small n; high variance). SciQA token
+count fell 9.5%, consistent with the qtype catalog filter reducing catalog
+size per iteration.
+
+**Runtime analysis.** Per-call FindNode latency increased from 1.5s to 3.6s
+vs baseline. A controlled server microbenchmark showed hybrid retrieval adds
+only ~140ms/search (494ms vs 355ms) and a warm reranker adds ~0ms. The bulk
+of the runtime regression is KIT API latency variance between run days, not
+retrieval code.
+
+**Adoption gap.** The model never used `group_bucket_size` on the six
+interval questions. Only the tool docstring mentioned it; the prompt decision
+tree still described the old recipe. Fixed in commit `6e93b9c` (prompt
+bullet + adoption-guard test; suite 321 passed). Re-validation pending the
+next run.
+
+**Artifact-gold dereferencing.** Worked as designed in the judge (tables not
+URLs). The three affected questions remain genuinely wrong; no verdicts
+flipped (consistent with the post-hoc re-judge on 2026-06-11).
