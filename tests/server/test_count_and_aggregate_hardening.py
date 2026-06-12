@@ -181,6 +181,14 @@ def test_bucket_size_zero_keeps_plain_grouping():
     assert groups == {"2006", "2007", "2011", "2016"}
 
 
+def test_system_prompt_advertises_bucketing():
+    """Adoption guard: in the 2026-06-12 validation run the model never used
+    group_bucket_size because only the tool docstring mentioned it. The
+    decision tree in the system prompt must name the parameter explicitly."""
+    from ama_kbqa.agents.sciqa_agent.prompts import SYSTEM_PROMPT
+    assert SYSTEM_PROMPT.count("group_bucket_size") >= 2
+
+
 def test_non_numeric_group_values_keep_label():
     bindings = AGG_BINDINGS + [
         {

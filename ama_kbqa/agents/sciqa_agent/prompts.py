@@ -550,6 +550,7 @@ TIER 3 - DOMAIN-SPECIFIC:
   algorithm=Naive Bayes AND feature=bag of words -> precision/recall/F1.
 - AggregateComparisonValues(comparison_id, value_predicate?, value_predicates?, agg, group_by_predicate?,
                             group_by_path?, group_by_intermediate?,
+                            group_bucket_size?, group_bucket_start?,
                             filter_predicate?, filter_value?, filter_match?, top_n?,
                             value_parser?, return_predicate?, intermediate_predicate?,
                             intermediate_path?, intermediate_filter_value?):
@@ -681,6 +682,10 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
   time/category path. If the metric rows are nested under the item being grouped
   (e.g. energy source -> installed capacity), also set group_by_intermediate=true
   so the result is grouped by both the nested row label and the time/category.
+  When the question asks for N-year intervals / N-wide ranges ("considering five
+  year intervals", "per 5-year period"), ALSO pass group_bucket_size=N: the tool
+  bins the numeric group values into inclusive ranges like 2006-2010 for you.
+  Never bin intervals by hand or with raw SPARQL.
 - Nested rollup rows ("all sources", "total", "overall"):
   if InspectComparisonSchema shows rollup_intermediate_values, or AggregateComparisonValues
   returns denominator_hints.rollup_intermediate_candidates, use that
