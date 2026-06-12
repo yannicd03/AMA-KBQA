@@ -29,8 +29,10 @@ from ama_kbqa.retrieval.search import (
 @pytest.fixture(autouse=True)
 def _reset_caches():
     search_mod.reset_capability_cache()
+    search_mod.clear_result_cache()
     yield
     search_mod.reset_capability_cache()
+    search_mod.clear_result_cache()
 
 
 def _point(pid: int, score: float, name: str = "doc") -> models.ScoredPoint:

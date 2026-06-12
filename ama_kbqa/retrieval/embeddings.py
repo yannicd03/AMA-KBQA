@@ -21,10 +21,19 @@ from ama_kbqa.config import get_embedding_model_name
 # (never on the populate/migration document side) and fold the prefix into
 # the cache key.
 
-# LRU cache for embeddings to avoid redundant API calls (shared by all
-# servers in the process; keyed on model + normalized text).
+# Cache for query embeddings to avoid redundant API calls (keyed on
+# model + normalized text). Scope: ONE question. The MCP servers clear it
+# on journal clear (the question boundary) via clear_embedding_cache();
+# cross-question reuse would let benchmark questions about the same
+# resources subsidize each other's latency, which real single-question
+# usage never does. The size bound is just a safety net within a question.
 _embedding_cache: Dict[str, List[float]] = {}
 _EMBEDDING_CACHE_MAX = 256
+
+
+def clear_embedding_cache() -> None:
+    """Clear the query-embedding cache (per-question scoping hook)."""
+    _embedding_cache.clear()
 
 
 def _cache_key(text: str, model: str) -> str:

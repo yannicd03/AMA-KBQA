@@ -95,6 +95,46 @@ def reset_capability_cache() -> None:
     _fallback_warned.clear()
 
 
+# Per-question cache of full search results, keyed by the complete query
+# identity (collection, normalized text, params, serialized filter). Within
+# one question the collections are static, so a byte-identical repeat call
+# (loop retry, plan revisiting the same search) returns the same hits
+# without re-running Qdrant + the reranker. Scope: ONE question. The MCP
+# servers clear it on journal clear (the question boundary) so benchmark
+# timings reflect real single-question usage; it never persists across
+# questions. Distinct from _bm25_capability_cache above, which is a schema
+# property and intentionally process-wide.
+_result_cache: Dict[tuple, List[models.ScoredPoint]] = {}
+_RESULT_CACHE_MAX = 128
+
+
+def clear_result_cache() -> None:
+    """Clear the per-question search-result cache (question boundary hook)."""
+    _result_cache.clear()
+
+
+def _result_cache_key(
+    collection_name: str,
+    query_text: str,
+    params: RetrievalParams,
+    query_filter: Optional[models.Filter],
+) -> Optional[tuple]:
+    """Build a hashable identity for a search call, or None if not cacheable."""
+    if query_filter is None:
+        filter_key = None
+    else:
+        try:
+            filter_key = query_filter.model_dump_json()
+        except Exception:
+            return None
+    return (
+        collection_name,
+        (query_text or "").strip().lower(),
+        params,  # frozen dataclass, hashable
+        filter_key,
+    )
+
+
 def _collection_has_bm25(qdrant: QdrantClient, collection_name: str) -> bool:
     cached = _bm25_capability_cache.get(collection_name)
     if cached is not None:
@@ -137,6 +177,10 @@ def search(
     Returns Qdrant ScoredPoint objects so each call site keeps its own
     payload→DTO mapping (``point.score``, ``point.payload``).
     """
+    cache_key = _result_cache_key(collection_name, query_text, params, query_filter)
+    if cache_key is not None and cache_key in _result_cache:
+        return list(_result_cache[cache_key])
+
     # When reranking, over-fetch so the cross-encoder has a candidate pool.
     if params.reranker_enabled:
         fetch_limit = max(params.rerank_candidates, params.limit)
@@ -144,6 +188,11 @@ def search(
         fetch_limit = params.limit
 
     use_hybrid = params.hybrid_enabled and _collection_has_bm25(qdrant, collection_name)
+    if params.hybrid_enabled and not use_hybrid:
+        # Degraded call (missing bm25 index or transient capability error):
+        # don't cache it, so a retry within the question can recover to the
+        # full hybrid path once the collection is inspectable again.
+        cache_key = None
     if params.hybrid_enabled and not use_hybrid and collection_name not in _fallback_warned:
         _fallback_warned.add(collection_name)
         logger.warning(
@@ -188,7 +237,12 @@ def search(
     if params.reranker_enabled and len(points) > 1:
         points = _rerank_points(query_text, list(points), params)
 
-    return list(points)[: params.limit]
+    result = list(points)[: params.limit]
+    if cache_key is not None:
+        if len(_result_cache) >= _RESULT_CACHE_MAX:
+            _result_cache.pop(next(iter(_result_cache)))
+        _result_cache[cache_key] = result
+    return list(result)
 
 
 def _rerank_points(

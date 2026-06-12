@@ -5230,6 +5230,9 @@ async def ManageJournal(
 
         elif action == "clear":
             session_journal = JournalState()
+            # Question boundary: drop the per-question retrieval caches so
+            # embeddings/results never leak across questions.
+            retrieval.clear_question_caches()
             return "Journal cleared."
 
         elif action == "add_step":
