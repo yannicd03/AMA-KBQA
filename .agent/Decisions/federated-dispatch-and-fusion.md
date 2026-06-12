@@ -1,7 +1,7 @@
 # ADR: Federated Multi-Specialist Dispatch and Answer Fusion
 
 **Date:** 2026-06-07
-**Status:** Implemented — uncommitted, pending feature branch (`worktree-federated-retrieval`)
+**Status:** Implemented — committed on `feature/federated-retrieval` (commit `092f66d`), rebased onto `main`
 **Files:** `ama_kbqa/agents/orchestrator_agent/agent.py`, `ama_kbqa/config.py`, `config.toml`, `config.docker.toml`, `scripts/benchmark_routing.py`, `tests/agents/test_orchestrator_routing.py`
 
 ## Related Docs
