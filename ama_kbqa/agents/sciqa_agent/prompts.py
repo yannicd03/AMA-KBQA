@@ -544,10 +544,17 @@ TIER 3 - DOMAIN-SPECIFIC:
   aggregation when the predicate is not already proven by a previous tool result.
   If a usage_hint contains intermediate_path="P1,P2", pass that exact path to
   AggregateComparisonValues instead of manually following every row.
-- QueryComparisonRows(comparison_id, filters?, return_predicates?, comparison_ids?):
+- QueryComparisonRows(comparison_id, filters?, return_predicates?, comparison_ids?,
+                      nested_fallback?, include_paper?):
   Return exact contribution rows after multiple predicate/value filters, then project
   several requested predicates. Use this before raw SPARQL for row questions like
   algorithm=Naive Bayes AND feature=bag of words -> precision/recall/F1.
+  filters accepts a plain mapping ({"P15006": "Naive bayes", "P36075": "Bag of words"})
+  or a list of {"predicate", "value", "match"} objects. Predicates may be
+  comma-separated paths with leading-'^' inverse hops. By default it also matches
+  predicates up to two hops BELOW each contribution (comparison cells usually
+  live on sub-resources), and each row carries the contribution's paper id and
+  label, so "which papers ..." can be answered directly from the rows.
 - AggregateComparisonValues(comparison_id, value_predicate?, value_predicates?, agg, group_by_predicate?,
                             group_by_path?, group_by_intermediate?,
                             group_bucket_size?, group_bucket_start?,
@@ -676,6 +683,15 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
 - Nested component filters ("variables for atmosphere models", "capacity for photovoltaics"):
   use InspectComparisonSchema to find the nested path, then pass
   intermediate_filter_value="Atmosphere" / "photovoltaics" to AggregateComparisonValues.
+- A category named in the question ("for carbon fuel", "for wind power studies") is a
+  FILTER, never optional: pass filter_predicate/filter_value (or intermediate_filter_value
+  for nested rows) and check the returned n is a plausible subset, not the whole
+  comparison. Averaging all rows when the question names a category is wrong.
+- "for each X" where X rows carry the value (energy source rows with their capacity):
+  pass group_by_predicate=X AND intermediate_predicate=X (same id). The tool pairs
+  label and value on the same row node. If every group returns the identical value,
+  you hit an unpaired cross-join: re-read the status warning and re-issue with the
+  pairing (or value_via_group=true when the value hangs off the group node).
 - Grouped interval/table questions ("for each source by year/time frame", "in 5-year
   intervals"):
   use AggregateComparisonValues with the metric path plus group_by_path for the
@@ -710,6 +726,42 @@ AGGREGATION DECISION TREE (for Count, Superlative, Ranking, Aggregation question
   per requested metric.
 - Negation/set-difference ("without", "not") remains a raw SPARQL FILTER NOT EXISTS case.
 
+SCOPE AND ANCHORING RULES (apply to EVERY count/aggregate/superlative):
+- If the question names a comparison ("most common drug in <comparison>"), the count
+  MUST be anchored to that comparison: use the comparison_id tools, or in raw SPARQL
+  write orkgr:RXXX orkgp:compareContribution ?contrib with the literal id. A pattern
+  like "?cmp orkgp:compareContribution ?contrib" with ?cmp unbound silently counts the
+  ENTIRE KG and produces confident wrong answers (the server warns via "note").
+- P31 direction: PAPER points to contribution. In SPARQL the paper of a contribution is
+  ?paper orkgp:P31 ?contrib (never ?contrib orkgp:P31 ?paper). In tool paths use the
+  inverse hop "^P31" to walk contribution -> paper.
+- Entity resolution: if FindResource with a node_type_filter does not return the EXACT
+  title you were given, retry once WITHOUT the filter (reviews are often Comparisons,
+  not Papers). If only similar titles exist, say the named resource was not found
+  instead of silently answering about a different one.
+
+RANKING RECIPES (raw SPARQL, when no comparison anchors the question):
+- "Who has the most contributions to <topic>" / "biggest contributor": group
+  contributions by AUTHOR, not by paper. Pattern:
+  SELECT ?author (COUNT(DISTINCT ?contrib) AS ?n) WHERE {
+    ?contrib orkgp:P32 ?problem . ?problem rdfs:label ?pl .
+    FILTER(CONTAINS(LCASE(?pl), "<topic>"))
+    ?paper orkgp:P31 ?contrib . ?paper orkgp:P27 ?author .
+  } GROUP BY ?author ORDER BY DESC(?n) LIMIT 5
+- "latest/most recent study about <topic>": find candidate papers, then sort by
+  publication year: ?paper orkgp:P29 ?year ... ORDER BY DESC(xsd:integer(?year)).
+  Verify the top paper actually matches the topic before answering.
+
+FINAL ANSWER CONTRACT (the judge scores the final text, not your journal):
+- "for each X" / "list" / "which" questions: enumerate EVERY group or item the tool
+  returned, including rollup rows like "all sources". Do not drop rows you consider
+  redundant, do not add items the data does not contain, and do not compress a list
+  into thematic summaries. Include resource labels (and IDs when available).
+- Echo numeric results at FULL precision exactly as the tool returned them
+  (7.395833333333333, not 7.4 or 7.396). Never round, truncate, or reformat numbers.
+- If you found row counts but the question asks for names, resolve the names; counts
+  alone do not answer "which/what" questions.
+
 ORKG PREDICATE REFERENCE (CORE)
 
 CORE NAVIGATION PREDICATES:
@@ -721,7 +773,8 @@ CORE NAVIGATION PREDICATES:
 - P10/P26: DOI                      Paper -> DOI string
 - P29: publication year             Paper -> Year
 - P30: research field               Paper -> ResearchField
-- P31: has contribution             Paper -> Contribution (CRITICAL PATH)
+- P31: has contribution             Paper -> Contribution (CRITICAL PATH; subject is
+  the PAPER: ?paper orkgp:P31 ?contrib. Walk contribution -> paper with inverse "^P31")
 - P32: research problem             Paper -> Problem
 
 For author searches, use FindAuthorPapers(name) instead of FindResource (vector search is poor for proper nouns).

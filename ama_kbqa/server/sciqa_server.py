@@ -60,7 +60,7 @@ import sys
 import time
 import json
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Any, Dict, List, Optional
+from typing import AsyncIterator, Any, Dict, List, Optional, Union
 from pathlib import Path
 from functools import wraps
 
@@ -1669,6 +1669,29 @@ async def RunORKGSPARQL(
                 "http://orkg.org/orkg/class/",
             ),
         )
+
+        # Anchor lint: counting/aggregating through compareContribution with an
+        # unbound comparison variable silently spans the ENTIRE KG, which is
+        # almost never what a "in comparison X"-scoped question wants.
+        unanchored = re.search(r"(\?\w+)\s+orkgp:compareContribution\b", query)
+        if unanchored:
+            var = unanchored.group(1)
+            var_esc = re.escape(var)
+            anchored = (
+                re.search(rf"VALUES\s+\(?\s*{var_esc}\b", query)
+                or re.search(rf"FILTER\s*\(\s*{var_esc}\s*=", query)
+                or re.search(rf"=\s*{var_esc}\s*\)", query)
+                or re.search(rf"{var_esc}\s+rdfs:label\b", query)
+            )
+            if not anchored:
+                lint = (
+                    f"WARNING: '{var} orkgp:compareContribution ...' has no anchor for "
+                    f"{var} (no VALUES/FILTER/label constraint), so this result spans "
+                    f"every comparison in the KG. If the question targets one "
+                    f"comparison, anchor it (orkgr:RXXX orkgp:compareContribution ...) "
+                    f"or use the comparison_id tools."
+                )
+                compact["note"] = f"{compact['note']} | {lint}" if compact.get("note") else lint
 
         session_journal.completed_steps.append(
             f"RunORKGSPARQL() -> {compact['result_count']} results"
@@ -3366,11 +3389,13 @@ SELECT DISTINCT ?contrib ?pathPred1 ?pathPred1Label ?pathNode1 ?pathNode1Label
 async def QueryComparisonRows(
     app_context: Context,
     comparison_id: str = "",
-    filters: Optional[List[Dict[str, str]]] = None,
-    return_predicates: Optional[List[str]] = None,
+    filters: Optional[Union[List[Dict[str, str]], Dict[str, str]]] = None,
+    return_predicates: Optional[Union[List[str], str]] = None,
     comparison_ids: str = "",
     filter_match: Literal["exact", "contains", "regex"] = "contains",
     limit: int = 100,
+    nested_fallback: bool = True,
+    include_paper: bool = True,
 ) -> str:
     """
     Return contribution rows from one or more Comparison resources after applying
@@ -3381,18 +3406,37 @@ async def QueryComparisonRows(
     precision/recall/F1 values?". This keeps the agent in tool space instead of
     hand-writing brittle multi-predicate SPARQL joins.
 
+    Comparison cells often live on sub-resources BELOW the contribution
+    (contribution -> approach -> metric). By default this tool also matches
+    filter and return predicates up to two anonymous hops below each
+    contribution, so you do not need to know the nesting predicate. For an
+    exact location, pass a comma-separated predicate path (steps support a
+    leading '^' for inverse hops, e.g. "^P31" walks to the paper).
+
     Args:
         comparison_id: Single Comparison resource ID. Used when comparison_ids is empty.
-        filters: List of filters, each with {"predicate", "value", optional "match"}.
-            The match value can be exact, contains, or regex and defaults to filter_match.
-        return_predicates: Predicate IDs to return for every matching contribution.
-            Leave empty to return only matching contribution IDs.
+        filters: Either a list of {"predicate", "value", optional "match"} objects
+            or a plain mapping like {"P15006": "Naive bayes", "P36075": "Bag of words"}.
+            "predicate" may be a comma-separated path ("P37586,P35205"); steps
+            support a leading '^' inverse hop. The match value can be exact,
+            contains, or regex and defaults to filter_match.
+        return_predicates: Predicate IDs (list) to return for every matching
+            contribution. Each entry may be a comma-separated path. A plain
+            string is treated as ONE path entry. Leave empty to return only
+            matching contribution IDs.
         comparison_ids: Optional comma-separated list of Comparison IDs to union.
         filter_match: Default matching mode for filters without their own "match".
         limit: Maximum number of rows to return, capped at 500.
+        nested_fallback: When True (default), single-predicate filters and
+            return predicates also match up to two anonymous hops below the
+            contribution. Set False for strictly direct predicates.
+        include_paper: When True (default), each row carries the contribution's
+            paper id and label (via the inverse P31 hop), so rows can be
+            reported as papers directly.
 
     Returns:
-        JSON with rows keyed by contribution and the requested predicates.
+        JSON with rows keyed by contribution (each with paper/paper_label when
+        available) and the requested predicates.
     """
     app = app_context.request_context.lifespan_context
 
@@ -3411,13 +3455,57 @@ async def QueryComparisonRows(
             return v.split("/")[-1]
         return v
 
+    def _norm_path_step(p: str) -> str:
+        p = p.strip()
+        if p.startswith("^"):
+            inner = _norm_pred(p[1:])
+            return f"^{inner}" if inner else ""
+        return _norm_pred(p)
+
+    def _path_steps(p: str) -> list[str]:
+        return [s for s in (_norm_path_step(x) for x in str(p or "").split(",")) if s]
+
+    def _walk(start: str, steps: list[str], terminal: str, prefix: str) -> str:
+        current = start
+        lines = []
+        for idx, step in enumerate(steps):
+            nxt = terminal if idx == len(steps) - 1 else f"?{prefix}{idx}"
+            if step.startswith("^"):
+                lines.append(f"{nxt} {step[1:]} {current} .")
+            else:
+                lines.append(f"{current} {step} {nxt} .")
+            current = nxt
+        return "\n        ".join(lines) + "\n"
+
+    def _pattern_with_fallback(steps: list[str], obj: str, prefix: str) -> str:
+        """Triple pattern from ?contrib to obj; single forward predicates also
+        match up to two anonymous hops below the contribution."""
+        direct = _walk("?contrib", steps, obj, f"{prefix}p")
+        if not (nested_fallback and len(steps) == 1 and not steps[0].startswith("^")):
+            return direct
+        pred = steps[0]
+        alt1 = (
+            f"?contrib ?{prefix}n1 ?{prefix}m1 .\n"
+            f"        ?{prefix}m1 {pred} {obj} .\n"
+        )
+        alt2 = (
+            f"?contrib ?{prefix}n2 ?{prefix}m2 .\n"
+            f"        ?{prefix}m2 ?{prefix}n3 ?{prefix}m3 .\n"
+            f"        ?{prefix}m3 {pred} {obj} .\n"
+        )
+        return f"{{ {direct} }} UNION {{ {alt1} }} UNION {{ {alt2} }}\n"
+
     try:
         cmp_id_list = [c.strip() for c in (comparison_ids or "").split(",") if c.strip()]
         multi_mode = bool(cmp_id_list)
         if not multi_mode and not (comparison_id or "").strip():
             return json.dumps({"error": "Either comparison_id or comparison_ids must be set"}, indent=2)
 
+        if isinstance(filters, dict):
+            filters = [{"predicate": k, "value": str(v)} for k, v in filters.items()]
         filters = filters or []
+        if isinstance(return_predicates, str):
+            return_predicates = [return_predicates] if return_predicates.strip() else []
         return_predicates = return_predicates or []
         limit = max(1, min(int(limit or 100), 500))
 
@@ -3435,9 +3523,9 @@ async def QueryComparisonRows(
         filter_blocks: list[str] = []
         filter_payload: list[dict[str, str]] = []
         for i, item in enumerate(filters):
-            pred = _norm_pred(str(item.get("predicate", "")))
+            steps = _path_steps(str(item.get("predicate", "")))
             value = str(item.get("value", "")).strip()
-            if not pred or not value:
+            if not steps or not value:
                 continue
             match = str(item.get("match", filter_match)).lower()
             if match not in {"exact", "contains", "regex"}:
@@ -3466,7 +3554,7 @@ async def QueryComparisonRows(
                     f'|| CONTAINS(LCASE(STR({nested})), LCASE("{safe}")) )'
                 )
             filter_blocks.append(
-                f"?contrib {pred} {obj} .\n"
+                f"{_pattern_with_fallback(steps, obj, f'f{i}')}"
                 f"        OPTIONAL {{ {obj} rdfs:label {label} }}\n"
                 f"        OPTIONAL {{ {obj} orkgp:HAS_VALUE {nested} }}\n"
                 f"        {predicate_filter}\n"
@@ -3477,26 +3565,40 @@ async def QueryComparisonRows(
         ret_vars: list[str] = []
         ret_blocks: list[str] = []
         for i, pred_raw in enumerate(ret_preds):
-            pred = _norm_pred(str(pred_raw))
+            steps = _path_steps(str(pred_raw))
+            if not steps:
+                continue
             obj = f"?retObj{i}"
             label = f"?retLabel{i}"
             nested = f"?retNested{i}"
             ret_vars.extend([obj, label, nested])
             ret_blocks.append(
                 f"OPTIONAL {{\n"
-                f"          ?contrib {pred} {obj} .\n"
+                f"          {_pattern_with_fallback(steps, obj, f'r{i}')}"
                 f"          OPTIONAL {{ {obj} rdfs:label {label} }}\n"
                 f"          OPTIONAL {{ {obj} orkgp:HAS_VALUE {nested} }}\n"
                 f"        }}\n"
             )
 
-        select_vars = " ".join(["?contrib"] + ret_vars)
+        paper_block = ""
+        paper_vars: list[str] = []
+        if include_paper:
+            paper_vars = ["?paper", "?paperLabel"]
+            paper_block = (
+                "OPTIONAL {\n"
+                "          ?paper orkgp:P31 ?contrib .\n"
+                "          OPTIONAL { ?paper rdfs:label ?paperLabel }\n"
+                "        }\n"
+            )
+
+        select_vars = " ".join(["?contrib"] + paper_vars + ret_vars)
         body_query = f"""
 SELECT DISTINCT {select_vars} WHERE {{
     GRAPH <{SCIQA_GRAPH}> {{
         {scope_clause}
         {''.join(filter_blocks)}
         {''.join(ret_blocks)}
+        {paper_block}
     }}
 }} LIMIT {limit}
 """
@@ -3510,6 +3612,13 @@ SELECT DISTINCT {select_vars} WHERE {{
             contrib_uri = b.get("contrib", {}).get("value", "")
             contrib = _short_uri(contrib_uri)
             row = rows_by_contrib.setdefault(contrib, {"contribution": contrib})
+            if include_paper:
+                paper_uri = b.get("paper", {}).get("value", "")
+                if paper_uri and "paper" not in row:
+                    row["paper"] = _short_uri(paper_uri)
+                    paper_label = b.get("paperLabel", {}).get("value")
+                    if paper_label:
+                        row["paper_label"] = paper_label
             for i, pred_raw in enumerate(ret_preds):
                 value = None
                 value_id = None
@@ -3630,7 +3739,14 @@ async def AggregateComparisonValues(
             unique_count are normalized.
         group_by_predicate: Optional predicate to GROUP BY. When set, the
             aggregate is computed per distinct value of this predicate
-            (e.g., "extreme values per energy source").
+            (e.g., "extreme values per energy source"). IMPORTANT: if the group
+            label and the value both live on the same nested row (e.g. one row
+            per energy source carrying its capacity), ALSO pass
+            intermediate_predicate with that row's predicate (often the SAME id
+            as group_by_predicate); the tool then pairs label and value on the
+            same node instead of cross-joining them. A grouped result where
+            every group shows the identical value is such an unpaired
+            cross-join (the status will warn).
         group_by_path: Optional comma-separated predicate path from each
             contribution to the grouping value. Use when the group key is not a
             direct contribution predicate, e.g. contribution -> scenario -> goal
@@ -3867,6 +3983,16 @@ async def AggregateComparisonValues(
         def _group_clause() -> str:
             if not group_chain:
                 return ""
+            if intermediate_chain and group_chain == intermediate_chain and not value_via_group:
+                # The group IS the intermediate row. Re-walking the path with a
+                # fresh variable would cross-join every group label against
+                # every nested value (each group then reports the identical
+                # global aggregate); bind both to the same node instead.
+                return (
+                    "BIND(?intermediate AS ?group)\n"
+                    "        OPTIONAL { ?group rdfs:label ?groupLabel }\n"
+                    "        OPTIONAL { ?group orkgp:HAS_VALUE ?groupNested }\n"
+                )
             path_block = _path_clause("?contrib", group_chain, "?group", "groupPath")
             return (
                 f"{path_block}\n"
@@ -4059,9 +4185,15 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
         from collections import defaultdict, Counter
         groups: Dict[Any, List[Dict[str, Any]]] = defaultdict(list)
 
+        same_group_axis = (
+            bool(intermediate_chain)
+            and group_chain == intermediate_chain
+            and not value_via_group
+        )
+
         def _row_group_key(row: Dict[str, Any]) -> Any:
             parts: list[tuple[str, Any]] = []
-            if group_by_intermediate:
+            if group_by_intermediate and not same_group_axis:
                 parts.append(("intermediate", row.get("intermediate")))
             if group_chain:
                 parts.append((group_label or "group", row.get("group")))
@@ -4134,6 +4266,34 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             result_payload: Any = grouped_result
         else:
             result_payload = _aggregate(rows)
+
+        # Cross-join sentinel: a grouped numeric aggregate where every group
+        # reports the identical value (and identical n) almost always means the
+        # group and value predicates are multi-valued on the contribution and
+        # were joined without pairing, so each group saw the global population.
+        degenerate_grouping_warning = ""
+        if (
+            group_chain
+            and not same_group_axis
+            and not value_via_group
+            and agg in ("avg", "sum", "min", "max")
+            and isinstance(result_payload, list)
+            and len(result_payload) >= 3
+        ):
+            numeric_vals = {
+                entry["value"] for entry in result_payload
+                if isinstance(entry.get("value"), (int, float))
+            }
+            n_vals = {entry.get("n") for entry in result_payload}
+            if len(numeric_vals) == 1 and len(n_vals) == 1:
+                degenerate_grouping_warning = (
+                    " WARNING: every group produced the identical aggregate; the group "
+                    "and value predicates are probably not paired on the same node "
+                    "(cross-join). If the value hangs off the group node, retry with "
+                    "value_via_group=true; if both live on a nested row, set "
+                    "intermediate_predicate to that row's predicate (it may equal "
+                    "group_by_predicate)."
+                )
 
         if return_pred and agg in ("min", "max"):
             scored_rows = [(r, _to_float(r["value"])) for r in rows]
@@ -4301,6 +4461,7 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                     if group_bucket else ""
                 )
                 + (f" across {len(cmp_id_list)} comparisons" if multi_mode else "")
+                + degenerate_grouping_warning
             ),
         }, indent=2, default=str)
 
