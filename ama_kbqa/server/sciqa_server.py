@@ -53,6 +53,7 @@ from ama_kbqa.config import (
     get_sciqa_relation_threshold,
 )
 from ama_kbqa import retrieval
+import math
 import os
 import re
 import sys
@@ -3471,6 +3472,8 @@ async def AggregateComparisonValues(
     group_by_predicate: str = "",
     group_by_path: str = "",
     group_by_intermediate: bool = False,
+    group_bucket_size: int = 0,
+    group_bucket_start: str = "",
     filter_predicate: str = "",
     filter_value: str = "",
     filter_match: Literal["exact", "contains", "regex"] = "contains",
@@ -3488,8 +3491,9 @@ async def AggregateComparisonValues(
     Aggregate values across the contributions of one or more Comparison resources.
 
     This is the right tool whenever a question asks for AVG/SUM/MIN/MAX/COUNT,
-    "most common X", "frequency of X", or per-group min/max over the rows of a
-    Featured Comparison. It encapsulates the common
+    "most common X", "frequency of X", per-group min/max, or values binned
+    into intervals ("average X for each energy source considering 5-year
+    intervals" -> group_bucket_size=5) over the rows of a Featured Comparison. It encapsulates the common
     ``orkgr:RXXX orkgp:compareContribution ?contrib`` pattern, including the
     ``HAS_VALUE`` indirection that wraps numeric measurements, so you do not
     have to hand-write SPARQL and reason about ``xsd:decimal`` casts.
@@ -3536,6 +3540,19 @@ async def AggregateComparisonValues(
             intermediate_path, include the nested row label itself as a grouping
             axis. Use this for table questions such as "average installed
             capacity for each energy source by time frame".
+        group_bucket_size: Optional integer interval width for RANGE-BUCKETED
+            grouping. When > 0, the numeric part of each group value (from
+            group_by_predicate/group_by_path, typically a year) is binned into
+            inclusive intervals of this width and the group label becomes
+            "start-end" (e.g. size 5 -> "2006-2010", "2011-2015", "2016-2020").
+            Use this whenever the question asks for values "in N-year
+            intervals" / "per N-year period" — do NOT fall back to raw SPARQL
+            for interval binning. Group values that have no numeric part keep
+            their original label.
+        group_bucket_start: Optional first bucket's lower bound (e.g. "2006").
+            Empty (default) = derived from the minimum numeric group value
+            observed, which matches "considering five year intervals" question
+            phrasing without needing the start year in advance.
         filter_predicate: Optional predicate used to subset contributions.
         filter_value: Value the filter_predicate must match.
         filter_match: "exact" (literal equals), "contains" (substring on
@@ -3867,6 +3884,37 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                 "return_value": _row_return(b),
             })
 
+        # Range-bucketed grouping: bin numeric group values (typically years)
+        # into inclusive intervals of group_bucket_size, e.g. size 5 ->
+        # "2006-2010". This replaces the SPARQL VALUES-range pattern gold
+        # queries use for "in N-year intervals" questions.
+        def _bucket_num(s) -> Optional[float]:
+            if s is None:
+                return None
+            m = re.search(r"[+-]?\d+(\.\d+)?", str(s))
+            if not m:
+                return None
+            try:
+                return float(m.group(0))
+            except ValueError:
+                return None
+
+        group_bucket = None
+        if group_bucket_size and int(group_bucket_size) > 0 and group_chain:
+            bucket_size = int(group_bucket_size)
+            parsed = [(r, _bucket_num(r["group"])) for r in rows]
+            nums = [n for _, n in parsed if n is not None]
+            if nums:
+                start_raw = str(group_bucket_start).strip()
+                origin = int(float(start_raw)) if start_raw else int(min(nums))
+                for r, n in parsed:
+                    if n is None:
+                        continue
+                    idx = math.floor((n - origin) / bucket_size)
+                    lo = origin + idx * bucket_size
+                    r["group"] = f"{lo}-{lo + bucket_size - 1}"
+                group_bucket = {"size": bucket_size, "start": origin}
+
         n_rows = len(rows)
         scope_label = (
             ",".join(cmp_id_list) if multi_mode else comparison_id
@@ -3945,8 +3993,18 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                     "value": _aggregate(items),
                     "n": len(items),
                 })
-            # For numeric grouping, sort descending by value when comparable
-            if agg in ("avg", "sum", "min", "max"):
+            # Bucketed grouping reads as a table: sort ascending by interval
+            # start (then by the other grouping axis). Otherwise, for numeric
+            # grouping, sort descending by value when comparable.
+            if group_bucket:
+                def _bucket_sort_key(entry):
+                    g = entry["group"]
+                    if isinstance(g, dict):
+                        g = g.get(group_label or "group")
+                    n = _bucket_num(g)
+                    return (n if n is not None else float("inf"), str(entry["group"]))
+                grouped_result.sort(key=_bucket_sort_key)
+            elif agg in ("avg", "sum", "min", "max"):
                 grouped_result.sort(
                     key=lambda x: x["value"] if isinstance(x["value"], (int, float)) else float("-inf"),
                     reverse=True,
@@ -4055,6 +4113,8 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             key += f" by {','.join(raw_group_by_path)}"
         if group_by_intermediate:
             key += " by intermediate"
+        if group_bucket:
+            key += f" in {group_bucket['size']}-wide buckets from {group_bucket['start']}"
         if raw_intermediate_path:
             key += f" via {','.join(raw_intermediate_path)}"
         elif intermediate_predicate:
@@ -4090,6 +4150,7 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
             "group_by": group_by_predicate or None,
             "group_by_path": raw_group_by_path or None,
             "group_by_intermediate": group_by_intermediate,
+            "group_bucket": group_bucket,
             "intermediate_predicate": intermediate_predicate or None,
             "intermediate_path": raw_intermediate_path or None,
             "intermediate_filter": (
@@ -4115,6 +4176,10 @@ SELECT DISTINCT ?contrib {value_pred_select}{intermediate_select}{group_select}?
                 + (f" grouped by {group_by_predicate}" if group_by_predicate else "")
                 + (f" grouped by path {','.join(raw_group_by_path)}" if raw_group_by_path else "")
                 + (" grouped by intermediate" if group_by_intermediate else "")
+                + (
+                    f" in {group_bucket['size']}-wide buckets starting at {group_bucket['start']}"
+                    if group_bucket else ""
+                )
                 + (f" across {len(cmp_id_list)} comparisons" if multi_mode else "")
             ),
         }, indent=2, default=str)

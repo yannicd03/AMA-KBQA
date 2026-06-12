@@ -4056,6 +4056,12 @@ class CountResponse(BaseModel):
     """Response from a Count tool."""
     count: int = Field(..., description="The exact count (no truncation).")
     description: str = Field(..., description="Human-readable description of what was counted.")
+    trusted: bool = Field(
+        default=False,
+        description="True when the count comes from a complete COUNT(DISTINCT) query over "
+                    "the stated filters. A trusted count IS the final answer to a 'how many' "
+                    "question; do not re-derive it with manual enumeration or raw SPARQL.",
+    )
     status: str = Field(..., description="Status message.")
 
 
@@ -4153,6 +4159,45 @@ def CountEntities(
             status="No concept/attribute/entity_ids supplied — refusing to count the whole KB.",
         )
 
+    # Drop incomplete filters instead of letting them pollute the query.
+    # A primary attribute_name without a value becomes an existence-only
+    # check; when the real condition lives in not_conditions (whose
+    # semantics deliberately KEEP entities lacking the attribute), that
+    # existence check silently shrinks the count. Same-name duplication is
+    # the observed failure shape, so only that case is dropped; a bare
+    # existence check without not_conditions remains a legitimate query.
+    ignored_filters: list[str] = []
+    not_attr_names = {
+        (cond.get("attribute_name") or "").strip().lower()
+        for cond in (not_conditions or [])
+    }
+    if attribute_name and not attribute_value and attribute_name.strip().lower() in not_attr_names:
+        ignored_filters.append(
+            f"incomplete primary filter '{attribute_name}' (no value; condition already in not_conditions)"
+        )
+        attribute_name = ""
+    cleaned_or: list[dict] = []
+    for cond in or_conditions or []:
+        if (cond.get("attribute_name") or "").strip():
+            cleaned_or.append(cond)
+        else:
+            ignored_filters.append("or_condition without attribute_name")
+    or_conditions = cleaned_or or None
+    cleaned_not: list[dict] = []
+    for cond in not_conditions or []:
+        if (cond.get("attribute_name") or "").strip():
+            cleaned_not.append(cond)
+        else:
+            ignored_filters.append("not_condition without attribute_name")
+    not_conditions = cleaned_not or None
+    if not concept and not attribute_name and not entity_ids and not or_conditions and not not_conditions:
+        return CountResponse(
+            count=0,
+            description="(all filters incomplete)",
+            status="All supplied filters were incomplete (missing attribute_name/value) — "
+                   "refusing to count the whole KB. Ignored: " + "; ".join(ignored_filters),
+        )
+
     pre_blocks: list[str] = []
     if entity_ids:
         entity_uris = " ".join([format_entity_uri(eid) for eid in entity_ids])
@@ -4222,12 +4267,17 @@ def CountEntities(
         count = int(bindings[0]["c"]["value"]) if bindings else 0
 
         session_journal.verified_facts.append({
-            "fact": f"Count[{desc}] = {count}",
+            "fact": f"TRUSTED COUNT[{desc}] = {count} (exact COUNT(DISTINCT) result; "
+                    "do not override with manual enumeration or raw-SPARQL recounts)",
             "source": "CountEntities",
         })
         session_journal.add_completed_step(f"CountEntities({desc}) = {count}")
         logger.info(f"CountEntities: {desc} = {count}")
-        return CountResponse(count=count, description=desc, status="ok")
+        status = ("ok — trusted count; this is the exact answer for the stated filters, "
+                  "prefer it over manual enumeration or later raw-SPARQL counts")
+        if ignored_filters:
+            status += ". Ignored: " + "; ".join(ignored_filters)
+        return CountResponse(count=count, description=desc, trusted=True, status=status)
 
     except Exception as e:
         logger.error(f"CountEntities failed: {e}")
@@ -4408,11 +4458,18 @@ def CountUnion(
         key = "count_union"
         session_journal.found_values.setdefault(key, {})[desc] = count
         session_journal.verified_facts.append({
-            "fact": f"CountUnion[{desc}] = {count}",
+            "fact": f"TRUSTED COUNT[{desc}] = {count} (exact COUNT(DISTINCT) result; "
+                    "do not override with manual enumeration or raw-SPARQL recounts)",
             "source": "CountUnion",
         })
         session_journal.add_completed_step(f"CountUnion({desc}) = {count}")
-        return CountResponse(count=count, description=desc, status="ok")
+        return CountResponse(
+            count=count,
+            description=desc,
+            trusted=True,
+            status="ok — trusted count; this is the exact answer for the stated filters, "
+                   "prefer it over manual enumeration or later raw-SPARQL counts",
+        )
 
     except Exception as e:
         logger.error(f"CountUnion failed: {e}")
