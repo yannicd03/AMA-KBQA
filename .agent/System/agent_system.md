@@ -52,22 +52,22 @@ All agents communicate with their MCP servers via **stdio protocol**.
 
 ### Routing Flow
 
-The Orchestrator routes each question in two LLM steps via `_route_autonomously`:
+The Orchestrator routes each question in one LLM round-trip via `_route_autonomously` (updated commit `19fa2d5`; benchmark-validation-pending):
 
 ```
-Step 1 — Probe
-  LLM receives: routing system prompt (includes agent domain descriptions)
-  Forced tool call (tool_choice=required): analyze_query_recommend_db(query)
-  Tool returns: raw evidence JSON (see below)
+Step 1 — Probe (direct MCP call, no LLM round-trip)
+  analyze_query_recommend_db(query) called directly via MCP client.
+  Tool returns: raw evidence JSON (see below).
+  If probe raises: degraded flag set, kg_evidence is empty.
 
-Step 2 — Judge
-  LLM receives: evidence appended as tool-result message
-  Forced tool call (tool_choice=required): select_agent(agent: enum, reason: str)
-  enum values constructed from _agent_config keys at runtime
-  reason recorded on the classify span as route_reason attribute
+Step 2 — Judge (single LLM call)
+  LLM receives: routing system prompt + evidence as tool-result message.
+  Forced tool call (tool_choice=required): select_agent(agent: enum, reason: str).
+  enum values constructed from _agent_config keys at runtime.
+  reason recorded on the classify span as route_reason attribute.
 ```
 
-If `_route_autonomously` raises or returns an unrecognised agent key, `_fallback_kqapro` delegates to KQAPro.
+If `_route_autonomously` raises or returns an unrecognised agent key, `_fallback_kqapro` delegates to KQAPro. If the probe itself fails, the LLM routes from question domain alone (no longer unconditionally falling back to KQAPro).
 
 ### `analyze_query_recommend_db` Evidence Contract
 
@@ -112,6 +112,8 @@ The `reason` string from the `select_agent` call is stored on the `classify` spa
 ### Key Design Invariants
 
 - Substring parsing of verdict text is gone. Routing is entirely determined by the `select_agent` structured call.
+- The probe tool (`analyze_query_recommend_db`) is called directly via MCP, not via an LLM round-trip. The first LLM call in `_route_autonomously` is the judge call that receives the probe evidence and forces `select_agent`. (Updated commit `19fa2d5`; benchmark-validation-pending.)
+- If the probe fails, routing degrades to domain-only decision (question wording alone). It no longer unconditionally falls back to KQAPro.
 - The Orchestrator stays stateless across turns. It does not maintain KG-specific session state; each turn creates a fresh routing context.
 - Multiturn conversation is scoped to directly-selected sub-agents only. When the user selects "Orchestrator" directly, each turn creates a fresh agent per the Orchestrator path. See `Decisions/multiturn-direct-agent-conversation.md`.
 
@@ -309,8 +311,8 @@ The KQAProAgent inherits from BaseKBQAAgent and implements KQAPro-specific metho
 │       • Store reflection in journal via ManageJournal          │
 │     - LOOP DETECTION: Check for infinite patterns              │
 │     - If loop detected: Emit loop_detected event + intervene   │
-│     - Every 5 iterations: Inject journal refresh at index 1    │
-│       (REPLACE mode after first refresh for primacy bias)      │
+│     - Every 5 iterations: Inject journal refresh (append-only) │
+│       Superseded refreshes stubbed during compaction           │
 │       Emit journal_refresh event                               │
 │     - PROGRESS CHECK: Compare journal state                    │
 │     - If GetJournalSummary called: Force answer next turn      │
@@ -504,17 +506,23 @@ After each non-journal tool call, the agent is forced to reflect by:
 This ensures the agent maintains a running mental model and doesn't lose context as tool responses are truncated.
 
 **Tool Response Truncation:**
-- Tool responses over 2000 characters are truncated (except journal tools)
-- Last 2 tool responses preserved in full (for immediate context)
-- All earlier responses compacted after each tool batch
-- Reduces context window bloat while preserving critical recent context
-- Increased from 1000 to 2000 chars to preserve complete property lists from GetNodeSummary
+- Tool responses over 2000 characters are truncated (except journal tools).
+- Last 2 tool responses preserved in full (for immediate context).
+- All earlier responses compacted after each tool batch.
+- Reduces context window bloat while preserving critical recent context.
+- Increased from 1000 to 2000 chars to preserve complete property lists from GetNodeSummary.
 
-**Journal Refresh Placement:**
-- Journal refresh injected at index 1 (after system prompt, before user question)
-- First refresh uses INSERT mode, subsequent refreshes use REPLACE mode
-- This exploits primacy bias: LLM sees journal state first
-- Only 1 journal refresh exists in message history at any time
+**Concurrent Tool Execution (updated commit 00c7612; benchmark-validation-pending):**
+- `_execute_tool_calls` validates all tool calls and runs loop detection sequentially.
+- Execution of the validated batch uses `asyncio.gather`, so independent calls in the same turn run in parallel.
+- Each concurrent call creates a child trace span using the `ContextVar` parent propagated from the calling context, so the span tree remains correct.
+- Both system prompts now instruct models to emit independent lookups as multiple tool calls in a single turn.
+
+**Journal Refresh Placement (updated commit 9bb1086; benchmark-validation-pending):**
+- Journal refresh messages are now appended at the tail of the message history (append-only).
+- Superseded refresh messages are stubbed to a short placeholder during discrete compaction, rather than being replaced in-place.
+- Append-only behaviour preserves the prefix-cache key for all earlier messages: the LLM provider can reuse KV cache entries for the stable prefix on every turn instead of invalidating from the replaced index onward.
+- `_next_trim_trigger` is armed above post-compaction token usage (hysteresis), preventing compaction and refresh from alternating every iteration.
 
 ### Message History Format
 
@@ -932,7 +940,7 @@ Controls whether `_run_tool_loop` automatically pushes journal state into the co
 
 Two injection sites in `_run_tool_loop` are guarded by this flag:
 
-1. **Periodic refresh** — every `journal_refresh_interval` iterations (default: every 5), `_inject_journal_refresh` is called. It fetches `GetJournalSummary`, applies the `WORKING MEMORY REFRESH (Iteration N)` template (or the `WARNING: NO PROGRESS DETECTED` template when the journal state is unchanged), strips any prior refresh message from history (replace-not-append strategy), and appends the new one. When `auto_inject_journal = false` this call is skipped entirely.
+1. **Periodic refresh** — every `journal_refresh_interval` iterations (default: every 5), `_inject_journal_refresh` is called. It fetches `GetJournalSummary`, applies the `WORKING MEMORY REFRESH (Iteration N)` template (or the `WARNING: NO PROGRESS DETECTED` template when the journal state is unchanged), and appends the new refresh message at the tail (append-only since commit `9bb1086`; superseded refresh messages are stubbed to short placeholders during compaction). When `auto_inject_journal = false` this call is skipped entirely.
 
 2. **Post-GetJournalSummary answer prompt** — when the agent voluntarily calls `GetJournalSummary` as a tool with no arguments, `_execute_tool_calls` sets a flag and `_run_tool_loop` injects `"Now provide your final answer. Do NOT call more tools."` immediately after the tool result. Malformed calls such as `GetJournalSummary(action="read")` still return the tool error to the model but do not trigger the answer prompt; the agent must retry the no-argument summary call first. When `auto_inject_journal = false` this prompt is suppressed.
 

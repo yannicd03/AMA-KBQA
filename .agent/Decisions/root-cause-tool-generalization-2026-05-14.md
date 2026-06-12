@@ -521,3 +521,157 @@ path aggregation has existed since 2026-05-23. The gold queries express the
 binning as a SPARQL `VALUES (?rangeId ?min ?max)` clause; the wrapped
 aggregation surface has no equivalent of range-bucketed grouping. That is the
 next generic capability gap for this question family.
+
+## 2026-06-12 Agent Improvement Batch (branch agent-improvements)
+
+Seven fixes implemented on branch `agent-improvements` (based on `yannic-dev`
+@ `7400065`). All validated by unit tests only; no n=100 benchmark run yet.
+Deploy to Hetzner is blocked pending a user decision. The hybrid retrieval
+flip noted below was merged on `yannic-dev` prior to this batch.
+
+### Hybrid retrieval flipped on by default (yannic-dev @ 7400065)
+
+`hybrid_enabled = true` is now the default in both `config.toml` and
+`config.docker.toml` (commit `7400065`, on `yannic-dev`). This followed
+verification that all four Hetzner Qdrant collections carry the BM25 sparse
+vector index. Evidence: `rag-rerank-100q-2026-06-07` run with hybrid enabled
+showed no regressions; reranker also enabled by default per that run.
+
+### Fix 1: SciQA tool catalog filtered by question type (commit 78a69eb)
+
+`SciQAAgent` now overrides `_get_allowed_tools_for_qtype`. The base set is
+CORE_TOOLS; each question type adds a per-qtype extras list; multi-label
+classifier outputs produce the union across all matched types; the
+General/unknown class receives all 27 tools. The pattern mirrors the existing
+KQAPro qtype-filter implementation.
+
+Evidence basis: each SciQA iteration was sending the full 27-tool catalog
+regardless of question type, costing approximately 2,000-3,000 extra prompt
+tokens per iteration.
+
+Benchmark validation: pending.
+
+### Fix 2: Count tool hardening and range-bucketed grouping (commit 23f0b23)
+
+Two changes:
+
+1. `CountEntities` and `CountUnion`: when the primary filter attribute_name is
+   present but duplicated in `not_conditions` (and lacks an attribute_value),
+   it is dropped before query construction so the spurious incomplete condition
+   does not narrow the result set. Condition items without `attribute_name` are
+   also dropped silently. A `trusted` response field is added and a
+   "TRUSTED COUNT" journal fact is written so the synthesis step can prefer
+   the high-level count over a later exploratory raw-SPARQL count.
+
+2. `AggregateComparisonValues`: new `group_bucket_size` and `group_bucket_start`
+   parameters bin numeric group values (typically years extracted from a
+   `group_by_path` relation) into inclusive intervals. For example,
+   `group_bucket_size=5, group_bucket_start=2006` bins the 2006-2050 range
+   into 2006-2010, 2011-2015, etc. This closes the range-bucketed-grouping gap
+   recorded on 2026-06-11: all six interval-question failures shared this
+   missing operation.
+
+Evidence basis: 2026-06-11 artifact-gold section above; six interval
+failures confirmed.
+
+Benchmark validation: pending.
+
+### Fix 3: Raw-SPARQL distress intervention (commit 5cfea93)
+
+`BaseKBQAAgent._run_tool_loop` now injects one steering message per question
+when the cumulative count of raw SPARQL tool calls (`RunSPARQL` or
+`RunORKGSPARQL`) reaches 4, well before the 8-10 hard loop caps. The
+intervention instructs the model to switch to the appropriate high-level
+wrapped tool for the question type.
+
+Evidence basis: failed traces from the seed-43 and June-7 runs show a
++16-20 percentage point raw-SPARQL share compared with correct traces. This
+pattern survived all post-May fixes and is the clearest remaining
+model-behavior gap.
+
+Benchmark validation: pending.
+
+### Fix 4: One-round-trip orchestrator routing (commit 19fa2d5)
+
+The orchestrator `_route_autonomously` flow was restructured from two explicit
+LLM round-trips to one. The `analyze_query_recommend_db` probe is now called
+directly via MCP (the old step-1 LLM call only echoed the question back
+before calling the tool). A single forced `select_agent` call follows. If the
+probe raises, the flow degrades to a domain-only routing decision instead of
+unconditionally falling back to KQAPro.
+
+Evidence basis: the two-step LLM flow documented in the
+`orchestrator-evidence-based-routing.md` ADR still made one full round-trip
+whose only purpose was to emit a tool call. The ADR evidence contract and
+`select_agent` structured call are unchanged; only the step-1 LLM call is
+removed.
+
+Benchmark validation: pending.
+
+### Fix 5: GetPredicateReference tool for SciQA (commit 13bc6a8)
+
+Domain predicate IDs (core/energy/chemistry/agriculture/benchmarks/biology/
+comparison) are moved out of the SciQA system prompt into an on-demand MCP
+tool `GetPredicateReference`. The tool returns the curated reference table for
+the requested domain on first call per question; subsequent calls for the same
+domain within a question are cached.
+
+Net prompt-size effect: approximately unchanged today (the system prompt
+shrank from 19,527 to ~19,200 characters, offset by the tool catalog entry).
+The structural value is that the curated reference grows server-side without
+inflating the static prompt.
+
+Benchmark validation: pending.
+
+### Fix 6: Batched concurrent tool calls (commit 00c7612)
+
+`_execute_tool_calls` now validates all tool calls and performs loop detection
+sequentially, then executes the batch via `asyncio.gather`. Each tool call
+creates a child trace span using the parent `ContextVar` from the calling
+context, so the span tree remains correct for concurrent calls. Both the
+KQAPro and SciQA system prompts instruct models to emit independent lookups
+as multiple tool calls in a single turn.
+
+Evidence basis: profiling on the Hetzner stack shows ~83% of per-question
+wall time is LLM round-trips. Parallelising independent tool calls within a
+turn reduces wait time proportionally to the number of parallel calls.
+
+Benchmark validation: pending.
+
+### Fix 7: Prefix-cache-friendly message history (commit 9bb1086)
+
+Two related changes to `_inject_journal_refresh` and `_run_tool_loop`:
+
+1. Journal refresh is now append-only. The prior implementation replaced the
+   existing refresh message in-place (REPLACE mode after the first refresh).
+   That approach invalidated the KV cache prefix on every refresh cycle
+   because the message at a stable index was mutated. The new implementation
+   appends a new refresh message at the current tail; superseded refreshes are
+   stubbed to a short placeholder during compaction.
+
+2. Context compaction is now discrete with hysteresis. The `_next_trim_trigger`
+   counter is armed above the post-compaction token usage, so a single trim
+   event does not immediately re-trigger on the next turn. This prevents the
+   previous behaviour where compaction and injection alternated every iteration,
+   constantly shifting message indices and defeating prefix reuse.
+
+Evidence basis: token accounting across the seed-43 benchmark shows 99.3% of
+benchmark tokens are prompt resends (existing context reinjected each turn).
+Any prefix cache hit on those resent tokens eliminates the majority of the
+per-turn prompt cost.
+
+Benchmark validation: pending.
+
+### Test coverage added
+
+Suite went from 276 to 320 passed (44 new tests):
+
+| File | Tests | Scope |
+|------|-------|-------|
+| `tests/agents/test_sciqa_qtype_filter.py` | New | Fix 1: qtype catalog filter |
+| `tests/server/test_count_and_aggregate_hardening.py` | New | Fix 2: count hardening + range bucketing |
+| `tests/framework/test_raw_sparql_distress.py` | New | Fix 3: distress intervention trigger |
+| `tests/agents/test_orchestrator_routing.py` | Rewritten | Fix 4: one-round-trip routing |
+| `tests/server/test_predicate_reference.py` | New | Fix 5: GetPredicateReference |
+| `tests/framework/test_concurrent_tool_calls.py` | New | Fix 6: concurrent execution |
+| `tests/framework/test_prefix_cache_history.py` | New | Fix 7: append-only refresh + hysteresis |
