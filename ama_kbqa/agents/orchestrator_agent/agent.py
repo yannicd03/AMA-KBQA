@@ -194,16 +194,6 @@ class Orchestrator:
             # Fallback with ASCII-safe output
             print(f"{color}    {label}: {str(data).encode('ascii', 'replace').decode('ascii')}{COLOR_END}")
 
-    def _mcp_tool_to_openai(self, mcp_tool: McpTool) -> Dict:
-        return {
-            "type": "function",
-            "function": {
-                "name": mcp_tool.name,
-                "description": mcp_tool.description,
-                "parameters": mcp_tool.inputSchema
-            }
-        }
-
     async def _init_mcp(self):
         if self.mcp:
             return
@@ -223,6 +213,12 @@ class Orchestrator:
                     pass
             self.mcp = None
 
+    # The deterministic probing tool on the orchestrator MCP server. Called
+    # directly (no LLM round-trip): the routing prompt used to force the LLM
+    # to call it with the question verbatim, so the first LLM call carried
+    # zero information.
+    PROBE_TOOL_NAME = "analyze_query_recommend_db"
+
     def _routing_system_prompt(self) -> str:
         agent_lines = "\n".join(
             f"- {name}: {cfg['description']}" for name, cfg in self._agent_config.items()
@@ -230,14 +226,14 @@ class Orchestrator:
         return (
             "You route user questions to one of these specialist agents:\n"
             f"{agent_lines}\n\n"
-            "First call the probing tool with the user's question VERBATIM to "
-            "gather entity-linking evidence from both knowledge graphs. Strong, "
-            "on-topic matches in one graph are a good signal, but judge the "
-            "question's domain yourself: generic terms can match spuriously in "
-            "either graph, so check the matched labels, not just the scores. "
-            "If the evidence is weak, missing, or degraded, decide from the "
-            "question's domain alone. Prefer kqapro_agent only when the "
-            "question is genuinely ambiguous between the two."
+            "Alongside the question you receive entity-linking evidence probed "
+            "from both knowledge graphs. Strong, on-topic matches in one graph "
+            "are a good signal, but judge the question's domain yourself: "
+            "generic terms can match spuriously in either graph, so check the "
+            "matched labels, not just the scores. If the evidence is weak, "
+            "missing, or degraded, decide from the question's domain alone. "
+            "Prefer kqapro_agent only when the question is genuinely ambiguous "
+            "between the two."
         )
 
     def _select_agent_tool(self) -> Dict:
@@ -270,80 +266,55 @@ class Orchestrator:
         }
 
     async def _route_autonomously(self, query: str) -> Optional[str]:
-        """Two-step LLM routing: probe both KGs, then decide on the evidence.
+        """One-round-trip routing: deterministic probe, one LLM decision call.
 
-        Step 1 forces the LLM to call the MCP probing tool, which returns
-        raw entity-linking evidence for BOTH knowledge graphs (no collapsed
-        verdict). Step 2 feeds that evidence back and forces a structured
-        `select_agent` call, so the decision weighs the evidence against the
-        agents' domain descriptions instead of a hardcoded threshold gate.
-        Any failure returns None and the caller falls back to KQAPro.
+        The probing tool is called directly with the user's question (the
+        previous first LLM call was forced to do exactly that, so it carried
+        no information and cost one full round-trip per question). The raw
+        entity-linking evidence for BOTH knowledge graphs is then handed to a
+        single LLM call with a forced structured `select_agent` decision, so
+        the LLM weighs the evidence against the agents' domain descriptions
+        instead of a hardcoded threshold gate. A failed probe degrades to a
+        domain-only decision; a failed decision returns None and the caller
+        falls back to KQAPro.
         """
         self.last_routing_reason = None
         if not self.mcp:
             return None
 
-        self._trace("Preparing routing: fetching tool definitions...")
-
+        # Step 1: deterministic probe (no LLM involved).
+        self._trace(f"Probing both KGs: {self.PROBE_TOOL_NAME}", color=COLOR_YELLOW)
         try:
-            mcp_tools = await self.mcp.list_tools()
-            probe_tools = [self._mcp_tool_to_openai(t) for t in mcp_tools]
+            tool_result = await self.mcp.call_tool(
+                self.PROBE_TOOL_NAME, {"question": query}
+            )
+            self._log_pretty("Evidence", tool_result, COLOR_MAGENTA)
         except Exception as e:
-            self._trace(f"{COLOR_RED}Error listing tools: {e}{COLOR_END}", COLOR_RED)
-            return None
+            self._trace(
+                f"{COLOR_YELLOW}Probe failed ({e}); deciding from domain alone.{COLOR_END}",
+                COLOR_YELLOW,
+            )
+            tool_result = json.dumps({
+                "semantics": {},
+                "kg_evidence": {},
+                "degraded": True,
+                "note": f"probe unavailable: {e}",
+            })
 
-        if not probe_tools:
-            self._trace(f"{COLOR_YELLOW}No tools available.{COLOR_END}", COLOR_YELLOW)
-            return None
-
+        # Step 2: single forced select_agent decision on the evidence.
         messages = [
             {"role": "system", "content": self._routing_system_prompt()},
-            {"role": "user", "content": f"Query: {query}"}
+            {
+                "role": "user",
+                "content": (
+                    f"Query: {query}\n\n"
+                    f"Entity-linking evidence from both knowledge graphs:\n"
+                    f"{tool_result}"
+                ),
+            },
         ]
 
         try:
-            # Step 1: gather evidence (forced probe call).
-            completion = self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=probe_tools, tool_choice="required"
-            )
-
-            message = completion.choices[0].message
-
-            if message.content:
-                self._trace(message.content, color=COLOR_CYAN)
-
-            if not message.tool_calls:
-                self._trace(f"{COLOR_YELLOW}LLM did not call the probing tool.{COLOR_END}", COLOR_YELLOW)
-                return None
-
-            tool_call = message.tool_calls[0]
-            func_name = tool_call.function.name
-            func_args_str = tool_call.function.arguments
-            func_args = json.loads(func_args_str)
-
-            self._trace(f"Calling tool: {func_name}", color=COLOR_YELLOW)
-            self._log_pretty("Arguments", func_args, COLOR_YELLOW)
-
-            tool_result = await self.mcp.call_tool(func_name, func_args)
-
-            self._log_pretty("Evidence", tool_result, COLOR_MAGENTA)
-
-            # Step 2: decide (forced structured select_agent call).
-            messages.append({
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [{
-                    "id": tool_call.id,
-                    "type": "function",
-                    "function": {"name": func_name, "arguments": func_args_str},
-                }],
-            })
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": tool_result,
-            })
-
             decision = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,

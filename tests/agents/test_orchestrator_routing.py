@@ -4,16 +4,16 @@ No network calls, no API keys, no MCP subprocess. The Orchestrator is
 constructed via __new__ so __init__ (which calls assert_provider_api_key_present
 and get_chat_client) is bypassed; all needed attributes are set by hand.
 
-Async pattern: asyncio.run() helpers, mirroring tests/server/test_orchestrator_server.py
-and tests/framework/test_base_agent_multiturn.py.
+Routing contract (one round-trip): the probing tool is called directly via
+MCP with the question verbatim (no LLM), then a SINGLE LLM call with the
+evidence in the user message commits to an agent through a forced
+`select_agent` tool call. A failed probe degrades to a domain-only decision;
+a failed decision returns None.
 """
 import asyncio
 import json
 from types import SimpleNamespace
-from typing import Optional
 from unittest.mock import MagicMock
-
-import pytest
 
 from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
 
@@ -26,7 +26,7 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _make_tool_call(id_="tc_001", name="analyze_query_recommend_db", arguments='{"question":"test"}'):
+def _make_tool_call(id_="tc_001", name="select_agent", arguments="{}"):
     """Build a SimpleNamespace that looks like an OpenAI ToolCall."""
     return SimpleNamespace(
         id=id_,
@@ -42,30 +42,20 @@ def _make_completion(tool_calls=None, content=None):
 
 
 class _FakeMcp:
-    """Minimal MCP stub: list_tools + call_tool, both async."""
+    """Minimal MCP stub: records call_tool invocations."""
 
-    def __init__(self, tools, tool_result_json):
-        self._tools = tools
+    def __init__(self, tool_result_json):
         self._tool_result = tool_result_json
-
-    async def list_tools(self):
-        return self._tools
+        self.calls = []
 
     async def call_tool(self, name, args):
+        self.calls.append((name, args))
         return self._tool_result
 
 
-def _fake_tool(name="analyze_query_recommend_db", description="Probe KGs"):
-    """A fake MCP tool with the attributes _mcp_tool_to_openai needs."""
-    return SimpleNamespace(
-        name=name,
-        description=description,
-        inputSchema={
-            "type": "object",
-            "properties": {"question": {"type": "string"}},
-            "required": ["question"],
-        },
-    )
+class _BrokenProbeMcp:
+    async def call_tool(self, name, args):
+        raise RuntimeError("qdrant down")
 
 
 _EVIDENCE_JSON = json.dumps({
@@ -102,27 +92,12 @@ def _make_orchestrator(mcp, client, agent_config=None):
     return o
 
 
-# ---------------------------------------------------------------------------
-# Two-call client stub factory
-# ---------------------------------------------------------------------------
-
-def _two_call_client(step1_tool_calls, step2_tool_calls, captured_kwargs=None):
-    """
-    Returns a stub whose .chat.completions.create() callable:
-    - first call  -> completion with step1_tool_calls
-    - second call -> completion with step2_tool_calls
-
-    If captured_kwargs is a list, each call's kwargs dict is appended to it.
-    """
-    call_count = [0]
-
+def _one_call_client(tool_calls, captured_kwargs=None):
+    """Stub whose .chat.completions.create() returns one canned completion."""
     def _create(**kwargs):
         if captured_kwargs is not None:
             captured_kwargs.append(kwargs)
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return _make_completion(tool_calls=step1_tool_calls)
-        return _make_completion(tool_calls=step2_tool_calls)
+        return _make_completion(tool_calls=tool_calls)
 
     client = MagicMock()
     client.chat.completions.create.side_effect = _create
@@ -136,14 +111,11 @@ def _two_call_client(step1_tool_calls, step2_tool_calls, captured_kwargs=None):
 class TestRouteAutonomouslyHappyPath:
 
     def test_routes_to_sciqa_agent_and_sets_reason(self):
-        step1_tc = [_make_tool_call()]
-        step2_tc = [_make_tool_call(
-            id_="tc_002",
-            name="select_agent",
+        decision_tc = [_make_tool_call(
             arguments='{"agent": "sciqa_agent", "reason": "scholarly"}',
         )]
-        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
-        client = _two_call_client(step1_tc, step2_tc)
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+        client = _one_call_client(decision_tc)
         o = _make_orchestrator(mcp, client)
 
         result = _run(o._route_autonomously("Who invented quantum computing?"))
@@ -151,37 +123,50 @@ class TestRouteAutonomouslyHappyPath:
         assert result == "sciqa_agent"
         assert o.last_routing_reason == "scholarly"
 
-    def test_second_call_receives_tool_result_and_forced_select_agent(self):
-        """Step-2 messages must include the tool result and use forced tool_choice."""
-        step1_tc = [_make_tool_call(id_="tc_abc")]
-        step2_tc = [_make_tool_call(
-            id_="tc_def",
-            name="select_agent",
+    def test_probe_is_called_directly_with_verbatim_question(self):
+        decision_tc = [_make_tool_call(
+            arguments='{"agent": "sciqa_agent", "reason": "scholarly"}',
+        )]
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+        client = _one_call_client(decision_tc)
+        o = _make_orchestrator(mcp, client)
+
+        _run(o._route_autonomously("Who invented quantum computing?"))
+
+        assert mcp.calls == [
+            ("analyze_query_recommend_db", {"question": "Who invented quantum computing?"}),
+        ]
+
+    def test_single_llm_call_with_evidence_and_forced_select_agent(self):
+        """Exactly ONE LLM call; evidence is in the user message; select_agent
+        is forced via tool_choice."""
+        decision_tc = [_make_tool_call(
             arguments='{"agent": "kqapro_agent", "reason": "world knowledge"}',
         )]
         captured = []
-        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
-        client = _two_call_client(step1_tc, step2_tc, captured_kwargs=captured)
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+        client = _one_call_client(decision_tc, captured_kwargs=captured)
         o = _make_orchestrator(mcp, client)
 
         result = _run(o._route_autonomously("Some question"))
 
         assert result == "kqapro_agent"
-        assert len(captured) == 2, "client should be called exactly twice"
+        assert len(captured) == 1, "client should be called exactly once"
 
-        # Second call must include the tool result message.
-        second_msgs = captured[1]["messages"]
-        tool_result_msgs = [m for m in second_msgs if m.get("role") == "tool"]
-        assert len(tool_result_msgs) == 1
-        assert tool_result_msgs[0]["content"] == _EVIDENCE_JSON
-        assert tool_result_msgs[0]["tool_call_id"] == "tc_abc"
+        kwargs = captured[0]
+        user_msgs = [m for m in kwargs["messages"] if m["role"] == "user"]
+        assert len(user_msgs) == 1
+        assert "Some question" in user_msgs[0]["content"]
+        assert _EVIDENCE_JSON in user_msgs[0]["content"]
 
-        # Second call must force select_agent via tool_choice.
-        tc = captured[1]["tool_choice"]
-        assert tc == {"type": "function", "function": {"name": "select_agent"}}
+        assert kwargs["tool_choice"] == {
+            "type": "function", "function": {"name": "select_agent"}
+        }
+        tool_names = [t["function"]["name"] for t in kwargs["tools"]]
+        assert tool_names == ["select_agent"]
 
 
-class TestRouteAutonomouslyFailurePaths:
+class TestRouteAutonomouslyDegradedAndFailurePaths:
 
     def test_returns_none_when_mcp_is_none(self):
         client = MagicMock()
@@ -192,45 +177,27 @@ class TestRouteAutonomouslyFailurePaths:
         assert result is None
         client.chat.completions.create.assert_not_called()
 
-    def test_returns_none_when_list_tools_raises(self):
-        class _BrokenMcp:
-            async def list_tools(self):
-                raise RuntimeError("transport error")
+    def test_probe_failure_degrades_to_domain_only_decision(self):
+        """A dead probe must NOT abort routing; the LLM decides from the
+        question's domain with degraded evidence."""
+        decision_tc = [_make_tool_call(
+            arguments='{"agent": "sciqa_agent", "reason": "research domain"}',
+        )]
+        captured = []
+        client = _one_call_client(decision_tc, captured_kwargs=captured)
+        o = _make_orchestrator(_BrokenProbeMcp(), client)
 
-            async def call_tool(self, name, args):
-                raise AssertionError("should not be reached")
+        result = _run(o._route_autonomously("Which papers evaluate BERT?"))
 
-        client = MagicMock()
-        o = _make_orchestrator(mcp=_BrokenMcp(), client=client)
+        assert result == "sciqa_agent"
+        user_content = captured[0]["messages"][1]["content"]
+        evidence = json.loads(user_content.split("knowledge graphs:\n", 1)[1])
+        assert evidence["degraded"] is True
+        assert "probe unavailable" in evidence["note"]
 
-        result = _run(o._route_autonomously("Anything"))
-
-        assert result is None
-
-    def test_returns_none_when_step1_has_no_tool_calls(self):
-        # LLM replies without calling any tool (no tool_calls).
-        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
-
-        call_count = [0]
-        def _create(**kwargs):
-            call_count[0] += 1
-            return _make_completion(tool_calls=None, content="I cannot decide.")
-
-        client = MagicMock()
-        client.chat.completions.create.side_effect = _create
-
-        o = _make_orchestrator(mcp, client)
-        result = _run(o._route_autonomously("Anything"))
-
-        assert result is None
-        # Only one LLM call should have been made (step 1).
-        assert call_count[0] == 1
-
-    def test_returns_none_when_step2_has_no_tool_calls(self):
-        step1_tc = [_make_tool_call()]
-        # Second LLM call returns no tool_calls.
-        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
-        client = _two_call_client(step1_tc, step2_tool_calls=None)
+    def test_returns_none_when_decision_has_no_tool_calls(self):
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+        client = _one_call_client(tool_calls=None)
 
         o = _make_orchestrator(mcp, client)
         result = _run(o._route_autonomously("Anything"))
@@ -238,14 +205,11 @@ class TestRouteAutonomouslyFailurePaths:
         assert result is None
 
     def test_returns_none_when_selected_agent_is_unknown(self):
-        step1_tc = [_make_tool_call()]
-        step2_tc = [_make_tool_call(
-            id_="tc_x",
-            name="select_agent",
+        decision_tc = [_make_tool_call(
             arguments='{"agent": "ghost_agent", "reason": "unknown"}',
         )]
-        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
-        client = _two_call_client(step1_tc, step2_tc)
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+        client = _one_call_client(decision_tc)
 
         o = _make_orchestrator(mcp, client)
         result = _run(o._route_autonomously("Anything"))
@@ -254,7 +218,7 @@ class TestRouteAutonomouslyFailurePaths:
         assert o.last_routing_reason is None
 
     def test_returns_none_when_client_raises(self):
-        mcp = _FakeMcp([_fake_tool()], _EVIDENCE_JSON)
+        mcp = _FakeMcp(_EVIDENCE_JSON)
 
         client = MagicMock()
         client.chat.completions.create.side_effect = Exception("API timeout")
