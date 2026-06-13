@@ -1,0 +1,77 @@
+This is BibTeX, Version 0.99d (TeX Live 2023/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+The style file: elsarticle-num-names.bst
+Database file #1: references.bib
+You're missing a field name---line 41 of file references.bib
+ : 
+ : %   author       = {{W3C}},
+(Error may have been on previous line)
+I'm skipping whatever remains of this entry
+You're missing a field name---line 49 of file references.bib
+ : 
+ : %   author       = {{W3C}},
+(Error may have been on previous line)
+I'm skipping whatever remains of this entry
+You're missing a field name---line 145 of file references.bib
+ : 
+ : %   author    = {K{\"a}fer, Tobias and Abdelrahman, Ahmed and Umbrich, J{\"u}rgen and O'Byrne, Patrick and Hogan, Aidan},
+(Error may have been on previous line)
+I'm skipping whatever remains of this entry
+You're missing a field name---line 157 of file references.bib
+ : 
+ : %   author    = {Suzgun, Mirac and Yuksekgonul, Mert and Bianchi, Federico and Jurafsky, Dan and Zou, James},
+(Error may have been on previous line)
+I'm skipping whatever remains of this entry
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Warning--empty pages in agrawal2023kg
+Warning--empty pages in berant2013semantic
+Warning--empty pages in lewis2020retrieval
+Warning--empty pages in xiong-etal-2024-interactive
+Warning--empty pages in soru2017sparql
+Warning--empty pages in meyer2024assessing
+Warning--empty pages in yao2023react
+Warning--empty pages in zheng2024synapse
+Warning--empty pages in cao2022kqapro
+You've used 14 entries,
+            2918 wiz_defined-function locations,
+            688 strings with 7091 characters,
+and the built_in function-call counts, 8067 in all, are:
+= -- 535
+> -- 346
+< -- 8
++ -- 133
+- -- 117
+* -- 864
+:= -- 1200
+add.period$ -- 16
+call.type$ -- 14
+change.case$ -- 102
+chr.to.int$ -- 14
+cite$ -- 23
+duplicate$ -- 669
+empty$ -- 633
+format.name$ -- 164
+if$ -- 1482
+int.to.chr$ -- 1
+int.to.str$ -- 1
+missing$ -- 119
+newline$ -- 81
+num.names$ -- 56
+pop$ -- 289
+preamble$ -- 1
+purify$ -- 102
+quote$ -- 0
+skip$ -- 185
+stack$ -- 0
+substring$ -- 170
+swap$ -- 373
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 126
+warning$ -- 9
+while$ -- 42
+width$ -- 0
+write$ -- 192
+(There were 4 error messages)

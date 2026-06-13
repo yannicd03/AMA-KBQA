@@ -1,0 +1,13 @@
+We present \textbf{AMA-KBQA}, a multi-agent framework for
+retrieval-augmented generation (RAG) over knowledge graphs that
+decouples reasoning by large language models (LLMs) from graph
+retrieval through abstract agents, configuration-driven adapters, and
+Model Context Protocol (MCP) tool servers. The system requires
+\emph{no model training}: onboarding a new knowledge graph reduces to
+writing SPARQL wrappers behind an abstract tool interface, and
+adopting a stronger LLM is a configuration change. A journal-based
+scratchpad keeps reasoning state token-efficient, and a
+Lessons-Learned loop distils high-quality traces into few-shot
+examples. Across KQAPro and SciQA, the same reasoning core generalises
+over a reified encyclopedic graph and a hierarchical scientific graph,
+reaching up to 84\% accuracy.

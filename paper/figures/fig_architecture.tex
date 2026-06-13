@@ -1,0 +1,178 @@
+%%
+%% Combined architecture figure: agent lifecycle (left) and multi-agent
+%% orchestrator swarm (right) side by side under one caption, so the
+%% colored swarm diagram fits the 5-page budget. The standalone sources
+%% remain in fig_agent_flow.tex / fig_agent_flow_swarm.tex.
+%%
+\begin{figure}[t]
+    \centering
+    \resizebox{0.54\linewidth}{!}{%
+    \begin{tikzpicture}[
+        >=Stealth,
+        %% Grid: y-rows at integer multiples of 1.6; x-columns at fixed centers.
+        box/.style={rectangle, rounded corners=4pt, draw=boxgray, thick, fill=white, minimum width=2.4cm, minimum height=1.0cm, align=center, font=\sffamily\normalsize\bfseries},
+        widebox/.style={box, minimum width=3.0cm},
+        decision/.style={diamond, draw=boxgray, thick, fill=white, minimum width=1.8cm, minimum height=1.4cm, align=center, font=\sffamily\normalsize\bfseries, inner sep=1pt},
+        arrow/.style={->, >=Stealth, line width=1.2pt, color=arrowcol, rounded corners=5pt},
+        line/.style={color=arrowcol, line width=1.2pt, rounded corners=5pt},
+        dasharrow/.style={->, >=Stealth, line width=1.2pt, dashed, color=arrowcol, rounded corners=5pt},
+        phaselabel/.style={font=\sffamily\Large\bfseries, text=boxgray}
+    ]
+    %% --- Starting node (row y=3.2) ---
+    \node[box] (user) at (-4.0, 3.2) {Agent\\Invocation};
+
+    %% --- Pre-Agent Hook (top-aligned: rows 3.2, 1.6, 0) ---
+    \node[box] (classifier) at (0,  3.2) {Question Type\\Classification};
+    \node[box] (extractor)  at (0,  1.6) {Entity\\Extraction};
+    \node[box] (strategy)   at (0,  0)   {Strategy\\Injection};
+
+    %% --- Main-Agent Loop (rows 3.2, 1.6, 0, -1.6) ---
+    \node[box]    (llm)      at (5.0,  3.2) {LLM\\Reasoning};
+    \node[box]    (toolcall) at (5.0,  1.6) {Tool\\Call};
+    \node[box]    (result)   at (5.0,  0)   {Scratchpad};
+    \node[decision] (done)   at (5.0, -1.6) {Done?};
+
+    %% --- Post-Agent Hook (top-aligned: rows 3.2, 1.6, 0) ---
+    \node[box] (synthesis) at (10.5,  3.2) {Answer\\Synthesis};
+    \node[box] (judge)     at (10.5,  1.6) {Trace\\Evaluation};
+    \node[box] (lessons)   at (10.5,  0)   {Lessons\\Learned};
+
+    %% --- Pre-Agent: sequential top-to-bottom ---
+    \draw[arrow] (user.east) -- (classifier.west);
+    \draw[arrow] (classifier.south) -- (extractor.north);
+    \draw[arrow] (extractor.south)  -- (strategy.north);
+
+    %% --- Shared entry into LLM.west: Done?-no + Strategy share the vertical at x=2.25 ---
+    \draw[arrow] (done.west) -- (2.25, -1.6)
+        node[midway, above, font=\sffamily\small] {no}
+        -- (2.25, 3.2) -- (llm.west);
+    \draw[line] (strategy.east) -- (2.25, 0);
+    \node[circle, fill=arrowcol, inner sep=1.2pt] at (2.25, 0) {};
+
+    %% --- Main loop internal: top-to-bottom ---
+    \draw[arrow] (llm.south)      -- (toolcall.north);
+    \draw[arrow] (toolcall.south) -- (result.north);
+    \draw[arrow] (result.south)   -- (done.north);
+
+    %% --- Done? "yes" exits east to Post-Agent Hook ---
+    \draw[arrow] (done.east) -- ++(0.8, 0)
+        node[midway, above, font=\sffamily\small] {yes}
+        |- (synthesis.west);
+
+    %% --- Post-Agent flow ---
+    \draw[arrow] (synthesis.south) -- (judge.north);
+    \draw[arrow] (judge.south)     -- (lessons.north);
+
+    %% --- Feedback: Lessons Learned -> Strategy Injection (dashed, inside bgs, below Done?) ---
+    \draw[dasharrow] (lessons.south) -- ++(0, -2.4) -| (strategy.south);
+
+    %% --- Phase backgrounds + labels (compact: 7.4cm tall, centered to keep top headroom) ---
+    \begin{scope}[on background layer]
+        \node[rectangle, rounded corners=10pt, fill=phasebg1,
+              minimum width=3.9cm, minimum height=7.4cm] at (0, 0.4) (bg1) {};
+        \node[phaselabel, anchor=south] at (bg1.north) {Pre-Agent Hook};
+        \node[rectangle, rounded corners=10pt, fill=phasebg2,
+              minimum width=5.0cm, minimum height=7.4cm] at (5.0, 0.4) (bg2) {};
+        \node[phaselabel, anchor=south] at (bg2.north) {Main-Agent Loop};
+        \node[rectangle, rounded corners=10pt, fill=phasebg3,
+              minimum width=4.0cm, minimum height=7.4cm] at (10.5, 0.4) (bg3) {};
+        \node[phaselabel, anchor=south] at (bg3.north) {Post-Agent Hook};
+    \end{scope}
+    \end{tikzpicture}
+    }\hfill
+    \resizebox{0.44\linewidth}{!}{%
+    \begin{tikzpicture}[
+        >=Stealth,
+        box/.style={rectangle, rounded corners=4pt, draw=boxgray, thick, fill=white, minimum width=2.4cm, minimum height=1.0cm, align=center, font=\sffamily\normalsize\bfseries},
+        miniPre/.style={rectangle, rounded corners=3pt, draw=boxgray, thick, fill=phasebg1, minimum width=1.1cm, minimum height=0.7cm, align=center, font=\sffamily\small\bfseries},
+        miniMain/.style={rectangle, rounded corners=3pt, draw=boxgray, thick, fill=phasebg2, minimum width=1.1cm, minimum height=0.7cm, align=center, font=\sffamily\small\bfseries},
+        miniPost/.style={rectangle, rounded corners=3pt, draw=boxgray, thick, fill=phasebg3, minimum width=1.1cm, minimum height=0.7cm, align=center, font=\sffamily\small\bfseries},
+        miniarrow/.style={->, >=Stealth, line width=1.0pt, color=arrowcol},
+        arrow/.style={->, >=Stealth, line width=1.2pt, color=arrowcol, rounded corners=5pt},
+        line/.style={color=arrowcol, line width=1.2pt, rounded corners=5pt},
+        dasharrow/.style={->, >=Stealth, line width=1.2pt, dashed, color=arrowcol, rounded corners=5pt},
+        phaselabel/.style={font=\sffamily\Large\bfseries, text=boxgray},
+        subagentlabel/.style={font=\sffamily\small\bfseries, text=boxgray}
+    ]
+    \definecolor{phasebgorch}{RGB}{230, 245, 230}
+
+    %% --- User Query ---
+    \node[box] (user) at (-4.0, 3.2) {User\\Query};
+
+    %% --- Orchestrator column (rows 3.2, 1.6, 0; same grid step as Fig. 1) ---
+    \node[box] (datasource) at (0, 3.2) {Datasource\\Probing};
+    \node[box] (async)      at (0, 1.6) {Async\\Dispatch};
+    \node[box] (combine)    at (0, 0)   {Answer\\Combination};
+
+    %% --- Sub-Agent C (Inactive, dotted): top, label above container.
+    %%     Container expanded with ~0.2 padding around the minis. ---
+    \draw[draw=boxgray, thick, dashed, rounded corners=5pt, draw opacity=0.7]
+        (2.85, 3.05) rectangle (7.15, 4.15);
+    \node[subagentlabel, text opacity=0.7] at (5.0, 4.4) {Sub-Agent C (Inactive)};
+    \node[miniPre,  fill opacity=0.55] (cpre)  at (3.6, 3.6) {Pre};
+    \node[miniMain, fill opacity=0.55] (cmain) at (5.0, 3.6) {Main};
+    \node[miniPost, fill opacity=0.55] (cpost) at (6.4, 3.6) {Post};
+
+    %% --- Sub-Agent A (active), aligned with Async at y=1.6 ---
+    \draw[draw=boxgray, thick, rounded corners=5pt]
+        (2.85, 1.05) rectangle (7.15, 2.15);
+    \node[subagentlabel] at (5.0, 2.4) {Sub-Agent A};
+    \node[miniPre]  (apre)  at (3.6, 1.6) {Pre};
+    \node[miniMain] (amain) at (5.0, 1.6) {Main};
+    \node[miniPost] (apost) at (6.4, 1.6) {Post};
+
+    %% --- Sub-Agent B (active), aligned with Answer Combination at y=0 ---
+    \draw[draw=boxgray, thick, rounded corners=5pt]
+        (2.85, -0.55) rectangle (7.15, 0.55);
+    \node[subagentlabel] at (5.0, 0.8) {Sub-Agent B};
+    \node[miniPre]  (bpre)  at (3.6, 0) {Pre};
+    \node[miniMain] (bmain) at (5.0, 0) {Main};
+    \node[miniPost] (bpost) at (6.4, 0) {Post};
+
+    %% --- Intra-agent arrows ---
+    \draw[miniarrow] (apre.east)  -- (amain.west);
+    \draw[miniarrow] (amain.east) -- (apost.west);
+    \draw[miniarrow] (bpre.east)  -- (bmain.west);
+    \draw[miniarrow] (bmain.east) -- (bpost.west);
+    \draw[miniarrow, dashed, draw opacity=0.55] (cpre.east)  -- (cmain.west);
+    \draw[miniarrow, dashed, draw opacity=0.55] (cmain.east) -- (cpost.west);
+
+    %% --- Orchestrator phase background + label ---
+    \begin{scope}[on background layer]
+        \node[rectangle, rounded corners=10pt, fill=phasebgorch,
+              minimum width=3.0cm, minimum height=5.0cm] at (0, 1.6) (orchbg) {};
+        \node[phaselabel, anchor=south] at (orchbg.north) {Orchestrator};
+    \end{scope}
+
+    %% --- User -> Orchestrator ---
+    \draw[arrow] (user.east) -- (datasource.west);
+
+    %% --- Orchestrator internal flow ---
+    \draw[arrow] (datasource.south) -- (async.north);
+
+    %% --- Async dispatch: trunk + 3 branches (A/B solid, C dashed) ---
+    \draw[line] (async.east) -- (2.0, 1.6);
+    \node[circle, fill=arrowcol, inner sep=1.2pt] at (2.0, 1.6) {};
+    \draw[arrow]     (2.0, 1.6) -- (2.85, 1.6);                       %% to A
+    \draw[arrow]     (2.0, 1.6) -- (2.0, 0)    -- (2.85, 0);          %% to B (now at y=0)
+    \draw[dasharrow] (2.0, 1.6) -- (2.0, 3.6)  -- (2.85, 3.6);        %% to C
+
+    %% --- Returns: A and B exit Post.east, run parallel right + down,
+    %%     then enter Combine.south at different x-offsets from below. ---
+    \draw[arrow] (apost.east) -- (8.0, 1.6) -- (8.0, -1.6) -- (-0.4, -1.6) -- (-0.4, -0.5);
+    \draw[arrow] (bpost.east) -- (7.6, 0.0) -- (7.6, -1.2) -- ( 0.4, -1.2) -- ( 0.4, -0.5);
+
+    %% --- Loop back: Combine -> User ---
+    \draw[arrow] (combine.west) -| (user.south);
+
+    \end{tikzpicture}
+    }
+    \caption{Left: agent lifecycle, with deterministic pre-processing,
+    an iterative tool-calling main loop over a scratchpad, and post-hoc
+    synthesis, trace evaluation, and lesson distillation. Right: the
+    multi-agent orchestrator dispatches the question to the sub-agents
+    matched by the routing probe (each an instance of the left
+    lifecycle) and merges their grounded answers; unmatched sub-agents
+    stay inactive.}
+    \label{fig:arch}
+\end{figure}

@@ -1,0 +1,79 @@
+\begin{figure}[t]
+    \centering
+    \resizebox{0.62\linewidth}{!}{%
+    \begin{tikzpicture}[
+        >=Stealth,
+        %% Grid: y-rows at integer multiples of 1.6; x-columns at fixed centers.
+        box/.style={rectangle, rounded corners=4pt, draw=boxgray, thick, fill=white, minimum width=2.4cm, minimum height=1.0cm, align=center, font=\sffamily\normalsize\bfseries},
+        widebox/.style={box, minimum width=3.0cm},
+        decision/.style={diamond, draw=boxgray, thick, fill=white, minimum width=1.8cm, minimum height=1.4cm, align=center, font=\sffamily\normalsize\bfseries, inner sep=1pt},
+        arrow/.style={->, >=Stealth, line width=1.2pt, color=arrowcol, rounded corners=5pt},
+        line/.style={color=arrowcol, line width=1.2pt, rounded corners=5pt},
+        dasharrow/.style={->, >=Stealth, line width=1.2pt, dashed, color=arrowcol, rounded corners=5pt},
+        phaselabel/.style={font=\sffamily\Large\bfseries, text=boxgray}
+    ]
+    %% --- Starting node (row y=3.2) ---
+    \node[box] (user) at (-4.0, 3.2) {Agent\\Invocation};
+
+    %% --- Pre-Agent Hook (top-aligned: rows 3.2, 1.6, 0) ---
+    \node[box] (classifier) at (0,  3.2) {Question Type\\Classification};
+    \node[box] (extractor)  at (0,  1.6) {Entity\\Extraction};
+    \node[box] (strategy)   at (0,  0)   {Strategy\\Injection};
+
+    %% --- Main-Agent Loop (rows 3.2, 1.6, 0, -1.6) ---
+    \node[box]    (llm)      at (5.0,  3.2) {LLM\\Reasoning};
+    \node[box]    (toolcall) at (5.0,  1.6) {Tool\\Call};
+    \node[box]    (result)   at (5.0,  0)   {Scratchpad};
+    \node[decision] (done)   at (5.0, -1.6) {Done?};
+
+    %% --- Post-Agent Hook (top-aligned: rows 3.2, 1.6, 0) ---
+    \node[box] (synthesis) at (10.5,  3.2) {Answer\\Synthesis};
+    \node[box] (judge)     at (10.5,  1.6) {Trace\\Evaluation};
+    \node[box] (lessons)   at (10.5,  0)   {Lessons\\Learned};
+
+    %% --- Pre-Agent: sequential top-to-bottom ---
+    \draw[arrow] (user.east) -- (classifier.west);
+    \draw[arrow] (classifier.south) -- (extractor.north);
+    \draw[arrow] (extractor.south)  -- (strategy.north);
+
+    %% --- Shared entry into LLM.west: Done?-no + Strategy share the vertical at x=2.25 ---
+    \draw[arrow] (done.west) -- (2.25, -1.6)
+        node[midway, above, font=\sffamily\small] {no}
+        -- (2.25, 3.2) -- (llm.west);
+    \draw[line] (strategy.east) -- (2.25, 0);
+    \node[circle, fill=arrowcol, inner sep=1.2pt] at (2.25, 0) {};
+
+    %% --- Main loop internal: top-to-bottom ---
+    \draw[arrow] (llm.south)      -- (toolcall.north);
+    \draw[arrow] (toolcall.south) -- (result.north);
+    \draw[arrow] (result.south)   -- (done.north);
+
+    %% --- Done? "yes" exits east to Post-Agent Hook ---
+    \draw[arrow] (done.east) -- ++(0.8, 0)
+        node[midway, above, font=\sffamily\small] {yes}
+        |- (synthesis.west);
+
+    %% --- Post-Agent flow ---
+    \draw[arrow] (synthesis.south) -- (judge.north);
+    \draw[arrow] (judge.south)     -- (lessons.north);
+
+    %% --- Feedback: Lessons Learned -> Strategy Injection (dashed, inside bgs, below Done?) ---
+    \draw[dasharrow] (lessons.south) -- ++(0, -2.4) -| (strategy.south);
+
+    %% --- Phase backgrounds + labels (compact: 7.4cm tall, centered to keep top headroom) ---
+    \begin{scope}[on background layer]
+        \node[rectangle, rounded corners=10pt, fill=phasebg1,
+              minimum width=3.9cm, minimum height=7.4cm] at (0, 0.4) (bg1) {};
+        \node[phaselabel, anchor=south] at (bg1.north) {Pre-Agent Hook};
+        \node[rectangle, rounded corners=10pt, fill=phasebg2,
+              minimum width=5.0cm, minimum height=7.4cm] at (5.0, 0.4) (bg2) {};
+        \node[phaselabel, anchor=south] at (bg2.north) {Main-Agent Loop};
+        \node[rectangle, rounded corners=10pt, fill=phasebg3,
+              minimum width=4.0cm, minimum height=7.4cm] at (10.5, 0.4) (bg3) {};
+        \node[phaselabel, anchor=south] at (bg3.north) {Post-Agent Hook};
+    \end{scope}
+    \end{tikzpicture}
+    }
+    \caption{Agent lifecycle: deterministic pre-processing, an iterative tool-calling main loop over a scratchpad, and post-hoc synthesis, trace evaluation, and lesson distillation.}
+    \label{fig:agent_flow}
+\end{figure}

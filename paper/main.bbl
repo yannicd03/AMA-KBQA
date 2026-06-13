@@ -1,0 +1,111 @@
+\begin{thebibliography}{14}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+\providecommand{\url}[1]{\texttt{#1}}
+\providecommand{\href}[2]{#2}
+\providecommand{\path}[1]{#1}
+\providecommand{\DOIprefix}{doi:}
+\providecommand{\ArXivprefix}{arXiv:}
+\providecommand{\URLprefix}{URL: }
+\providecommand{\Pubmedprefix}{pmid:}
+\providecommand{\doi}[1]{\href{http://dx.doi.org/#1}{\path{#1}}}
+\providecommand{\Pubmed}[1]{\href{pmid:#1}{\path{#1}}}
+\providecommand{\bibinfo}[2]{#2}
+\ifx\xfnm\relax \def\xfnm[#1]{\unskip,\space#1}\fi
+%Type = Inproceedings
+\bibitem[{Agrawal et~al.(2024)Agrawal, Kumarage, Alghamdi, and
+  Liu}]{agrawal2023kg}
+\bibinfo{author}{G.~Agrawal}, \bibinfo{author}{T.~Kumarage},
+  \bibinfo{author}{Z.~Alghamdi}, \bibinfo{author}{H.~Liu},
+\newblock \bibinfo{title}{Can knowledge graphs reduce hallucinations in
+  {LLMs}?: A survey},
+\newblock in: \bibinfo{booktitle}{Proc. of NAACL}, \bibinfo{year}{2024}.
+%Type = Inproceedings
+\bibitem[{Berant et~al.(2013)Berant, Chou, Frostig, and
+  Liang}]{berant2013semantic}
+\bibinfo{author}{J.~Berant}, \bibinfo{author}{A.~Chou},
+  \bibinfo{author}{R.~Frostig}, \bibinfo{author}{P.~Liang},
+\newblock \bibinfo{title}{Semantic parsing on {F}reebase from question-answer
+  pairs},
+\newblock in: \bibinfo{booktitle}{Proc. of EMNLP}, \bibinfo{year}{2013}.
+%Type = Inproceedings
+\bibitem[{Lewis et~al.(2020)}]{lewis2020retrieval}
+\bibinfo{author}{P.~Lewis}, et~al.,
+\newblock \bibinfo{title}{Retrieval-augmented generation for
+  knowledge-intensive {NLP} tasks},
+\newblock in: \bibinfo{booktitle}{Proc. of NeurIPS}, \bibinfo{year}{2020}.
+%Type = Article
+\bibitem[{Rony et~al.(2022)}]{rony2022sgpt}
+\bibinfo{author}{M.~R. A.~H. Rony}, et~al.,
+\newblock \bibinfo{title}{{SGPT}: A generative approach for {SPARQL} query
+  generation from natural language questions},
+\newblock \bibinfo{journal}{IEEE Access} \bibinfo{volume}{10}
+  (\bibinfo{year}{2022}).
+%Type = Inproceedings
+\bibitem[{Xiong et~al.(2024)Xiong, Bao, and Zhao}]{xiong-etal-2024-interactive}
+\bibinfo{author}{G.~Xiong}, \bibinfo{author}{J.~Bao},
+  \bibinfo{author}{W.~Zhao},
+\newblock \bibinfo{title}{{Interactive-KBQA}: Multi-turn interactions for
+  knowledge base question answering with large language models},
+\newblock in: \bibinfo{booktitle}{Proc. of ACL}, \bibinfo{year}{2024}.
+%Type = Article
+\bibitem[{Noy et~al.(2019)Noy, Gao, Jain, Narayanan, Patterson, and
+  Taylor}]{noy2019industry}
+\bibinfo{author}{N.~Noy}, \bibinfo{author}{Y.~Gao}, \bibinfo{author}{A.~Jain},
+  \bibinfo{author}{A.~Narayanan}, \bibinfo{author}{A.~Patterson},
+  \bibinfo{author}{J.~Taylor},
+\newblock \bibinfo{title}{Industry-scale knowledge graphs: Lessons and
+  challenges},
+\newblock \bibinfo{journal}{Commun. ACM} \bibinfo{volume}{62}
+  (\bibinfo{year}{2019}).
+%Type = Inproceedings
+\bibitem[{Soru et~al.(2017)}]{soru2017sparql}
+\bibinfo{author}{T.~Soru}, et~al.,
+\newblock \bibinfo{title}{{SPARQL} as a foreign language},
+\newblock in: \bibinfo{booktitle}{Proc. of SEMANTiCS Posters \& Demos},
+  \bibinfo{year}{2017}.
+%Type = Inproceedings
+\bibitem[{Meyer et~al.(2024)Meyer, Frey, and Arndt}]{meyer2024assessing}
+\bibinfo{author}{L.-P. Meyer}, \bibinfo{author}{J.~Frey},
+  \bibinfo{author}{N.~Arndt},
+\newblock \bibinfo{title}{Assessing {SPARQL} capabilities of large language
+  models},
+\newblock in: \bibinfo{booktitle}{Proc. of NLP4KGC at SEMANTiCS},
+  \bibinfo{year}{2024}.
+%Type = Inproceedings
+\bibitem[{Yao et~al.(2023)}]{yao2023react}
+\bibinfo{author}{S.~Yao}, et~al.,
+\newblock \bibinfo{title}{{ReAct}: Synergizing reasoning and acting in language
+  models},
+\newblock in: \bibinfo{booktitle}{Proc. of ICLR}, \bibinfo{year}{2023}.
+%Type = Misc
+\bibitem[{{Anthropic}(2024)}]{anthropic2024mcp}
+\bibinfo{author}{{Anthropic}}, \bibinfo{title}{{Model Context Protocol}
+  specification}, \bibinfo{year}{2024}. \URLprefix
+  \url{https://modelcontextprotocol.io}.
+%Type = Inproceedings
+\bibitem[{Zheng et~al.(2024)Zheng, Wang, Wang, and An}]{zheng2024synapse}
+\bibinfo{author}{L.~Zheng}, \bibinfo{author}{R.~Wang},
+  \bibinfo{author}{X.~Wang}, \bibinfo{author}{B.~An},
+\newblock \bibinfo{title}{{Synapse}: Trajectory-as-exemplar prompting with
+  memory for computer control},
+\newblock in: \bibinfo{booktitle}{Proc. of ICLR}, \bibinfo{year}{2024}.
+%Type = Misc
+\bibitem[{Nye et~al.(2021)}]{nye2021scratchpad}
+\bibinfo{author}{M.~Nye}, et~al., \bibinfo{title}{Show your work: Scratchpads
+  for intermediate computation with language models}, \bibinfo{year}{2021}.
+  \URLprefix \url{https://arxiv.org/abs/2112.00114}.
+%Type = Inproceedings
+\bibitem[{Cao et~al.(2022)}]{cao2022kqapro}
+\bibinfo{author}{S.~Cao}, et~al.,
+\newblock \bibinfo{title}{{KQA Pro}: A dataset with explicit compositional
+  programs for complex question answering over knowledge base},
+\newblock in: \bibinfo{booktitle}{Proc. of ACL}, \bibinfo{year}{2022}.
+%Type = Article
+\bibitem[{Auer et~al.(2023)}]{sciqa2023}
+\bibinfo{author}{S.~Auer}, et~al.,
+\newblock \bibinfo{title}{The {SciQA} scientific question answering benchmark
+  for scholarly knowledge},
+\newblock \bibinfo{journal}{Scientific Reports} \bibinfo{volume}{13}
+  (\bibinfo{year}{2023}).
+
+\end{thebibliography}
