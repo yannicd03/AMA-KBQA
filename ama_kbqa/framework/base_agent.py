@@ -25,6 +25,7 @@ from ama_kbqa.config import (
     get_chat_model_name,
     get_chat_temperature,
     get_chat_max_tokens,
+    get_chat_seed,
     get_provider_preferences,
     get_auto_inject_journal,
     get_zero_tool_call_retry,
@@ -606,11 +607,14 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             payload={"prompt": prompt, "question": question},
         ) as _cls_span:
             try:
+                _classify_seed = get_chat_seed()
+                _seed_kwargs = {"seed": _classify_seed} if _classify_seed is not None else {}
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "system", "content": prompt}],
                     temperature=get_chat_temperature(),
                     response_format={"type": "json_object"},
+                    **_seed_kwargs,
                     # Bumped from 300 to 1500: minimax-m2.7 emits a
                     # `<think>...</think>` reasoning prefix before the JSON
                     # object even with response_format=json_object. With
@@ -2188,6 +2192,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             "temperature": get_chat_temperature(),
             "max_tokens": get_chat_max_tokens(),
         }
+        _seed = get_chat_seed()
+        if _seed is not None:
+            call_params["seed"] = _seed
         # Only include tools= when we actually have some — for text-mode models
         # we pass tools=None on purpose, and some servers reject a literal null.
         if tools:
@@ -2273,6 +2280,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             "temperature": get_chat_temperature(),
             "max_tokens": get_chat_max_tokens(),
         }
+        _seed = get_chat_seed()
+        if _seed is not None:
+            call_params["seed"] = _seed
 
         provider_prefs = get_provider_preferences()
         if provider_prefs:

@@ -141,6 +141,33 @@ def get_chat_max_tokens() -> int:
     return config["llm"].get("chat_max_tokens", 16000)
 
 
+# Env var carrying the run seed across the process boundary into the agent and
+# the MCP server subprocesses (which inherit os.environ). The benchmark sets it
+# from --seed; LLM call sites pass it through as the OpenAI `seed` parameter so
+# a run is reproducible (same seed) and independently re-rollable (new seed).
+LLM_SEED_ENV = "AMA_LLM_SEED"
+
+
+def get_chat_seed() -> Optional[int]:
+    """Return the LLM sampling seed, or None when unset.
+
+    Read from the ``AMA_LLM_SEED`` environment variable (set by the benchmark
+    from ``--seed``) so it crosses into MCP subprocesses, falling back to the
+    optional ``[llm] chat_seed`` config key. Returns None when neither is set,
+    in which case call sites omit the seed and the provider samples freely.
+    """
+    raw = os.environ.get(LLM_SEED_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("llm", {}).get("chat_seed")
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def get_chat_model_provider() -> Optional[str]:
     """Get the configured chat model provider preference.
 

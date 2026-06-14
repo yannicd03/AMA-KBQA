@@ -609,7 +609,16 @@ def sample_questions(
     random.seed(seed)
     n_sample = min(n, len(data))
     sampled = random.sample(data, n_sample)
-    print(f"[OK] Sampled {n_sample} questions with seed={seed}")
+    if n_sample >= len(data):
+        print(
+            f"[WARN] Requested {n} of {len(data)} available questions: the whole "
+            f"dataset is used, so seed={seed} only changes ORDER, not which "
+            f"questions are drawn. Question membership is identical across seeds; "
+            f"run-to-run differences come from agent LLM sampling (now seeded "
+            f"via AMA_LLM_SEED). Use --n-questions < {len(data)} to vary the set."
+        )
+    else:
+        print(f"[OK] Sampled {n_sample} of {len(data)} questions with seed={seed}")
     return sampled
 
 
@@ -858,6 +867,7 @@ async def process_single_question(
     agent_name: str,
     timeout: int,
     postprocessor: Optional[PostProcessor] = None,
+    question_index: Optional[int] = None,
 ) -> QuestionResult:
     """
     Process a single question through the agent.
@@ -865,10 +875,14 @@ async def process_single_question(
     When postprocessor is provided, uses it for evaluation (single-model mode
     and multi-model with --postprocessing). Otherwise falls back to the
     built-in LLM judge (legacy multi-model mode).
+
+    question_index is the 0-based position in the run; it becomes the
+    question_id when the question dict has no explicit "id" (sampled CSV rows
+    do not), so per-question logs are distinguishable instead of all "[0]".
     """
     q_text = question.get("question", "")
     gold_answer = question.get("answer", "")
-    q_id = question.get("id", 0)
+    q_id = question.get("id", question_index if question_index is not None else 0)
     q_type = get_question_type(question, agent_name)
     choices = question.get("choices", [])
     program = question.get("program", None)
@@ -1381,25 +1395,42 @@ async def run_benchmark_for_model_agent(
         return any(p in err for p in INFRA_ERROR_PATTERNS)
 
     try:
+        total_q = len(questions)
         pbar = tqdm(questions, desc=f"{model.name}/{agent_name}", unit="q")
 
-        for question in pbar:
+        for i, question in enumerate(pbar):
             result = await process_single_question(
                 agent=agent,
                 question=question,
                 agent_name=agent_name,
                 timeout=timeout,
                 postprocessor=postprocessor,
+                question_index=i,
             )
             results.append(result)
 
+            answered = len(results)
             correct = sum(1 for r in results if r.accuracy)
-            pbar.set_postfix({"acc": f"{correct}/{len(results)}", "time": f"{result.elapsed_time:.1f}s"})
+            running_acc = 100.0 * correct / answered if answered else 0.0
+            # Distinct labels: 'done' is completion progress, 'acc' is accuracy.
+            # The previous postfix showed "acc: 77/100", which reads like a
+            # progress counter and was routinely misread as 77-of-100-answered.
+            pbar.set_postfix({
+                "done": f"{answered}/{total_q}",
+                "acc": f"{running_acc:.0f}%",
+                "time": f"{result.elapsed_time:.1f}s",
+            })
 
             status = "CORRECT" if result.accuracy else "INCORRECT"
             if result.error:
                 status = f"ERROR: {result.error[:50]}"
-            log_print(f"  [{result.question_id}] {status} | {result.elapsed_time:.1f}s")
+            # Explicit answered-count makes progress legible in nohup logs where
+            # the tqdm bar does not animate.
+            log_print(
+                f"  [answered {answered}/{total_q}] q#{result.question_id} "
+                f"{status} | running acc {correct}/{answered} ({running_acc:.0f}%) "
+                f"| {result.elapsed_time:.1f}s"
+            )
             log_print(f"      Gold: {result.gold_answer}")
             log_print(f"      Pred: {result.predicted_answer}")
 
@@ -1441,6 +1472,7 @@ async def run_benchmark_for_model_agent(
         await agent.close()
 
         if results:
+            log_print(f"[POST] {model.name}/{agent_name}: finalizing results and exporting traces...")
             summary = save_results_to_disk(
                 results=results,
                 model=model,
@@ -1455,9 +1487,16 @@ async def run_benchmark_for_model_agent(
     if results and summary:
         stats = summary.get("statistics", {})
         total = stats.get("total_questions", len(results))
+        answered = len(results)
         correct = stats.get("correct", 0)
         accuracy_pct = stats.get("accuracy", 0) * 100
-        print(f"\nCompleted {model.name}/{agent_name}: {correct}/{total} ({accuracy_pct:.1f}%)")
+        # Two clearly-separated facts: how many were answered (completion) and
+        # how many were correct (accuracy). The old single "{correct}/{total}
+        # ({pct}%)" was read as a progress counter.
+        print(
+            f"\n[DONE] {model.name}/{agent_name}: answered {answered}/{total} questions "
+            f"| accuracy {correct}/{total} correct ({accuracy_pct:.1f}%)"
+        )
 
     return summary
 
@@ -1798,6 +1837,17 @@ Examples:
                         help="Generate LLM-based fewshot examples from results (default: from config.toml)")
 
     args = parser.parse_args()
+
+    # Propagate the run seed to the agent and the MCP server subprocesses via the
+    # environment so LLM sampling is reproducible (same seed) and independently
+    # re-rollable (new seed). The agent/orchestrator read AMA_LLM_SEED at each
+    # chat-completion call; subprocesses inherit os.environ. Without this, --seed
+    # only reshuffled question selection and never touched the (dominant) source
+    # of run-to-run variation, the agent's own sampling.
+    if args.seed is not None:
+        os.environ["AMA_LLM_SEED"] = str(args.seed)
+        print(f"[OK] Seeding agent LLM sampling with AMA_LLM_SEED={args.seed}")
+
     question_indices = None
     if args.question_indices:
         try:

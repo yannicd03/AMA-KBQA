@@ -13,6 +13,7 @@ from loguru import logger
 from ama_kbqa.config import (
     get_chat_client,
     get_chat_model_name,
+    get_chat_seed,
     get_embedding_model_name,
     get_provider_preferences,
     get_qdrant_host,
@@ -163,6 +164,10 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
             ],
             "response_format": {"type": "json_object"}
         }
+
+        _seed = get_chat_seed()
+        if _seed is not None:
+            call_params["seed"] = _seed
 
         # Add OpenRouter provider preferences if configured
         provider_prefs = get_provider_preferences()
