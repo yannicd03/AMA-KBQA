@@ -8,6 +8,7 @@ the SciQA dataset to answer scientific research questions.
 from __future__ import annotations
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -194,6 +195,18 @@ class SciQAAgent(BaseKBQAAgent):
     def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
         """Return set of tool names allowed for this question type, or None for all."""
         return allowed_tools_for_qtype(qtype)
+
+    def _get_denied_tool_names(self) -> set:
+        """Gate raw SPARQL off when AMA_SCIQA_DISABLE_RAW_SPARQL is set (truthy).
+
+        Off by default. Used to A/B-test retiring RunORKGSPARQL and as the
+        last-resort gating lever: the tool runs ~65% unproductive, so a run can
+        force the agent onto the dedicated comparison/aggregation tools.
+        """
+        flag = os.environ.get("AMA_SCIQA_DISABLE_RAW_SPARQL", "").strip().lower()
+        if flag in {"1", "true", "yes", "on"}:
+            return {"RunORKGSPARQL"}
+        return set()
 
     def _classify_question(self, question: str) -> Dict[str, str]:
         """

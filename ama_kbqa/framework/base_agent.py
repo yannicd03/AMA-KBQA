@@ -414,6 +414,15 @@ Change strategy or acknowledge the data doesn't exist."""
         """
         return None
 
+    def _get_denied_tool_names(self) -> set:
+        """
+        Return tool names to remove from the advertised tool set regardless of
+        question type. Empty by default. Subclasses override to gate a tool off
+        (e.g. raw SPARQL via an env flag), which is applied even when
+        _get_allowed_tools_for_qtype returns None (all tools).
+        """
+        return set()
+
     def _raw_sparql_tool_names(self) -> set:
         """
         Tool names that count as raw SPARQL escape hatches.
@@ -1000,6 +1009,17 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                         COLOR_GREEN
                     )
                     openai_tools = filtered_tools
+
+                # Denylist gate (applied even when the qtype filter allowed all
+                # tools), used to A/B-test or permanently retire a tool.
+                denied = self._get_denied_tool_names()
+                if denied:
+                    before = len(openai_tools)
+                    openai_tools = [t for t in openai_tools if t["function"]["name"] not in denied]
+                    self._trace(
+                        f"Tool denylist: removed {sorted(denied)} ({before} → {len(openai_tools)} tools)",
+                        COLOR_YELLOW,
+                    )
 
             # Run tool loop (config already loaded above)
             max_iterations = config.domain_settings.get("max_iterations", 50)
