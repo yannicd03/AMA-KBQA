@@ -65,6 +65,23 @@ COLOR_END = '\033[0m'
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
 
 
+# Appended to every agent's system prompt in conversational mode. In that mode
+# synthesis is bypassed and the user sees the agent's final loop message
+# verbatim, so the agent itself must self-explain — independent of whether it
+# happened to call GetJournalSummary (some models, e.g. gemma4, answer directly
+# and would otherwise return a bare value with no reasoning).
+_CONVERSATIONAL_ANSWER_DIRECTIVE = """
+
+USER-FACING ANSWER (conversational mode): Your FINAL answer is shown directly to a
+person, so always format it as:
+1. The direct answer in a natural, friendly sentence.
+2. A short section titled "How I found this:" with 1-3 concise bullets naming the
+   entities you looked up and the tools/queries that produced the answer.
+Base every statement only on your journal / discovered data; never use outside
+knowledge. Include the "How I found this:" section in EVERY final answer, even if
+you did not call GetJournalSummary first."""
+
+
 class BaseKBQAAgent(ABC):
     """
     Abstract base class for KBQA agents.
@@ -154,7 +171,7 @@ class BaseKBQAAgent(ABC):
 
         # Message history
         self._messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": self._get_system_prompt()}
+            {"role": "system", "content": self._get_effective_system_prompt()}
         ]
 
         # Some models on some endpoints (e.g. minimax-m2.7 on KIT) don't emit
@@ -231,6 +248,22 @@ class BaseKBQAAgent(ABC):
             System prompt string
         """
         return "You are a KBQA agent."
+
+    def _get_effective_system_prompt(self) -> str:
+        """The subclass system prompt plus shared mode-specific guidance.
+
+        Used everywhere the system message is (re)built so every agent gets the
+        same conversational answer directive without each subclass repeating it.
+        """
+        prompt = self._get_system_prompt()
+        try:
+            from ama_kbqa.config import get_synthesis_mode
+            conversational = get_synthesis_mode() == "conversational"
+        except Exception:
+            conversational = False
+        if conversational:
+            prompt += _CONVERSATIONAL_ANSWER_DIRECTIVE
+        return prompt
 
     def _get_qtype_strategies(self) -> Dict[str, str]:
         """
@@ -2209,7 +2242,7 @@ Change strategy or acknowledge the data doesn't exist."""
                 resets, giving each turn a fresh trace and per-turn token totals.
         """
         if not keep_history:
-            self._messages = [{"role": "system", "content": self._get_system_prompt()}]
+            self._messages = [{"role": "system", "content": self._get_effective_system_prompt()}]
             # The message stack was wiped, so the text-mode tool catalog (injected
             # in _ask_impl) must be re-added on the next ask.
             self._catalog_injected = False

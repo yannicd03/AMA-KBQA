@@ -48,12 +48,12 @@ from ama_kbqa.frontend.utils.chat_controls import (
     apply_chat_settings,
     apply_retrieval_settings,
     available_models,
+    default_model,
     display_model_name,
     price_caption,
     reranker_available,
 )
 from ama_kbqa.config import (
-    get_chat_model_name,
     get_chat_temperature,
     get_fusion,
     get_hybrid_enabled,
@@ -98,8 +98,10 @@ selected_agent = st.session_state.setdefault("agent_selection", "Orchestrator")
 with st.sidebar:
     # ── Model & temperature (demo build: KIT endpoint only) ──────────────────
     _models = available_models()
-    _current_model = get_chat_model_name()
-    _model_idx = _models.index(_current_model) if _current_model in _models else 0
+    # Default to the pinned demo model (gemma4-31b), not the server config's
+    # chat_model — keeps the default stable regardless of config drift.
+    _default = default_model(_models)
+    _model_idx = _models.index(_default) if _default in _models else 0
     selected_model = st.selectbox(
         "Model",
         options=_models,
