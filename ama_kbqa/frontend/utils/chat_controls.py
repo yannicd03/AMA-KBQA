@@ -16,28 +16,39 @@ from ama_kbqa.frontend.utils.config_editor import fetch_provider_models
 from ama_kbqa.pricing import format_cost_usd, get_model_pricing, known_models
 
 
-def filter_selectable_models(models: list[str]) -> list[str]:
-    """Keep only KIT chat models worth offering in the demo dropdown.
+# Explicit allow-list of the currently-hosted local KIT *LLM chat* models.
+#
+# KIT's ``/models`` endpoint advertises many non-chat models that must never
+# appear in a chat-model picker: image generation (``flux``), embeddings
+# (``qwen3-embedding``), rerankers (``qwen3-reranker``), text-to-speech
+# (``voxtral``/``tts``) and speech-to-text (``whisper``). It also routes a set
+# of Azure-hosted OpenAI models (``azure.*``) and exposes generic routing
+# aliases (``standard-extern``/``standard-local``). None of those belong in the
+# demo, so rather than chase an ever-growing blacklist we whitelist exactly the
+# KIT LLMs we want to offer.
+#
+# Update this set when KIT changes what it hosts — query the live endpoint with
+# ``fetch_provider_models("kit")`` (see ``available_models``) and add the new
+# chat model id(s) here. Ids must match the endpoint exactly (case-sensitive).
+KIT_LLM_WHITELIST: frozenset[str] = frozenset({
+    "kit.gemma4-31b-it",
+    "kit.gpt-oss-120b",
+    "kit.minimax-m2.7-229b",
+    "kit.mistral-small-4-119b-a8b",
+    "kit.qwen3.5-397b-A17b",
+})
 
-    Drops embedding models (not valid chat models), Azure OpenAI models (with a
-    carve-out for the open-source ``gpt-oss`` model which the demo keeps), and
-    the generic ``standard extern`` / ``standard local`` KIT routing aliases,
-    which are not concrete models worth offering in the picker.
+
+def filter_selectable_models(models: list[str]) -> list[str]:
+    """Keep only whitelisted KIT LLM chat models for the demo dropdown.
+
+    The demo offers an explicit allow-list (``KIT_LLM_WHITELIST``) of the
+    currently-hosted local KIT chat models. Everything else advertised by the
+    KIT endpoint — image/embedding/reranker/TTS/STT models, Azure-routed
+    models, and generic routing aliases — is dropped so only real chat models
+    reach the picker.
     """
-    out: list[str] = []
-    for m in models:
-        ml = m.lower()
-        if "embedding" in ml:
-            continue
-        if ml.startswith("azure.") and "gpt-oss" not in ml:
-            continue
-        # Normalise away the provider prefix and separators so we catch
-        # ``kit.standard-extern``, ``standard_local``, etc.
-        norm = ml.split(".", 1)[-1].replace("-", " ").replace("_", " ")
-        if norm in ("standard extern", "standard local"):
-            continue
-        out.append(m)
-    return sorted(set(out))
+    return sorted(m for m in set(models) if m in KIT_LLM_WHITELIST)
 
 
 @st.cache_data(show_spinner=False, ttl=300)
