@@ -69,6 +69,21 @@ def test_filter_dedupes_and_sorts():
     assert out == ["kit.gemma4-31b-it", "kit.gpt-oss-120b"]
 
 
+def test_default_model_is_pinned_gemma4_when_available():
+    # The demo default is gemma4-31b regardless of ordering or config drift.
+    assert chat_controls.DEFAULT_MODEL == "kit.gemma4-31b-it"
+    assert chat_controls.default_model(
+        ["kit.gpt-oss-120b", "kit.gemma4-31b-it", "kit.qwen3.5-397b-A17b"]
+    ) == "kit.gemma4-31b-it"
+    # The pinned default must itself be a whitelisted chat model.
+    assert chat_controls.DEFAULT_MODEL in chat_controls.KIT_LLM_WHITELIST
+
+
+def test_default_model_falls_back_when_pinned_absent():
+    assert chat_controls.default_model(["kit.gpt-oss-120b"]) == "kit.gpt-oss-120b"
+    assert chat_controls.default_model([]) == chat_controls.DEFAULT_MODEL
+
+
 def test_price_caption_for_known_model():
     cap = chat_controls.price_caption("kit.gemma4-31b-it")
     assert cap is not None

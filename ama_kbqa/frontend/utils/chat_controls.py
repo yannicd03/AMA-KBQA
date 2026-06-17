@@ -38,6 +38,22 @@ KIT_LLM_WHITELIST: frozenset[str] = frozenset({
     "kit.qwen3.5-397b-A17b",
 })
 
+# Model the demo pre-selects on load. Pinned in code (not read from config) so
+# the default is drift-proof regardless of the deployed server config. Must be a
+# member of KIT_LLM_WHITELIST.
+DEFAULT_MODEL: str = "kit.gemma4-31b-it"
+
+
+def default_model(models: list[str]) -> str:
+    """The model the picker should select by default.
+
+    The pinned ``DEFAULT_MODEL`` if it's currently available, else the first
+    available model (so the picker is never empty / mis-indexed).
+    """
+    if DEFAULT_MODEL in models:
+        return DEFAULT_MODEL
+    return models[0] if models else DEFAULT_MODEL
+
 
 def filter_selectable_models(models: list[str]) -> list[str]:
     """Keep only whitelisted KIT LLM chat models for the demo dropdown.
