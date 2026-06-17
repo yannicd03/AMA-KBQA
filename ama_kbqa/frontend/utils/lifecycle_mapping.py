@@ -57,8 +57,11 @@ def span_to_node_ids(
         if phase == "open":
             return ["agent_invocation"]
         if phase == "close":
-            # Final settle-down: the Post-Agent Hook boxes get a brief flash.
-            return ["post_evaluate", "post_lessons"]
+            # Final settle-down: the whole Post-Agent Hook band flashes as the
+            # answer is finalized. Answer Synthesis is included so the box
+            # lights once *at the end* even when the synthesis LLM step is
+            # bypassed (the demo default), instead of never lighting.
+            return ["post_synthesis", "post_evaluate", "post_lessons"]
         return []
 
     if kind == "classify":
@@ -82,19 +85,18 @@ def span_to_node_ids(
         return ["main_llm_reason"]
 
     if kind == "tool_call":
-        if name == "GetJournalStateJSON":
+        # Journal/scratchpad tools are scratchpad operations end to end — light
+        # the Scratchpad box for both open and close.
+        if name in ("GetJournalStateJSON", "GetJournalSummary", "ManageJournal"):
             return ["main_scratchpad"]
-        # ManageJournal *is* the scratchpad: reading/writing journal state is a
-        # scratchpad operation, so light the Scratchpad box (not the generic
-        # Tool Call box) whenever the agent touches its working memory.
-        if name == "ManageJournal":
+        # Every other (KG) tool: light Tool Call while it runs, then Scratchpad
+        # as its result is recorded into the journal. The agent's working memory
+        # is updated server-side as a side effect of each KG tool, with no
+        # client-side span of its own, so the tool-call *close* is the only
+        # reliable per-iteration scratchpad signal. This also gives the ReAct
+        # "Tool Call → Scratchpad" beat after every tool call.
+        if phase == "close":
             return ["main_scratchpad"]
-        # All KG tools (traversal + summary/verify) light the single Tool Call
-        # box; the scratchpad reflects journal state separately.
-        if name in TOOLS_A or name in TOOLS_B:
-            return ["main_tool_call"]
-        # Unknown tool: still light the Tool Call box so the viz never goes
-        # blank during a tool call.
         return ["main_tool_call"]
 
     if kind == "tool_loop_iter":
@@ -110,8 +112,13 @@ def span_to_node_ids(
         return ["main_scratchpad"]
 
     if kind == "fast_path":
-        # Fast-path bypasses the loop and goes straight to synthesis.
-        return ["main_llm_reason"] if phase == "open" else ["post_synthesis"]
+        # A deterministic shortcut that runs tool calls without the LLM loop.
+        # Light Reasoning while it runs, but do NOT light Answer Synthesis on
+        # close: the shortcut frequently fails and falls back to the full loop,
+        # so a synthesis flash mid-run is misleading ("synthesis randomly lights
+        # up"). The inner tool_call spans drive Tool Call/Scratchpad, and
+        # agent_run close handles the final post-band flash.
+        return ["main_llm_reason"] if phase == "open" else []
 
     if kind == "delegate":
         # The child sub-agent's spans drive the figure.

@@ -83,6 +83,84 @@ def _wait_until_terminal(q: queue.Queue, state: LiveLifecycleState, timeout: flo
     raise AssertionError(f"runner did not terminate; state={state.status}")
 
 
+# Real event stream captured from a deployed KQAPro run of
+# "Who is the director of Inception?" (fast-path attempt that fails and falls
+# back to a 3-iteration loop). Each entry is (phase, kind, name, span_id,
+# is_event). span_id pairs open/close; events carry "".
+_GROUND_TRUTH = [
+    ("open",  "agent_run",      "kqapro_agent",     "ar", False),
+    ("open",  "classify",       "kit.gpt-oss-120b", "cl", False),
+    ("close", "classify",       "kit.gpt-oss-120b", "cl", False),
+    ("open",  "fast_path",      "QueryAttr",        "fp", False),
+    ("open",  "tool_call",      "FindNode",         "t1", False),
+    ("close", "tool_call",      "FindNode",         "t1", False),
+    ("open",  "tool_call",      "GetAttributeDetails", "t2", False),
+    ("close", "tool_call",      "GetAttributeDetails", "t2", False),
+    ("open",  "tool_call",      "GetNodeSummary",   "t3", False),
+    ("close", "tool_call",      "GetNodeSummary",   "t3", False),
+    ("close", "fast_path",      "QueryAttr",        "fp", False),  # <-- fast-path FAILS here
+    ("event", "tool_loop_iter", "iter:1",           "",   True),
+    ("open",  "llm_call",       "kit.gpt-oss-120b", "l1", False),
+    ("close", "llm_call",       "kit.gpt-oss-120b", "l1", False),
+    ("open",  "tool_call",      "FindNode",         "t4", False),
+    ("close", "tool_call",      "FindNode",         "t4", False),
+    ("event", "tool_loop_iter", "iter:2",           "",   True),
+    ("open",  "llm_call",       "kit.gpt-oss-120b", "l2", False),
+    ("close", "llm_call",       "kit.gpt-oss-120b", "l2", False),
+    ("open",  "tool_call",      "GetJournalSummary","t5", False),
+    ("close", "tool_call",      "GetJournalSummary","t5", False),
+    ("event", "tool_loop_iter", "iter:3",           "",   True),
+    ("open",  "llm_call",       "kit.gpt-oss-120b", "l3", False),
+    ("close", "llm_call",       "kit.gpt-oss-120b", "l3", False),
+    ("close", "agent_run",      "kqapro_agent",     "ar", False),
+]
+
+
+def _drain_events(state: LiveLifecycleState, events: list) -> None:
+    q: queue.Queue = queue.Queue()
+    for phase, kind, name, sid, is_ev in events:
+        q.put((phase, {
+            "kind": kind, "name": name, "span_id": sid,
+            "parent_span_id": None, "status": "ok",
+            "is_event": is_ev, "attributes": {},
+        }))
+    drain_into(q, state)
+
+
+class TestGroundTruthReplay:
+    """Replays a real captured agent run to lock in the two reported figure
+    bugs: scratchpad must light during the run, and Answer Synthesis must not
+    flash mid-run (only settle at the end)."""
+
+    def _split_at_fastpath_close(self):
+        idx = next(i for i, e in enumerate(_GROUND_TRUTH)
+                   if e[0] == "close" and e[1] == "fast_path")
+        return _GROUND_TRUTH[: idx + 1], _GROUND_TRUTH[idx + 1:]
+
+    def test_synthesis_does_not_flash_when_fastpath_fails(self):
+        # Drain everything up to and including the fast-path close. The old
+        # mapping lit post_synthesis here (the "randomly lights up" bug).
+        through_fastpath, _rest = self._split_at_fastpath_close()
+        state = LiveLifecycleState()
+        _drain_events(state, through_fastpath)
+        assert "post_synthesis" not in state.render_active_node_ids()
+
+    def test_scratchpad_lights_during_the_run(self):
+        # By the time the first KG tool calls have closed, the scratchpad must
+        # have lit (it never did before — the core complaint).
+        through_fastpath, _rest = self._split_at_fastpath_close()
+        state = LiveLifecycleState()
+        _drain_events(state, through_fastpath)
+        assert "main_scratchpad" in state.render_active_node_ids()
+        assert "main_scratchpad" in state.visited_node_ids
+
+    def test_synthesis_settles_only_at_the_end(self):
+        state = LiveLifecycleState()
+        _drain_events(state, _GROUND_TRUTH)
+        # agent_run close flashes the full post band, including Answer Synthesis.
+        assert "post_synthesis" in state.render_active_node_ids()
+
+
 class TestRunner:
     def test_successful_run_transitions_to_done(self):
         agent = _StubAgent()
