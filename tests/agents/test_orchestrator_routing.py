@@ -119,12 +119,15 @@ def _make_orchestrator(mcp, client, agent_config=None):
 class _FakeAgent:
     """Minimal sub-agent stub matching the surface _run_specialist touches."""
 
-    def __init__(self, name, answer="", error=None, delay=0.0):
+    def __init__(self, name, answer="", error=None, delay=0.0, journal_state=None):
         self.name = name
         self._answer = answer
         self._error = error
         self._delay = delay
-        self.journal_snapshots = [{"ts": 1.0, "trigger": "test", "state": {"agent": name}}]
+        # `journal_state` is the JournalState dump the orchestrator renders
+        # into the handoff scratchpad; default is an empty stub.
+        state = journal_state if journal_state is not None else {"agent": name}
+        self.journal_snapshots = [{"ts": 1.0, "trigger": "test", "state": state}]
         self.token_usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
         self.recorder = None
         self._parent_span_id_override = None
@@ -429,6 +432,34 @@ class TestFederate:
         # completion has no usage attribute).
         assert o.token_usage["total_tokens"] == 30
 
+    def test_specialist_scratchpad_reaches_fusion_prompt(self):
+        """The handoff now carries each specialist's journal: its verified
+        facts must surface in the fusion prompt as grounding evidence."""
+        captured = []
+        o = _make_orchestrator(mcp=None, client=_fusion_client(captured_kwargs=captured))
+        kqapro_state = {
+            "kg_name": "KQAPro",
+            "verified_facts": [
+                {"subject": "Q42", "predicate": "born_in", "object": "1879", "source": "RunSPARQL"}
+            ],
+        }
+        sciqa_state = {
+            "kg_name": "SciQA",
+            "found_values": {"R7": {"citation_count": 12}},
+        }
+        o._agents = {
+            "kqapro_agent": _FakeAgent("kqapro_agent", answer="1879", journal_state=kqapro_state),
+            "sciqa_agent": _FakeAgent("sciqa_agent", answer="12 papers", journal_state=sciqa_state),
+        }
+
+        _run(o._federate(["kqapro_agent", "sciqa_agent"], "Q?"))
+
+        user_msg = captured[0]["messages"][-1]["content"]
+        # Working-notes block present, with structured journal content.
+        assert "Working notes" in user_msg
+        assert "born_in" in user_msg          # kqapro verified fact
+        assert "citation_count" in user_msg   # sciqa found value
+
     def test_concurrent_delegate_spans_nest_as_siblings(self):
         """Each specialist gets its own delegate span; neither parents
         under the other despite running concurrently."""
@@ -511,6 +542,34 @@ class TestFuseAnswers:
         system_msg = captured[0]["messages"][0]["content"]
         assert "CONFLICT" in system_msg
 
+    def test_scratchpad_block_included_when_present(self):
+        captured = []
+        o = _make_orchestrator(mcp=None, client=_fusion_client(captured_kwargs=captured))
+        answers = [
+            {"agent": "kqapro_agent", "answer": "Born in 1879.",
+             "scratchpad": "Verified Facts:\n  - [Q42] --born_in--> [1879] (from: RunSPARQL)"},
+            {"agent": "sciqa_agent", "answer": "Cited in 12 papers.", "scratchpad": None},
+        ]
+
+        _run(o._fuse_answers("Q?", answers))
+
+        user_msg = captured[0]["messages"][-1]["content"]
+        assert "Working notes" in user_msg
+        assert "born_in" in user_msg
+        # System prompt explains how to use the notes.
+        system_msg = captured[0]["messages"][0]["content"]
+        assert "working notes" in system_msg.lower()
+
+    def test_missing_scratchpad_omits_block(self):
+        """Answers without a scratchpad (e.g. legacy/None) add no notes block."""
+        captured = []
+        o = _make_orchestrator(mcp=None, client=_fusion_client(captured_kwargs=captured))
+
+        _run(o._fuse_answers("Q?", self._ANSWERS))  # fixtures have no scratchpad key
+
+        user_msg = captured[0]["messages"][-1]["content"]
+        assert "Working notes" not in user_msg
+
     def test_empty_fusion_degrades_to_first_answer(self):
         o = _make_orchestrator(mcp=None, client=_fusion_client(content=""))
 
@@ -535,3 +594,32 @@ class TestFuseAnswers:
         spans = [e for e in o.recorder.events if e.kind == "synthesis"]
         assert len(spans) == 1
         assert spans[0].attributes["agents"] == "kqapro_agent, sciqa_agent"
+
+
+class TestExtractScratchpad:
+
+    def test_renders_journal_state_to_summary(self):
+        o = _make_orchestrator(mcp=None, client=MagicMock())
+        agent = _FakeAgent("kqapro_agent", journal_state={
+            "kg_name": "KQAPro",
+            "verified_facts": [
+                {"subject": "Q42", "predicate": "born_in", "object": "1879", "source": "RunSPARQL"}
+            ],
+        })
+
+        rendered = o._extract_scratchpad(agent)
+
+        assert rendered is not None
+        assert "born_in" in rendered
+
+    def test_no_snapshots_returns_none(self):
+        o = _make_orchestrator(mcp=None, client=MagicMock())
+        agent = _FakeAgent("kqapro_agent")
+        agent.journal_snapshots = []
+
+        assert o._extract_scratchpad(agent) is None
+
+    def test_missing_attribute_returns_none(self):
+        o = _make_orchestrator(mcp=None, client=MagicMock())
+
+        assert o._extract_scratchpad(object()) is None

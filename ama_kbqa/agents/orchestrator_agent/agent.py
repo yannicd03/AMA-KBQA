@@ -523,7 +523,36 @@ class Orchestrator:
                     await self.mcp.close()
                     self._trace("Orchestrator MCP server cleanly terminated")
 
-    async def _run_specialist(self, agent_name: str, query: str, fallback: bool = False) -> str:
+    def _extract_scratchpad(self, agent) -> Optional[str]:
+        """Render a sub-agent's final journal as an LLM-legible scratchpad.
+
+        Reads the last journal snapshot the sub-agent captured during its run
+        (a `JournalState` dump) and renders it via `to_summary_str()` so the
+        orchestrator receives the specialist's working notes — entities
+        visited, values found, verified facts — alongside its prose answer.
+
+        Returns None when the sub-agent captured no usable journal (e.g. its
+        MCP server lacks the GetJournalStateJSON tool, or the run never
+        mutated the journal), so callers can omit the block cleanly rather
+        than forwarding an empty placeholder.
+        """
+        try:
+            snapshots = agent.journal_snapshots
+        except AttributeError:
+            return None
+        if not snapshots:
+            return None
+        state = snapshots[-1].get("state")
+        if not isinstance(state, dict) or not state:
+            return None
+        try:
+            from ama_kbqa.framework.state import JournalState
+            rendered = JournalState.from_dict(state).to_summary_str().strip()
+        except Exception:
+            return None
+        return rendered or None
+
+    async def _run_specialist(self, agent_name: str, query: str, fallback: bool = False) -> Dict[str, Any]:
         """Run one sub-agent under its own `delegate` span; raises on failure.
 
         We hand the sub-agent our recorder + the current span id; its
@@ -534,6 +563,12 @@ class Orchestrator:
         specialist). It is safe to run concurrently for DIFFERENT agent
         names: the recorder's contextvar is task-local under asyncio.gather,
         so each delegate span nests independently.
+
+        Returns a handoff record `{"agent", "answer", "scratchpad"}`: the
+        specialist's prose answer plus a rendering of its final journal
+        (None if it captured none). Single dispatch uses only the answer;
+        federated fusion also consumes the scratchpad to ground and
+        adjudicate the combined answer.
 
         Args:
             agent_name: Key into self._agent_config.
@@ -589,12 +624,20 @@ class Orchestrator:
             except AttributeError:
                 pass
 
-            return answer
+            scratchpad = self._extract_scratchpad(agent)
+            _delegate_span.set_attribute("scratchpad_captured", scratchpad is not None)
+            return {"agent": agent_name, "answer": answer, "scratchpad": scratchpad}
 
     async def _delegate(self, agent_name: str, query: str) -> str:
-        """Single dispatch: run one specialist, falling back to KQAPro on error."""
+        """Single dispatch: run one specialist, falling back to KQAPro on error.
+
+        Single dispatch returns the specialist's answer verbatim; the
+        scratchpad in the handoff record is only consumed when answers are
+        fused (`_federate`), since there is nothing to combine here.
+        """
         try:
-            return await self._run_specialist(agent_name, query)
+            result = await self._run_specialist(agent_name, query)
+            return result["answer"]
         except Exception as e:
             self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
             self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
@@ -613,14 +656,15 @@ class Orchestrator:
             return_exceptions=True,
         )
 
-        answers: List[Dict[str, str]] = []
+        answers: List[Dict[str, Any]] = []
         failures: List[str] = []
         for name, result in zip(agent_names, results):
             if isinstance(result, BaseException):
                 self._trace(f"{COLOR_RED}{name} failed: {result}{COLOR_END}", COLOR_RED)
                 failures.append(f"{name}: {result}")
             else:
-                answers.append({"agent": name, "answer": result})
+                # result is the handoff record {"agent", "answer", "scratchpad"}.
+                answers.append(result)
 
         if not answers:
             self._trace(
@@ -643,18 +687,26 @@ class Orchestrator:
             "You combine answers from multiple knowledge-graph specialist "
             "agents into ONE final answer. Each specialist consulted a "
             "different knowledge graph and answered independently.\n"
+            "Besides each specialist's prose answer you may be given its "
+            "working notes (scratchpad): the entities it visited, the values "
+            "it found, and the facts it verified against its graph. Treat the "
+            "notes as grounding evidence, not as additional answers.\n"
             "Rules:\n"
             "- If the answers agree, state the answer once; you may note it "
             "is confirmed by both sources.\n"
             "- If the answers complement each other (different facets), merge "
             "them into one coherent answer, attributing each facet to its "
             "source graph.\n"
-            "- If the answers CONFLICT, do not silently pick one: present "
-            "both, name the source of each, and say which is better "
-            "supported by the routing evidence and why.\n"
+            "- If the answers CONFLICT, do not silently pick one: weigh them "
+            "by the working notes and routing evidence (an answer backed by "
+            "concrete verified facts outweighs an unsupported assertion), "
+            "then present both, name the source of each, and say which is "
+            "better supported and why.\n"
             "- If a specialist clearly found nothing (empty / 'unknown' "
-            "answer), rely on the other and briefly say so.\n"
-            "- Never introduce facts that appear in neither answer."
+            "answer, or empty working notes), rely on the other and briefly "
+            "say so.\n"
+            "- Never introduce facts that appear in neither the answers nor "
+            "the working notes."
         )
 
     async def _fuse_answers(self, query: str, answers: List[Dict[str, str]]) -> str:
@@ -676,7 +728,15 @@ class Orchestrator:
             blocks = []
             for a in answers:
                 desc = self._agent_config[a["agent"]]["description"]
-                blocks.append(f"### {a['agent']} ({desc})\n{a['answer']}")
+                block = f"### {a['agent']} ({desc})\nAnswer: {a['answer']}"
+                scratchpad = a.get("scratchpad")
+                if scratchpad:
+                    block += (
+                        "\n\nWorking notes (this specialist's scratchpad — "
+                        "entities visited, values found, verified facts):\n"
+                        f"{scratchpad}"
+                    )
+                blocks.append(block)
             user_content = f"Question: {query}\n\n" + "\n\n".join(blocks)
             if self.last_routing_evidence:
                 user_content += (
@@ -728,7 +788,8 @@ class Orchestrator:
         in a separate, invisible trace).
         """
         self._trace("Loading KQAPro agent...", COLOR_CYAN)
-        return await self._run_specialist("kqapro_agent", query, fallback=True)
+        result = await self._run_specialist("kqapro_agent", query, fallback=True)
+        return result["answer"]
 
 
 async def main():
