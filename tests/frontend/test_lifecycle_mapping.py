@@ -40,13 +40,34 @@ class TestToolsSplit:
             assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tool_call"]
 
     def test_summary_tools_light_tool_call(self):
-        for tool in ("GetNodeSummary", "VerifyFact", "ManageJournal"):
+        for tool in ("GetNodeSummary", "VerifyFact"):
             assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tool_call"]
+
+    def test_manage_journal_lights_scratchpad(self):
+        # ManageJournal *is* the scratchpad — it must light the Scratchpad box,
+        # not the generic Tool Call box, so the figure shows working-memory
+        # activity whenever the agent touches its journal during the loop.
+        assert span_to_node_ids("tool_call", "ManageJournal", phase="open") == [
+            "main_scratchpad"
+        ]
 
     def test_journal_snapshot_tool_lights_scratchpad(self):
         assert span_to_node_ids("tool_call", "GetJournalStateJSON", phase="open") == [
             "main_scratchpad"
         ]
+
+    def test_synthesis_mode_llm_call_stays_in_post_band(self):
+        # The synthesis step's inner llm_call carries mode="synthesis"; it must
+        # not also light the main-loop reasoning box alongside post_synthesis.
+        for phase in ("open", "close"):
+            assert span_to_node_ids(
+                "llm_call", "gpt-4o (synthesis)", phase=phase,
+                attributes={"mode": "synthesis"},
+            ) == ["post_synthesis"]
+        # A normal loop llm_call is unaffected.
+        assert span_to_node_ids(
+            "llm_call", "gpt-4o", phase="open", attributes={"model": "gpt-4o"}
+        ) == ["main_llm_reason"]
 
     def test_tools_a_and_b_are_disjoint(self):
         assert TOOLS_A.isdisjoint(TOOLS_B)
