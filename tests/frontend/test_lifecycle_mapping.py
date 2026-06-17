@@ -28,33 +28,32 @@ from ama_kbqa.frontend.utils.lifecycle_mapping import (
     ("context_trim", "truncate", "event", ["main_done"]),
     ("synthesis", "final", "open",  ["post_synthesis"]),
     ("synthesis", "final", "close", ["post_synthesis"]),
-    ("agent_run", "ask", "close", ["post_evaluate", "post_lessons"]),
+    # The whole post band flashes at the end so Answer Synthesis lights once
+    # even when the synthesis LLM step is bypassed (demo default).
+    ("agent_run", "ask", "close", ["post_synthesis", "post_evaluate", "post_lessons"]),
+    # Fast-path no longer lights synthesis on close (it often fails and falls
+    # back to the loop — a mid-run synthesis flash is misleading).
+    ("fast_path", "QueryAttr", "open",  ["main_llm_reason"]),
+    ("fast_path", "QueryAttr", "close", []),
 ])
 def test_mapping(kind, name, phase, expected):
     assert span_to_node_ids(kind, name, phase=phase) == expected
 
 
 class TestToolsSplit:
-    def test_traversal_tools_light_tool_call(self):
-        for tool in ("FindNode", "FindResource", "GetResourceDetails"):
+    def test_kg_tools_light_tool_call_then_scratchpad(self):
+        # A KG tool lights Tool Call while running (open) and Scratchpad as its
+        # result lands in the journal (close) — the per-iteration ReAct beat.
+        for tool in ("FindNode", "FindResource", "GetResourceDetails",
+                     "GetNodeSummary", "VerifyFact"):
             assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tool_call"]
+            assert span_to_node_ids("tool_call", tool, phase="close") == ["main_scratchpad"]
 
-    def test_summary_tools_light_tool_call(self):
-        for tool in ("GetNodeSummary", "VerifyFact"):
-            assert span_to_node_ids("tool_call", tool, phase="open") == ["main_tool_call"]
-
-    def test_manage_journal_lights_scratchpad(self):
-        # ManageJournal *is* the scratchpad — it must light the Scratchpad box,
-        # not the generic Tool Call box, so the figure shows working-memory
-        # activity whenever the agent touches its journal during the loop.
-        assert span_to_node_ids("tool_call", "ManageJournal", phase="open") == [
-            "main_scratchpad"
-        ]
-
-    def test_journal_snapshot_tool_lights_scratchpad(self):
-        assert span_to_node_ids("tool_call", "GetJournalStateJSON", phase="open") == [
-            "main_scratchpad"
-        ]
+    def test_journal_tools_light_scratchpad(self):
+        # The journal/scratchpad tools are scratchpad operations end to end.
+        for tool in ("ManageJournal", "GetJournalSummary", "GetJournalStateJSON"):
+            assert span_to_node_ids("tool_call", tool, phase="open") == ["main_scratchpad"]
+            assert span_to_node_ids("tool_call", tool, phase="close") == ["main_scratchpad"]
 
     def test_synthesis_mode_llm_call_stays_in_post_band(self):
         # The synthesis step's inner llm_call carries mode="synthesis"; it must
