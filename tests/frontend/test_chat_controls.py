@@ -7,40 +7,66 @@ import pytest
 from ama_kbqa.frontend.utils import chat_controls
 
 
-def test_filter_drops_azure_except_gpt_oss():
-    raw = [
-        "kit.gemma4-31b-it",
-        "azure.gpt-4.1-mini",
-        "azure.o4-mini",
-        "kit.gpt-oss-120b",
-        "kit.qwen3.5-397b-A17b",
+# The exact set of model ids KIT's /models endpoint advertises today: 5 LLM
+# chat models plus a pile of non-chat models, Azure-routed models, and routing
+# aliases. The picker must surface only the 5 chat models.
+_LIVE_KIT_MODELS = [
+    "azure.gpt-4.1",
+    "azure.gpt-5",
+    "azure.o4-mini",
+    "kit.flux.2-dev",
+    "kit.gemma4-31b-it",
+    "kit.gpt-oss-120b",
+    "kit.minimax-m2.7-229b",
+    "kit.mistral-small-4-119b-a8b",
+    "kit.qwen3-embedding-8b",
+    "kit.qwen3-reranker-8b",
+    "kit.qwen3.5-397b-A17b",
+    "kit.voxtral-4b-tts-2603",
+    "kit.whisper-large-v3",
+    "standard-extern",
+    "standard-local",
+]
+
+_EXPECTED_WHITELIST = [
+    "kit.gemma4-31b-it",
+    "kit.gpt-oss-120b",
+    "kit.minimax-m2.7-229b",
+    "kit.mistral-small-4-119b-a8b",
+    "kit.qwen3.5-397b-A17b",
+]
+
+
+def test_filter_returns_exactly_the_whitelisted_llms():
+    # The whole point: feed the real KIT catalog, get back only chat LLMs.
+    out = chat_controls.filter_selectable_models(_LIVE_KIT_MODELS)
+    assert out == _EXPECTED_WHITELIST
+
+
+def test_filter_drops_non_llm_kit_models():
+    # Image-gen, embeddings, rerankers, TTS and speech-to-text must never show.
+    non_llm = [
+        "kit.flux.2-dev",
+        "kit.qwen3-embedding-8b",
+        "kit.qwen3-reranker-8b",
+        "kit.voxtral-4b-tts-2603",
+        "kit.whisper-large-v3",
     ]
-    out = chat_controls.filter_selectable_models(raw)
-    assert "azure.gpt-4.1-mini" not in out
-    assert "azure.o4-mini" not in out
-    assert "kit.gpt-oss-120b" in out
-    assert "kit.gemma4-31b-it" in out
-    assert "kit.qwen3.5-397b-A17b" in out
+    assert chat_controls.filter_selectable_models(non_llm) == []
 
 
-def test_filter_keeps_azure_gpt_oss_carveout():
-    # If the endpoint ever serves gpt-oss under an azure prefix, keep it.
-    out = chat_controls.filter_selectable_models(["azure.gpt-oss-120b", "azure.o4-mini"])
-    assert out == ["azure.gpt-oss-120b"]
-
-
-def test_filter_drops_embedding_models():
-    out = chat_controls.filter_selectable_models(
-        ["kit.qwen3-embedding-8b", "kit.gemma4-31b-it"]
-    )
-    assert out == ["kit.gemma4-31b-it"]
+def test_filter_drops_all_azure_models():
+    # Azure-routed models are excluded wholesale (no gpt-oss carve-out needed —
+    # the open-source gpt-oss is served under the kit. prefix).
+    azure = ["azure.gpt-4.1-mini", "azure.o4-mini", "azure.gpt-5", "azure.gpt-oss-120b"]
+    assert chat_controls.filter_selectable_models(azure) == []
 
 
 def test_filter_dedupes_and_sorts():
     out = chat_controls.filter_selectable_models(
-        ["kit.b", "kit.a", "kit.b"]
+        ["kit.gpt-oss-120b", "kit.gemma4-31b-it", "kit.gpt-oss-120b"]
     )
-    assert out == ["kit.a", "kit.b"]
+    assert out == ["kit.gemma4-31b-it", "kit.gpt-oss-120b"]
 
 
 def test_price_caption_for_known_model():
