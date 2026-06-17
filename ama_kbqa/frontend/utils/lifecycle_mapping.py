@@ -72,10 +72,22 @@ def span_to_node_ids(
         return ["post_synthesis"]
 
     if kind == "llm_call":
+        # The synthesis step runs its own ``llm_call`` (``mode="synthesis"``)
+        # *inside* the wrapping ``synthesis`` span. Mapping it to the main-loop
+        # reasoning box would light ``main_llm_reason`` simultaneously with
+        # ``post_synthesis`` — making it look like a stray loop step fired
+        # together with answer synthesis. Keep it in the Post-Agent band.
+        if (attributes or {}).get("mode") == "synthesis":
+            return ["post_synthesis"]
         return ["main_llm_reason"]
 
     if kind == "tool_call":
         if name == "GetJournalStateJSON":
+            return ["main_scratchpad"]
+        # ManageJournal *is* the scratchpad: reading/writing journal state is a
+        # scratchpad operation, so light the Scratchpad box (not the generic
+        # Tool Call box) whenever the agent touches its working memory.
+        if name == "ManageJournal":
             return ["main_scratchpad"]
         # All KG tools (traversal + summary/verify) light the single Tool Call
         # box; the scratchpad reflects journal state separately.
