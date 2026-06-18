@@ -24,10 +24,9 @@
 |----------|-------------|
 | [SOP/running_batch_processing.md](SOP/running_batch_processing.md) | Run single-model or multi-model benchmarks; LLM judge; fewshot generation; CSV export; resume |
 | [SOP/adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) | Checklist for adding KQAPro MCP tools that produce answer values (journal write invariants) |
-| [SOP/hetzner_deployment.md](SOP/hetzner_deployment.md) | Hetzner VPS deployment runbook: 3-service compose stack, Qdrant port, frontend container, RDF bootstrap, SSH tunnel |
 | [SOP/migrate_add_bm25.md](SOP/migrate_add_bm25.md) | Runbook for `db/migrate_add_bm25.py`: adds BM25 sparse index to existing Qdrant collections (dry-run, then --yes); enable hybrid in config afterward |
 
-> `SOP/database_setup.md` and `SOP/changing_llm_provider.md` — referenced in earlier docs but files are absent; Virtuoso/Qdrant setup is in the root `README.md`; LLM provider config is in `docs/guides/dataset_integration.md` and `config.toml`.
+> `SOP/database_setup.md` and `SOP/changing_llm_provider.md` — referenced in earlier docs but files are absent; Virtuoso/Qdrant setup is in `docs/guides/getting-started.md`; LLM provider config is in `docs/guides/dataset_integration.md` and `config.toml`.
 
 ---
 
