@@ -1,3 +1,4 @@
+[demo-video.webm](https://github.com/user-attachments/assets/54464342-4ba0-4b2f-96e8-46569adae5ac)
 # AMA KBQA
 
 A multi-agent Knowledge Base Question Answering system that answers natural language questions over **multiple knowledge graphs**, proving generalization across different RDF/SPARQL databases.
