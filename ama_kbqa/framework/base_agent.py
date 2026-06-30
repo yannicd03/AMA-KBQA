@@ -1227,6 +1227,11 @@ Change strategy or acknowledge the data doesn't exist."""
         total_tool_calls_made = sum(self.tool_call_counts.values())
         zero_tool_call_retries = 0
         zero_tool_call_retry_max = get_zero_tool_call_retry_max() if get_zero_tool_call_retry() else 0
+        # Some providers (e.g. OpenRouter/Gemma) occasionally return a response
+        # with no choices — typically right after rejecting a malformed tool call.
+        # Track consecutive empties so we can recover instead of crashing on
+        # response.choices[0].
+        empty_response_count = 0
 
         while True:
             iteration_count += 1
@@ -1277,6 +1282,32 @@ Change strategy or acknowledge the data doesn't exist."""
                 response = self._llm_call(tools=None, tool_choice=None)
             else:
                 response = self._llm_call(tools=tools, tool_choice=tc)
+
+            # Guard: a response with no choices (provider transient error, content
+            # filter, or a confused turn after a rejected tool call) must not crash
+            # the whole question on response.choices[0]. Nudge and retry; bail to
+            # synthesis if it keeps happening.
+            if not response or not getattr(response, "choices", None):
+                empty_response_count += 1
+                self._trace(
+                    f"Empty LLM response (no choices) [{empty_response_count}/3]",
+                    COLOR_YELLOW,
+                )
+                if empty_response_count >= 3:
+                    self._trace("Repeated empty responses — breaking to synthesis", COLOR_YELLOW)
+                    break
+                self._messages.append({
+                    "role": "user",
+                    "content": (
+                        "Your previous response was empty. Continue: either call a "
+                        "tool with valid JSON arguments (include every required "
+                        "argument, e.g. RunSPARQL needs a \"query\"), or give your "
+                        "final answer."
+                    ),
+                })
+                continue
+            empty_response_count = 0
+
             message = response.choices[0].message
             finish_reason = response.choices[0].finish_reason
 
@@ -2038,7 +2069,32 @@ Change strategy or acknowledge the data doesn't exist."""
             payload={"messages": self._messages_for_payload()},
         ) as _llm_span:
             try:
-                response = self.client.chat.completions.create(**call_params)
+                # Retry transient provider errors (e.g. KIT's "Open WebUI: Server
+                # Connection Error" 400, 5xx, connection drops) instead of aborting
+                # the whole question. Deterministic errors (bad request, auth) are
+                # re-raised immediately.
+                import time as _time
+
+                response = None
+                for _attempt in range(3):
+                    try:
+                        response = self.client.chat.completions.create(**call_params)
+                        break
+                    except Exception as _exc:
+                        _m = str(_exc).lower()
+                        _transient = any(s in _m for s in (
+                            "server connection error", "open webui", "connection error",
+                            "timeout", "timed out", "502", "503", "504", "overloaded",
+                            "temporarily unavailable", "429", "rate limit",
+                        ))
+                        if not _transient or _attempt == 2:
+                            raise
+                        self._trace(
+                            f"Transient LLM error (attempt {_attempt + 1}/3), retrying: "
+                            f"{str(_exc)[:90]}",
+                            COLOR_YELLOW,
+                        )
+                        _time.sleep(1.5 * (_attempt + 1))
                 self._trace("LLM call completed", COLOR_GREEN)
                 if response.usage:
                     _llm_span.update_attributes({

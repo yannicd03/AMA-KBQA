@@ -1,0 +1,6 @@
+# Large WikiKGQA datasets are downloaded, not version-controlled.
+# Training: Zenodo doi 10.5281/zenodo.19474009 (wikikgqa.json.zip)
+# Test sets: wikikgqa.org / Codabench
+*.json
+*.zip
+!.gitignore

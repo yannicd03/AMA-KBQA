@@ -13,6 +13,7 @@
 | [System/project_architecture.md](System/project_architecture.md) | Start here. Full structure, tech stack, MCP servers, CLI, frontend, batch pipeline, config system |
 | [System/agent_system.md](System/agent_system.md) | Agent lifecycle, question classification, loop detection (6 layers), journal/scratchpad data model |
 | [System/research_corpus.md](System/research_corpus.md) | Paper (`paper/`), dataset docs (`docs/`), and how research artifacts relate to code |
+| [System/wikikgqa_agent.md](System/wikikgqa_agent.md) | WikiKGQA subsystem reference: `WikidataAgent`, `wikidata_server.py` MCP tools, `MentionSparqlGenerator`/`AgentSparqlGenerator`, tool-call budget mechanism, R1-R10 answer conventions |
 
 > `System/database_schema.md` — referenced in older READMEs but file is absent; Qdrant/Virtuoso schema is documented inline in `System/project_architecture.md` and `System/agent_system.md`.
 
@@ -58,6 +59,8 @@
 | [Decisions/root-cause-tool-generalization-2026-05-14.md](Decisions/root-cause-tool-generalization-2026-05-14.md) | Root-cause fixes from the seed-43 trace audit: answer cleanup, branch-local `CountUnion` relations, qualifier aliases, `QueryComparisonRows`, multi-predicate aggregation, and subject-scope frequencies |
 | [Decisions/multiturn-direct-agent-conversation.md](Decisions/multiturn-direct-agent-conversation.md) | Multiturn conversation for directly-selected sub-agents: persistent agent instance + `reset(keep_history=True)`; skip pre-agent hook on follow-ups; fast-path answer recording; asyncio event-loop safety; Orchestrator stays stateless |
 | [Decisions/orchestrator-evidence-based-routing.md](Decisions/orchestrator-evidence-based-routing.md) | Orchestrator routing reworked from collapsed heuristic verdict (avg_confidence > 0.7) to evidence-based two-step LLM routing: tool returns raw JSON (terms_probed/matched/avg_score/labels); LLM calls `select_agent(agent, reason)`; `route_reason` on classify span; degraded paths no longer silently KQAPro |
+| [Decisions/wikikgqa-2026-adaptation.md](Decisions/wikikgqa-2026-adaptation.md) | ADR for WikiKGQA 2026 challenge adaptation: SPARQL-generate→execute head, no Wikidata embedding (live SPARQL as index), challenge endpoint backend, English with-mentions initial target, new `wikidata/` backend + `ama_kbqa/wikikgqa/` module |
+| [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md) | Tool-call budget (20) replaces wall-clock (280s) as the binding limit on the agentic generator, fixing empty-output cancellation on over-exploration; per-tool SPARQL timeout with steering message; live `[tool call N/20]` budget counter; shared-framework retry for transient KIT proxy errors + empty-response guard |
 
 ---
 
