@@ -1,15 +1,16 @@
-"""Build WikiKGQA submission files.
+"""Build WikiKGQA submission files in the Codabench-required format.
 
-A submission is the challenge's QALD-JSON with two fields filled per question:
+Per the competition (#15358) the scoring uses ONLY ``id`` + ``answers`` (SPARQL
+queries are ignored), with exact string match, and ``answers`` is a BARE array:
 
-* ``query.sparql`` — the generated query (optional but recommended).
-* ``answers`` — MANDATORY: the SPARQL-JSON results of executing that query
-  against the evaluation endpoint.
+* entity/property ids as bare strings: ``["Q23", "P453"]`` (NOT full URIs),
+* literals/numbers/dates as strings: ``["250681000000.0", "1230-01-01T00:00:00Z"]``,
+* ASK results as JSON booleans: ``[true]`` / ``[false]``,
+* ``[]`` when there is no answer.
 
-The original entry structure (id, question, mentions) is preserved verbatim so
-the output validates against the organisers' reader. A question whose query
-fails to execute is written with an empty SELECT result rather than dropped, so
-the submission stays aligned with the test set.
+The upload file must be named ``submission.json`` and zipped so the json sits at
+the zip root. Output shape mirrors the official sample:
+``{"questions": [{"id", "question", "sparql", "answers"}]}``.
 """
 
 from __future__ import annotations
@@ -26,6 +27,51 @@ from ama_kbqa.wikikgqa.endpoint import SparqlResult, execute
 SparqlGenerator = Callable[[WikiKGQAQuestion], str | None]
 
 _EMPTY_SELECT = {"head": {"vars": []}, "results": {"bindings": []}}
+
+_WD_URI_PREFIXES = (
+    "http://www.wikidata.org/entity/",
+    "http://www.wikidata.org/prop/direct/",
+    "http://www.wikidata.org/prop/",
+)
+
+
+def _bare_id(value: str) -> str:
+    """Reduce a Wikidata URI to its bare id (Q.../P...); leave literals untouched."""
+    for pre in _WD_URI_PREFIXES:
+        if value.startswith(pre):
+            return value[len(pre):]
+    return value
+
+
+def to_codabench_answers(result_json: Any) -> list:
+    """Convert a SPARQL-JSON result to Codabench's bare ``answers`` array.
+
+    ASK -> [true]/[false] (JSON booleans); SELECT -> the single projected column's
+    values with entity URIs reduced to bare ids and literals kept as their raw value
+    string; empty/failed -> []. Deduped, order preserved (scoring is set-based).
+    """
+    if not isinstance(result_json, dict):
+        return []
+    if "boolean" in result_json:
+        return [bool(result_json["boolean"])]
+    head = result_json.get("head", {}).get("vars", [])
+    bindings = result_json.get("results", {}).get("bindings", [])
+    if not bindings:
+        return []
+    var = head[0] if head else next(iter(bindings[0]), None)
+    out: list = []
+    seen: set = set()
+    for row in bindings:
+        cell = row.get(var)
+        if not cell:
+            continue
+        value = cell.get("value", "")
+        if cell.get("type") == "uri":
+            value = _bare_id(value)
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
 
 
 @dataclass
@@ -58,16 +104,25 @@ def build_submission(
     dataset: WikiKGQADataset,
     outcomes: dict[int, QuestionOutcome],
 ) -> dict[str, Any]:
-    """Assemble a submission dict mirroring the input file, with answers filled."""
+    """Assemble a Codabench submission: ``{"questions": [{id, question, sparql, answers}]}``.
+
+    Only ``id`` + ``answers`` are scored; ``answers`` is the BARE array (see
+    to_codabench_answers). ``sparql``/``question`` are included for readability but ignored.
+    """
     out_questions: list[dict[str, Any]] = []
     for q in dataset.questions:
-        entry = json.loads(json.dumps(q.raw))  # deep copy of the original entry
+        raw = getattr(q, "raw", {}) or {}
         outcome = outcomes.get(q.id)
-        if outcome is not None:
-            entry["query"] = {"sparql": outcome.sparql or ""}
-            entry["answers"] = [outcome.answer]
-        out_questions.append(entry)
-    return {"dataset": {"id": dataset.dataset_id}, "questions": out_questions}
+        out_questions.append(
+            {
+                "id": raw.get("id", q.id),
+                "question": raw.get("question")
+                or [{"string": s, "language": lang} for lang, s in q.questions.items()],
+                "sparql": (outcome.sparql or "") if outcome is not None else "",
+                "answers": to_codabench_answers(outcome.answer) if outcome is not None else [],
+            }
+        )
+    return {"questions": out_questions}
 
 
 def write_submission(submission: dict[str, Any], path: str | Path) -> Path:

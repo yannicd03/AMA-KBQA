@@ -17,8 +17,11 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import os
+
 from ama_kbqa.agents.wikidata_agent.prompts import (
     ANALYSIS_CONTEXT,
+    ENTITY_SEARCH_GUIDANCE,
     EXTENDED_CONVENTIONS,
     SYNTHESIS_PROMPT_TEMPLATE,
     SYNTHESIS_SYSTEM_PROMPT,
@@ -46,10 +49,23 @@ class WikidataAgent(BaseKBQAAgent):
         model: Optional[str] = None,
         provider: Optional[str] = None,
         conventions: str = "full",
+        entity_search: bool = False,
+        tool_budget: int = 20,
     ):
         # conventions: "full" includes the extended R7-R10 modeling rules; "minimal"
         # uses only R1-R6 (for held-out A/B testing of whether R7-R10 generalize).
         self._conventions = conventions
+        # entity_search gates the without-mentions linker. Set the env flag BEFORE
+        # super().__init__ so the MCP server subprocess (spawned later, inheriting
+        # os.environ) registers the SearchEntities tool.
+        self._entity_search = entity_search
+        os.environ["WIKIKGQA_ENTITY_SEARCH"] = "1" if entity_search else "0"
+        # Per-run tool-call budget. The without-mentions track spends much of its
+        # budget on SearchEntities linking, so it needs a higher cap to leave room for
+        # exploration+validation. The MCP server reads the same value (env) for its
+        # live "[tool call N/BUDGET]" counter, so both stay in sync.
+        self._tool_budget = int(tool_budget)
+        os.environ["WIKIKGQA_TOOL_BUDGET"] = str(self._tool_budget)
         super().__init__(name=name, session_id=session_id, use_fewshot=False)
 
         # config.toml's chat_model is stale; allow a per-run override and keep
@@ -98,10 +114,10 @@ class WikidataAgent(BaseKBQAAgent):
                 # Tool-call budget the agent is told about (see prompt). At the cap the
                 # framework FORCES synthesis (emits the best validated query) rather than
                 # letting the model refine until the wall-clock cancels it with nothing.
-                "max_tool_calls": 20,
-                "max_iterations": 24,
-                "sparql_cap": 20,
-                "find_resource_cap": 12,
+                "max_tool_calls": self._tool_budget,
+                "max_iterations": self._tool_budget + 6,
+                "sparql_cap": self._tool_budget,
+                "find_resource_cap": max(12, self._tool_budget - 6),
                 "context_limit": 100000,
             },
         )
@@ -112,9 +128,22 @@ class WikidataAgent(BaseKBQAAgent):
 
     # --- prompt overrides ---
     def _get_system_prompt(self) -> str:
-        if getattr(self, "_conventions", "full") == "minimal":
-            return SYSTEM_PROMPT
-        return SYSTEM_PROMPT + "\n" + EXTENDED_CONVENTIONS
+        prompt = SYSTEM_PROMPT
+        if getattr(self, "_conventions", "full") != "minimal":
+            prompt += "\n" + EXTENDED_CONVENTIONS
+        # Without-mentions: prepend the linking guidance so the agent knows to resolve
+        # names to ids with SearchEntities before exploring.
+        if getattr(self, "_entity_search", False):
+            prompt = ENTITY_SEARCH_GUIDANCE + "\n\n" + prompt
+        return prompt
+
+    def _synthesis_full_context(self) -> bool:
+        # Give synthesis the full exploration transcript (all tool calls + results) so it
+        # has maximum information when assembling the final SPARQL query. The redundant
+        # intermediate journal dumps are stripped by the framework; the current journal is
+        # re-injected fresh in the synthesis prompt. Toggle off with WIKIKGQA_FULL_SYNTHESIS=0
+        # (for the full-vs-minimal synthesis A/B).
+        return os.environ.get("WIKIKGQA_FULL_SYNTHESIS", "1") != "0"
 
     def _get_synthesis_prompt_template(self) -> str:
         return SYNTHESIS_PROMPT_TEMPLATE

@@ -38,6 +38,18 @@ from ama_kbqa.wikikgqa.submission import (
 )
 
 
+def _macro_score(pairs):
+    """Score with the right metric for the data: bare-value (no-mentions splits, where
+    gold is a list of strings) vs QALD SPARQL-JSON (gold is a dict). Both return an
+    object with .n/.macro_f1/.macro_precision/.macro_recall/.per_question."""
+    if pairs and isinstance(pairs[0][1], list):
+        from ama_kbqa.wikikgqa.nomentions import macro_f1 as _nm_macro
+        from ama_kbqa.wikikgqa.nomentions import score_one
+
+        return _nm_macro([score_one(qid, gold, sys) for qid, gold, sys in pairs])
+    return macro_qald_f1(pairs)
+
+
 def run_benchmark(
     dataset: WikiKGQADataset,
     generator: Generator,
@@ -60,7 +72,7 @@ def run_benchmark(
         (hang, kill, crash) never loses completed work."""
         write_submission(build_submission(sub_dataset, outcomes), out_dir / "submission.json")
         if score_pairs:
-            sc = macro_qald_f1(score_pairs)
+            sc = _macro_score(score_pairs)
             with open(out_dir / "summary.json", "w", encoding="utf-8") as fh:
                 json.dump(
                     {
@@ -96,12 +108,16 @@ def run_benchmark(
             elapsed_s=(gen.result.elapsed_s if gen.result else 0.0),
         )
         if q.has_gold:
-            score_pairs.append((q.id, q.gold_answer, gen.answer))
+            # gold_answer (QALD dict) or gold_values (bare list) — _macro_score dispatches.
+            score_pairs.append((q.id, q.gold_answer if q.gold_answer is not None else q.gold_values, gen.answer))
         if verbose:
             n_rows = len(gen.answer.get("results", {}).get("bindings", []))
+            n_vars = len(gen.answer.get("head", {}).get("vars", []))
+            # Gold always projects a single column; >1 var can never match (formality).
+            multivar = f" [WARN: {n_vars} projected vars, gold is single-column]" if n_vars > 1 else ""
             print(
                 f"[{i}/{len(questions)}] q{q.id} ok={gen.ok} "
-                f"attempts={gen.attempts} rows={n_rows} :: {q.question('en')[:60]}",
+                f"attempts={gen.attempts} rows={n_rows} :: {q.question('en')[:60]}{multivar}",
                 flush=True,
             )
         _checkpoint()  # durable after every question
@@ -117,7 +133,7 @@ def run_benchmark(
         "submission": str(sub_path),
     }
     if score_pairs:
-        score = macro_qald_f1(score_pairs)
+        score = _macro_score(score_pairs)
         summary["scored"] = score.n
         summary["macro_f1"] = round(score.macro_f1, 4)
         summary["macro_precision"] = round(score.macro_precision, 4)
@@ -156,6 +172,26 @@ def main(argv=None) -> int:
         "--conventions", default="full", choices=["full", "minimal"],
         help="agent only: 'full' = R1-R10 modeling conventions; 'minimal' = R1-R6 (held-out A/B)",
     )
+    parser.add_argument(
+        "--entity-search", action="store_true",
+        help="agent only: enable the SearchEntities linker (without-mentions track)",
+    )
+    parser.add_argument(
+        "--minimal-synthesis", action="store_true",
+        help="agent only: use minimal (journal-only) synthesis context instead of the full "
+             "exploration transcript (for the full-vs-minimal synthesis A/B).",
+    )
+    parser.add_argument(
+        "--tool-budget", type=int, default=20,
+        help="agent only: per-question tool-call budget (default 20; raise for the "
+             "linking-heavy without-mentions track, e.g. 30).",
+    )
+    parser.add_argument(
+        "--agent-timeout", type=float, default=None,
+        help="agent only: per-question wall-clock cap in seconds (default: none). A stuck "
+             "question is cancelled and its best validated query recovered from the journal. "
+             "Use a generous value (e.g. 600) as a safety net for unattended submission runs.",
+    )
     parser.add_argument("--out-dir", default="benchmark_results/wikikgqa")
     parser.add_argument(
         "--sample", type=int, default=None,
@@ -163,6 +199,27 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--seed", type=int, default=42, help="random seed for --sample")
     args = parser.parse_args(argv)
+
+    # Formality guard: the final answer's literal datatypes (xsd:int vs xsd:integer),
+    # date serialization, and entity URIs must match the gold, which was produced on the
+    # challenge QLever endpoint. Running answers against public WDQS silently breaks these
+    # even for a correct query, so make the resolved endpoint visible and warn on WDQS.
+    from ama_kbqa.wikikgqa.endpoint import DEFAULT_ENDPOINT, resolve_endpoint
+
+    resolved = resolve_endpoint(args.endpoint)
+    print(f"[endpoint] final answers execute against: {resolved}", flush=True)
+    if resolved == DEFAULT_ENDPOINT:
+        print(
+            "[endpoint] WARNING: this is public WDQS (the default), NOT the challenge "
+            "endpoint. Answer datatypes/date formats may not match the gold. Set "
+            "WIKIKGQA_ENDPOINT (or pass --endpoint) to the challenge QLever backend for a "
+            "real submission.",
+            flush=True,
+        )
+
+    if args.minimal_synthesis:
+        import os as _os
+        _os.environ["WIKIKGQA_FULL_SYNTHESIS"] = "0"
 
     dataset = WikiKGQADataset.load(args.data)
     if args.sample:
@@ -180,6 +237,9 @@ def main(argv=None) -> int:
             provider=args.provider,
             model=args.model,
             conventions=args.conventions,
+            entity_search=args.entity_search,
+            tool_budget=args.tool_budget,
+            agent_timeout=args.agent_timeout,
         )
     else:
         generator = MentionSparqlGenerator(

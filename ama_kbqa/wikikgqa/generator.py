@@ -168,8 +168,15 @@ class MentionSparqlGenerator:
         return GeneratedQuery(qid=question.id, sparql=sparql, result=result, attempts=attempt)
 
 
-def _augment_question(question: WikiKGQAQuestion, language: str) -> str:
-    """Render the question plus its resolved mentions for the agent."""
+def _augment_question(question: WikiKGQAQuestion, language: str, include_mentions: bool = True) -> str:
+    """Render the question for the agent, optionally with its resolved mentions.
+
+    ``include_mentions=False`` simulates the without-mentions track: the given
+    QIDs/PIDs are withheld so the agent must link names itself via SearchEntities.
+    Used to score the live-API linking path against the (with-mentions) gold set.
+    """
+    if not include_mentions:
+        return f"QUESTION: {question.question(language)}"
     lines = [f"QUESTION: {question.question(language)}", "", "Linked mentions (already resolved for you):"]
     mentions = question.mentions_for(language) or question.mentions
     seen: set[tuple] = set()
@@ -189,6 +196,36 @@ def _augment_question(question: WikiKGQAQuestion, language: str) -> str:
     return "\n".join(lines)
 
 
+def _best_query_from_snapshots(agent) -> str | None:
+    """Salvage the latest validated non-empty SPARQL query the agent ran.
+
+    Every RunSPARQL is recorded into the journal's ``found_values`` as
+    ``sparql_result_N`` with its ``result_count``, and the agent snapshots the
+    journal locally after each tool call. So even when the agent is cancelled by
+    the wall-clock (or emits nothing at synthesis), we can return the last query
+    that actually returned rows instead of an empty answer. Picks the
+    highest-numbered (most recent) query with a positive result_count — the best
+    proxy for what the agent would have committed.
+    """
+    snaps = getattr(agent, "journal_snapshots", None) or []
+    best_idx, best_query = -1, None
+    for snap in snaps:
+        found = (snap.get("state") or {}).get("found_values") or {}
+        for key, val in found.items():
+            if not (isinstance(val, dict) and key.startswith("sparql_result")):
+                continue
+            query = val.get("query")
+            if not query or (val.get("result_count") or 0) <= 0:
+                continue
+            try:
+                idx = int(key.rsplit("_", 1)[-1])
+            except ValueError:
+                idx = 0
+            if idx > best_idx:
+                best_idx, best_query = idx, query
+    return best_query
+
+
 class AgentSparqlGenerator:
     """Agentic generator: the BaseKBQAAgent tool-loop, emitting a SPARQL query.
 
@@ -205,17 +242,25 @@ class AgentSparqlGenerator:
         model: str | None = None,
         provider: str | None = None,
         timeout: int = 120,
-        agent_timeout: float = 280.0,
+        agent_timeout: float | None = None,
         conventions: str = "full",
+        entity_search: bool = False,
+        tool_budget: int = 20,
     ):
         self.language = language
         self.endpoint = endpoint
         self.model = model
         self.provider = provider
         self.timeout = timeout
-        # Wall-clock SAFETY NET only. The binding limit is the agent's tool-call
-        # budget (max_tool_calls), which forces synthesis and emits a query. This
-        # cap just catches a genuinely stuck run; it should rarely fire now.
+        # Without-mentions track: let the agent link names to ids via SearchEntities.
+        self.entity_search = entity_search
+        # Per-question tool-call budget (raise for the linking-heavy without-mentions track).
+        self.tool_budget = tool_budget
+        # No wall-clock by default (quality over speed): the tool-call budget bounds
+        # the run and forces synthesis, and every LLM/tool call is individually timed
+        # and retried with stepped backoff, so a slow-but-healthy endpoint is waited
+        # out instead of cancelled mid-query. Set a float only to force a hard cap
+        # (e.g. tests exercising the journal-recovery fallback).
         self.agent_timeout = agent_timeout
         # "full" = R1-R10; "minimal" = R1-R6 (for held-out A/B of the R7-R10 conventions).
         self.conventions = conventions
@@ -225,25 +270,48 @@ class AgentSparqlGenerator:
 
         from ama_kbqa.agents.wikidata_agent.agent import WikidataAgent
 
-        augmented = _augment_question(question, self.language)
+        # In entity_search (without-mentions) mode, withhold the given mentions so the
+        # agent is forced to link names itself — exercising the live-API linking path.
+        augmented = _augment_question(question, self.language, include_mentions=not self.entity_search)
 
-        async def _run() -> str:
+        async def _run() -> tuple[str, str | None]:
             agent = WikidataAgent(
-                model=self.model, provider=self.provider, conventions=self.conventions
+                model=self.model,
+                provider=self.provider,
+                conventions=self.conventions,
+                entity_search=self.entity_search,
+                tool_budget=self.tool_budget,
             )
+            raw = ""
             try:
-                return await asyncio.wait_for(agent.ask(augmented), timeout=self.agent_timeout)
-            finally:
-                try:
-                    await agent.close()
-                except Exception:
-                    pass
+                if self.agent_timeout:  # optional hard cap; default is None (no wall-clock)
+                    raw = await asyncio.wait_for(agent.ask(augmented), timeout=self.agent_timeout)
+                else:
+                    raw = await agent.ask(augmented)
+            except Exception:  # timeout / agent / MCP failure: fall through to recovery
+                raw = ""
+            # Read the journal snapshots (local, survives cancellation) BEFORE closing,
+            # so a cancelled or empty-synthesis run can still emit its best query.
+            recovered = _best_query_from_snapshots(agent)
+            try:
+                await agent.close()
+            except Exception:
+                pass
+            return raw, recovered
 
         try:
-            raw = asyncio.run(_run())
-        except Exception:  # timeout / agent / MCP failure -> empty answer, keep going
-            return GeneratedQuery(question.id, None, None, attempts=1)
+            raw, recovered = asyncio.run(_run())
+        except Exception:  # event-loop level failure -> nothing to salvage
+            raw, recovered = "", None
 
         sparql = strip_sparql(raw)
+        used_recovery = False
+        if not sparql and recovered:  # synthesis produced nothing: fall back to the journal
+            sparql = strip_sparql(recovered)
+            used_recovery = bool(sparql)
+        if not sparql:
+            return GeneratedQuery(question.id, None, None, attempts=1)
         result = execute(sparql, endpoint=self.endpoint, timeout=self.timeout)
-        return GeneratedQuery(qid=question.id, sparql=sparql, result=result, attempts=1)
+        return GeneratedQuery(
+            qid=question.id, sparql=sparql, result=result, attempts=2 if used_recovery else 1
+        )

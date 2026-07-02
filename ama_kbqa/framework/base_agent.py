@@ -37,6 +37,7 @@ from ama_kbqa.config import (
 )
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
+from ama_kbqa.llm.retry import TransientRetry, is_transient_error
 from ama_kbqa.framework.trace import (
     JOURNAL_MUTATING_TOOLS,
     TraceRecorder,
@@ -134,6 +135,12 @@ class BaseKBQAAgent(ABC):
         self._synthesis_model = None
 
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
+
+        # Transient-error retry (shared core: ama_kbqa.llm.retry). One instance per
+        # agent so the stepped-backoff level persists across this question's calls and
+        # resets on the first success. This is the sole resilience layer now that there
+        # is no per-question wall-clock.
+        self._retry = TransientRetry()
 
         # Token tracking
         self.token_usage = {
@@ -287,6 +294,47 @@ Relations: {formatted_relations}
 {qtype_strategy}
 
 Proceed with your investigation."""
+
+    def _synthesis_full_context(self) -> bool:
+        """Whether synthesis sees the FULL exploration transcript (all tool calls +
+        results) instead of the minimal journal-only context.
+
+        Default False (minimal = the big token saving). Override to True for agents that
+        benefit from maximum context at synthesis (e.g. the Wikidata SPARQL agent, where
+        the exact tool results matter for assembling the final query). The intermediate
+        journal/scratchpad dumps are stripped either way, since the current journal is
+        injected fresh in the synthesis prompt.
+        """
+        return False
+
+    _SYNTHESIS_JOURNAL_TOOLS = ("ManageJournal", "GetJournalSummary", "GetJournalStateJSON")
+
+    def _build_full_synthesis_messages(self, synthesis_prompt: str) -> List[Dict[str, Any]]:
+        """Full conversation for synthesis, minus the redundant scratchpad states.
+
+        Keeps every real exploration message (assistant tool calls + their results,
+        reasoning), but (1) drops the periodic journal-refresh injections and (2) replaces
+        journal-TOOL result payloads with a short placeholder — content only, so the
+        assistant->tool pairing the API requires stays intact. The synthesis_prompt (which
+        carries the current journal + question) is appended as the final user turn.
+        """
+        out: List[Dict[str, Any]] = []
+        for msg in self._messages:
+            content = msg.get("content")
+            if (
+                msg.get("role") == "user"
+                and isinstance(content, str)
+                and content.startswith(self._JOURNAL_REFRESH_MARKER)
+            ):
+                continue  # redundant periodic scratchpad re-injection
+            if msg.get("role") == "tool" and msg.get("name") in self._SYNTHESIS_JOURNAL_TOOLS:
+                stripped = dict(msg)
+                stripped["content"] = "[intermediate journal omitted; current journal is below]"
+                out.append(stripped)
+                continue
+            out.append(dict(msg))
+        out.append({"role": "user", "content": synthesis_prompt})
+        return out
 
     def _get_synthesis_prompt_template(self) -> str:
         """
@@ -1937,12 +1985,17 @@ Change strategy or acknowledge the data doesn't exist."""
             query=query
         )
 
-        # Use MINIMAL messages for synthesis instead of full history
-        # This is the single biggest token saving in the pipeline
-        synthesis_messages = [
-            {"role": "system", "content": self._get_synthesis_system_prompt()},
-            {"role": "user", "content": synthesis_prompt}
-        ]
+        if self._synthesis_full_context():
+            # Full exploration transcript (all tool calls + results) so the model has the
+            # maximum information, MINUS the intermediate journal/scratchpad dumps (they are
+            # redundant with the fresh journal injected in synthesis_prompt below).
+            synthesis_messages = self._build_full_synthesis_messages(synthesis_prompt)
+        else:
+            # MINIMAL messages: the single biggest token saving in the pipeline.
+            synthesis_messages = [
+                {"role": "system", "content": self._get_synthesis_system_prompt()},
+                {"role": "user", "content": synthesis_prompt}
+            ]
 
         # Make synthesis call with minimal context
         self._trace("Making final synthesis LLM call (minimal context)...", COLOR_YELLOW)
@@ -2030,6 +2083,29 @@ Change strategy or acknowledge the data doesn't exist."""
     # LLM CALLS
     # =========================================================================
 
+    # Transient detection kept as a method for back-compat / readability; the logic
+    # lives in the shared retry core (single source of truth).
+    _is_transient_error = staticmethod(is_transient_error)
+
+    def _create_with_retry(self, client, call_params: Dict[str, Any], label: str = "LLM"):
+        """chat.completions.create with stepped-backoff retry on transient errors.
+
+        Delegates to the per-agent :class:`TransientRetry` (shared core in
+        ``ama_kbqa.llm.retry``), so the raw-SDK path, ChatKIT, and this agent all back
+        off identically. No per-question wall-clock remains, so this is the sole
+        resilience layer for provider flakiness; deterministic errors re-raise at once.
+        """
+        def _log(exc: BaseException, attempt: int, wait: float) -> None:
+            self._trace(
+                f"Transient {label} error (attempt {attempt}, waiting {wait:.0f}s "
+                f"before retry): {str(exc)[:90]}",
+                COLOR_YELLOW,
+            )
+
+        return self._retry.run(
+            lambda: client.chat.completions.create(**call_params), on_retry=_log
+        )
+
     def _llm_call(
         self,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -2069,32 +2145,10 @@ Change strategy or acknowledge the data doesn't exist."""
             payload={"messages": self._messages_for_payload()},
         ) as _llm_span:
             try:
-                # Retry transient provider errors (e.g. KIT's "Open WebUI: Server
-                # Connection Error" 400, 5xx, connection drops) instead of aborting
-                # the whole question. Deterministic errors (bad request, auth) are
-                # re-raised immediately.
-                import time as _time
-
-                response = None
-                for _attempt in range(3):
-                    try:
-                        response = self.client.chat.completions.create(**call_params)
-                        break
-                    except Exception as _exc:
-                        _m = str(_exc).lower()
-                        _transient = any(s in _m for s in (
-                            "server connection error", "open webui", "connection error",
-                            "timeout", "timed out", "502", "503", "504", "overloaded",
-                            "temporarily unavailable", "429", "rate limit",
-                        ))
-                        if not _transient or _attempt == 2:
-                            raise
-                        self._trace(
-                            f"Transient LLM error (attempt {_attempt + 1}/3), retrying: "
-                            f"{str(_exc)[:90]}",
-                            COLOR_YELLOW,
-                        )
-                        _time.sleep(1.5 * (_attempt + 1))
+                # Transient provider errors (KIT's "Open WebUI: Server Connection
+                # Error", 5xx, connection drops, rate limits) are retried with stepped
+                # backoff; deterministic errors (bad request, auth) re-raise at once.
+                response = self._create_with_retry(self.client, call_params, label="LLM")
                 self._trace("LLM call completed", COLOR_GREEN)
                 if response.usage:
                     _llm_span.update_attributes({
@@ -2165,7 +2219,7 @@ Change strategy or acknowledge the data doesn't exist."""
             payload={"messages": self._messages_for_payload()},
         ) as _span:
             try:
-                response = self.client.chat.completions.create(**call_params)
+                response = self._create_with_retry(self.client, call_params, label="LLM (text)")
 
                 if response.usage:
                     self._track_token_usage(response.usage)
@@ -2212,7 +2266,11 @@ Change strategy or acknowledge the data doesn't exist."""
             ]},
         ) as _span:
             try:
-                response = self.synthesis_client.chat.completions.create(**call_params)
+                # Synthesis produces the FINAL query, so it must survive a transient
+                # blip too — retry with the same stepped backoff before giving up.
+                response = self._create_with_retry(
+                    self.synthesis_client, call_params, label="synthesis"
+                )
                 self._trace("Synthesis LLM call completed", COLOR_GREEN)
 
                 if response.usage:

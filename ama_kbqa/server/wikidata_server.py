@@ -15,22 +15,28 @@ Tool groups:
   * Discovery (the blocker-#1 tools): GetEntityProperties, GetRelationBetween,
     GetPropertyInfo, GetLabels.
 
-Entity/property *linking* (fuzzy search) is intentionally NOT implemented here.
-For the with-mentions track the QIDs/PIDs are given; the without-mentions linker
-(Wikidata search API for entities, a small property index for relations) is a
-separate, still-to-be-decided component.
+Entity/property *linking* (fuzzy search) is gated behind a config flag. For the
+with-mentions track the QIDs/PIDs are given and no linker is needed. For the
+without-mentions track, set ``WIKIKGQA_ENTITY_SEARCH=1`` (surfaced by the
+``entity_search`` config parameter on WikidataAgent/AgentSparqlGenerator/the
+benchmark CLI) to register the ``SearchEntities`` tool, which resolves names to
+Wikidata ids via the Wikidata search API. It is off by default so the with-mentions
+tool list stays lean.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import urllib.parse
+import urllib.request
 from typing import Literal
 
 from fastmcp import Context, FastMCP
 
 from ama_kbqa.framework.state import JournalState
-from ama_kbqa.wikikgqa.endpoint import execute
+from ama_kbqa.wikikgqa.endpoint import USER_AGENT, execute
 
 mcp = FastMCP("Wikidata-KG-Server")
 
@@ -49,8 +55,20 @@ _TOOL_SPARQL_TIMEOUT = 30
 # Tool-call budget surfaced live to the agent. Matches the agent's max_tool_calls
 # so the running "[tool call N/BUDGET]" tag lines up with when the framework forces
 # synthesis. Resets per question (the server process restarts each question).
-_TOOL_BUDGET = 20
+_TOOL_BUDGET = int(os.environ.get("WIKIKGQA_TOOL_BUDGET", "20"))
 _tool_call_count = 0
+
+# Entity linking (without-mentions track) is gated: the SearchEntities tool is only
+# registered when WIKIKGQA_ENTITY_SEARCH is truthy, which the `entity_search` config
+# parameter sets before the agent spawns this server. Keeps with-mentions runs lean.
+_ENTITY_SEARCH_ENABLED = os.environ.get("WIKIKGQA_ENTITY_SEARCH", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+# The frozen challenge endpoint has no search API, so linking hits the LIVE Wikidata
+# search API. QIDs are stable identifiers, so an id found here resolves in the frozen
+# dump too (and the agent validates every path with RunSPARQL against the endpoint).
+_SEARCH_API = os.environ.get("WIKIDATA_SEARCH_API", "https://www.wikidata.org/w/api.php")
+_SEARCH_LIMIT = 7
 
 
 def _budgeted(fn):
@@ -399,6 +417,151 @@ def GetPropertyInfo(property_id: str, context: Context) -> str:
     return f"{pid}: {label}\n  description: {desc}\n  aliases: {aliases}"
 
 
+_QUALIFIER_PREFIX = "http://www.wikidata.org/prop/qualifier/"
+
+
+@mcp.tool
+@_budgeted
+def GetStatementQualifiers(entity_id: str, property_id: str, context: Context) -> str:
+    """Show an entity's statements for a property INCLUDING their qualifiers (the p:/ps:/pq: layer).
+
+    GetEntityProperties only shows a property's direct (wdt:) value. Use THIS when the
+    answer lives on a qualifier of a statement — e.g. a person's middle name is the
+    p:P735 statement whose pq:P1545 (series ordinal) is "2"; a review score is the
+    p:P444 statement qualified by pq:P459 (determination method). It lists each
+    statement's main value and every qualifier (id, label, value) so you can pick the
+    right pq: predicate for your query instead of guessing.
+    """
+    e, p = entity_id.strip(), property_id.strip()
+    if not _valid_id(e, "Q"):
+        return f"ERROR: '{e}' is not a valid entity id (expected Q<number>)."
+    if not _valid_id(p, "P"):
+        return f"ERROR: '{p}' is not a valid property id (expected P<number>)."
+    # Two steps so a slow qualifier scan can't cost us the statement values. The
+    # main-value query is cheap; the qualifier query uses an unbound predicate
+    # (?stmt ?q ?qv), which QLever can be slow on, so it gets a tight timeout and
+    # degrades gracefully to values-only rather than hanging.
+    base = f"SELECT ?stmt ?val WHERE {{ wd:{e} p:{p} ?stmt . ?stmt ps:{p} ?val . }} LIMIT 300"
+    rb = execute(base, timeout=30, retries=1)
+    if not rb.ok or rb.json is None:
+        return f"ERROR: {(rb.error or 'query failed')[:200]}"
+    base_rows = rb.json.get("results", {}).get("bindings", [])
+    if not base_rows:
+        return f"{e} has no p:{p} statements (or the property is not present)."
+    stmts: dict[str, dict] = {}
+    for b in base_rows:
+        stmts.setdefault(b["stmt"]["value"], {"val": _cell(b["val"]), "quals": []})
+
+    qq = (
+        f"SELECT ?stmt ?q ?qv WHERE {{ wd:{e} p:{p} ?stmt . ?stmt ?q ?qv . "
+        f'FILTER(STRSTARTS(STR(?q), "{_QUALIFIER_PREFIX}")) }} LIMIT 300'
+    )
+    rq = execute(qq, timeout=25, retries=0)
+    qual_note = ""
+    if rq.ok and rq.json is not None:
+        for b in rq.json.get("results", {}).get("bindings", []):
+            d = stmts.get(b["stmt"]["value"])
+            if d is not None and "q" in b and "qv" in b:
+                d["quals"].append((b["q"]["value"].rsplit("/", 1)[-1], _cell(b["qv"])))
+    else:
+        qual_note = "  (qualifier lookup timed out; showing statement values only)"
+    # Resolve labels for the property, all qualifier P-ids, and any entity-valued ids.
+    label_ids = [p]
+    for d in stmts.values():
+        if _valid_id(d["val"], "Q"):
+            label_ids.append(d["val"])
+        for qpid, qv in d["quals"]:
+            label_ids.append(qpid)
+            if _valid_id(qv, "Q"):
+                label_ids.append(qv)
+    labels = _labels_for(label_ids)
+
+    def _lbl(x: str) -> str:
+        return f"{x} ({labels[x]})" if x in labels and labels[x] else x
+
+    out = [f"{e} p:{p} ({labels.get(p, '?')}) statements ({len(stmts)}):{qual_note}"]
+    for d in list(stmts.values())[:_MAX_ROWS]:
+        quals = ", ".join(f"pq:{_lbl(qpid)}={_lbl(qv)}" for qpid, qv in d["quals"]) or "(no qualifiers)"
+        out.append(f"  value {_lbl(d['val'])}  [{quals}]")
+    return "\n".join(out)
+
+
+@mcp.tool
+@_budgeted
+def SelectExtreme(
+    value_property: str,
+    context: Context,
+    mode: str = "max",
+    concept: str = "",
+    by_count: bool = False,
+    filter_property: str = "",
+    filter_value: str = "",
+) -> str:
+    """Return ALL entities tied for the extreme (max/min) of a property — superlatives done right.
+
+    Writing a superlative by hand as `ORDER BY DESC(?v) LIMIT 1` silently drops ties; the
+    gold answer keeps every tied entity. This builds the correct MAX/MIN-subquery for you.
+    Args:
+      value_property: the P-id whose value to extremize (e.g. P2046 area, P1082 population).
+      mode: "max" (default) for largest/highest/longest/most, "min" for smallest/least.
+      concept: optional Q-id to restrict subjects to its instances (wdt:P31/wdt:P279*).
+      by_count: True for "most/fewest <things>" — extremize by the COUNT of value_property
+        per subject instead of by its value.
+      filter_property/filter_value: optional extra subject constraint (P-id = Q-id),
+        e.g. P57=Q2001 to restrict to films directed by Kubrick.
+    Returns the tied entity ids plus the SPARQL used, so you can submit that as the answer.
+    """
+    vp = value_property.strip()
+    if not _valid_id(vp, "P"):
+        return f"ERROR: '{vp}' is not a valid property id (expected P<number>)."
+    agg = "MIN" if str(mode).lower().startswith("min") else "MAX"
+    restr = ""
+    if concept.strip() and _valid_id(concept.strip(), "Q"):
+        restr += f"?s wdt:P31/wdt:P279* wd:{concept.strip()} . "
+    if (
+        filter_property.strip() and filter_value.strip()
+        and _valid_id(filter_property.strip(), "P") and _valid_id(filter_value.strip(), "Q")
+    ):
+        restr += f"?s wdt:{filter_property.strip()} wd:{filter_value.strip()} . "
+    if by_count:
+        inner = f"SELECT ?s (COUNT(DISTINCT ?x) AS ?v) WHERE {{ {restr}?s wdt:{vp} ?x . }} GROUP BY ?s"
+    else:
+        inner = f"SELECT ?s ?v WHERE {{ {restr}?s wdt:{vp} ?v . }}"
+    query = (
+        f"SELECT DISTINCT ?s WHERE {{ "
+        f"{{ SELECT ({agg}(?v) AS ?m) WHERE {{ {{ {inner} }} }} }} "
+        f"{{ {inner} }} FILTER(?v = ?m) }}"
+    )
+    r = execute(query, timeout=_TOOL_SPARQL_TIMEOUT, retries=1)
+    if not r.ok or r.json is None:
+        err = (r.error or "query failed")[:200]
+        if "timeout" in err.lower():
+            return (
+                "TIMEOUT: the extreme query was too broad. Add a `concept` restriction or a "
+                "filter_property/filter_value to shrink the candidate set, then retry."
+            )
+        return f"ERROR: {err}"
+    rows = r.json.get("results", {}).get("bindings", [])
+    ids = [_short(b["s"]["value"]) for b in rows if "s" in b]
+    if not ids:
+        return (
+            "0 rows. Check the value_property exists on these subjects (try GetEntityProperties), "
+            "or relax the concept/filter."
+        )
+    # Record into the journal so synthesis can reuse this exact (tie-safe) query as the answer.
+    key = f"sparql_result_{len(session_journal.found_values) + 1}"
+    session_journal.found_values[key] = {
+        "query": query, "vars": ["s"],
+        "rows": [{"s": i} for i in ids[:_MAX_ROWS]], "result_count": len(ids),
+    }
+    labels = _labels_for(ids[:_MAX_ROWS])
+    shown = "  ".join(f"{i}({labels[i]})" if labels.get(i) else i for i in ids[:_MAX_ROWS])
+    return (
+        f"{agg} of {vp}: {len(ids)} entity(ies) tied for the extreme:\n  {shown}\n"
+        f"Use this query as your answer (it keeps all ties):\n{query}"
+    )
+
+
 @mcp.tool
 @_budgeted
 def GetLabels(ids: str, context: Context) -> str:
@@ -428,6 +591,160 @@ def _labels_for(ids: list[str]) -> dict[str, str]:
         for b in r.json.get("results", {}).get("bindings", []):
             out[_short(b["e"]["value"])] = b.get("l", {}).get("value", "")
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Entity/property linking (without-mentions track) — gated behind config
+# --------------------------------------------------------------------------- #
+def _wbsearch(term: str, kind: str, language: str) -> list[dict]:
+    """Query the Wikidata ``wbsearchentities`` API; return the raw candidate list."""
+    params = urllib.parse.urlencode(
+        {
+            "action": "wbsearchentities",
+            "search": term,
+            "language": language,
+            "uselang": language,
+            "type": kind,
+            "format": "json",
+            "limit": _SEARCH_LIMIT,
+        }
+    )
+    req = urllib.request.Request(
+        f"{_SEARCH_API}?{params}", headers={"User-Agent": USER_AGENT}
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode())
+    return data.get("search", []) or []
+
+
+def SearchEntities(
+    query: str,
+    context: Context,
+    type: Literal["item", "property"] = "item",
+    language: str = "en",
+) -> str:
+    """Link a NAME to Wikidata ids via the Wikidata search API (without-mentions track).
+
+    Use this FIRST when you were given no Q/P ids and must derive them from the
+    question text. ``type="item"`` finds entities (people, places, works, classes);
+    ``type="property"`` finds relations. ``language`` should match the question
+    ("en"/"es"). Returns ranked candidates with label + description; pick the id
+    whose description matches the question's intended sense (e.g. "Mercury" -> the
+    planet, not the element), then confirm with GetEntityProperties / RunSPARQL
+    before committing.
+    """
+    term = query.strip()
+    if not term:
+        return "ERROR: provide a name to search for."
+    kind = "property" if str(type).lower().startswith("prop") else "item"
+    lang = (language or "en").strip() or "en"
+    try:
+        hits = _wbsearch(term, kind, lang)
+    except Exception as exc:
+        return f"ERROR: entity search failed: {type(exc).__name__}: {exc}"[:300]
+    if not hits and lang != "en":
+        # A non-English label may be missing; fall back to an English search.
+        try:
+            hits = _wbsearch(term, kind, "en")
+        except Exception:
+            hits = []
+    if not hits:
+        return (
+            f"No {kind} candidates found for '{term}'. Try a shorter form, a synonym, "
+            "or search for a related class instead."
+        )
+    out = [f"Candidates for '{term}' ({kind}):"]
+    for h in hits:
+        cid = h.get("id", "?")
+        label = h.get("label", "")
+        desc = h.get("description", "")
+        out.append(f"  {cid}  {label}" + (f" — {desc}" if desc else ""))
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------------- #
+# Property linking via embedded dense/hybrid retrieval (without-mentions track)
+# --------------------------------------------------------------------------- #
+# Unlike SearchEntities (live Wikidata API), relations are linked against a LOCAL
+# Qdrant collection of all ~13k properties (label+description+aliases), embedded with
+# the project's shared model. Semantic matching beats the live API's label-only match
+# for oddly-phrased relations, and it costs no endpoint round-trip per search.
+_WIKIDATA_PROPERTIES_COLLECTION = "wikidata-properties"
+_qdrant_client = None
+_embed_client = None
+
+
+def _get_qdrant():
+    global _qdrant_client
+    if _qdrant_client is None:
+        from qdrant_client import QdrantClient
+
+        from ama_kbqa.config import get_qdrant_host, get_qdrant_port
+
+        _qdrant_client = QdrantClient(host=get_qdrant_host(), port=get_qdrant_port(), timeout=30)
+    return _qdrant_client
+
+
+def _get_embed_client():
+    global _embed_client
+    if _embed_client is None:
+        from ama_kbqa.config import get_embedding_client
+
+        _embed_client = get_embedding_client()
+    return _embed_client
+
+
+def SearchProperties(query: str, context: Context, limit: int = 8) -> str:
+    """Semantic search over ALL Wikidata properties to find the P-id for a relation.
+
+    The relation linker for the without-mentions track. Prefer this over guessing
+    property ids: it matches MEANING (label + description + aliases), so a relation
+    phrased differently than its label still resolves ("who governs" -> P6 head of
+    government; "cause of death" -> P509). Returns ranked candidates (P-id, label,
+    description); confirm the winner with GetPropertyInfo or RunSPARQL before committing.
+    """
+    term = query.strip()
+    if not term:
+        return "ERROR: provide a relation phrase to search for."
+    try:
+        from ama_kbqa import retrieval
+
+        qc = _get_qdrant()
+        if not qc.collection_exists(_WIKIDATA_PROPERTIES_COLLECTION):
+            return (
+                f"ERROR: the '{_WIKIDATA_PROPERTIES_COLLECTION}' index is not populated. "
+                "Use SearchEntities(type=property) as a fallback."
+            )
+        vec = retrieval.embed_query(_get_embed_client(), term)
+        hits = retrieval.search(
+            qc,
+            _WIKIDATA_PROPERTIES_COLLECTION,
+            query_text=term,
+            query_vector=vec,
+            # allow_rerank=False: dense+BM25 fusion is enough for linking and avoids the
+            # optional sentence-transformers dep (install `uv sync --extra rerank` for a
+            # cross-encoder boost later).
+            params=retrieval.build_retrieval_params(
+                limit=max(1, min(int(limit), 15)), score_threshold=None, allow_rerank=False
+            ),
+        )
+    except Exception as exc:
+        return f"ERROR: property search failed: {type(exc).__name__}: {exc}"[:300]
+    if not hits:
+        return f"No property candidates for '{term}'. Try a synonym or simpler phrasing."
+    out = [f"Property candidates for '{term}':"]
+    for h in hits:
+        p = h.payload or {}
+        pid, label, desc = p.get("pid", "?"), p.get("label", ""), p.get("description", "")
+        out.append(f"  {pid}  {label}" + (f" — {desc[:70]}" if desc else "") + f"  (score {h.score:.2f})")
+    return "\n".join(out)
+
+
+# Register only when the config flag is set, so these are absent (and invisible to
+# the agent's tool catalog) on with-mentions runs.
+if _ENTITY_SEARCH_ENABLED:
+    mcp.tool(_budgeted(SearchEntities))
+    mcp.tool(_budgeted(SearchProperties))
 
 
 if __name__ == "__main__":

@@ -96,12 +96,13 @@ class WikiKGQAQuestion:
     questions: dict[str, str]                 # language -> question string
     mentions: list[Mention] = field(default_factory=list)
     gold_sparql: str | None = None            # None for test entries
-    gold_answer: dict[str, Any] | None = None  # raw SPARQL-JSON, None for test entries
+    gold_answer: dict[str, Any] | None = None  # raw SPARQL-JSON (QALD format), None otherwise
+    gold_values: list[str] | None = None       # bare answers (no-mentions splits), None otherwise
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_gold(self) -> bool:
-        return self.gold_answer is not None
+        return self.gold_answer is not None or self.gold_values is not None
 
     @property
     def has_mentions(self) -> bool:
@@ -124,15 +125,21 @@ class WikiKGQAQuestion:
             if q.get("string")
         }
 
-        sparql = (raw.get("query") or {}).get("sparql")
+        # gold query lives at query.sparql (QALD format) or top-level sparql (no-mentions).
+        sparql = (raw.get("query") or {}).get("sparql") or raw.get("sparql")
         if _is_placeholder(sparql):
             sparql = None
 
         gold_answer = None
+        gold_values = None
         answers = raw.get("answers") or []
         if answers and not _is_placeholder(answers[0]):
-            # Training entries store the SPARQL-JSON object directly in answers[0].
-            gold_answer = answers[0]
+            if isinstance(answers[0], dict):
+                # QALD format: the SPARQL-JSON object is stored directly in answers[0].
+                gold_answer = answers[0]
+            else:
+                # No-mentions splits: answers is a bare list of values ("Q..."/"3"/...).
+                gold_values = [str(a) for a in answers]
 
         mentions = [Mention.from_raw(m) for m in raw.get("mentions", [])]
 
@@ -142,6 +149,7 @@ class WikiKGQAQuestion:
             mentions=mentions,
             gold_sparql=sparql,
             gold_answer=gold_answer,
+            gold_values=gold_values,
             raw=raw,
         )
 
