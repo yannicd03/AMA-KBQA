@@ -138,12 +138,11 @@ class WikidataAgent(BaseKBQAAgent):
         return prompt
 
     def _synthesis_full_context(self) -> bool:
-        # Give synthesis the full exploration transcript (all tool calls + results) so it
-        # has maximum information when assembling the final SPARQL query. The redundant
-        # intermediate journal dumps are stripped by the framework; the current journal is
-        # re-injected fresh in the synthesis prompt. Toggle off with WIKIKGQA_FULL_SYNTHESIS=0
-        # (for the full-vs-minimal synthesis A/B).
-        return os.environ.get("WIKIKGQA_FULL_SYNTHESIS", "1") != "0"
+        # Default: minimal (journal-only) synthesis. The 2026-07-02 A/B found that feeding
+        # synthesis the full exploration transcript did NOT help (0.781 vs 0.807 minimal) and
+        # costs more tokens — the journal already carries the validated queries. Kept as an
+        # opt-in behind WIKIKGQA_FULL_SYNTHESIS=1 for future experiments.
+        return os.environ.get("WIKIKGQA_FULL_SYNTHESIS", "0") == "1"
 
     def _get_synthesis_prompt_template(self) -> str:
         return SYNTHESIS_PROMPT_TEMPLATE

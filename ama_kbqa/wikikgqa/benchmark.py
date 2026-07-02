@@ -177,9 +177,10 @@ def main(argv=None) -> int:
         help="agent only: enable the SearchEntities linker (without-mentions track)",
     )
     parser.add_argument(
-        "--minimal-synthesis", action="store_true",
-        help="agent only: use minimal (journal-only) synthesis context instead of the full "
-             "exploration transcript (for the full-vs-minimal synthesis A/B).",
+        "--full-synthesis", action="store_true",
+        help="agent only: feed the full exploration transcript to synthesis instead of the "
+             "default minimal journal-only context. (The 2026-07-02 A/B found this does not "
+             "help and costs more tokens; kept as an opt-in.)",
     )
     parser.add_argument(
         "--tool-budget", type=int, default=20,
@@ -217,9 +218,9 @@ def main(argv=None) -> int:
             flush=True,
         )
 
-    if args.minimal_synthesis:
+    if args.full_synthesis:
         import os as _os
-        _os.environ["WIKIKGQA_FULL_SYNTHESIS"] = "0"
+        _os.environ["WIKIKGQA_FULL_SYNTHESIS"] = "1"
 
     dataset = WikiKGQADataset.load(args.data)
     if args.sample:
