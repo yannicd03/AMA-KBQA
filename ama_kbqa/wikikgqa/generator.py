@@ -249,7 +249,7 @@ class AgentSparqlGenerator:
         provider: str | None = None,
         timeout: int = 120,
         agent_timeout: float | None = None,
-        conventions: str = "full",
+        conventions: str = "minimal",
         entity_search: bool = False,
         tool_budget: int = 20,
         ask_votes: int = 1,
@@ -269,7 +269,8 @@ class AgentSparqlGenerator:
         # out instead of cancelled mid-query. Set a float only to force a hard cap
         # (e.g. tests exercising the journal-recovery fallback).
         self.agent_timeout = agent_timeout
-        # "full" = R1-R10; "minimal" = R1-R6 (for held-out A/B of the R7-R10 conventions).
+        # "minimal" = R1-R6 (default; held-out A/B found no R7-R10 benefit);
+        # "full" = R1-R10 (opt-in).
         self.conventions = conventions
         # Self-consistency for ASK questions: when the committed query executes to a
         # boolean, run the whole generation this many times in total and majority-vote

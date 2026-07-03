@@ -200,8 +200,10 @@ def main(argv=None) -> int:
         help="'mention' = blind LLM-to-SPARQL baseline; 'agent' = exploring BaseKBQAAgent",
     )
     parser.add_argument(
-        "--conventions", default="full", choices=["full", "minimal"],
-        help="agent only: 'full' = R1-R10 modeling conventions; 'minimal' = R1-R6 (held-out A/B)",
+        "--conventions", default="minimal", choices=["full", "minimal"],
+        help="agent only: 'minimal' = R1-R6 (default; the 2026-07-03 held-out seed-99 A/B "
+             "found no benefit from the extended rules: 0.7311 minimal vs 0.6833 full, "
+             "noise-dominated); 'full' = R1-R10 (opt-in).",
     )
     parser.add_argument(
         "--entity-search", action="store_true",

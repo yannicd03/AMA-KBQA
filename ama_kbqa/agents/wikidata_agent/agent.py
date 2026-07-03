@@ -48,12 +48,15 @@ class WikidataAgent(BaseKBQAAgent):
         session_id: str = "default",
         model: Optional[str] = None,
         provider: Optional[str] = None,
-        conventions: str = "full",
+        conventions: str = "minimal",
         entity_search: bool = False,
         tool_budget: int = 20,
     ):
-        # conventions: "full" includes the extended R7-R10 modeling rules; "minimal"
-        # uses only R1-R6 (for held-out A/B testing of whether R7-R10 generalize).
+        # conventions: "minimal" (default) uses only R1-R6; "full" adds the extended
+        # R7-R10 modeling rules. The 2026-07-03 held-out A/B (seed-99 rand-50,
+        # Qwen3.5-397B) found no benefit from R7-R10 (0.7311 minimal vs 0.6833 full,
+        # noise-dominated), so the cheaper, lower-overfitting-risk minimal set is
+        # the default and full stays opt-in.
         self._conventions = conventions
         # entity_search gates the without-mentions linker. Set the env flag BEFORE
         # super().__init__ so the MCP server subprocess (spawned later, inheriting
