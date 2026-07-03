@@ -50,6 +50,37 @@ def _macro_score(pairs):
     return macro_qald_f1(pairs)
 
 
+def _write_run_manifest(out_dir: str | Path, args, resolved_endpoint: str) -> None:
+    """Persist the run's full configuration so results map to code and settings.
+
+    Mirrors benchmark_agents._write_run_manifest: without this, a summary.json
+    cannot be attributed to a model/conventions/seed/commit after the fact (the
+    exact gap that made earlier failure-mode analysis unreliable).
+    """
+    import subprocess
+
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+            cwd=Path(__file__).resolve().parents[2],
+        ).stdout.strip() or None
+    except Exception:
+        commit = None
+    manifest = {
+        "timestamp": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        "git_commit": commit,
+        "endpoint": resolved_endpoint,
+        "args": {k: v for k, v in vars(args).items()},
+    }
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(out_dir / "run_manifest.json", "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2, ensure_ascii=False, default=str)
+    except OSError as exc:
+        print(f"WARNING: could not write run_manifest.json: {exc}")
+
+
 def run_benchmark(
     dataset: WikiKGQADataset,
     generator: Generator,
@@ -188,6 +219,13 @@ def main(argv=None) -> int:
              "linking-heavy without-mentions track, e.g. 30).",
     )
     parser.add_argument(
+        "--ask-votes", type=int, default=1,
+        help="agent only: self-consistency votes for ASK questions. When the committed "
+             "query executes to a boolean, re-run the full generation up to this many "
+             "times and majority-vote the booleans (booleans are the known-"
+             "nondeterministic ~7%% of questions). 1 = off (default).",
+    )
+    parser.add_argument(
         "--agent-timeout", type=float, default=None,
         help="agent only: per-question wall-clock cap in seconds (default: none). A stuck "
              "question is cancelled and its best validated query recovered from the journal. "
@@ -222,6 +260,8 @@ def main(argv=None) -> int:
         import os as _os
         _os.environ["WIKIKGQA_FULL_SYNTHESIS"] = "1"
 
+    _write_run_manifest(args.out_dir, args, resolved)
+
     dataset = WikiKGQADataset.load(args.data)
     if args.sample:
         import random
@@ -241,6 +281,7 @@ def main(argv=None) -> int:
             entity_search=args.entity_search,
             tool_budget=args.tool_budget,
             agent_timeout=args.agent_timeout,
+            ask_votes=args.ask_votes,
         )
     else:
         generator = MentionSparqlGenerator(

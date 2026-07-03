@@ -58,7 +58,13 @@ class Generator(Protocol):
 
 
 def strip_sparql(text: str) -> str:
-    """Pull a bare SPARQL query out of a model response (strip fences/prose)."""
+    """Pull a bare SPARQL query out of a model response (strip fences/prose).
+
+    Returns "" when the text contains no SPARQL at all (e.g. an agent-loop error
+    string like "Error: Agent reached maximum iteration limit."), so callers can
+    tell "no query" apart from a query and fall back to journal recovery instead
+    of executing prose.
+    """
     text = (text or "").strip()
     m = _FENCE_RE.search(text)
     if m:
@@ -69,7 +75,7 @@ def strip_sparql(text: str) -> str:
         idx = upper.find(kw)
         if idx != -1:
             return text[idx:].strip()
-    return text
+    return ""
 
 
 def _has_rows(result: SparqlResult) -> bool:
@@ -246,6 +252,7 @@ class AgentSparqlGenerator:
         conventions: str = "full",
         entity_search: bool = False,
         tool_budget: int = 20,
+        ask_votes: int = 1,
     ):
         self.language = language
         self.endpoint = endpoint
@@ -264,8 +271,13 @@ class AgentSparqlGenerator:
         self.agent_timeout = agent_timeout
         # "full" = R1-R10; "minimal" = R1-R6 (for held-out A/B of the R7-R10 conventions).
         self.conventions = conventions
+        # Self-consistency for ASK questions: when the committed query executes to a
+        # boolean, run the whole generation this many times in total and majority-vote
+        # the executed booleans (boolean answers are the known-nondeterministic ~7%).
+        # 1 = off (default).
+        self.ask_votes = max(1, int(ask_votes))
 
-    def generate(self, question: WikiKGQAQuestion) -> GeneratedQuery:
+    def _generate_once(self, question: WikiKGQAQuestion) -> GeneratedQuery:
         import asyncio
 
         from ama_kbqa.agents.wikidata_agent.agent import WikidataAgent
@@ -312,6 +324,35 @@ class AgentSparqlGenerator:
         if not sparql:
             return GeneratedQuery(question.id, None, None, attempts=1)
         result = execute(sparql, endpoint=self.endpoint, timeout=self.timeout)
+        # Non-empty prior: every gold answer in this benchmark is non-empty, so a
+        # committed query that fails or returns 0 rows is known-wrong. If the journal
+        # holds a different query that returned rows during exploration, prefer it.
+        if not _has_rows(result) and recovered and not used_recovery:
+            alt = strip_sparql(recovered)
+            if alt and alt != sparql:
+                alt_result = execute(alt, endpoint=self.endpoint, timeout=self.timeout)
+                if _has_rows(alt_result):
+                    sparql, result, used_recovery = alt, alt_result, True
         return GeneratedQuery(
             qid=question.id, sparql=sparql, result=result, attempts=2 if used_recovery else 1
         )
+
+    def generate(self, question: WikiKGQAQuestion) -> GeneratedQuery:
+        first = self._generate_once(question)
+        # ASK self-consistency: only when enabled and the first run answered a boolean.
+        if self.ask_votes <= 1 or not (first.result and first.result.json and "boolean" in first.result.json):
+            return first
+        runs = [first]
+        for _ in range(self.ask_votes - 1):
+            nxt = self._generate_once(question)
+            if nxt.result and nxt.result.json and "boolean" in nxt.result.json:
+                runs.append(nxt)
+        votes = [bool(r.result.json["boolean"]) for r in runs]
+        n_true, n_false = votes.count(True), votes.count(False)
+        # Ties (possible when some re-runs fail to produce a boolean) keep the
+        # first run's answer; otherwise return the earliest majority run.
+        majority = votes[0] if n_true == n_false else (n_true > n_false)
+        for r in runs:
+            if bool(r.result.json["boolean"]) == majority:
+                return r
+        return first
