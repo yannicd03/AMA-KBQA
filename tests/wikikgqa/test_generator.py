@@ -108,7 +108,7 @@ def test_format_mentions_block_empty():
     assert "none provided" in format_mentions_block([])
 
 
-# --- AgentSparqlGenerator: journal-recovery swap + ask_votes self-consistency ---
+# --- AgentSparqlGenerator: journal-recovery swap + answer-set self-consistency ---
 # WikidataAgent (the real tool-loop) is monkeypatched out entirely; these tests
 # only exercise the pure decision logic in _generate_once/generate, no
 # network/LLM/MCP involved.
@@ -225,8 +225,15 @@ def test_generate_once_returns_no_query_without_synthesis_or_recovery(monkeypatc
     assert not calls  # execute() must never run without a query to run
 
 
-def test_ask_votes_default_off_returns_single_run():
-    gen = AgentSparqlGenerator(ask_votes=1)
+def _select_result_values(*qids: str) -> SparqlResult:
+    bindings = [
+        {"x": {"type": "uri", "value": f"http://www.wikidata.org/entity/{q}"}} for q in qids
+    ]
+    return SparqlResult(ok=True, json={"head": {"vars": ["x"]}, "results": {"bindings": bindings}})
+
+
+def test_votes_default_off_returns_single_run():
+    gen = AgentSparqlGenerator(votes=1)
     first = GeneratedQuery(qid=1, sparql="ASK {}", result=_bool_result(True))
     calls: list = []
 
@@ -240,23 +247,29 @@ def test_ask_votes_default_off_returns_single_run():
     assert len(calls) == 1
 
 
-def test_ask_votes_skips_revoting_for_non_boolean_result():
-    gen = AgentSparqlGenerator(ask_votes=3)
-    first = GeneratedQuery(qid=1, sparql="SELECT ?x WHERE {}", result=_select_result(rows=False))
+def test_votes_early_consensus_stops_after_two_agreeing_select_runs():
+    gen = AgentSparqlGenerator(votes=3)
+    # Different queries, SAME answer set -> they vote together and consensus
+    # is reached after two runs (the third generation never happens).
+    runs = [
+        GeneratedQuery(qid=1, sparql="SELECT ?x WHERE { a }", result=_select_result_values("Q1", "Q2")),
+        GeneratedQuery(qid=1, sparql="SELECT ?y WHERE { b }", result=_select_result_values("Q2", "Q1")),
+    ]
+    it = iter(runs)
     calls: list = []
 
     def fake_once(question):
         calls.append(question)
-        return first
+        return next(it)
 
     gen._generate_once = fake_once
     out = gen.generate(_question())
-    assert out is first
-    assert len(calls) == 1  # SELECT results never trigger self-consistency re-runs
+    assert out is runs[0]  # earliest run matching the modal answer set
+    assert len(calls) == 2  # early exit: no third run
 
 
-def test_ask_votes_majority_returns_earliest_matching_run():
-    gen = AgentSparqlGenerator(ask_votes=3)
+def test_votes_majority_returns_earliest_matching_run():
+    gen = AgentSparqlGenerator(votes=3)
     runs = [
         GeneratedQuery(qid=1, sparql="ASK {}", result=_bool_result(False)),
         GeneratedQuery(qid=1, sparql="ASK {}", result=_bool_result(True)),
@@ -269,8 +282,8 @@ def test_ask_votes_majority_returns_earliest_matching_run():
     assert out is runs[1]
 
 
-def test_ask_votes_tie_keeps_first_runs_answer():
-    gen = AgentSparqlGenerator(ask_votes=2)
+def test_votes_tie_keeps_first_runs_answer():
+    gen = AgentSparqlGenerator(votes=2)
     runs = [
         GeneratedQuery(qid=1, sparql="ASK {}", result=_bool_result(True)),
         GeneratedQuery(qid=1, sparql="ASK {}", result=_bool_result(False)),
@@ -281,8 +294,8 @@ def test_ask_votes_tie_keeps_first_runs_answer():
     assert out is runs[0]
 
 
-def test_ask_votes_ignores_reruns_that_return_non_boolean():
-    gen = AgentSparqlGenerator(ask_votes=3)
+def test_votes_empty_runs_never_win():
+    gen = AgentSparqlGenerator(votes=3)
     runs = [
         GeneratedQuery(qid=1, sparql="ASK {}", result=_bool_result(True)),
         GeneratedQuery(qid=1, sparql="SELECT ?x WHERE {}", result=_select_result(rows=False)),
@@ -291,5 +304,31 @@ def test_ask_votes_ignores_reruns_that_return_non_boolean():
     it = iter(runs)
     gen._generate_once = lambda question: next(it)
     out = gen.generate(_question())
-    # votes counted = [True, False] (the non-boolean re-run is dropped) -> tie -> first run wins.
+    # keys counted = [True, False] (the empty run keys to None and is dropped)
+    # -> tie -> first run wins.
+    assert out is runs[0]
+
+
+def test_votes_two_acts_as_retry_when_first_run_is_empty():
+    gen = AgentSparqlGenerator(votes=2)
+    runs = [
+        GeneratedQuery(qid=1, sparql="SELECT ?x WHERE {}", result=_select_result(rows=False)),
+        GeneratedQuery(qid=1, sparql="SELECT ?y WHERE { b }", result=_select_result_values("Q5")),
+    ]
+    it = iter(runs)
+    gen._generate_once = lambda question: next(it)
+    out = gen.generate(_question())
+    # The empty first run cannot win (None key); the valid second run is modal.
+    assert out is runs[1]
+
+
+def test_votes_all_runs_empty_returns_first():
+    gen = AgentSparqlGenerator(votes=2)
+    runs = [
+        GeneratedQuery(qid=1, sparql="SELECT ?x WHERE {}", result=_select_result(rows=False)),
+        GeneratedQuery(qid=1, sparql=None, result=None),
+    ]
+    it = iter(runs)
+    gen._generate_once = lambda question: next(it)
+    out = gen.generate(_question())
     assert out is runs[0]

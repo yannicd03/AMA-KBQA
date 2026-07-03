@@ -50,6 +50,16 @@ def _macro_score(pairs):
     return macro_qald_f1(pairs)
 
 
+def _codabench_macro(pairs):
+    """Leaderboard-estimate score (bare-value exact match), or None when the gold
+    is already bare (no-mentions splits, where _macro_score compares bare values)."""
+    if pairs and isinstance(pairs[0][1], list):
+        return None
+    from ama_kbqa.wikikgqa.scoring import macro_qald_f1_codabench
+
+    return macro_qald_f1_codabench(pairs)
+
+
 def _write_run_manifest(out_dir: str | Path, args, resolved_endpoint: str) -> None:
     """Persist the run's full configuration so results map to code and settings.
 
@@ -104,23 +114,24 @@ def run_benchmark(
         write_submission(build_submission(sub_dataset, outcomes), out_dir / "submission.json")
         if score_pairs:
             sc = _macro_score(score_pairs)
+            payload = {
+                "dataset": dataset.dataset_id,
+                "n_questions": len(questions),
+                "n_done": len(outcomes),
+                "n_exec_ok": sum(o.exec_ok for o in outcomes.values()),
+                "scored": sc.n,
+                "macro_f1": round(sc.macro_f1, 4),
+                "macro_precision": round(sc.macro_precision, 4),
+                "macro_recall": round(sc.macro_recall, 4),
+                "per_question": [asdict(s) for s in sc.per_question],
+            }
+            cb = _codabench_macro(score_pairs)
+            if cb is not None:
+                payload["macro_f1_codabench"] = round(cb.macro_f1, 4)
+                payload["macro_precision_codabench"] = round(cb.macro_precision, 4)
+                payload["macro_recall_codabench"] = round(cb.macro_recall, 4)
             with open(out_dir / "summary.json", "w", encoding="utf-8") as fh:
-                json.dump(
-                    {
-                        "dataset": dataset.dataset_id,
-                        "n_questions": len(questions),
-                        "n_done": len(outcomes),
-                        "n_exec_ok": sum(o.exec_ok for o in outcomes.values()),
-                        "scored": sc.n,
-                        "macro_f1": round(sc.macro_f1, 4),
-                        "macro_precision": round(sc.macro_precision, 4),
-                        "macro_recall": round(sc.macro_recall, 4),
-                        "per_question": [asdict(s) for s in sc.per_question],
-                    },
-                    fh,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
 
     for i, q in enumerate(questions, 1):
         try:
@@ -169,6 +180,11 @@ def run_benchmark(
         summary["macro_f1"] = round(score.macro_f1, 4)
         summary["macro_precision"] = round(score.macro_precision, 4)
         summary["macro_recall"] = round(score.macro_recall, 4)
+        cb = _codabench_macro(score_pairs)
+        if cb is not None:
+            summary["macro_f1_codabench"] = round(cb.macro_f1, 4)
+            summary["macro_precision_codabench"] = round(cb.macro_precision, 4)
+            summary["macro_recall_codabench"] = round(cb.macro_recall, 4)
         summary["per_question"] = [asdict(s) for s in score.per_question]
 
     with open(out_dir / "summary.json", "w", encoding="utf-8") as fh:
@@ -182,6 +198,11 @@ def run_benchmark(
                 f"(P={summary['macro_precision']} R={summary['macro_recall']}) "
                 f"over {summary['scored']} scored questions"
             )
+            if "macro_f1_codabench" in summary:
+                print(
+                    f"Codabench-estimate F1 = {summary['macro_f1_codabench']} "
+                    f"(bare-value exact match, leaderboard semantics)"
+                )
         print(f"exec ok: {summary['n_exec_ok']}/{summary['n_questions']}")
     return summary
 
@@ -221,11 +242,12 @@ def main(argv=None) -> int:
              "linking-heavy without-mentions track, e.g. 30).",
     )
     parser.add_argument(
-        "--ask-votes", type=int, default=1,
-        help="agent only: self-consistency votes for ASK questions. When the committed "
-             "query executes to a boolean, re-run the full generation up to this many "
-             "times and majority-vote the booleans (booleans are the known-"
-             "nondeterministic ~7%% of questions). 1 = off (default).",
+        "--votes", type=int, default=1,
+        help="agent only: self-consistency votes over executed answer sets (all "
+             "question types). Runs the full generation up to N times, stopping "
+             "early when two runs agree, and returns the modal answer (ties keep "
+             "the first run's). Attacks run-to-run trajectory divergence, the "
+             "dominant residual error source (seed-99 A/B). 1 = off (default).",
     )
     parser.add_argument(
         "--agent-timeout", type=float, default=None,
@@ -283,7 +305,7 @@ def main(argv=None) -> int:
             entity_search=args.entity_search,
             tool_budget=args.tool_budget,
             agent_timeout=args.agent_timeout,
-            ask_votes=args.ask_votes,
+            votes=args.votes,
         )
     else:
         generator = MentionSparqlGenerator(

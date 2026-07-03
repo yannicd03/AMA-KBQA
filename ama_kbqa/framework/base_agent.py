@@ -66,6 +66,34 @@ COLOR_END = '\033[0m'
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
 
 
+def best_snapshot_query(snapshots: List[Dict[str, Any]]) -> Optional[str]:
+    """Latest validated non-empty SPARQL query recorded in journal snapshots.
+
+    Every RunSPARQL-style tool records ``sparql_result_N`` entries (query +
+    result_count) into the journal, which the agent snapshots locally after
+    each mutating tool call. This picks the highest-numbered query that
+    returned rows — the best proxy for what the agent would have committed.
+    Shared by the agent's synthesis fallback and the WikiKGQA generator's
+    recovery path so the two can never diverge.
+    """
+    best_idx, best_query = -1, None
+    for snap in snapshots or []:
+        found = (snap.get("state") or {}).get("found_values") or {}
+        for key, val in found.items():
+            if not (isinstance(val, dict) and key.startswith("sparql_result")):
+                continue
+            query = val.get("query")
+            if not query or (val.get("result_count") or 0) <= 0:
+                continue
+            try:
+                idx = int(key.rsplit("_", 1)[-1])
+            except ValueError:
+                idx = 0
+            if idx > best_idx:
+                best_idx, best_query = idx, query
+    return best_query
+
+
 class BaseKBQAAgent(ABC):
     """
     Abstract base class for KBQA agents.
@@ -781,18 +809,26 @@ Change strategy or acknowledge the data doesn't exist."""
             if all(call == current_call for call in recent_calls):
                 return True, f"Identical call repeated 3 times: {func_name}"
 
+        # Workhorse exploration tools (e.g. Wikidata's RunSPARQL) are EXPECTED
+        # to repeat with different arguments — that is the intended workflow,
+        # not a loop. Exempt them from the name-frequency detectors (2 and 3);
+        # Detection 1 (identical args 3x) still catches their true loops.
+        exempt = getattr(self, "_loop_exempt_tools", set())
+
         # Detection 2: Oscillating pattern
         if len(self.tool_sequence) >= 6:
             last_6 = self.tool_sequence[-6:]
             # A-B-A-B-A-B pattern
             if (last_6[0] == last_6[2] == last_6[4] and
                 last_6[1] == last_6[3] == last_6[5] and
-                last_6[0] != last_6[1]):
+                last_6[0] != last_6[1] and
+                not (last_6[0] in exempt or last_6[1] in exempt)):
                 return True, f"Oscillating between {last_6[0]} and {last_6[1]}"
             # A-B-C-A-B-C pattern
             if (last_6[0] == last_6[3] and
                 last_6[1] == last_6[4] and
-                last_6[2] == last_6[5]):
+                last_6[2] == last_6[5] and
+                not any(t in exempt for t in last_6[:3])):
                 return True, f"Oscillating between {last_6[0]}, {last_6[1]}, {last_6[2]}"
 
         # Detection 3: Same tool called too often
@@ -802,7 +838,7 @@ Change strategy or acknowledge the data doesn't exist."""
             for t in last_6:
                 tool_counts[t] = tool_counts.get(t, 0) + 1
             for tool, count in tool_counts.items():
-                if count >= 5:
+                if count >= 5 and tool not in exempt:
                     return True, f"Tool '{tool}' called {count} times in last 6 iterations"
 
         # Detection 4: FindResource cap (configurable per agent)
@@ -1285,15 +1321,19 @@ Change strategy or acknowledge the data doesn't exist."""
             iteration_count += 1
             self._trace(f"Starting iteration {iteration_count}/{max_iterations}", COLOR_CYAN)
 
-            # Safety check
+            # Safety check. Break (not return): the journal may hold validated
+            # data, so every terminal condition must exit through synthesis.
             if iteration_count > max_iterations:
-                self._trace(f"WARNING: Reached max iterations ({max_iterations})", COLOR_RED)
+                self._trace(
+                    f"WARNING: Reached max iterations ({max_iterations}) - breaking to synthesis",
+                    COLOR_RED,
+                )
                 self.recorder.event(
                     "intervention",
                     "max_iterations_reached",
                     attributes={"iteration_count": iteration_count, "max": max_iterations},
                 )
-                return "Error: Agent reached maximum iteration limit."
+                break
 
             # Per-iteration point-in-time event. We don't wrap the iteration
             # in an interval span because the loop has many `continue`/`break`
@@ -1326,10 +1366,24 @@ Change strategy or acknowledge the data doesn't exist."""
             self._trace(f"Calling LLM with {len(self._messages)} messages (tool_choice={tc})...", COLOR_YELLOW)
             # Text-mode: don't pass tools= to the API call. The catalog is in
             # the system prompt and the format is in the format-instruction.
-            if self._text_tool_call_mode:
-                response = self._llm_call(tools=None, tool_choice=None)
-            else:
-                response = self._llm_call(tools=tools, tool_choice=tc)
+            try:
+                if self._text_tool_call_mode:
+                    response = self._llm_call(tools=None, tool_choice=None)
+                else:
+                    response = self._llm_call(tools=tools, tool_choice=tc)
+            except Exception as llm_error:
+                # A dead provider mid-loop must not discard the journal's
+                # validated work: break to synthesis instead of propagating.
+                self.recorder.event(
+                    "intervention",
+                    "llm_call_failed_break_to_synthesis",
+                    attributes={"error": str(llm_error)[:300]},
+                )
+                self._trace(
+                    f"LLM call failed mid-loop ({llm_error}) - breaking to synthesis",
+                    COLOR_RED,
+                )
+                break
 
             # Guard: a response with no choices (provider transient error, content
             # filter, or a confused turn after a rejected tool call) must not crash
@@ -1483,17 +1537,15 @@ Change strategy or acknowledge the data doesn't exist."""
                         },
                     )
                     self._trace(
-                        "Zero-tool-call answer persisted after retry budget - hard stopping",
+                        "Zero-tool-call answer persisted after retry budget - breaking to synthesis",
                         COLOR_RED,
                     )
-                    return "Error: Agent attempted final answer with zero tool calls."
+                    break
                 self._trace("No more tool calls - breaking to synthesis", COLOR_GREEN)
                 if message.content:
                     self._messages.append({"role": "assistant", "content": message.content})
                 final_agent_content = message.content
                 break
-
-            total_tool_calls_made += len(message.tool_calls)
 
             # Add assistant message to history. For text-mode we keep the
             # original content (with `<tool_call>` blocks) and DON'T attach the
@@ -1520,6 +1572,13 @@ Change strategy or acknowledge the data doesn't exist."""
                 message.tool_calls, as_user_messages=text_mode_synthetic,
             )
 
+            # Budget accounting counts EXECUTED calls only (tool_call_counts is
+            # incremented in _execute_single_tool). Unknown tools, malformed
+            # JSON, and loop-blocked calls do not burn budget — this also keeps
+            # the framework's binding cap aligned with the server's live
+            # "[tool call N/BUDGET]" tag, which counts executed tools.
+            total_tool_calls_made = sum(self.tool_call_counts.values())
+
             # Inject answer prompt if GetJournalSummary was called
             # (can be disabled via agent.auto_inject_journal)
             if called_get_journal_summary and get_auto_inject_journal():
@@ -1543,7 +1602,7 @@ Change strategy or acknowledge the data doesn't exist."""
                     f"Reached max tool-call cap ({total_tool_calls_made}/{max_tool_calls}) - forcing synthesis",
                     COLOR_RED,
                 )
-                return await self._run_synthesis(query, qtype=qtype)
+                return await self._run_synthesis_guarded(query, qtype=qtype)
 
             # Early exit: nudge agent to wrap up after iteration 15
             if iteration_count >= 15 and iteration_count % 5 == 0:
@@ -1573,7 +1632,7 @@ Change strategy or acknowledge the data doesn't exist."""
             )
 
         # Run synthesis
-        return await self._run_synthesis(query, qtype=qtype)
+        return await self._run_synthesis_guarded(query, qtype=qtype)
 
     async def _execute_tool_calls(self, tool_calls: List, as_user_messages: bool = False) -> bool:
         """
@@ -1623,12 +1682,22 @@ Change strategy or acknowledge the data doesn't exist."""
                 _append_tool_result(tool_call, func_name, tool_result)
                 continue
 
-            # Parse arguments
+            # Parse arguments. Malformed JSON must NOT execute with empty args:
+            # that burns a call on a guaranteed error while hiding the actual
+            # problem from the model. Tell it what went wrong instead.
             try:
                 args_str = tool_call.function.arguments
                 func_args = json.loads(args_str) if args_str else {}
             except json.JSONDecodeError:
-                func_args = {}
+                self._trace(f"Malformed JSON arguments for {func_name}", COLOR_RED)
+                _append_tool_result(
+                    tool_call,
+                    func_name,
+                    f"Error: the arguments for {func_name} were not valid JSON. "
+                    "Re-issue the call with valid JSON arguments (check quotes, "
+                    "commas, and braces).",
+                )
+                continue
 
             args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
             self._trace(f"Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
@@ -1968,11 +2037,45 @@ Change strategy or acknowledge the data doesn't exist."""
         ) as _syn_span:
             return await self._run_synthesis_impl(query, _syn_span, qtype=qtype)
 
+    async def _run_synthesis_guarded(self, query: str, qtype: str = "") -> str:
+        """Synthesis must never lose the run.
+
+        On any synthesis failure, fall back to the best validated query from
+        the local journal snapshots (empty string if none) instead of raising
+        away a run whose journal holds validated work.
+        """
+        try:
+            return await self._run_synthesis(query, qtype=qtype)
+        except Exception as exc:
+            self.recorder.event(
+                "intervention",
+                "synthesis_failed_snapshot_fallback",
+                attributes={"error": str(exc)[:300]},
+            )
+            self._trace(
+                f"Synthesis failed ({exc}) - falling back to best snapshot query",
+                COLOR_RED,
+            )
+            return best_snapshot_query(getattr(self, "journal_snapshots", None) or []) or ""
+
     async def _run_synthesis_impl(self, query: str, _syn_span, qtype: str = "") -> str:
         self._trace("Starting synthesis step", COLOR_CYAN)
 
-        # Get journal summary
-        journal_summary = await self.mcp.call_tool("GetJournalSummary", {})
+        # Get journal summary. A dead MCP session at the finish line must not
+        # cost the run: degrade to the last local snapshot instead of raising.
+        try:
+            journal_summary = await self.mcp.call_tool("GetJournalSummary", {})
+        except Exception as exc:
+            self._trace(
+                f"GetJournalSummary failed at synthesis ({exc}) - using local snapshot",
+                COLOR_RED,
+            )
+            snaps = getattr(self, "journal_snapshots", None) or []
+            journal_summary = json.dumps(
+                (snaps[-1].get("state") if snaps else {}) or {},
+                ensure_ascii=False,
+                default=str,
+            )
         self._trace(f"Journal fetched ({len(journal_summary)} chars)", COLOR_GREEN)
         _syn_span.set_attribute("journal_chars", len(journal_summary) if journal_summary else 0)
         _syn_span.set_payload("journal_summary", journal_summary)
@@ -2221,6 +2324,11 @@ Change strategy or acknowledge the data doesn't exist."""
             try:
                 response = self._create_with_retry(self.client, call_params, label="LLM (text)")
 
+                if not response or not getattr(response, "choices", None):
+                    self._trace("Text-only response had no choices - returning empty", COLOR_RED)
+                    _span.set_payload("assistant_content", "")
+                    return ""
+
                 if response.usage:
                     self._track_token_usage(response.usage)
                     _span.update_attributes({
@@ -2272,6 +2380,14 @@ Change strategy or acknowledge the data doesn't exist."""
                     self.synthesis_client, call_params, label="synthesis"
                 )
                 self._trace("Synthesis LLM call completed", COLOR_GREEN)
+
+                # Empty-choices transient at synthesis: return "" (callers treat
+                # an empty answer as recoverable) instead of IndexError-ing away
+                # a run whose journal holds a validated query.
+                if not response or not getattr(response, "choices", None):
+                    self._trace("Synthesis response had no choices - returning empty", COLOR_RED)
+                    _span.set_payload("assistant_content", "")
+                    return ""
 
                 if response.usage:
                     self._track_token_usage(response.usage)

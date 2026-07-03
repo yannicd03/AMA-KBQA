@@ -39,48 +39,48 @@ def _patch_offline(monkeypatch):
     return captured
 
 
-def test_main_passes_ask_votes_to_agent_generator(monkeypatch, tmp_path):
+def test_main_passes_votes_to_agent_generator(monkeypatch, tmp_path):
     captured = _patch_offline(monkeypatch)
 
     rc = benchmark_mod.main(
-        ["--data", "unused.json", "--generator", "agent", "--ask-votes", "3", "--out-dir", str(tmp_path)]
+        ["--data", "unused.json", "--generator", "agent", "--votes", "3", "--out-dir", str(tmp_path)]
     )
     assert rc == 0
     gen = captured["generator"]
     assert isinstance(gen, AgentSparqlGenerator)
-    assert gen.ask_votes == 3
+    assert gen.votes == 3
 
 
-def test_main_ask_votes_default_value_is_one(monkeypatch, tmp_path):
+def test_main_votes_default_is_one(monkeypatch, tmp_path):
     captured = _patch_offline(monkeypatch)
 
     rc = benchmark_mod.main(["--data", "unused.json", "--generator", "agent", "--out-dir", str(tmp_path)])
     assert rc == 0
-    assert captured["generator"].ask_votes == 1
+    assert captured["generator"].votes == 1
 
 
-def test_main_ask_votes_ignored_for_mention_generator(monkeypatch, tmp_path):
-    # --ask-votes is agent-only; the mention generator has no such knob.
+def test_main_votes_ignored_for_mention_generator(monkeypatch, tmp_path):
+    # --votes is agent-only; the mention generator has no such knob.
     captured = _patch_offline(monkeypatch)
 
     rc = benchmark_mod.main(
-        ["--data", "unused.json", "--generator", "mention", "--ask-votes", "5", "--out-dir", str(tmp_path)]
+        ["--data", "unused.json", "--generator", "mention", "--votes", "5", "--out-dir", str(tmp_path)]
     )
     assert rc == 0
     assert isinstance(captured["generator"], MentionSparqlGenerator)
-    assert not hasattr(captured["generator"], "ask_votes")
+    assert not hasattr(captured["generator"], "votes")
 
 
 def test_main_writes_run_manifest(monkeypatch, tmp_path):
     _patch_offline(monkeypatch)
 
     benchmark_mod.main(
-        ["--data", "unused.json", "--generator", "agent", "--ask-votes", "2", "--out-dir", str(tmp_path)]
+        ["--data", "unused.json", "--generator", "agent", "--votes", "2", "--out-dir", str(tmp_path)]
     )
     manifest_path = tmp_path / "run_manifest.json"
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["args"]["ask_votes"] == 2
+    assert manifest["args"]["votes"] == 2
     assert manifest["args"]["generator"] == "agent"
     assert "timestamp" in manifest
     assert "git_commit" in manifest
@@ -89,7 +89,7 @@ def test_main_writes_run_manifest(monkeypatch, tmp_path):
 
 def test_write_run_manifest_creates_out_dir_and_expected_keys(tmp_path):
     out_dir = tmp_path / "nested" / "run"
-    args = argparse.Namespace(data="d.json", ask_votes=4, generator="agent")
+    args = argparse.Namespace(data="d.json", votes=4, generator="agent")
 
     benchmark_mod._write_run_manifest(out_dir, args, "https://example.org/sparql")
 
@@ -97,6 +97,6 @@ def test_write_run_manifest_creates_out_dir_and_expected_keys(tmp_path):
     assert manifest_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["endpoint"] == "https://example.org/sparql"
-    assert manifest["args"] == {"data": "d.json", "ask_votes": 4, "generator": "agent"}
+    assert manifest["args"] == {"data": "d.json", "votes": 4, "generator": "agent"}
     assert "timestamp" in manifest
     assert "git_commit" in manifest  # may be None outside a git checkout, but the key exists

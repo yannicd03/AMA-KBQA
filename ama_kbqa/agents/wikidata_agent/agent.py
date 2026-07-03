@@ -71,6 +71,11 @@ class WikidataAgent(BaseKBQAAgent):
         os.environ["WIKIKGQA_TOOL_BUDGET"] = str(self._tool_budget)
         super().__init__(name=name, session_id=session_id, use_fewshot=False)
 
+        # Repeated RunSPARQL refinement IS the intended workflow here, not a
+        # loop; exempt the workhorse tools from the name-frequency loop
+        # detectors (identical-args detection still applies to them).
+        self._loop_exempt_tools = {"RunSPARQL", "SearchEntities", "SearchProperties"}
+
         # config.toml's chat_model is stale; allow a per-run override and keep
         # the text-tool-call mode consistent with the actual model in use.
         if provider:

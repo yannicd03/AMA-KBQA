@@ -209,27 +209,13 @@ def _best_query_from_snapshots(agent) -> str | None:
     ``sparql_result_N`` with its ``result_count``, and the agent snapshots the
     journal locally after each tool call. So even when the agent is cancelled by
     the wall-clock (or emits nothing at synthesis), we can return the last query
-    that actually returned rows instead of an empty answer. Picks the
-    highest-numbered (most recent) query with a positive result_count — the best
-    proxy for what the agent would have committed.
+    that actually returned rows instead of an empty answer. Delegates to the
+    framework's shared implementation (also used by the agent's own synthesis
+    fallback) so the two salvage paths can never diverge.
     """
-    snaps = getattr(agent, "journal_snapshots", None) or []
-    best_idx, best_query = -1, None
-    for snap in snaps:
-        found = (snap.get("state") or {}).get("found_values") or {}
-        for key, val in found.items():
-            if not (isinstance(val, dict) and key.startswith("sparql_result")):
-                continue
-            query = val.get("query")
-            if not query or (val.get("result_count") or 0) <= 0:
-                continue
-            try:
-                idx = int(key.rsplit("_", 1)[-1])
-            except ValueError:
-                idx = 0
-            if idx > best_idx:
-                best_idx, best_query = idx, query
-    return best_query
+    from ama_kbqa.framework.base_agent import best_snapshot_query
+
+    return best_snapshot_query(getattr(agent, "journal_snapshots", None) or [])
 
 
 class AgentSparqlGenerator:
@@ -252,7 +238,7 @@ class AgentSparqlGenerator:
         conventions: str = "minimal",
         entity_search: bool = False,
         tool_budget: int = 20,
-        ask_votes: int = 1,
+        votes: int = 1,
     ):
         self.language = language
         self.endpoint = endpoint
@@ -272,11 +258,13 @@ class AgentSparqlGenerator:
         # "minimal" = R1-R6 (default; held-out A/B found no R7-R10 benefit);
         # "full" = R1-R10 (opt-in).
         self.conventions = conventions
-        # Self-consistency for ASK questions: when the committed query executes to a
-        # boolean, run the whole generation this many times in total and majority-vote
-        # the executed booleans (boolean answers are the known-nondeterministic ~7%).
-        # 1 = off (default).
-        self.ask_votes = max(1, int(ask_votes))
+        # Self-consistency voting over EXECUTED ANSWER SETS (all question types):
+        # run the full generation up to `votes` times, stop early as soon as two
+        # runs agree on the same answer, and return the modal answer (ties keep
+        # the first run's). Run-to-run trajectory divergence, not prompt rules,
+        # dominates the residual error (seed-99 A/B, 2026-07-03), which is what
+        # this attacks. 1 = off (default).
+        self.votes = max(1, int(votes))
 
     def _generate_once(self, question: WikiKGQAQuestion) -> GeneratedQuery:
         import asyncio
@@ -338,22 +326,46 @@ class AgentSparqlGenerator:
             qid=question.id, sparql=sparql, result=result, attempts=2 if used_recovery else 1
         )
 
+    @staticmethod
+    def _answer_key(gq: GeneratedQuery):
+        """Comparable identity of an executed answer.
+
+        Booleans key on their value; SELECT results key on the frozen set of
+        codabench-reduced values (bare ids / literal strings) so two different
+        queries with the same answer set vote together. None (= empty or
+        failed) can never win a vote: the benchmark's answers are non-empty.
+        """
+        if not (gq.result and gq.result.ok and gq.result.json):
+            return None
+        j = gq.result.json
+        if "boolean" in j:
+            return ("bool", bool(j["boolean"]))
+        from ama_kbqa.wikikgqa.submission import to_codabench_answers
+
+        vals = to_codabench_answers(j)
+        if not vals:
+            return None
+        return ("set", frozenset(str(v) for v in vals))
+
     def generate(self, question: WikiKGQAQuestion) -> GeneratedQuery:
+        from collections import Counter
+
         first = self._generate_once(question)
-        # ASK self-consistency: only when enabled and the first run answered a boolean.
-        if self.ask_votes <= 1 or not (first.result and first.result.json and "boolean" in first.result.json):
+        if self.votes <= 1:
             return first
         runs = [first]
-        for _ in range(self.ask_votes - 1):
-            nxt = self._generate_once(question)
-            if nxt.result and nxt.result.json and "boolean" in nxt.result.json:
-                runs.append(nxt)
-        votes = [bool(r.result.json["boolean"]) for r in runs]
-        n_true, n_false = votes.count(True), votes.count(False)
-        # Ties (possible when some re-runs fail to produce a boolean) keep the
-        # first run's answer; otherwise return the earliest majority run.
-        majority = votes[0] if n_true == n_false else (n_true > n_false)
+        while len(runs) < self.votes:
+            keys = [k for k in (self._answer_key(r) for r in runs) if k is not None]
+            if keys and Counter(keys).most_common(1)[0][1] >= 2:
+                break  # consensus: two runs already agree on the answer
+            runs.append(self._generate_once(question))
+        counts = Counter(k for k in (self._answer_key(r) for r in runs) if k is not None)
+        if not counts:
+            return first  # every run came back empty/failed
+        # Counter preserves insertion order on equal counts, so a tie resolves
+        # to the earliest-seen answer (the first run's, when it produced one).
+        best_key = counts.most_common(1)[0][0]
         for r in runs:
-            if bool(r.result.json["boolean"]) == majority:
+            if self._answer_key(r) == best_key:
                 return r
         return first

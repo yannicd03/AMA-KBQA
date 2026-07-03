@@ -129,3 +129,54 @@ def macro_qald_f1(
         n=len(scores),
         per_question=scores,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Codabench-mode scoring: compare the way the leaderboard compares.
+#
+# The strict scorer above compares typed literals as (value, datatype, lang)
+# tuples; Codabench compares BARE value strings after the submission reduction
+# (URIs -> Q/P ids, booleans -> JSON bools, literals -> raw value strings).
+# The strict number is therefore a lower bound on the leaderboard number. Score
+# both: `macro_f1` for development honesty, `macro_f1_codabench` to estimate
+# the leaderboard.
+# --------------------------------------------------------------------------- #
+def codabench_answer_set(result: SparqlJson) -> set[str]:
+    """Bare comparable values, exactly as the submission reduction produces them."""
+    from ama_kbqa.wikikgqa.submission import to_codabench_answers
+
+    return {
+        ("true" if v else "false") if isinstance(v, bool) else str(v)
+        for v in to_codabench_answers(result)
+    }
+
+
+def score_question_codabench(qid: int, gold: SparqlJson, system: SparqlJson) -> QuestionScore:
+    """P/R/F1 over bare-value sets (Codabench exact-match semantics)."""
+    gold_set = codabench_answer_set(gold)
+    sys_set = codabench_answer_set(system)
+    kind = "ask" if _is_boolean(gold) else "select"
+    if not gold_set and not sys_set:
+        return QuestionScore(qid, 1.0, 1.0, 1.0, kind)
+    if not gold_set or not sys_set:
+        return QuestionScore(qid, 0.0, 0.0, 0.0, kind)
+    tp = len(gold_set & sys_set)
+    precision = tp / len(sys_set)
+    recall = tp / len(gold_set)
+    f1 = 0.0 if (precision + recall) == 0 else (2 * precision * recall) / (precision + recall)
+    return QuestionScore(qid, precision, recall, f1, kind)
+
+
+def macro_qald_f1_codabench(
+    pairs: list[tuple[int, SparqlJson, SparqlJson]],
+) -> MacroScore:
+    """Macro-average P/R/F1 with Codabench bare-value comparison."""
+    scores = [score_question_codabench(qid, gold, system) for qid, gold, system in pairs]
+    n = len(scores) or 1
+    return MacroScore(
+        macro_precision=sum(s.precision for s in scores) / n,
+        macro_recall=sum(s.recall for s in scores) / n,
+        macro_f1=sum(s.f1 for s in scores) / n,
+        n=len(scores),
+        per_question=scores,
+    )
