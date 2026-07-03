@@ -63,6 +63,7 @@
 | [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md) | Tool-call budget (20) replaces wall-clock (280s) as the binding limit on the agentic generator, fixing empty-output cancellation on over-exploration; per-tool SPARQL timeout with steering message; live `[tool call N/20]` budget counter; shared-framework retry for transient KIT proxy errors + empty-response guard |
 | [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) | Synthesis context default reverted to minimal (journal-only): seed-42 rand-50 A/B found full-context 0.781 vs minimal 0.807 F1 (within noise, cheaper); full stays opt-in via `WIKIKGQA_FULL_SYNTHESIS=1` / `--full-synthesis` |
 | [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) | `strip_sparql` empty-on-no-match fix + non-empty-prior fallback (0/462 gold answers empty) at commit time; ASK self-consistency voting (`--ask-votes`); `run_manifest.json` per run; open framework-level paths that still discard validated queries |
+| [Decisions/wikikgqa-conventions-default-2026-07-03.md](Decisions/wikikgqa-conventions-default-2026-07-03.md) | `conventions` default flipped full→minimal (R1-R6): held-out seed-99 rand-50 A/B found no benefit from extended R7-R10 rules (0.7311 vs 0.6833 F1, noise-dominated); held-out F1 (~0.73) calibration note vs tuning-set 0.807 |
 
 ---
 

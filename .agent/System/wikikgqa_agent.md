@@ -5,6 +5,7 @@
 - [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](../Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md) — why the tool-call budget became the binding limit and why provider-error retries were added
 - [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) — why synthesis context defaults to minimal (journal-only), not full transcript
 - [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) — non-empty-prior recovery at commit time, ASK self-consistency voting, run manifests; open framework-level gaps still discarding validated queries
+- [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) — why `conventions` defaults to minimal (R1-R6): held-out seed-99 A/B found no benefit from the extended R7-R10 rules
 - [System/agent_system.md](./agent_system.md) — the shared `BaseKBQAAgent` tool loop, journal, and synthesis machinery this subsystem reuses
 - [System/project_architecture.md](./project_architecture.md) — overall repo structure, KQAPro/SciQA reference pattern
 
@@ -111,9 +112,12 @@ KQAPro/SciQA agents:
 - **`conventions: "full" | "minimal"`** constructor parameter, threaded through
   to `benchmark.py --conventions`. `"full"` appends `EXTENDED_CONVENTIONS` (R7-R10
   modeling rules) to `SYSTEM_PROMPT`; `"minimal"` uses only `SYSTEM_PROMPT`
-  (R1-R6). This is a held-out A/B toggle to test whether R7-R10 generalize
-  beyond the training set they were mined from. See
-  `ama_kbqa/wikikgqa/ANSWER_CONVENTIONS.md` for what R1-R10 actually encode
+  (R1-R6). **Default: `"minimal"`** (since 2026-07-03) — the held-out seed-99
+  `rand-50` A/B found no benefit from R7-R10 (0.7311 minimal vs 0.6833 full
+  Macro F1, noise-dominated), so the cheaper, lower-overfitting-risk minimal
+  set is the default and `"full"` is opt-in. See
+  [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md).
+  See `ama_kbqa/wikikgqa/ANSWER_CONVENTIONS.md` for what R1-R10 actually encode
   (entity-URI-not-label answers, `ASK` for yes/no, superlative `ORDER BY`,
   age-via-`NOW()`, `COUNT` default for "how many", sovereign-state QID, the
   normalized-quantity statement path, "currently/still" exclusion filters,
@@ -244,6 +248,7 @@ by WikiKGQA's exposure to transient KIT proxy failures but generally useful:
 | `AgentSparqlGenerator.agent_timeout` | **280s** (was 180s) | Wall-clock safety net; rarely fires now that the tool-call budget is the binding limit |
 | `AgentSparqlGenerator.ask_votes` / `benchmark.py --ask-votes` | 1 (off) | ASK self-consistency vote count; see above |
 | `WikidataAgent._synthesis_full_context()` / `WIKIKGQA_FULL_SYNTHESIS` / `benchmark.py --full-synthesis` | **minimal (off)** by default | Full exploration-transcript context for synthesis vs journal-only; A/B found no benefit (0.781 vs 0.807 F1) — see [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) |
+| `WikidataAgent(conventions=)` / `AgentSparqlGenerator(conventions=)` / `benchmark.py --conventions` | **`"minimal"`** (was `"full"`) since 2026-07-03 | R1-R6 vs R7-R10 extended modeling rules; held-out seed-99 A/B found no benefit from R7-R10 (0.7311 vs 0.6833 F1) — see [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) |
 | `MentionSparqlGenerator.timeout` | 120s | Per-`execute()` call for the blind single-shot generator |
 | `MentionSparqlGenerator.max_repairs` | 2 | Execution-error / empty-result repair attempts |
 

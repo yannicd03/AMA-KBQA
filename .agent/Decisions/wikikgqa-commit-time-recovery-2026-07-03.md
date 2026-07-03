@@ -9,6 +9,7 @@
 - [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](./wikikgqa-synthesis-context-ab-2026-07-02.md) — prior-day decision on the same generator (synthesis context default)
 - [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](./wikikgqa-tool-budget-and-resilience-2026-06-30.md) — the journal-recovery mechanism this decision builds on (evidence-based verify-on-empty repair)
 - **External:** `0_Claude/AMA-KBQA/wikikgqa-implementation-audit-2026-07-03.md` in the user's Obsidian wiki — the full implementation audit this commit implements strategic recommendations from. Read that note for the complete audit findings; this ADR only records what was *implemented* and what remains *open*.
+- [Decisions/wikikgqa-conventions-default-2026-07-03.md](./wikikgqa-conventions-default-2026-07-03.md) — final results of the held-out seed-99 conventions A/B tracked as in-flight below; this later ADR has the full analysis
 
 ---
 
@@ -100,17 +101,17 @@ Tests: +34 new/extended (`tests/wikikgqa/test_nomentions.py`,
 `uv run pytest tests/wikikgqa tests/framework tests/server -q` = **270
 passed** (up from 199 as of the 2026-06-30 ADR).
 
-**In-flight validation run:** a held-out seed-99 `conventions` A/B (full
-R1-R10 vs minimal R1-R6, model `kit.qwen3.5-397b-A17b`, `rand-50`) was
-launched 2026-07-03 to re-check whether the earlier full/minimal-conventions
-question generalizes on a fresh seed, now running through this commit's
-recovery/voting code path. Output directories:
-`benchmark_results/wikikgqa/run-rand50-seed99-conv-full/` and
-`run-rand50-seed99-conv-minimal/`. As of this capture both runs are
-**incomplete** (8/50 and 6/50 questions scored respectively per their
-`summary.json`) — do not cite their partial `macro_f1` values as final;
-check `n_done` against `n_questions` before reading `summary.json` from
-these paths in future sessions.
+**Held-out seed-99 `conventions` A/B — completed.** The held-out seed-99
+`conventions` A/B (full R1-R10 vs minimal R1-R6, model
+`kit.qwen3.5-397b-A17b`, `rand-50`, challenge endpoint) launched 2026-07-03
+through this commit's recovery/voting code path has finished: minimal 0.7311
+Macro F1 vs full 0.6833, both 50/50 exec_ok. R7-R10 show no held-out benefit;
+the default flipped to minimal. Full results, the noise-dominated
+sign-test/trajectory-divergence analysis, and the implementation diff are in
+[Decisions/wikikgqa-conventions-default-2026-07-03.md](./wikikgqa-conventions-default-2026-07-03.md)
+— this note is retained only to mark that the run referenced above completed.
+Output directories: `benchmark_results/wikikgqa/run-rand50-seed99-conv-full/`
+and `run-rand50-seed99-conv-minimal/`.
 
 ## Open Items (not yet fixed — from the audit, tracked here for follow-up)
 
