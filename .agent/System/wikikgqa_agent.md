@@ -3,6 +3,8 @@
 ## Related Docs
 - [Decisions/wikikgqa-2026-adaptation.md](../Decisions/wikikgqa-2026-adaptation.md) — why this subsystem exists: SPARQL-generate→execute head, no local Wikidata embedding, challenge endpoint backend, with-mentions-first scope
 - [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](../Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md) — why the tool-call budget became the binding limit and why provider-error retries were added
+- [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) — why synthesis context defaults to minimal (journal-only), not full transcript
+- [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) — non-empty-prior recovery at commit time, ASK self-consistency voting, run manifests; open framework-level gaps still discarding validated queries
 - [System/agent_system.md](./agent_system.md) — the shared `BaseKBQAAgent` tool loop, journal, and synthesis machinery this subsystem reuses
 - [System/project_architecture.md](./project_architecture.md) — overall repo structure, KQAPro/SciQA reference pattern
 
@@ -39,8 +41,8 @@ ama_kbqa/
 
 Tests: `tests/wikikgqa/` plus the shared `tests/framework/` and `tests/server/`
 suites (the WikidataAgent and its server are exercised by the same framework
-tests as KQAPro/SciQA). As of 2026-06-30: 199 tests passing across
-`tests/framework tests/server tests/wikikgqa`.
+tests as KQAPro/SciQA). As of 2026-07-03: 270 tests passing across
+`tests/wikikgqa tests/framework tests/server` (up from 199 on 2026-06-30).
 
 ---
 
@@ -61,6 +63,26 @@ model to reconsider triple direction, `wdt:`/`p:`/`ps:`/`pq:` choice, and whethe
 a qualifier is needed — this is the "evidence-based verify-on-empty" repair
 referenced in earlier work; it lives in `ama_kbqa/wikikgqa/prompts.py` and
 predates the 2026-06-30 budget/resilience changes below.
+
+**Non-empty-prior recovery (`AgentSparqlGenerator`, since 2026-07-03).**
+Every gold answer in this benchmark is non-empty, so a committed query that
+errors or returns 0 rows is known-wrong, not merely suspicious.
+`_generate_once` exploits this: if the committed query fails or is empty
+**and** the journal holds a different validated query from exploration, that
+alternate query is executed too; if it has rows, it replaces the committed
+result. This depends on `strip_sparql` correctly returning `""` for
+non-SPARQL text (see below) — before that fix, agent-loop error strings like
+`"Error: Agent reached maximum iteration limit."` were executed as literal
+SPARQL queries, which both produced a guaranteed failure *and* skipped the
+recovery branch (it only fired on genuinely empty output). See
+[Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md).
+
+**ASK self-consistency voting.** `AgentSparqlGenerator(ask_votes=N)` /
+`benchmark.py --ask-votes N` (default `1` = off). When the committed query
+executes to a boolean (`ASK`) result and `ask_votes > 1`, the full generation
+re-runs up to `ask_votes` times and majority-votes the booleans; ties keep
+the first run. SELECT-result questions are never re-run. Targets the ASK
+slice (~7% of questions), identified as the noisier/less-deterministic class.
 
 ---
 
@@ -220,5 +242,13 @@ by WikiKGQA's exposure to transient KIT proxy failures but generally useful:
 | Knob | Value | Note |
 |---|---|---|
 | `AgentSparqlGenerator.agent_timeout` | **280s** (was 180s) | Wall-clock safety net; rarely fires now that the tool-call budget is the binding limit |
+| `AgentSparqlGenerator.ask_votes` / `benchmark.py --ask-votes` | 1 (off) | ASK self-consistency vote count; see above |
+| `WikidataAgent._synthesis_full_context()` / `WIKIKGQA_FULL_SYNTHESIS` / `benchmark.py --full-synthesis` | **minimal (off)** by default | Full exploration-transcript context for synthesis vs journal-only; A/B found no benefit (0.781 vs 0.807 F1) — see [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) |
 | `MentionSparqlGenerator.timeout` | 120s | Per-`execute()` call for the blind single-shot generator |
 | `MentionSparqlGenerator.max_repairs` | 2 | Execution-error / empty-result repair attempts |
+
+`benchmark.py` also writes `run_manifest.json` into each run's output
+directory (git commit, ISO timestamp, resolved SPARQL endpoint, full parsed
+CLI args) so a `summary.json` can always be traced back to the code version
+and settings that produced it. Added 2026-07-03 — see
+[Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md).
