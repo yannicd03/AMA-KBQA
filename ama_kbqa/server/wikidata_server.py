@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import urllib.parse
 import urllib.request
 from typing import Literal
@@ -597,7 +598,12 @@ def _labels_for(ids: list[str]) -> dict[str, str]:
 # Entity/property linking (without-mentions track) — gated behind config
 # --------------------------------------------------------------------------- #
 def _wbsearch(term: str, kind: str, language: str) -> list[dict]:
-    """Query the Wikidata ``wbsearchentities`` API; return the raw candidate list."""
+    """Query the Wikidata ``wbsearchentities`` API; return the raw candidate list.
+
+    Retries with backoff: the anonymous API rate-limits by IP (HTTP 429 /
+    "too many requests"), and parallel benchmark shards can trip it. The
+    backoff both rides out the window and self-throttles our request rate.
+    """
     params = urllib.parse.urlencode(
         {
             "action": "wbsearchentities",
@@ -609,12 +615,20 @@ def _wbsearch(term: str, kind: str, language: str) -> list[dict]:
             "limit": _SEARCH_LIMIT,
         }
     )
-    req = urllib.request.Request(
-        f"{_SEARCH_API}?{params}", headers={"User-Agent": USER_AGENT}
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read().decode())
-    return data.get("search", []) or []
+    last_exc: Exception | None = None
+    for attempt, delay in enumerate((0, 2, 6)):
+        if delay:
+            time.sleep(delay)
+        try:
+            req = urllib.request.Request(
+                f"{_SEARCH_API}?{params}", headers={"User-Agent": USER_AGENT}
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+            return data.get("search", []) or []
+        except Exception as exc:  # HTTPError(429), URLError, timeout, bad JSON
+            last_exc = exc
+    raise last_exc if last_exc else RuntimeError("wbsearchentities failed")
 
 
 def SearchEntities(
@@ -641,7 +655,10 @@ def SearchEntities(
     try:
         hits = _wbsearch(term, kind, lang)
     except Exception as exc:
-        return f"ERROR: entity search failed: {type(exc).__name__}: {exc}"[:300]
+        # NB: the `type` PARAMETER shadows the builtin in this scope — use
+        # __class__ (a bare type(exc) here crashes with "'str' object is not
+        # callable" and masks the real error).
+        return f"ERROR: entity search failed: {exc.__class__.__name__}: {exc}"[:300]
     if not hits and lang != "en":
         # A non-English label may be missing; fall back to an English search.
         try:
