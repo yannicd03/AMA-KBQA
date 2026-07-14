@@ -332,3 +332,276 @@ def test_votes_all_runs_empty_returns_first():
     gen._generate_once = lambda question: next(it)
     out = gen.generate(_question())
     assert out is runs[0]
+
+
+# --- class-closure expansion repair (ANSWER_CONVENTIONS.md rule 10) ---
+# Committed queries that constrain class membership with bare `wdt:P31 wd:QX`
+# score precision=1.0/recall~=0 against gold's transitive closure. These tests
+# cover the rewrite/escalation helpers directly, then the end-to-end wiring in
+# _generate_once (same monkeypatched-execute style as the tests above).
+
+
+def test_next_closure_escalation_bare_to_single_closure():
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    out = generator_mod._next_closure_escalation(bare)
+    assert out == "SELECT DISTINCT ?x WHERE { ?x wdt:P31/wdt:P279* wd:Q22645 }"
+
+
+def test_next_closure_escalation_single_to_starred_closure():
+    level1 = "SELECT DISTINCT ?x WHERE { ?x wdt:P31/wdt:P279* wd:Q22645 }"
+    out = generator_mod._next_closure_escalation(level1)
+    assert out == "SELECT DISTINCT ?x WHERE { ?x wdt:P31*/wdt:P279* wd:Q22645 }"
+
+
+def test_next_closure_escalation_at_ceiling_returns_none():
+    level2 = "SELECT DISTINCT ?x WHERE { ?x wdt:P31*/wdt:P279* wd:Q22645 }"
+    assert generator_mod._next_closure_escalation(level2) is None
+
+
+def test_next_closure_escalation_no_membership_pattern_returns_none():
+    q = "SELECT DISTINCT ?x WHERE { ?x wdt:P106 wd:Q5 }"
+    assert generator_mod._next_closure_escalation(q) is None
+
+
+def test_next_closure_escalation_does_not_touch_string_literals():
+    # A literal that happens to spell out "wdt:P31" must survive untouched;
+    # only the real triple pattern outside the string gets escalated.
+    q = 'SELECT ?x WHERE { ?x rdfs:label "wdt:P31 fake" . ?x wdt:P31 wd:Q5 }'
+    out = generator_mod._next_closure_escalation(q)
+    assert out == 'SELECT ?x WHERE { ?x rdfs:label "wdt:P31 fake" . ?x wdt:P31/wdt:P279* wd:Q5 }'
+
+
+def test_closure_expansion_eligible_true_for_plain_select_of_uris():
+    q = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q5 }"
+    result_json = _select_result_values("Q1").json
+    assert generator_mod._closure_expansion_eligible(q, result_json) is True
+
+
+def test_closure_expansion_eligible_false_for_ask():
+    q = "ASK { ?x wdt:P31 wd:Q5 }"
+    result_json = _bool_result(True).json
+    assert generator_mod._closure_expansion_eligible(q, result_json) is False
+
+
+def test_closure_expansion_eligible_false_for_count_aggregate():
+    q = "SELECT (COUNT(?x) AS ?c) WHERE { ?x wdt:P31 wd:Q5 }"
+    result_json = {"head": {"vars": ["c"]}, "results": {"bindings": [{"c": {"type": "literal", "value": "3"}}]}}
+    assert generator_mod._closure_expansion_eligible(q, result_json) is False
+
+
+def test_closure_expansion_eligible_false_for_group_by():
+    q = "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 } GROUP BY ?x"
+    result_json = _select_result_values("Q1").json
+    assert generator_mod._closure_expansion_eligible(q, result_json) is False
+
+
+def test_closure_expansion_eligible_false_for_having():
+    q = "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 } GROUP BY ?x HAVING (COUNT(?x) > 1)"
+    result_json = _select_result_values("Q1").json
+    assert generator_mod._closure_expansion_eligible(q, result_json) is False
+
+
+def test_closure_expansion_eligible_false_for_literal_valued_select():
+    q = "SELECT ?label WHERE { ?x wdt:P31 wd:Q5 ; rdfs:label ?label }"
+    result_json = {"head": {"vars": ["label"]}, "results": {"bindings": [{"label": {"type": "literal", "value": "foo"}}]}}
+    assert generator_mod._closure_expansion_eligible(q, result_json) is False
+
+
+def test_closure_expansion_eligible_false_for_zero_rows():
+    q = "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 }"
+    result_json = _select_result(rows=False).json
+    assert generator_mod._closure_expansion_eligible(q, result_json) is False
+
+
+def test_is_strict_superset_true_when_candidate_adds_rows():
+    committed = _select_result_values("Q1").json
+    candidate = _select_result_values("Q1", "Q2").json
+    assert generator_mod._is_strict_superset(candidate, committed) is True
+
+
+def test_is_strict_superset_false_when_sets_are_equal():
+    same = _select_result_values("Q1").json
+    assert generator_mod._is_strict_superset(same, same) is False
+
+
+def test_is_strict_superset_false_when_candidate_does_not_contain_committed():
+    committed = _select_result_values("Q1").json
+    candidate = _select_result_values("Q2").json
+    assert generator_mod._is_strict_superset(candidate, committed) is False
+
+
+def _closure_exec_map(mapping: dict, calls: list):
+    """execute() stand-in: dispatch by exact (stripped) query text, log every call."""
+
+    def _exec(q, endpoint=None, timeout=120):
+        key = q.strip()
+        calls.append(key)
+        return mapping.get(key, SparqlResult(ok=False, json=None, error=f"unmapped query: {key!r}"))
+
+    return _exec
+
+
+def test_generate_once_adopts_one_closure_level_when_strict_superset(monkeypatch):
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    level1 = generator_mod._next_closure_escalation(bare)
+    level2 = generator_mod._next_closure_escalation(level1)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                bare: _select_result_values("Q1"),
+                level1: _select_result_values("Q1", "Q2"),  # strict superset -> adopt
+                level2: _select_result_values("Q1", "Q2"),  # same set as level1 -> reject, stop
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == level1
+    assert out.result.json == _select_result_values("Q1", "Q2").json
+    assert calls == [bare, level1, level2]  # tried both levels, stopped after level2 rejected
+
+
+def test_generate_once_escalates_two_levels_when_both_strict_supersets(monkeypatch):
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q729 }"
+    level1 = generator_mod._next_closure_escalation(bare)
+    level2 = generator_mod._next_closure_escalation(level1)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                bare: _select_result_values("Q1"),
+                level1: _select_result_values("Q1", "Q2"),
+                level2: _select_result_values("Q1", "Q2", "Q3"),
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == level2
+    assert out.result.json == _select_result_values("Q1", "Q2", "Q3").json
+    assert calls == [bare, level1, level2]
+
+
+def test_generate_once_rejects_non_superset_escalation_keeps_committed(monkeypatch):
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    level1 = generator_mod._next_closure_escalation(bare)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                bare: _select_result_values("Q1"),
+                level1: _select_result_values("Q9"),  # disjoint set -> not a superset
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == bare
+    assert out.result.json == _select_result_values("Q1").json
+    assert calls == [bare, level1]  # tried once, rejected, never tried level2
+
+
+def test_generate_once_equal_set_escalation_passes_through_to_next_level(monkeypatch):
+    # Regression for the q110 shape (verified live on the challenge endpoint):
+    # P31 -> P31/P279* keeps the same row set, and only P31*/P279* widens to
+    # gold's. An equal-set escalation is a no-op answer-wise and must NOT stop
+    # the loop, or the ceiling level is never tried.
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    level1 = generator_mod._next_closure_escalation(bare)
+    level2 = generator_mod._next_closure_escalation(level1)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                bare: _select_result_values("Q1"),
+                level1: _select_result_values("Q1"),  # equal set: pass through
+                level2: _select_result_values("Q1", "Q2", "Q3"),
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == level2
+    assert out.result.json == _select_result_values("Q1", "Q2", "Q3").json
+    assert calls == [bare, level1, level2]
+
+
+def test_generate_once_error_on_escalation_keeps_committed_result(monkeypatch):
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    level1 = generator_mod._next_closure_escalation(bare)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                bare: _select_result_values("Q1"),
+                level1: SparqlResult(ok=False, json=None, error="timeout"),
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == bare
+    assert out.result.json == _select_result_values("Q1").json
+    assert calls == [bare, level1]
+
+
+def test_generate_once_skips_closure_expansion_for_aggregate_query(monkeypatch):
+    committed = "SELECT (COUNT(?x) AS ?c) WHERE { ?x wdt:P31 wd:Q22645 }"
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+    count_result = SparqlResult(
+        ok=True, json={"head": {"vars": ["c"]}, "results": {"bindings": [{"c": {"type": "literal", "value": "3"}}]}}
+    )
+    calls: list = []
+    monkeypatch.setattr(generator_mod, "execute", _closure_exec_map({committed: count_result}, calls))
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == committed
+    assert calls == [committed]  # no escalation query was ever attempted
+
+
+def test_generate_once_closure_expansion_disabled_by_constructor_flag(monkeypatch):
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    calls: list = []
+    monkeypatch.setattr(generator_mod, "execute", _closure_exec_map({bare: _select_result_values("Q1")}, calls))
+
+    out = AgentSparqlGenerator(closure_expansion=False)._generate_once(_question())
+    assert out.sparql == bare
+    assert calls == [bare]  # constructor flag off -> no extra execution at all

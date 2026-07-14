@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -61,6 +62,13 @@ PREFIX schema: <http://schema.org/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 """
 
+# Gold answers were frozen against the challenge KG at a fixed reference instant.
+# Reverse-engineered from gold data: gold ages for Stan Lee (103, born 1922-12-28)
+# and Justin Bieber (32, born 1994-03-01) bound the window, and every gold
+# "birthday today" entity was born on April 8 -- together pinning the reference
+# date to 2026-04-08.
+REFERENCE_TIME = "2026-04-08T00:00:00Z"
+
 
 def resolve_endpoint(endpoint: str | None = None) -> str:
     """Endpoint precedence: explicit arg > WIKIKGQA_ENDPOINT env > public WDQS."""
@@ -93,6 +101,66 @@ def with_prefixes(query: str) -> str:
     return f"{WIKIDATA_PREFIXES}\n{query}"
 
 
+# Matches SPARQL/IRI/string-literal spans that must NOT have NOW() rewritten
+# inside them: long triple-quoted strings, short single/double-quoted strings
+# (with backslash escapes), and IRIREFs. Used to protect those spans from the
+# NOW()-call regex below, which otherwise has no notion of SPARQL syntax.
+_STRING_OR_IRI_RE = re.compile(
+    r"""
+    '''(?:\\.|(?!''').)*'''            # long single-quoted string
+    | \"\"\"(?:\\.|(?!\"\"\").)*\"\"\"  # long double-quoted string
+    | '(?:\\.|[^'\\\n])*'              # short single-quoted string
+    | "(?:\\.|[^"\\\n])*"              # short double-quoted string
+    | <[A-Za-z][\w+.-]*:[^<>\s]*>      # IRIREF (scheme required, so a space-free
+                                       # comparison like ?a<NOW()&&?b>?c is not
+                                       # mistaken for an IRI and left unrewritten)
+    """,
+    re.VERBOSE | re.DOTALL,
+)
+
+# The NOW() function-call form: case-insensitive, whitespace-tolerant between
+# NOW and the parens. The negative lookbehind excludes prefixed names (ex:now),
+# variables/parameters (?now, $now), and identifiers where "now" is a
+# substring -- \w, ":", "?", or "$" immediately before "NOW" means it isn't a
+# standalone function-call token.
+_NOW_CALL_RE = re.compile(r"(?<![\w:?$])NOW\s*\(\s*\)", re.IGNORECASE)
+
+
+def rewrite_now(query: str, reference_time: str = REFERENCE_TIME) -> str:
+    """Replace every SPARQL ``NOW()`` call with the frozen ``REFERENCE_TIME``.
+
+    Gold answers were computed once against a frozen KG snapshot using the
+    reference instant baked into ``REFERENCE_TIME`` (see its docstring). Gold
+    SPARQL uses ``NOW()``, which is fine at freeze time but drifts when a
+    system re-runs the query later: ages tick over, "born today" filters land
+    on the wrong day, and open-ended future-date filters admit rows gold never
+    saw. Rewriting ``NOW()`` to the frozen instant keeps outgoing queries
+    reproducing the gold evaluation instant regardless of when they run.
+
+    Uses the full ``xsd:dateTime`` IRI (not the ``xsd:`` prefix) so the
+    replacement is correct even if the query has no prefix declarations and
+    is sent before ``with_prefixes()`` runs.
+
+    Only the ``NOW()`` function-call form is rewritten (case-insensitive,
+    whitespace-tolerant, e.g. ``NOW ( )``). Occurrences inside string
+    literals or IRIs are left untouched, as are identifiers that merely
+    look like "now" (a variable ``?known``/``?now`` or a prefixed name like
+    ``ex:now``) since those aren't calls to the NOW() function.
+    """
+    literal = f'"{reference_time}"^^<http://www.w3.org/2001/XMLSchema#dateTime>'
+    protected = [(m.start(), m.end()) for m in _STRING_OR_IRI_RE.finditer(query)]
+
+    def _in_protected(pos: int) -> bool:
+        return any(start <= pos < end for start, end in protected)
+
+    def _replace(match: re.Match[str]) -> str:
+        if _in_protected(match.start()):
+            return match.group(0)
+        return literal
+
+    return _NOW_CALL_RE.sub(_replace, query)
+
+
 @dataclass
 class SparqlResult:
     ok: bool
@@ -107,14 +175,27 @@ def execute(
     timeout: int = 120,
     retries: int = 2,
     backoff_s: float = 2.0,
+    pin_now: bool | None = None,
 ) -> SparqlResult:
     """Run a SPARQL query and return its SPARQL-JSON results.
 
     Retries transient HTTP/network failures with linear backoff. Never truncates
     results — the caller owns size concerns.
+
+    ``pin_now`` rewrites ``NOW()`` in the query to the frozen ``REFERENCE_TIME``
+    gold was computed against, so results stay reproducible regardless of when
+    the query actually runs; see ``rewrite_now()``. Default (``None``) resolves
+    from the ``WIKIKGQA_PIN_NOW`` env var (unset/"1" = on; "0" = off, set by
+    ``benchmark.py --no-pin-now``) — env rather than parameter threading because
+    execute() is reached through several layers (generator commit path, the
+    agent's RunSPARQL tool via wikidata_server, submission checks) that would
+    all need the plumbing. This module is challenge-only code, hence the
+    on-by-default; pass ``pin_now=False`` to send the query as written.
     """
+    if pin_now is None:
+        pin_now = os.environ.get("WIKIKGQA_PIN_NOW", "1") != "0"
     url = resolve_endpoint(endpoint)
-    full_query = with_prefixes(query)
+    full_query = with_prefixes(rewrite_now(query) if pin_now else query)
     data = urllib.parse.urlencode({"query": full_query}).encode()
     headers = {
         "Accept": "application/sparql-results+json",

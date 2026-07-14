@@ -86,6 +86,132 @@ def _has_rows(result: SparqlResult) -> bool:
     return bool(result.json.get("results", {}).get("bindings"))
 
 
+# --- class-closure expansion repair (ANSWER_CONVENTIONS.md rule 10) ---
+#
+# Dominant remaining failure class: the committed query constrains class
+# membership with bare `?var wdt:P31 wd:QX .`, but gold uses the transitive
+# closure `wdt:P31/wdt:P279*` (or even `wdt:P31*/wdt:P279*`) so subclass
+# instances count too. That scores precision=1.0/recall~=0. This used to be a
+# prompt rule (R10); a held-out A/B showed prompt-space R7+ didn't help
+# overall, so it's now applied mechanically at commit time instead: widen the
+# membership pattern textually and adopt only if the wider answer set is a
+# STRICT SUPERSET of the committed one (never a same-size or unrelated set).
+
+_ASK_OR_AGGREGATE_RE = re.compile(
+    r"\bASK\b"                                 # ASK query form
+    r"|\b(?:COUNT|SUM|AVG|MIN|MAX)\s*\("       # aggregate function calls
+    r"|\bGROUP\s+BY\b"                         # GROUP BY
+    r"|\bHAVING\b",                            # HAVING
+    re.IGNORECASE,
+)
+
+_STRING_LITERAL_RE = re.compile(
+    r"'''(?:\\.|[^\\])*?'''"
+    r'|"""(?:\\.|[^\\])*?"""'
+    r"|'(?:\\.|[^'\\])*'"
+    r'|"(?:\\.|[^"\\])*"',
+    re.DOTALL,
+)
+
+# Class-membership property-path patterns, most-specific alternative first so
+# an already-escalated occurrence is never re-matched as a lower level (regex
+# alternation tries alternatives left-to-right at each start position).
+_MEMBERSHIP_RE = re.compile(
+    r"wdt:P31\*/wdt:P279\*"   # level 2: already at the escalation ceiling
+    r"|wdt:P31/wdt:P279\*"    # level 1: one escalation applied
+    r"|wdt:P31(?!\*)"         # level 0: bare instance-of
+)
+
+_MEMBERSHIP_ESCALATION = {
+    0: "wdt:P31/wdt:P279*",
+    1: "wdt:P31*/wdt:P279*",
+}
+
+
+def _mask_string_literals(sparql: str) -> str:
+    """Blank string-literal contents so the membership regex never matches inside one.
+
+    Length-preserving (replaces each literal with same-length 'x' filler), so
+    match spans found in the masked text are valid offsets into the original
+    query text too.
+    """
+    return _STRING_LITERAL_RE.sub(lambda m: "x" * len(m.group(0)), sparql)
+
+
+def _membership_pattern_level(text: str) -> int:
+    if text == "wdt:P31*/wdt:P279*":
+        return 2
+    if text == "wdt:P31/wdt:P279*":
+        return 1
+    return 0
+
+
+def _closure_expansion_eligible(sparql: str, result_json: dict | None) -> bool:
+    """Guardrails: SELECT-of-entities only, never ASK or an aggregate query.
+
+    Expanding an ASK or an aggregate (COUNT/SUM/AVG/MIN/MAX/GROUP BY/HAVING)
+    would silently change a scalar instead of growing a row set, which the
+    strict-superset check can't validate -- so those are refused outright
+    rather than risking a wrong "adoption".
+    """
+    if _ASK_OR_AGGREGATE_RE.search(_mask_string_literals(sparql)):
+        return False
+    if not result_json or "boolean" in result_json:
+        return False
+    bindings = result_json.get("results", {}).get("bindings", [])
+    if not bindings:
+        return False  # 0-row committed results are already handled upstream
+    head = result_json.get("head", {}).get("vars", [])
+    var = head[0] if head else next(iter(bindings[0]), None)
+    # Class membership is a URI concept; only escalate when the projected
+    # column is entity/URI-typed (never literal-valued SELECTs).
+    return all(row.get(var, {}).get("type") == "uri" for row in bindings if var in row)
+
+
+def _next_closure_escalation(sparql: str) -> str | None:
+    """Escalate the query's lowest-level membership pattern(s) by one step.
+
+    Returns the rewritten query text, or None when there is nothing left to
+    escalate: no `wdt:P31` membership pattern at all, or every occurrence is
+    already at the `wdt:P31*/wdt:P279*` ceiling. Only the property-path text
+    of matching triples is touched -- variable names, object ids, whitespace,
+    and string literals all pass through unchanged.
+    """
+    matches = list(_MEMBERSHIP_RE.finditer(_mask_string_literals(sparql)))
+    if not matches:
+        return None
+    levels = [_membership_pattern_level(m.group(0)) for m in matches]
+    min_level = min(levels)
+    if min_level >= 2:
+        return None  # everything already at the ceiling
+    replacement = _MEMBERSHIP_ESCALATION[min_level]
+    out: list[str] = []
+    last = 0
+    for m, level in zip(matches, levels):
+        if level != min_level:
+            continue
+        out.append(sparql[last:m.start()])
+        out.append(replacement)
+        last = m.end()
+    out.append(sparql[last:])
+    return "".join(out)
+
+
+def _answer_set(result_json: dict | None) -> frozenset:
+    if not result_json:
+        return frozenset()
+    from ama_kbqa.wikikgqa.submission import to_codabench_answers
+
+    return frozenset(str(v) for v in to_codabench_answers(result_json))
+
+
+def _is_strict_superset(candidate_json: dict | None, committed_json: dict | None) -> bool:
+    """True iff candidate's answer set properly contains every committed answer."""
+    committed = _answer_set(committed_json)
+    candidate = _answer_set(candidate_json)
+    return candidate.issuperset(committed) and candidate != committed
+
+
 class MentionSparqlGenerator:
     """Baseline with-mentions generator: prompt -> SPARQL -> execute -> repair.
 
@@ -239,6 +365,7 @@ class AgentSparqlGenerator:
         entity_search: bool = False,
         tool_budget: int = 20,
         votes: int = 1,
+        closure_expansion: bool = True,
     ):
         self.language = language
         self.endpoint = endpoint
@@ -265,6 +392,10 @@ class AgentSparqlGenerator:
         # dominates the residual error (seed-99 A/B, 2026-07-03), which is what
         # this attacks. 1 = off (default).
         self.votes = max(1, int(votes))
+        # Commit-time class-closure repair (ANSWER_CONVENTIONS.md rule 10, applied
+        # mechanically instead of via prompt): see _next_closure_escalation. On by
+        # default; the benchmark CLI flag to disable it is wired separately.
+        self.closure_expansion = closure_expansion
 
     def _generate_once(self, question: WikiKGQAQuestion) -> GeneratedQuery:
         import asyncio
@@ -322,6 +453,34 @@ class AgentSparqlGenerator:
                 alt_result = execute(alt, endpoint=self.endpoint, timeout=self.timeout)
                 if _has_rows(alt_result):
                     sparql, result, used_recovery = alt, alt_result, True
+        # Class-closure expansion: widen bare wdt:P31 membership patterns to the
+        # transitive closure and adopt only if the wider answer set is a strict
+        # superset of the committed one (never a same-size or unrelated set), so
+        # a wrong broadening can never be adopted. Runs on whatever query/result
+        # ended up committed above (original or non-empty-prior swap).
+        if self.closure_expansion and _has_rows(result) and _closure_expansion_eligible(sparql, result.json):
+            # `base` walks the escalation ladder; (sparql, result) is only
+            # re-pointed when the answer set strictly grows. An equal-set
+            # escalation must pass through rather than stop the loop (verified
+            # live on q110: P31 -> P31/P279* keeps the same 1 row, and only
+            # P31*/P279* reaches gold's 564) — but it is not adopted either, so
+            # a no-op ladder leaves the committed query text untouched.
+            # Anything that loses or swaps rows still stops the loop.
+            base = sparql
+            for _ in range(2):  # at most two escalations: bare -> P279* -> *P279*
+                candidate = _next_closure_escalation(base)
+                if candidate is None or candidate == base:
+                    break
+                candidate_result = execute(candidate, endpoint=self.endpoint, timeout=self.timeout)
+                if not candidate_result.ok:
+                    break
+                candidate_answers = _answer_set(candidate_result.json)
+                committed_answers = _answer_set(result.json)
+                if not candidate_answers.issuperset(committed_answers):
+                    break
+                if candidate_answers != committed_answers:
+                    sparql, result = candidate, candidate_result
+                base = candidate
         return GeneratedQuery(
             qid=question.id, sparql=sparql, result=result, attempts=2 if used_recovery else 1
         )

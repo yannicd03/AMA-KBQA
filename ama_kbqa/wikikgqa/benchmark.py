@@ -250,6 +250,18 @@ def main(argv=None) -> int:
              "dominant residual error source (seed-99 A/B). 1 = off (default).",
     )
     parser.add_argument(
+        "--no-closure-expansion", action="store_true",
+        help="agent only: disable the commit-time class-closure repair (widening bare "
+             "wdt:P31 membership to the P279* closure when the wider answer set is a "
+             "strict superset; ANSWER_CONVENTIONS.md rule 10 applied mechanically).",
+    )
+    parser.add_argument(
+        "--no-pin-now", action="store_true",
+        help="send NOW() as written instead of pinning it to the frozen gold reference "
+             "instant (2026-04-08, endpoint.REFERENCE_TIME). Pinning is on by default "
+             "because gold answers were computed at that instant.",
+    )
+    parser.add_argument(
         "--agent-timeout", type=float, default=None,
         help="agent only: per-question wall-clock cap in seconds (default: none). A stuck "
              "question is cancelled and its best validated query recovered from the journal. "
@@ -283,6 +295,9 @@ def main(argv=None) -> int:
     if args.full_synthesis:
         import os as _os
         _os.environ["WIKIKGQA_FULL_SYNTHESIS"] = "1"
+    if args.no_pin_now:
+        import os as _os
+        _os.environ["WIKIKGQA_PIN_NOW"] = "0"
 
     _write_run_manifest(args.out_dir, args, resolved)
 
@@ -306,6 +321,7 @@ def main(argv=None) -> int:
             tool_budget=args.tool_budget,
             agent_timeout=args.agent_timeout,
             votes=args.votes,
+            closure_expansion=not args.no_closure_expansion,
         )
     else:
         generator = MentionSparqlGenerator(
