@@ -6,6 +6,7 @@
 - [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) — why synthesis context defaults to minimal (journal-only), not full transcript
 - [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) — non-empty-prior recovery at commit time, ASK self-consistency voting, run manifests; open framework-level gaps still discarding validated queries
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) — why `conventions` defaults to minimal (R1-R6): held-out seed-99 A/B found no benefit from the extended R7-R10 rules
+- [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) — commit-time class-closure expansion (rule 10 applied mechanically) and NOW() pinned to the frozen gold reference instant
 - [System/agent_system.md](./agent_system.md) — the shared `BaseKBQAAgent` tool loop, journal, and synthesis machinery this subsystem reuses
 - [System/project_architecture.md](./project_architecture.md) — overall repo structure, KQAPro/SciQA reference pattern
 
@@ -42,8 +43,8 @@ ama_kbqa/
 
 Tests: `tests/wikikgqa/` plus the shared `tests/framework/` and `tests/server/`
 suites (the WikidataAgent and its server are exercised by the same framework
-tests as KQAPro/SciQA). As of 2026-07-03: 270 tests passing across
-`tests/wikikgqa tests/framework tests/server` (up from 199 on 2026-06-30).
+tests as KQAPro/SciQA). As of 2026-07-14: 328 tests passing (up from 270 on
+2026-07-03, up from 199 on 2026-06-30).
 
 ---
 
@@ -84,6 +85,41 @@ executes to a boolean (`ASK`) result and `ask_votes > 1`, the full generation
 re-runs up to `ask_votes` times and majority-votes the booleans; ties keep
 the first run. SELECT-result questions are never re-run. Targets the ASK
 slice (~7% of questions), identified as the noisier/less-deterministic class.
+
+**Class-closure expansion (`AgentSparqlGenerator`, since 2026-07-14).**
+`ANSWER_CONVENTIONS.md` rule 10 — gold uses `wdt:P31/wdt:P279*` transitive
+class-membership closure, not bare `wdt:P31` — used to be a prompt rule
+(part of `EXTENDED_CONVENTIONS`); the 2026-07-03 conventions A/B found the
+R7-R10 block gave no net held-out benefit, but rule 10 specifically is
+demonstrably needed on some questions (q110, q111). It's now applied
+mechanically at commit time instead of via prompt: after the query
+commits (post non-empty-prior recovery above), `_next_closure_escalation`
+widens any bare `wdt:P31` pattern one ladder step at a time
+(`wdt:P31` → `wdt:P31/wdt:P279*` → `wdt:P31*/wdt:P279*`), executing each
+candidate and adopting it only when its answer set is a **strict superset**
+of the currently committed one. Equal-set steps pass through the ladder
+without adoption or stopping the loop (verified live on q110: only the
+ceiling level reaches gold's answer set). `ASK`/aggregate/`GROUP
+BY`/`HAVING`/literal-valued/0-row queries are excluded outright — widening
+a scalar isn't something the strict-superset check can validate. Constructor
+flag `AgentSparqlGenerator(closure_expansion=True)` (default on),
+`benchmark.py --no-closure-expansion` to disable. See
+[Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md).
+
+**NOW() pinning (`ama_kbqa/wikikgqa/endpoint.py`, since 2026-07-14).** Gold
+answers were computed once against a frozen KG snapshot at a reference
+instant reverse-engineered from gold data as **2026-04-08**
+(`endpoint.REFERENCE_TIME`). `execute()` rewrites every outgoing SPARQL
+`NOW()` function call to that frozen instant
+(`"2026-04-08T00:00:00Z"^^xsd:dateTime`) before sending the query —
+string-literal- and IRI-safe, case-insensitive, whitespace-tolerant.
+Default on; `WIKIKGQA_PIN_NOW=0` env var / `benchmark.py --no-pin-now` to
+opt out. Because both the generator's commit path and the agent's
+`RunSPARQL` MCP tool (`wikidata_server.py`) funnel through this same
+`execute()`, pinning applies consistently to agent exploration and
+commit-time execution alike — the model never sees one NOW() while
+exploring and a different one at commit. See
+[Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md).
 
 ---
 
@@ -249,6 +285,8 @@ by WikiKGQA's exposure to transient KIT proxy failures but generally useful:
 | `AgentSparqlGenerator.ask_votes` / `benchmark.py --ask-votes` | 1 (off) | ASK self-consistency vote count; see above |
 | `WikidataAgent._synthesis_full_context()` / `WIKIKGQA_FULL_SYNTHESIS` / `benchmark.py --full-synthesis` | **minimal (off)** by default | Full exploration-transcript context for synthesis vs journal-only; A/B found no benefit (0.781 vs 0.807 F1) — see [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) |
 | `WikidataAgent(conventions=)` / `AgentSparqlGenerator(conventions=)` / `benchmark.py --conventions` | **`"minimal"`** (was `"full"`) since 2026-07-03 | R1-R6 vs R7-R10 extended modeling rules; held-out seed-99 A/B found no benefit from R7-R10 (0.7311 vs 0.6833 F1) — see [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) |
+| `AgentSparqlGenerator.closure_expansion` / `benchmark.py --no-closure-expansion` | **on** by default, since 2026-07-14 | Rule-10 class-membership closure applied mechanically at commit time, strict-superset-gated — see above and [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) |
+| `endpoint.execute(pin_now=)` / `WIKIKGQA_PIN_NOW` env / `benchmark.py --no-pin-now` | **on** by default, since 2026-07-14 | Rewrites outgoing `NOW()` to the frozen gold reference instant `2026-04-08T00:00:00Z` — see above and the same ADR |
 | `MentionSparqlGenerator.timeout` | 120s | Per-`execute()` call for the blind single-shot generator |
 | `MentionSparqlGenerator.max_repairs` | 2 | Execution-error / empty-result repair attempts |
 

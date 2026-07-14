@@ -10,6 +10,7 @@
 - [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](./wikikgqa-tool-budget-and-resilience-2026-06-30.md) — the journal-recovery mechanism this decision builds on (evidence-based verify-on-empty repair)
 - **External:** `0_Claude/AMA-KBQA/wikikgqa-implementation-audit-2026-07-03.md` in the user's Obsidian wiki — the full implementation audit this commit implements strategic recommendations from. Read that note for the complete audit findings; this ADR only records what was *implemented* and what remains *open*.
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](./wikikgqa-conventions-default-2026-07-03.md) — final results of the held-out seed-99 conventions A/B tracked as in-flight below; this later ADR has the full analysis
+- [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](./wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) — two more commit-time mechanisms added on top of this one; also resolves every item in this ADR's Open Items table
 
 ---
 
@@ -113,22 +114,33 @@ sign-test/trajectory-divergence analysis, and the implementation diff are in
 Output directories: `benchmark_results/wikikgqa/run-rand50-seed99-conv-full/`
 and `run-rand50-seed99-conv-minimal/`.
 
-## Open Items (not yet fixed — from the audit, tracked here for follow-up)
+## Open Items (from the audit — status as of 2026-07-14)
 
 The audit identified further paths that can still discard a validated query
-before it reaches the recovery logic above. None of these were fixed in this
-commit:
+before it reaches the recovery logic above. None were fixed in *this*
+commit; status below reflects what has since landed.
 
-| Location | Issue |
-|---|---|
-| `ama_kbqa/framework/base_agent.py:1289-1296` | Max-iterations exit path |
-| `ama_kbqa/framework/base_agent.py:1330-1332` | Unhandled mid-loop LLM exception |
-| `ama_kbqa/framework/base_agent.py:1975`, `:2283` | Unguarded synthesis call sites |
-| `ama_kbqa/agents/wikidata_agent` loop-detection (approx. `base_agent.py:798-806`) | False-positive loop detection on repeated `RunSPARQL` calls that are legitimately similar (e.g. incremental narrowing), not actual stalls |
-| Budget accounting | Double-bookkeeping between the tool-call budget counter and the framework's own `total_tool_calls_made` — not reconciled |
-| Local scorer vs Codabench | The local macro-F1 scorer is stricter than the Codabench submission scorer on at least one class of answers (exact class not re-derived here — see the wiki audit for detail) |
+| Location | Issue | Status |
+|---|---|---|
+| `ama_kbqa/framework/base_agent.py:1289-1296` | Max-iterations exit path | **Resolved** — commit `f6b313c` (2026-07-03): every terminal condition in the tool loop breaks to synthesis instead of returning an error string. Verified 2026-07-14 by line-by-line audit. |
+| `ama_kbqa/framework/base_agent.py:1330-1332` | Unhandled mid-loop LLM exception | **Resolved** — `f6b313c`, same synthesis-exit funnel. Verified 2026-07-14. |
+| `ama_kbqa/framework/base_agent.py:1975`, `:2283` | Unguarded synthesis call sites | **Resolved** — `f6b313c` added `_run_synthesis_guarded` (base_agent.py:2040): `GetJournalSummary` failure degrades to the local snapshot, empty-`choices` responses return `""` instead of raising `IndexError`, and synthesis falls back to `best_snapshot_query()` on failure. Verified 2026-07-14, `grep -n _run_synthesis_guarded base_agent.py`. |
+| `ama_kbqa/agents/wikidata_agent` loop-detection (approx. `base_agent.py:798-806`) | False-positive loop detection on repeated `RunSPARQL` calls that are legitimately similar (e.g. incremental narrowing), not actual stalls | **Resolved** — `f6b313c` added `_loop_exempt_tools` (base_agent.py:816): name-frequency detectors (oscillation, same-tool-5-of-6) exempt declared workhorse tools (`RunSPARQL`, `SearchEntities`, `SearchProperties`); identical-args detection still applies. Test coverage in `877551c` (`tests/framework/test_loop_detection_exemptions.py`, 152 lines). Verified 2026-07-14. |
+| Budget accounting | Double-bookkeeping between the tool-call budget counter and the framework's own `total_tool_calls_made` — not reconciled | **Resolved** — `f6b313c`: tool budget now counts EXECUTED calls only, aligning the binding cap with the framework counter. Verified 2026-07-14. |
+| Local scorer vs Codabench | The local macro-F1 scorer is stricter than the Codabench submission scorer on at least one class of answers (exact class not re-derived here — see the wiki audit for detail) | **Resolved (by design, confirmed)** — a 2026-07-14 parity audit ran `scoring.py`'s `*_codabench` functions (`score_question_codabench`, `macro_qald_f1_codabench`) against the official gold files (`debayan/wikikgqa-public`; bare-value arrays, no datatype info) and confirmed they match official semantics on every verifiable class. The native (non-`_codabench`) scorer's datatype-tuple strictness is intentionally local-only, for development honesty — not a bug to fix. |
 
-These four `base_agent.py` paths are **framework-level**, so a fix benefits
-KQAPro/SciQA too, not just WikiKGQA — same shared-framework pattern as the
-2026-06-30 ADR's `_llm_call` retry. Candidate for a follow-up ADR once
-prioritized.
+All four `base_agent.py` fixes and the budget-accounting fix shipped together
+in commits `f6b313c`/`877551c` (2026-07-03) — see the commit summaries for
+full detail; not written up as a separate ADR since they're audit-item
+closures of the items already tracked here, not new decisions with rejected
+alternatives.
+
+**Known inert bug, noted in passing (2026-07-14):** `submission.py::_bare_id`
+mangles `prop/statement/` and `prop/qualifier/` URIs into `"statement/Pxxx"`
+/ `"qualifier/Pxxx"` (its prefix-strip loop matches the shorter `.../prop/`
+prefix before ever checking for the longer `.../prop/statement/` one). Zero
+occurrences across all 497 gold answers, so it has never been exercised in
+practice — recorded here rather than fixed blind, since a fix without a
+reproducing case can't be validated. Surfaced while auditing
+`to_codabench_answers` for the closure-expansion superset check in
+[Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](./wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md#validation).
