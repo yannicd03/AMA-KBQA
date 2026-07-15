@@ -13,7 +13,7 @@
 | [System/project_architecture.md](System/project_architecture.md) | Start here. Full structure, tech stack, MCP servers, CLI, frontend, batch pipeline, config system |
 | [System/agent_system.md](System/agent_system.md) | Agent lifecycle, question classification, loop detection (6 layers), journal/scratchpad data model |
 | [System/research_corpus.md](System/research_corpus.md) | Paper (`paper/`), dataset docs (`docs/`), and how research artifacts relate to code |
-| [System/wikikgqa_agent.md](System/wikikgqa_agent.md) | WikiKGQA subsystem reference: `WikidataAgent`, `wikidata_server.py` MCP tools, `MentionSparqlGenerator`/`AgentSparqlGenerator`, tool-call budget mechanism, R1-R10 answer conventions |
+| [System/wikikgqa_agent.md](System/wikikgqa_agent.md) | WikiKGQA subsystem reference: `WikidataAgent`, `wikidata_server.py` MCP tools, `MentionSparqlGenerator`/`AgentSparqlGenerator`, tool-call budget mechanism, R1-R13 answer conventions incl. conditional R8/R9/R12 injection |
 
 > `System/database_schema.md` — referenced in older READMEs but file is absent; Qdrant/Virtuoso schema is documented inline in `System/project_architecture.md` and `System/agent_system.md`.
 
@@ -66,6 +66,7 @@
 | [Decisions/wikikgqa-conventions-default-2026-07-03.md](Decisions/wikikgqa-conventions-default-2026-07-03.md) | `conventions` default flipped full→minimal (R1-R6): held-out seed-99 rand-50 A/B found no benefit from extended R7-R10 rules (0.7311 vs 0.6833 F1, noise-dominated); held-out F1 (~0.73) calibration note vs tuning-set 0.807 |
 | [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) | Commit-time class-closure expansion (rule 10 applied mechanically, strict-superset-gated escalation ladder P31→P31/P279*→P31*/P279*) + NOW() rewritten to frozen gold reference instant 2026-04-08 in `endpoint.execute()`; q110 0.004→1.000, q111 0.064→0.897 on dev |
 | [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) | q113 with-mentions regression (0.85→0.84) root-caused to a committed statement-node-URI result; `_bare_id` normalizes `prop/statement/`/`prop/qualifier/` namespaces; commit-time `_result_is_sane` guard (bnode/statement-node/`Special:EntityData`/unmapped-`/`) gates journal recovery, closure escalation, and vote tie-breaks |
+| [Decisions/wikikgqa-round2-repairs-2026-07-15.md](Decisions/wikikgqa-round2-repairs-2026-07-15.md) | Round-2 package: yes/no ASK repair (35/35 gold yes/no are ASK), projection trim (416/442 gold SELECTs single-var), sanity catch-all rescoped any-`/`→`wikidata.org/` residue, conditional R8/R9/R12 convention injection (5/4/15 train-trigger hits) bounding the always-on-bundle A/B loss, `benchmark.py` auto-escalation (+15 tool budget, replace-only-empty) |
 
 ---
 

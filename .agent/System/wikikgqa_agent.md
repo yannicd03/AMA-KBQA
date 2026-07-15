@@ -8,6 +8,7 @@
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) — why `conventions` defaults to minimal (R1-R6): held-out seed-99 A/B found no benefit from the extended R7-R10 rules
 - [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) — commit-time class-closure expansion (rule 10 applied mechanically) and NOW() pinned to the frozen gold reference instant
 - [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) — commit-time answer-sanity guard (`_result_is_sane`) and `_bare_id` property-namespace normalization; fixes the q113 with-mentions regression
+- [Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md) — same-day round-2 package: yes/no ASK repair, projection trim, sanity catch-all rescoped to `wikidata.org/` residue, conditional R8/R9/R12 convention injection, benchmark auto-escalation
 - [System/agent_system.md](./agent_system.md) — the shared `BaseKBQAAgent` tool loop, journal, and synthesis machinery this subsystem reuses
 - [System/project_architecture.md](./project_architecture.md) — overall repo structure, KQAPro/SciQA reference pattern
 
@@ -44,8 +45,9 @@ ama_kbqa/
 
 Tests: `tests/wikikgqa/` plus the shared `tests/framework/` and `tests/server/`
 suites (the WikidataAgent and its server are exercised by the same framework
-tests as KQAPro/SciQA). As of 2026-07-15: 347 tests passing (up from 328 on
-2026-07-14, 270 on 2026-07-03, 199 on 2026-06-30).
+tests as KQAPro/SciQA). As of 2026-07-15: 389 tests passing (up from 347
+earlier the same day, 328 on 2026-07-14, 270 on 2026-07-03, 199 on
+2026-06-30).
 
 ---
 
@@ -141,6 +143,54 @@ flag. Companion fix in `submission.py::_bare_id`: `prop/statement/` and
 still pass through un-laundered so `_result_is_sane` catches them. See
 [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md).
 
+**Projection trim (`AgentSparqlGenerator`, since 2026-07-15).** 416/442
+(94%) of gold `SELECT` queries project exactly one variable, and
+`to_codabench_answers` scores every projected column as an answer value, so
+a committed multi-column `SELECT` is almost always precision poison from
+spurious extra columns. `_trim_projection` (`generator.py`) rewrites a
+multi-variable, non-aggregate, non-`SELECT *` query (matched on
+string-literal-masked text) to keep only its first projected variable; the
+caller executes the trimmed query and adopts it only if it still executes,
+has rows, and is sane. Guarded off for `ASK`/aggregate queries,
+`SELECT *`, and `(...)`-expression projections. Runs in the commit-time
+chain **after non-empty-prior recovery, before the answer-sanity guard and
+closure expansion** (a trim can drop the junk that made a result unsane;
+closure expansion expects a single-column query). Flag:
+`AgentSparqlGenerator(projection_trim=True)` (default on; no `benchmark.py`
+CLI toggle yet — constructor-only, see the config knobs table). Companion
+always-on prompt rule
+(`ANSWER_CONVENTIONS.md` rule 13): "SELECT exactly ONE variable." See
+[Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md).
+
+**Yes/no ASK repair (`AgentSparqlGenerator`, since 2026-07-15).** Gold-scan
+found all 35/35 yes/no-form questions use an `ASK` gold query, zero
+exceptions (includes the "at least N times" count-threshold shape, e.g.
+q403/q405 "Has France won the Eurovision at least twice?", which must wrap
+a `COUNT` subquery inside the `ASK` rather than commit a bare `COUNT`
+scalar). When a yes/no-form question (`_is_yesno_question`, matched on a
+leading is/are/was/were/has/have/had/does/do/did/can/could/will/would)
+commits a non-boolean result, `_generate_once` re-runs generation exactly
+once with an explicit ASK instruction appended to the question, and adopts
+the re-run only if its result actually is boolean — otherwise the original
+non-boolean result is kept. Runs **last** in the commit-time chain, after
+closure expansion. An internal `_repair_instruction` parameter prevents the
+repair re-run from recursively triggering a second repair. Flag:
+`AgentSparqlGenerator(ask_repair=True)` (default on); `GeneratedQuery`
+tracks whether a repair round was used. See
+[Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md).
+
+**Sanity catch-all rescoped (since 2026-07-15).** The answer-sanity guard's
+catch-all (previous paragraph) was originally "any `/` survives
+normalization → unsane"; it is now scoped to specifically
+`"wikidata.org/"` residue (case-insensitive). Zero gold answers in either
+form contain that substring, so detection power against this benchmark is
+unchanged — the rescoping removes a false-positive risk against legitimate
+URL-literal answers (e.g. an official-website value like
+`"https://www.louvre.fr/"`) that happens not to occur in this benchmark's
+gold set but would misfire if the guard were reused more generally. A
+user-driven correctness fix, not a benchmark-score-driven one. See
+[Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md).
+
 ---
 
 ## WikidataAgent (`ama_kbqa/agents/wikidata_agent/agent.py`)
@@ -173,11 +223,35 @@ KQAPro/SciQA agents:
   Macro F1, noise-dominated), so the cheaper, lower-overfitting-risk minimal
   set is the default and `"full"` is opt-in. See
   [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md).
-  See `ama_kbqa/wikikgqa/ANSWER_CONVENTIONS.md` for what R1-R10 actually encode
-  (entity-URI-not-label answers, `ASK` for yes/no, superlative `ORDER BY`,
-  age-via-`NOW()`, `COUNT` default for "how many", sovereign-state QID, the
-  normalized-quantity statement path, "currently/still" exclusion filters,
-  instance-of completeness).
+  **Since 2026-07-15, "minimal" also conditionally injects three of the
+  extended rules per-question**, bounding the blast radius that made
+  always-on injection lose the A/B above: `get_conditional_conventions`
+  (`prompts.py`) matches the question text against a trigger regex per rule
+  and, on a match, appends that rule's text to the per-question analysis
+  context (`WikidataAgent._build_analysis_context`, not the system prompt —
+  this is why it can vary per question within one agent instance). Trigger
+  table:
+
+  | Rule | Trigger words | Training hits |
+  |---|---|---|
+  | 8 (quantity normalization) | heavy / mass / weigh / weight / tall / height / net worth | 5 |
+  | 9 (currently / exclude-ended) | currently / still / nowadays / present-day | 4 |
+  | 12 (class-vs-instance location) | found in / are there in / which countries have | 15 |
+
+  Rules 7, 10, 11 have no clean textual trigger and remain `"full"`-only.
+  "Minimal" now means: R1-R6 always on + rule 2's count-threshold `ASK`
+  sub-case + the new always-on single-variable-projection rule (13) +
+  rules 8/9/12 injected conditionally per the table above. `"full"` is
+  unaffected — it still gets the entire `EXTENDED_CONVENTIONS` bundle
+  unconditionally via the system prompt (conditional injection is skipped
+  there to avoid duplicating it). See
+  [Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md).
+  See `ama_kbqa/wikikgqa/ANSWER_CONVENTIONS.md` for what R1-R13 actually encode
+  (entity-URI-not-label answers, `ASK` for yes/no incl. count-threshold,
+  superlative `ORDER BY`, age-via-`NOW()`, `COUNT` default for "how many",
+  sovereign-state QID, the normalized-quantity statement path,
+  "currently/still" exclusion filters, instance-of completeness,
+  single-variable projection).
 - **Per-instance model/provider override** — `config.toml`'s `chat_model` is
   treated as stale for this subsystem; `model=`/`provider=` constructor args let
   the benchmark runner sweep multiple models without editing config, and
@@ -307,9 +381,30 @@ by WikiKGQA's exposure to transient KIT proxy failures but generally useful:
 | `WikidataAgent(conventions=)` / `AgentSparqlGenerator(conventions=)` / `benchmark.py --conventions` | **`"minimal"`** (was `"full"`) since 2026-07-03 | R1-R6 vs R7-R10 extended modeling rules; held-out seed-99 A/B found no benefit from R7-R10 (0.7311 vs 0.6833 F1) — see [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) |
 | `AgentSparqlGenerator.closure_expansion` / `benchmark.py --no-closure-expansion` | **on** by default, since 2026-07-14 | Rule-10 class-membership closure applied mechanically at commit time, strict-superset-gated — see above and [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) |
 | `endpoint.execute(pin_now=)` / `WIKIKGQA_PIN_NOW` env / `benchmark.py --no-pin-now` | **on** by default, since 2026-07-14 | Rewrites outgoing `NOW()` to the frozen gold reference instant `2026-04-08T00:00:00Z` — see above and the same ADR |
-| `generator._result_is_sane` | **always on**, no flag, since 2026-07-15 | Commit-time answer-sanity guard (bnode/statement-node/`Special:EntityData`/unmapped-`/` detection); gates journal-alternate recovery, closure escalation, and vote tie-breaks — see above and [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) |
+| `generator._result_is_sane` | **always on**, no flag, since 2026-07-15 | Commit-time answer-sanity guard (bnode/statement-node/`Special:EntityData`/`wikidata.org/`-residue detection — catch-all rescoped from any-`"/"` on 2026-07-15); gates journal-alternate recovery, closure escalation, and vote tie-breaks — see above and [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) / [Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md) |
+| `AgentSparqlGenerator.projection_trim` | **on** by default, since 2026-07-15 | Trims a committed multi-column `SELECT` to its first variable (94% of gold SELECTs are single-column); no `benchmark.py` CLI toggle yet — see above and [Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md) |
+| `AgentSparqlGenerator.ask_repair` | **on** by default, since 2026-07-15 | One re-run with an explicit ASK instruction when a yes/no question commits a non-boolean result (35/35 gold yes/no questions are ASK); no `benchmark.py` CLI toggle yet — see above and [Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md) |
+| `benchmark.py --no-auto-escalate` | auto-escalation **on** by default, since 2026-07-15 | Empty-answer questions (agent generator only) get one re-run with `tool_budget` raised by +15 before the final submission write, replace-only-empty policy; see below and [Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md) |
 | `MentionSparqlGenerator.timeout` | 120s | Per-`execute()` call for the blind single-shot generator |
 | `MentionSparqlGenerator.max_repairs` | 2 | Execution-error / empty-result repair attempts |
+
+**Auto-escalation (`benchmark.py`, since 2026-07-15).** Every gold answer
+in this benchmark is non-empty, so a submission answer still empty after
+the main pass is known-wrong. `run_benchmark` calls
+`_escalate_empty_answers` after the main pass (before the final submission
+write): for each still-empty question, one re-run with the generator's
+`tool_budget` raised by a fixed `+15` (`_ESCALATION_BUDGET_BUMP`),
+restoring the original budget afterward. Replace-only-empty policy
+(mirrors `scripts/assemble_voted_submission.py`'s `--patch` flow): a
+question with a non-empty answer is never re-run, and an escalation re-run
+that comes back still-empty never overwrites the original outcome. No-op
+for non-`AgentSparqlGenerator` generators or when there are no empty
+answers. `summary.json` gains `escalated_qids` /
+`escalated_filled_qids` / `escalated_still_empty_qids` (additive-only —
+absent when there's nothing to escalate). CLI: `--no-auto-escalate` to
+disable. Automates a manual escalation flow used once by hand (the
+EN-without-mentions run's q3, +15 by hand, found sufficient). See
+[Decisions/wikikgqa-round2-repairs-2026-07-15.md](../Decisions/wikikgqa-round2-repairs-2026-07-15.md).
 
 `benchmark.py` also writes `run_manifest.json` into each run's output
 directory (git commit, ISO timestamp, resolved SPARQL endpoint, full parsed
