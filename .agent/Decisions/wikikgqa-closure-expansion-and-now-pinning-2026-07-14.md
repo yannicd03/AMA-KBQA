@@ -9,6 +9,7 @@
 - [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](./wikikgqa-commit-time-recovery-2026-07-03.md) — prior commit-time repair (non-empty-prior recovery, ASK voting); this ADR adds two more mechanisms to the same commit-time stage, and resolves several items in its Open Items table
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](./wikikgqa-conventions-default-2026-07-03.md) — why prompt-space R7-R10 (including rule 10, class-membership completeness) defaults off; the reason this same rule is applied mechanically here instead
 - [Decisions/wikikgqa-2026-adaptation.md](./wikikgqa-2026-adaptation.md) — why this subsystem exists (SPARQL-generate-and-execute head, challenge endpoint)
+- [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](./wikikgqa-answer-sanity-guard-2026-07-15.md) — fixes the `_bare_id` bug flagged in this ADR's Validation caveat below (it was not inert after all) and gates this ADR's strict-superset escalation on the same sanity check
 
 ---
 
@@ -163,14 +164,19 @@ choke point avoids that entirely.
 Full suite: `uv run pytest` → **328 passed** (up from 290 as of the
 2026-07-03 `877551c` test-coverage commit).
 
-**Caveat on `_answer_set` (closure-expansion's superset check).** The
-strict-superset comparison in `generator.py::_answer_set` reuses
-`ama_kbqa/wikikgqa/submission.py::to_codabench_answers` to normalize rows
-into a comparable set. `to_codabench_answers` has a latent bug in
-`_bare_id` — see the note in
-[Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](./wikikgqa-commit-time-recovery-2026-07-03.md#open-items)
-Open Items — but it is inert against all 497 gold answers, so it does not
-affect the superset comparison in practice.
+**Caveat on `_answer_set` (closure-expansion's superset check) — resolved
+2026-07-15.** The strict-superset comparison in `generator.py::_answer_set`
+reuses `ama_kbqa/wikikgqa/submission.py::to_codabench_answers` to normalize
+rows into a comparable set. `to_codabench_answers` had a latent `_bare_id`
+namespace-prefix bug, assessed inert here because it was inert against all
+497 gold answers — but the very next resubmission proved a live
+agent-generated query could reach it (q113, a statement-node-URI result).
+Fixed in `fde0c62`
+([Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](./wikikgqa-answer-sanity-guard-2026-07-15.md)),
+which also gates this ADR's strict-superset escalation adoption on
+`_result_is_sane` — a candidate that is a strict superset of the committed
+answer set but pulls in unsane rows (blank/statement nodes) is no longer
+adopted.
 
 ## Context: this ADR does not change the scored leaderboard result
 

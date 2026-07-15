@@ -11,6 +11,7 @@
 - **External:** `0_Claude/AMA-KBQA/wikikgqa-implementation-audit-2026-07-03.md` in the user's Obsidian wiki — the full implementation audit this commit implements strategic recommendations from. Read that note for the complete audit findings; this ADR only records what was *implemented* and what remains *open*.
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](./wikikgqa-conventions-default-2026-07-03.md) — final results of the held-out seed-99 conventions A/B tracked as in-flight below; this later ADR has the full analysis
 - [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](./wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) — two more commit-time mechanisms added on top of this one; also resolves every item in this ADR's Open Items table
+- [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](./wikikgqa-answer-sanity-guard-2026-07-15.md) — fixes the `_bare_id` bug noted below and adds the commit-time answer-sanity guard that reuses this ADR's journal-alternate recovery path
 
 ---
 
@@ -135,12 +136,21 @@ full detail; not written up as a separate ADR since they're audit-item
 closures of the items already tracked here, not new decisions with rejected
 alternatives.
 
-**Known inert bug, noted in passing (2026-07-14):** `submission.py::_bare_id`
-mangles `prop/statement/` and `prop/qualifier/` URIs into `"statement/Pxxx"`
-/ `"qualifier/Pxxx"` (its prefix-strip loop matches the shorter `.../prop/`
-prefix before ever checking for the longer `.../prop/statement/` one). Zero
-occurrences across all 497 gold answers, so it has never been exercised in
-practice — recorded here rather than fixed blind, since a fix without a
-reproducing case can't be validated. Surfaced while auditing
-`to_codabench_answers` for the closure-expansion superset check in
-[Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](./wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md#validation).
+**Bug noted 2026-07-14 as inert, fixed 2026-07-15 (`fde0c62`).**
+`submission.py::_bare_id` mangled `prop/statement/` and `prop/qualifier/`
+URIs into `"statement/Pxxx"` / `"qualifier/Pxxx"` (its prefix-strip loop
+matched the shorter `.../prop/` prefix before ever checking for the longer
+`.../prop/statement/` one). At the time this was recorded, a scan of all 497
+gold answers found zero occurrences, so it was assessed inert and left
+unfixed. The very next resubmission (2026-07-15) proved that assessment
+wrong: a live agent-generated query committed a result full of
+`entity/statement/` URIs, costing ~-0.013 macro F1 on the with-mentions
+score (q113) — because the bug's reachability depends on what the *system*
+generates, not on what gold contains. Fixed in `fde0c62` alongside a new
+commit-time answer-sanity guard (`_result_is_sane`) that catches this whole
+class of junk (bnodes, statement-node URIs, `Special:EntityData` URLs, and
+unmapped `"/"`-containing values) even where a future namespace gap slips
+through `_bare_id` again. See
+[Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](./wikikgqa-answer-sanity-guard-2026-07-15.md)
+for the full incident writeup and the transferable lesson (validate against
+the reference-value *grammar*, not just observed reference data).

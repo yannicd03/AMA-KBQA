@@ -7,6 +7,7 @@
 - [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) — non-empty-prior recovery at commit time, ASK self-consistency voting, run manifests; open framework-level gaps still discarding validated queries
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) — why `conventions` defaults to minimal (R1-R6): held-out seed-99 A/B found no benefit from the extended R7-R10 rules
 - [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) — commit-time class-closure expansion (rule 10 applied mechanically) and NOW() pinned to the frozen gold reference instant
+- [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) — commit-time answer-sanity guard (`_result_is_sane`) and `_bare_id` property-namespace normalization; fixes the q113 with-mentions regression
 - [System/agent_system.md](./agent_system.md) — the shared `BaseKBQAAgent` tool loop, journal, and synthesis machinery this subsystem reuses
 - [System/project_architecture.md](./project_architecture.md) — overall repo structure, KQAPro/SciQA reference pattern
 
@@ -43,8 +44,8 @@ ama_kbqa/
 
 Tests: `tests/wikikgqa/` plus the shared `tests/framework/` and `tests/server/`
 suites (the WikidataAgent and its server are exercised by the same framework
-tests as KQAPro/SciQA). As of 2026-07-14: 328 tests passing (up from 270 on
-2026-07-03, up from 199 on 2026-06-30).
+tests as KQAPro/SciQA). As of 2026-07-15: 347 tests passing (up from 328 on
+2026-07-14, 270 on 2026-07-03, 199 on 2026-06-30).
 
 ---
 
@@ -120,6 +121,25 @@ opt out. Because both the generator's commit path and the agent's
 commit-time execution alike — the model never sees one NOW() while
 exploring and a different one at commit. See
 [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md).
+
+**Answer-sanity guard (`AgentSparqlGenerator`, since 2026-07-15).** A
+committed result **with rows** can still be known-wrong: gold answers are
+always a clean entity id, literal, or boolean, never a blank node,
+statement-node URI (`entity/statement/Qxxx-UUID`), `Special:EntityData` URL,
+or other unmapped URI junk. `_result_is_sane` (`generator.py`) names that
+failure mode — surfaced by q113, where a `votes=3` self-consistency round
+committed a 50-row statement-node-URI result over a correct single answer,
+costing the entire 2026-07-15 with-mentions regression (0.85→0.84). The
+check is wired into three commit-time stages: (1) journal-alternate
+recovery now also fires on a has-rows-but-unsane result, not just 0 rows;
+(2) closure-expansion escalation (above) only adopts a strict-superset
+candidate if it is also sane; (3) `votes=N` tie-breaks prefer a sane tied
+answer over an earlier-seen unsane one. Always on, not configurable via
+flag. Companion fix in `submission.py::_bare_id`: `prop/statement/` and
+`prop/qualifier/` URI namespaces now normalize to bare `Pxxx` (mirrors
+`dataset.py::_PROPERTY_PREFIXES`); entity statement nodes deliberately
+still pass through un-laundered so `_result_is_sane` catches them. See
+[Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md).
 
 ---
 
@@ -287,6 +307,7 @@ by WikiKGQA's exposure to transient KIT proxy failures but generally useful:
 | `WikidataAgent(conventions=)` / `AgentSparqlGenerator(conventions=)` / `benchmark.py --conventions` | **`"minimal"`** (was `"full"`) since 2026-07-03 | R1-R6 vs R7-R10 extended modeling rules; held-out seed-99 A/B found no benefit from R7-R10 (0.7311 vs 0.6833 F1) — see [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) |
 | `AgentSparqlGenerator.closure_expansion` / `benchmark.py --no-closure-expansion` | **on** by default, since 2026-07-14 | Rule-10 class-membership closure applied mechanically at commit time, strict-superset-gated — see above and [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) |
 | `endpoint.execute(pin_now=)` / `WIKIKGQA_PIN_NOW` env / `benchmark.py --no-pin-now` | **on** by default, since 2026-07-14 | Rewrites outgoing `NOW()` to the frozen gold reference instant `2026-04-08T00:00:00Z` — see above and the same ADR |
+| `generator._result_is_sane` | **always on**, no flag, since 2026-07-15 | Commit-time answer-sanity guard (bnode/statement-node/`Special:EntityData`/unmapped-`/` detection); gates journal-alternate recovery, closure escalation, and vote tie-breaks — see above and [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) |
 | `MentionSparqlGenerator.timeout` | 120s | Per-`execute()` call for the blind single-shot generator |
 | `MentionSparqlGenerator.max_repairs` | 2 | Execution-error / empty-result repair attempts |
 
