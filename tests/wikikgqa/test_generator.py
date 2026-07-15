@@ -294,6 +294,22 @@ def test_votes_tie_keeps_first_runs_answer():
     assert out is runs[0]
 
 
+def test_votes_tie_prefers_sane_answer_over_unsane():
+    # Two runs, 1-1 tie by vote count, but the first-seen run's answer set is
+    # unsane (a statement-node URI) and the second's is a clean entity id. A
+    # tie must resolve to the sane answer, not the earliest-seen one, since an
+    # unsane answer set can never match gold.
+    gen = AgentSparqlGenerator(votes=2)
+    runs = [
+        GeneratedQuery(qid=1, sparql="SELECT ?x WHERE { a }", result=_statement_uri_result()),
+        GeneratedQuery(qid=1, sparql="SELECT ?y WHERE { b }", result=_select_result_values("Q1")),
+    ]
+    it = iter(runs)
+    gen._generate_once = lambda question: next(it)
+    out = gen.generate(_question())
+    assert out is runs[1]
+
+
 def test_votes_empty_runs_never_win():
     gen = AgentSparqlGenerator(votes=3)
     runs = [
@@ -332,6 +348,138 @@ def test_votes_all_runs_empty_returns_first():
     gen._generate_once = lambda question: next(it)
     out = gen.generate(_question())
     assert out is runs[0]
+
+
+# --- answer-sanity guard ---
+# Every gold answer is a clean Q/P id, literal, or boolean -- never a statement
+# node, blank node, or Special:EntityData URL. _result_is_sane names that
+# failure mode (q113 incident: a committed 50-row result was all
+# "statement/Qxxx-UUID" junk) so it can be treated the same way a 0-row result
+# already is: known-wrong, worth a journal-alternate recovery attempt.
+
+
+def _bnode_result() -> SparqlResult:
+    return SparqlResult(
+        ok=True,
+        json={"head": {"vars": ["x"]}, "results": {"bindings": [{"x": {"type": "bnode", "value": "b0"}}]}},
+    )
+
+
+def _statement_uri_result() -> SparqlResult:
+    return SparqlResult(
+        ok=True,
+        json={
+            "head": {"vars": ["x"]},
+            "results": {
+                "bindings": [
+                    {
+                        "x": {
+                            "type": "uri",
+                            "value": "http://www.wikidata.org/entity/statement/Q1061678-4137053F",
+                        }
+                    }
+                ]
+            },
+        },
+    )
+
+
+def _special_entitydata_result() -> SparqlResult:
+    return SparqlResult(
+        ok=True,
+        json={
+            "head": {"vars": ["x"]},
+            "results": {
+                "bindings": [
+                    {"x": {"type": "uri", "value": "https://www.wikidata.org/wiki/Special:EntityData/Q42"}}
+                ]
+            },
+        },
+    )
+
+
+def test_result_is_sane_false_for_bnode():
+    assert generator_mod._result_is_sane(_bnode_result().json) is False
+
+
+def test_result_is_sane_false_for_statement_node_uri():
+    assert generator_mod._result_is_sane(_statement_uri_result().json) is False
+
+
+def test_result_is_sane_false_for_special_entitydata_url():
+    assert generator_mod._result_is_sane(_special_entitydata_result().json) is False
+
+
+def test_result_is_sane_true_for_clean_entity_rows():
+    assert generator_mod._result_is_sane(_select_result_values("Q1", "Q2").json) is True
+
+
+def test_result_is_sane_true_for_literal_rows():
+    r = {
+        "head": {"vars": ["n"]},
+        "results": {"bindings": [{"n": {"type": "literal", "value": "3"}}]},
+    }
+    assert generator_mod._result_is_sane(r) is True
+
+
+def test_result_is_sane_true_for_boolean_results():
+    assert generator_mod._result_is_sane(_bool_result(True).json) is True
+    assert generator_mod._result_is_sane(_bool_result(False).json) is True
+
+
+def test_result_is_sane_false_for_slash_junk_after_normalization():
+    # Catch-all: gold-scan of data/wikikgqa/wikikgqa.json (497 questions) found
+    # no gold answer value containing "/", so a literal that still has one
+    # after to_codabench_answers normalization is unmapped URI junk, not a
+    # legitimate literal/URL answer.
+    r = {
+        "head": {"vars": ["x"]},
+        "results": {"bindings": [{"x": {"type": "literal", "value": "foo/bar"}}]},
+    }
+    assert generator_mod._result_is_sane(r) is False
+
+
+def test_result_is_sane_false_for_none_or_empty():
+    assert generator_mod._result_is_sane(None) is False
+
+
+def test_generate_once_swaps_to_sane_alternate_when_committed_is_unsane(monkeypatch):
+    committed = "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 }"
+    recovered = "SELECT ?y WHERE { ?y wdt:P31 wd:Q5 }"
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+
+    def _exec(q, endpoint=None, timeout=120):
+        if q.strip() == recovered:
+            return _select_result_values("Q1")  # sane, has rows
+        return _statement_uri_result()  # committed: has rows but unsane
+
+    monkeypatch.setattr(generator_mod, "execute", _exec)
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: recovered)
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == recovered
+    assert out.result.json == _select_result_values("Q1").json
+    assert out.attempts == 2
+
+
+def test_generate_once_keeps_unsane_committed_when_no_alternate(monkeypatch):
+    committed = "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 }"
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+    monkeypatch.setattr(generator_mod, "execute", lambda q, endpoint=None, timeout=120: _statement_uri_result())
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)  # no journal alternate
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    # No sane alternate exists: a bad answer is not worse than a bad answer, so
+    # the original (unsane) committed result is kept rather than blanked out.
+    assert out.sparql == committed
+    assert out.result.json == _statement_uri_result().json
+    assert out.attempts == 1
 
 
 # --- class-closure expansion repair (ANSWER_CONVENTIONS.md rule 10) ---
@@ -518,6 +666,51 @@ def test_generate_once_rejects_non_superset_escalation_keeps_committed(monkeypat
     assert out.sparql == bare
     assert out.result.json == _select_result_values("Q1").json
     assert calls == [bare, level1]  # tried once, rejected, never tried level2
+
+
+def test_generate_once_rejects_unsane_escalation_candidate_keeps_committed(monkeypatch):
+    # level1's answer set is a strict superset of bare's (so the plain
+    # superset check alone would adopt it) but one of the added rows is a
+    # statement-node URI -- unsane, so it must NOT be adopted even though it
+    # nominally "grows" the answer set.
+    bare = "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q22645 }"
+    level1 = generator_mod._next_closure_escalation(bare)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{bare}\n```"),
+    )
+    unsane_superset = SparqlResult(
+        ok=True,
+        json={
+            "head": {"vars": ["x"]},
+            "results": {
+                "bindings": [
+                    {"x": {"type": "uri", "value": "http://www.wikidata.org/entity/Q1"}},
+                    {
+                        "x": {
+                            "type": "uri",
+                            "value": "http://www.wikidata.org/entity/statement/Q1-UUID",
+                        }
+                    },
+                ]
+            },
+        },
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                bare: _select_result_values("Q1"),
+                level1: unsane_superset,  # superset but unsane -> not adopted
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == bare
+    assert out.result.json == _select_result_values("Q1").json
 
 
 def test_generate_once_equal_set_escalation_passes_through_to_next_level(monkeypatch):

@@ -212,6 +212,46 @@ def _is_strict_superset(candidate_json: dict | None, committed_json: dict | None
     return candidate.issuperset(committed) and candidate != committed
 
 
+# --- answer-sanity guard ---
+#
+# Every gold answer in this benchmark is a clean Q/P entity id, a literal, or a
+# boolean -- never a statement node, blank node, or Special:EntityData URL. A
+# committed query can return rows and still be known-wrong when its bindings are
+# one of those junk shapes (e.g. q113: a 50-row result of `statement/Q...-UUID`
+# ids that can never match gold). _result_is_sane names that failure mode so it
+# can be treated the same way a 0-row result already is: known-wrong, worth a
+# journal-alternate recovery attempt.
+def _result_is_sane(result_json: dict | None) -> bool:
+    """False when any binding is a blank node, a statement-node URI, a
+    Special:EntityData URL, or (catch-all) still contains "/" after
+    to_codabench_answers normalization -- i.e. unmapped URI junk.
+
+    Rule (c) was checked against the gold dataset (data/wikikgqa/wikikgqa.json,
+    497 questions): no gold answer value contains "/", so the catch-all does not
+    need weakening -- a "/" surviving normalization is always junk, never a
+    legitimate literal/URL answer.
+
+    ASK (boolean) results are always sane -- there are no bindings to inspect.
+    """
+    if not result_json:
+        return False
+    if "boolean" in result_json:
+        return True
+    bindings = result_json.get("results", {}).get("bindings", [])
+    for row in bindings:
+        for cell in row.values():
+            if not isinstance(cell, dict):
+                continue
+            if cell.get("type") == "bnode":
+                return False
+            value = cell.get("value", "")
+            if "/entity/statement/" in value or "Special:EntityData" in value:
+                return False
+    from ama_kbqa.wikikgqa.submission import to_codabench_answers
+
+    return not any("/" in v for v in to_codabench_answers(result_json) if isinstance(v, str))
+
+
 class MentionSparqlGenerator:
     """Baseline with-mentions generator: prompt -> SPARQL -> execute -> repair.
 
@@ -453,6 +493,20 @@ class AgentSparqlGenerator:
                 alt_result = execute(alt, endpoint=self.endpoint, timeout=self.timeout)
                 if _has_rows(alt_result):
                     sparql, result, used_recovery = alt, alt_result, True
+        # Answer-sanity guard: a committed result WITH rows can still be
+        # known-wrong when those rows are unsane (blank nodes / statement-node
+        # URIs / Special:EntityData URLs / unmapped URI junk -- see
+        # _result_is_sane). Try the same journal-alternate recovery as the
+        # 0-row path above; adopt the alternate only if it both has rows AND is
+        # sane. If no sane alternate exists, keep the original result -- an
+        # unsane answer is not worse than an empty one (both score 0), and the
+        # empty submission fallback is guaranteed 0 anyway.
+        if _has_rows(result) and not _result_is_sane(result.json) and recovered and not used_recovery:
+            alt = strip_sparql(recovered)
+            if alt and alt != sparql:
+                alt_result = execute(alt, endpoint=self.endpoint, timeout=self.timeout)
+                if _has_rows(alt_result) and _result_is_sane(alt_result.json):
+                    sparql, result, used_recovery = alt, alt_result, True
         # Class-closure expansion: widen bare wdt:P31 membership patterns to the
         # transitive closure and adopt only if the wider answer set is a strict
         # superset of the committed one (never a same-size or unrelated set), so
@@ -478,7 +532,11 @@ class AgentSparqlGenerator:
                 committed_answers = _answer_set(result.json)
                 if not candidate_answers.issuperset(committed_answers):
                     break
-                if candidate_answers != committed_answers:
+                # A strictly-growing candidate is only adopted when it's also
+                # sane; an unsane candidate (e.g. the widened pattern now pulls
+                # in blank/statement nodes) must not replace a sane committed
+                # result, even though its answer set is nominally a superset.
+                if candidate_answers != committed_answers and _result_is_sane(candidate_result.json):
                     sparql, result = candidate, candidate_result
                 base = candidate
         return GeneratedQuery(
@@ -522,8 +580,28 @@ class AgentSparqlGenerator:
         if not counts:
             return first  # every run came back empty/failed
         # Counter preserves insertion order on equal counts, so a tie resolves
-        # to the earliest-seen answer (the first run's, when it produced one).
-        best_key = counts.most_common(1)[0][0]
+        # to the earliest-seen answer (the first run's, when it produced one) --
+        # UNLESS one of the tied answer sets is unsane (blank/statement nodes,
+        # see _result_is_sane) and another tied one is sane, in which case the
+        # sane answer wins the tie: an unsane answer set can never match gold,
+        # so it should never beat an equally-voted sane alternative.
+        entries = counts.most_common()
+        top_count = entries[0][1]
+        tied_keys = [k for k, c in entries if c == top_count]
+        if len(tied_keys) == 1:
+            best_key = tied_keys[0]
+        else:
+            def _key_is_sane(key) -> bool:
+                return any(
+                    self._answer_key(r) == key
+                    and r.result is not None
+                    and r.result.json is not None
+                    and _result_is_sane(r.result.json)
+                    for r in runs
+                )
+
+            sane_tied = [k for k in tied_keys if _key_is_sane(k)]
+            best_key = sane_tied[0] if sane_tied else tied_keys[0]
         for r in runs:
             if self._answer_key(r) == best_key:
                 return r

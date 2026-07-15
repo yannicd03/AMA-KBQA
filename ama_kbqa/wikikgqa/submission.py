@@ -28,15 +28,27 @@ SparqlGenerator = Callable[[WikiKGQAQuestion], str | None]
 
 _EMPTY_SELECT = {"head": {"vars": []}, "results": {"bindings": []}}
 
+# Properties appear under several Wikidata namespaces; strip any of them to the
+# bare Pxx. Mirrors dataset._PROPERTY_PREFIXES (most-specific first, generic
+# "prop/" last so it never shadows the statement/qualifier/direct forms).
 _WD_URI_PREFIXES = (
     "http://www.wikidata.org/entity/",
     "http://www.wikidata.org/prop/direct/",
+    "http://www.wikidata.org/prop/statement/",
+    "http://www.wikidata.org/prop/qualifier/",
     "http://www.wikidata.org/prop/",
 )
 
 
 def _bare_id(value: str) -> str:
-    """Reduce a Wikidata URI to its bare id (Q.../P...); leave literals untouched."""
+    """Reduce a Wikidata URI to its bare id (Q.../P...); leave literals untouched.
+
+    Entity STATEMENT nodes (``http://www.wikidata.org/entity/statement/Q123-UUID``)
+    are not entities and have no correct bare form, so they pass through with the
+    "statement/..." remainder attached rather than being mis-mapped to a bare Qxxx.
+    Callers must treat such values as unsane (see generator._result_is_sane) rather
+    than trust this function to launder them into a plausible-looking answer.
+    """
     for pre in _WD_URI_PREFIXES:
         if value.startswith(pre):
             return value[len(pre):]
