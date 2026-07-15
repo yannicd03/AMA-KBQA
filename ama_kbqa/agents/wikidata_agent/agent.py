@@ -26,6 +26,7 @@ from ama_kbqa.agents.wikidata_agent.prompts import (
     SYNTHESIS_PROMPT_TEMPLATE,
     SYNTHESIS_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    get_conditional_conventions,
 )
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.framework.config import (
@@ -52,11 +53,20 @@ class WikidataAgent(BaseKBQAAgent):
         entity_search: bool = False,
         tool_budget: int = 20,
     ):
-        # conventions: "minimal" (default) uses only R1-R6; "full" adds the extended
-        # R7-R10 modeling rules. The 2026-07-03 held-out A/B (seed-99 rand-50,
-        # Qwen3.5-397B) found no benefit from R7-R10 (0.7311 minimal vs 0.6833 full,
-        # noise-dominated), so the cheaper, lower-overfitting-risk minimal set is
-        # the default and full stays opt-in.
+        # conventions: "minimal" (default) uses R1-R6 always-on PLUS three of the
+        # extended R7-R10 rules (quantity normalization, currently/exclude-ended,
+        # class-vs-instance location) injected CONDITIONALLY, per-question, only when
+        # the question text trips that rule's trigger regex (see
+        # prompts.get_conditional_conventions, wired in via _build_analysis_context
+        # below). "full" adds the entire EXTENDED_CONVENTIONS bundle unconditionally
+        # to the system prompt, as before. The 2026-07-03 held-out A/B (seed-99
+        # rand-50, Qwen3.5-397B) found always-on R7-R10 injection HURTS (0.7311
+        # minimal vs 0.6833 full, noise-dominated): most questions don't need those
+        # rules, so blasting them everywhere adds noise. The 2026-07-15 follow-up
+        # keeps that lesson (full-bundle-always-on stays off by default) while still
+        # recovering the rules' value on the narrow slice of questions where gold
+        # evidence shows they apply, by bounding injection to a trigger match instead
+        # of an all-or-nothing toggle.
         self._conventions = conventions
         # entity_search gates the without-mentions linker. Set the env flag BEFORE
         # super().__init__ so the MCP server subprocess (spawned later, inheriting
@@ -180,4 +190,13 @@ class WikidataAgent(BaseKBQAAgent):
     ) -> str:
         ents = ", ".join(entities) if entities else "(none given)"
         rels = ", ".join(relations) if relations else "(none given)"
-        return f"Given entity ids: {ents}\nGiven property ids: {rels}\n\n{ANALYSIS_CONTEXT}"
+        context = f"Given entity ids: {ents}\nGiven property ids: {rels}\n\n{ANALYSIS_CONTEXT}"
+        # Conditional extended-rule injection (minimal conventions only; "full" already
+        # gets the whole EXTENDED_CONVENTIONS bundle unconditionally in the system
+        # prompt, so injecting here too would just duplicate it). This is the
+        # per-question hook (query is available here, unlike _get_system_prompt which
+        # runs once at __init__ before any question is known), so trigger-matched
+        # rules are appended per-question instead of blasted onto every question.
+        if getattr(self, "_conventions", "minimal") == "minimal":
+            context += get_conditional_conventions(query)
+        return context

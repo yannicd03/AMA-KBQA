@@ -427,16 +427,27 @@ def test_result_is_sane_true_for_boolean_results():
     assert generator_mod._result_is_sane(_bool_result(False).json) is True
 
 
-def test_result_is_sane_false_for_slash_junk_after_normalization():
+def test_result_is_sane_false_for_wikidata_junk_after_normalization():
     # Catch-all: gold-scan of data/wikikgqa/wikikgqa.json (497 questions) found
-    # no gold answer value containing "/", so a literal that still has one
-    # after to_codabench_answers normalization is unmapped URI junk, not a
-    # legitimate literal/URL answer.
+    # no gold answer value containing "wikidata.org/", so a literal that still
+    # has one after to_codabench_answers normalization is unmapped Wikidata
+    # URI junk, not a legitimate literal/URL answer. Case-insensitive.
     r = {
         "head": {"vars": ["x"]},
-        "results": {"bindings": [{"x": {"type": "literal", "value": "foo/bar"}}]},
+        "results": {"bindings": [{"x": {"type": "literal", "value": "http://www.WIKIDATA.org/foo/bar"}}]},
     }
     assert generator_mod._result_is_sane(r) is False
+
+
+def test_result_is_sane_true_for_non_wikidata_url_literal():
+    # The catch-all is scoped to Wikidata URIs only: a legitimate URL-literal
+    # answer (e.g. an official-website value) must not be flagged unsane just
+    # for containing "/".
+    r = {
+        "head": {"vars": ["x"]},
+        "results": {"bindings": [{"x": {"type": "literal", "value": "https://www.louvre.fr/"}}]},
+    }
+    assert generator_mod._result_is_sane(r) is True
 
 
 def test_result_is_sane_false_for_none_or_empty():
@@ -798,3 +809,283 @@ def test_generate_once_closure_expansion_disabled_by_constructor_flag(monkeypatc
     out = AgentSparqlGenerator(closure_expansion=False)._generate_once(_question())
     assert out.sparql == bare
     assert calls == [bare]  # constructor flag off -> no extra execution at all
+
+
+# --- projection trim (commit-time SELECT column pruning) ---
+# 416/442 (94%) of gold SELECT queries project exactly one variable, but
+# to_codabench_answers treats every projected column as an answer value, so a
+# committed multi-column SELECT is almost always precision poison. These tests
+# cover _trim_projection directly, then the end-to-end wiring in
+# _generate_once (same monkeypatched-execute style as the closure tests above).
+
+
+def _two_col_result(*pairs: tuple[str, str]) -> SparqlResult:
+    bindings = [
+        {
+            "x": {"type": "uri", "value": f"http://www.wikidata.org/entity/{qid}"},
+            "y": {"type": "literal", "value": val},
+        }
+        for qid, val in pairs
+    ]
+    return SparqlResult(ok=True, json={"head": {"vars": ["x", "y"]}, "results": {"bindings": bindings}})
+
+
+def test_trim_projection_multi_var_select_keeps_first_var():
+    q = "SELECT ?x ?y WHERE { ?x wdt:P31 wd:Q5 . ?x wdt:P106 ?y }"
+    out = generator_mod._trim_projection(q)
+    assert out == "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 . ?x wdt:P106 ?y }"
+
+
+def test_trim_projection_preserves_distinct():
+    q = "SELECT DISTINCT ?x ?y WHERE { ?x wdt:P31 wd:Q5 . ?x wdt:P106 ?y }"
+    out = generator_mod._trim_projection(q)
+    assert out == "SELECT DISTINCT ?x WHERE { ?x wdt:P31 wd:Q5 . ?x wdt:P106 ?y }"
+
+
+def test_trim_projection_skips_single_var():
+    q = "SELECT ?x WHERE { ?x wdt:P31 wd:Q5 }"
+    assert generator_mod._trim_projection(q) is None
+
+
+def test_trim_projection_skips_star_projection():
+    q = "SELECT * WHERE { ?x wdt:P31 wd:Q5 . ?x wdt:P106 ?y }"
+    assert generator_mod._trim_projection(q) is None
+
+
+def test_trim_projection_skips_aggregate_expression():
+    q = "SELECT (COUNT(?x) AS ?c) ?y WHERE { ?x wdt:P31 wd:Q5 }"
+    assert generator_mod._trim_projection(q) is None
+
+
+def test_trim_projection_skips_ask():
+    q = "ASK { ?x wdt:P31 wd:Q5 }"
+    assert generator_mod._trim_projection(q) is None
+
+
+def test_trim_projection_does_not_touch_string_literals():
+    # A literal containing "{" or brace-like text before the real WHERE clause
+    # must not confuse the masked SELECT-clause match.
+    q = 'SELECT ?x ?y WHERE { ?x rdfs:label "fake { junk" . ?x wdt:P106 ?y }'
+    out = generator_mod._trim_projection(q)
+    assert out == 'SELECT ?x WHERE { ?x rdfs:label "fake { junk" . ?x wdt:P106 ?y }'
+
+
+def test_generate_once_adopts_trimmed_projection_when_it_executes_and_is_sane(monkeypatch):
+    # Deliberately NOT wdt:P31 here: that pattern also makes the trimmed
+    # single-column URI result eligible for the (unrelated) class-closure
+    # expansion step, which would add an extra unmapped execute() call.
+    committed = "SELECT ?x ?y WHERE { ?x wdt:P166 wd:Q5 . ?x wdt:P106 ?y }"
+    trimmed = generator_mod._trim_projection(committed)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                committed: _two_col_result(("Q1", "foo")),
+                trimmed: _select_result_values("Q1"),
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == trimmed
+    assert out.result.json == _select_result_values("Q1").json
+    assert calls == [committed, trimmed]
+
+
+def test_generate_once_projection_trim_exec_failure_keeps_original(monkeypatch):
+    committed = "SELECT ?x ?y WHERE { ?x wdt:P166 wd:Q5 . ?x wdt:P106 ?y }"
+    trimmed = generator_mod._trim_projection(committed)
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    committed_result = _two_col_result(("Q1", "foo"))
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {
+                committed: committed_result,
+                trimmed: SparqlResult(ok=False, json=None, error="timeout"),
+            },
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    assert out.sparql == committed
+    assert out.result.json == committed_result.json
+    assert calls == [committed, trimmed]
+
+
+def test_generate_once_projection_trim_disabled_by_constructor_flag(monkeypatch):
+    committed = "SELECT ?x ?y WHERE { ?x wdt:P166 wd:Q5 . ?x wdt:P106 ?y }"
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map({committed: _two_col_result(("Q1", "foo"))}, calls),
+    )
+
+    out = AgentSparqlGenerator(projection_trim=False)._generate_once(_question())
+    assert out.sparql == committed
+    assert calls == [committed]  # constructor flag off -> no trim execution at all
+
+
+# --- yes/no ASK repair (commit-time) ---
+# All 35/35 yes/no-form questions in the training gold have ASK gold queries.
+# Failure case q403/q405 ("Has France won the Eurovision at least twice?")
+# committed a COUNT scalar and scored 0. These tests use a fake agent whose
+# `ask()` response depends on whether the augmented prompt carries the repair
+# instruction, so the "one extra re-run" behavior can be observed directly.
+
+
+def _yesno_question(qid: int = 1) -> WikiKGQAQuestion:
+    return _question(qid, "Has France won the Eurovision at least twice?")
+
+
+def _count_scalar_result(value: str = "1") -> SparqlResult:
+    return SparqlResult(
+        ok=True,
+        json={"head": {"vars": ["cnt"]}, "results": {"bindings": [{"cnt": {"type": "literal", "value": value}}]}},
+    )
+
+
+def _fake_agent_cls_by_augmented(normal_raw: str, repair_raw: str, ask_calls: list):
+    """Stand-in whose ask() reply depends on whether the repair instruction is present.
+
+    Also logs every augmented prompt into `ask_calls`, so tests can assert how
+    many agent runs actually happened (exactly one repair re-run, or none).
+    """
+
+    class _FakeAgent:
+        def __init__(self, **kwargs):
+            self.journal_snapshots: list = []
+
+        async def ask(self, augmented: str) -> str:
+            ask_calls.append(augmented)
+            if generator_mod._ASK_REPAIR_INSTRUCTION in augmented:
+                return repair_raw
+            return normal_raw
+
+        async def close(self) -> None:
+            pass
+
+    return _FakeAgent
+
+
+def test_ask_repair_triggers_and_adopts_boolean_for_yesno_nonboolean_commit(monkeypatch):
+    committed = "SELECT (COUNT(?x) AS ?cnt) WHERE { ?x wdt:P31 wd:Q5 }"
+    ask_query = "ASK { wd:Q142 wdt:P166 wd:Q114933 }"
+    ask_calls: list = []
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls_by_augmented(f"```sparql\n{committed}\n```", f"```sparql\n{ask_query}\n```", ask_calls),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map({committed: _count_scalar_result(), ask_query: _bool_result(True)}, calls),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_yesno_question())
+    assert out.sparql == ask_query
+    assert out.result.json == _bool_result(True).json
+    assert len(ask_calls) == 2  # exactly one repair re-run
+    assert calls == [committed, ask_query]
+
+
+def test_ask_repair_not_triggered_when_committed_already_boolean(monkeypatch):
+    ask_query = "ASK { wd:Q142 wdt:P166 wd:Q114933 }"
+    ask_calls: list = []
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls_by_augmented(f"```sparql\n{ask_query}\n```", "SHOULD NOT BE USED", ask_calls),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    calls: list = []
+    monkeypatch.setattr(generator_mod, "execute", _closure_exec_map({ask_query: _bool_result(True)}, calls))
+
+    out = AgentSparqlGenerator()._generate_once(_yesno_question())
+    assert out.sparql == ask_query
+    assert out.result.json == _bool_result(True).json
+    assert len(ask_calls) == 1  # already boolean -> no repair re-run
+    assert calls == [ask_query]
+
+
+def test_ask_repair_not_triggered_for_non_yesno_question(monkeypatch):
+    committed = "SELECT (COUNT(?x) AS ?cnt) WHERE { ?x wdt:P31 wd:Q5 }"
+    ask_calls: list = []
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls_by_augmented(f"```sparql\n{committed}\n```", "SHOULD NOT BE USED", ask_calls),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    calls: list = []
+    monkeypatch.setattr(generator_mod, "execute", _closure_exec_map({committed: _count_scalar_result()}, calls))
+
+    # Non-yes/no surface form ("How many...") -> never eligible for repair,
+    # even though the committed result is non-boolean.
+    out = AgentSparqlGenerator()._generate_once(_question(1, "How many times has France won the Eurovision?"))
+    assert out.sparql == committed
+    assert len(ask_calls) == 1  # no repair re-run
+    assert calls == [committed]
+
+
+def test_ask_repair_keeps_original_when_repair_result_not_boolean(monkeypatch):
+    committed = "SELECT (COUNT(?x) AS ?cnt) WHERE { ?x wdt:P31 wd:Q5 }"
+    repair_attempt = "SELECT (COUNT(?y) AS ?cnt2) WHERE { ?y wdt:P31 wd:Q5 }"
+    ask_calls: list = []
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls_by_augmented(
+            f"```sparql\n{committed}\n```", f"```sparql\n{repair_attempt}\n```", ask_calls
+        ),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    committed_result = _count_scalar_result("1")
+    calls: list = []
+    monkeypatch.setattr(
+        generator_mod, "execute",
+        _closure_exec_map(
+            {committed: committed_result, repair_attempt: _count_scalar_result("2")},
+            calls,
+        ),
+    )
+
+    out = AgentSparqlGenerator()._generate_once(_yesno_question())
+    # Repair re-run still didn't produce a boolean -> keep the original commit.
+    assert out.sparql == committed
+    assert out.result.json == committed_result.json
+    assert len(ask_calls) == 2  # one repair attempt was made, but not adopted
+    assert calls == [committed, repair_attempt]
+
+
+def test_ask_repair_disabled_by_constructor_flag(monkeypatch):
+    committed = "SELECT (COUNT(?x) AS ?cnt) WHERE { ?x wdt:P31 wd:Q5 }"
+    ask_calls: list = []
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls_by_augmented(f"```sparql\n{committed}\n```", "SHOULD NOT BE USED", ask_calls),
+    )
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: None)
+    calls: list = []
+    monkeypatch.setattr(generator_mod, "execute", _closure_exec_map({committed: _count_scalar_result()}, calls))
+
+    out = AgentSparqlGenerator(ask_repair=False)._generate_once(_yesno_question())
+    assert out.sparql == committed
+    assert len(ask_calls) == 1  # flag off -> no repair re-run at all
+    assert calls == [committed]

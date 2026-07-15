@@ -34,8 +34,16 @@ from ama_kbqa.wikikgqa.scoring import macro_qald_f1
 from ama_kbqa.wikikgqa.submission import (
     QuestionOutcome,
     build_submission,
+    to_codabench_answers,
     write_submission,
 )
+
+# Escalation raises the per-question tool budget by this much over whatever the
+# main pass used (see _escalate_empty_answers). Fixed rather than a CLI knob: the
+# 2026-07-13 EN-WITHOUT-MENTIONS incident (one manually-escalated empty answer,
+# q3) used +15 by hand and it was enough; keep it simple until evidence says
+# otherwise.
+_ESCALATION_BUDGET_BUMP = 15
 
 
 def _macro_score(pairs):
@@ -91,12 +99,100 @@ def _write_run_manifest(out_dir: str | Path, args, resolved_endpoint: str) -> No
         print(f"WARNING: could not write run_manifest.json: {exc}")
 
 
+def _escalate_empty_answers(
+    generator: Generator,
+    questions: list,
+    outcomes: dict[int, QuestionOutcome],
+    score_pairs: list[tuple[int, dict, dict]],
+    verbose: bool = True,
+) -> dict[str, list[int]]:
+    """Re-run empty-answer questions once with a raised tool budget (agent generator only).
+
+    Every gold answer in this benchmark is non-empty, so a submission answer that
+    ends up empty is known-wrong (the premise behind
+    scripts/assemble_voted_submission.py's ``--patch`` escalation flow, which this
+    mirrors and automates: replace ONLY empty answers, and only with a non-empty
+    escalation result -- a still-empty or errored escalation never overwrites the
+    original outcome, and a question that already has a non-empty answer is never
+    re-run).
+
+    No-op (returns empty lists, never touches ``generator``) unless ``generator``
+    is an :class:`AgentSparqlGenerator` with at least one empty-answer question.
+    Mutates ``outcomes`` and ``score_pairs`` in place for the questions that get
+    filled, so callers only need to rebuild/write the submission afterwards.
+    """
+    result: dict[str, list[int]] = {"escalated_qids": [], "filled_qids": [], "still_empty_qids": []}
+    if not isinstance(generator, AgentSparqlGenerator):
+        return result
+
+    empty_qids = [
+        q.id for q in questions if q.id in outcomes and not to_codabench_answers(outcomes[q.id].answer)
+    ]
+    if not empty_qids:
+        return result
+
+    result["escalated_qids"] = list(empty_qids)
+    qid_to_question = {q.id: q for q in questions}
+    score_index = {qid: i for i, (qid, _gold, _sys) in enumerate(score_pairs)}
+    original_budget = generator.tool_budget
+    raised_budget = original_budget + _ESCALATION_BUDGET_BUMP
+    if verbose:
+        print(
+            f"\n[escalate] {len(empty_qids)} empty answer(s) after the main pass: "
+            f"{empty_qids} -- re-running with tool_budget={raised_budget} "
+            f"(was {original_budget})",
+            flush=True,
+        )
+    generator.tool_budget = raised_budget
+    try:
+        for qid in empty_qids:
+            q = qid_to_question[qid]
+            try:
+                gen = generator.generate(q)
+            except Exception as exc:  # escalation must never kill the run either
+                if verbose:
+                    print(f"[escalate] q{qid} GENERATOR ERROR: {exc} -- still empty", flush=True)
+                result["still_empty_qids"].append(qid)
+                continue
+            new_answer = gen.answer
+            if to_codabench_answers(new_answer):
+                outcomes[qid] = QuestionOutcome(
+                    qid=qid,
+                    sparql=gen.sparql,
+                    answer=new_answer,
+                    exec_ok=gen.ok,
+                    error=(gen.result.error if gen.result else "no result"),
+                    elapsed_s=(gen.result.elapsed_s if gen.result else 0.0),
+                )
+                result["filled_qids"].append(qid)
+                if qid in score_index:  # keep score_pairs in sync with the patched submission
+                    gold = score_pairs[score_index[qid]][1]
+                    score_pairs[score_index[qid]] = (qid, gold, new_answer)
+                if verbose:
+                    print(f"[escalate] q{qid} FILLED on re-run", flush=True)
+            else:
+                result["still_empty_qids"].append(qid)
+                if verbose:
+                    print(f"[escalate] q{qid} still empty after re-run", flush=True)
+    finally:
+        generator.tool_budget = original_budget
+    if verbose:
+        print(
+            f"[escalate] done: {len(result['filled_qids'])} filled, "
+            f"{len(result['still_empty_qids'])} still empty "
+            f"(of {len(empty_qids)} escalated)\n",
+            flush=True,
+        )
+    return result
+
+
 def run_benchmark(
     dataset: WikiKGQADataset,
     generator: Generator,
     out_dir: str | Path,
     limit: int | None = None,
     verbose: bool = True,
+    auto_escalate: bool = True,
 ) -> dict:
     """Run the generator over the dataset; write submission + summary; score."""
     out_dir = Path(out_dir)
@@ -164,6 +260,16 @@ def run_benchmark(
             )
         _checkpoint()  # durable after every question
 
+    # Every gold answer in this benchmark is non-empty, so an empty submission
+    # answer is known-wrong. Give agent runs one more shot at exactly those
+    # questions with a raised tool budget before writing the final submission
+    # (automates the manual escalation done by hand for q3 on 2026-07-13).
+    escalation = {"escalated_qids": [], "filled_qids": [], "still_empty_qids": []}
+    if auto_escalate:
+        escalation = _escalate_empty_answers(generator, questions, outcomes, score_pairs, verbose=verbose)
+        if escalation["escalated_qids"]:
+            _checkpoint()  # persist the patched outcomes durably before the final write
+
     # Final submission file (mirrors the input, answers filled).
     submission = build_submission(sub_dataset, outcomes)
     sub_path = write_submission(submission, out_dir / "submission.json")
@@ -174,6 +280,13 @@ def run_benchmark(
         "n_exec_ok": sum(o.exec_ok for o in outcomes.values()),
         "submission": str(sub_path),
     }
+    if escalation["escalated_qids"]:
+        # Additive-only: absent entirely on runs with no empty answers (or
+        # auto_escalate=False / a non-agent generator), so summary.json's shape
+        # is unchanged in the common case.
+        summary["escalated_qids"] = escalation["escalated_qids"]
+        summary["escalated_filled_qids"] = escalation["filled_qids"]
+        summary["escalated_still_empty_qids"] = escalation["still_empty_qids"]
     if score_pairs:
         score = _macro_score(score_pairs)
         summary["scored"] = score.n
@@ -240,6 +353,14 @@ def main(argv=None) -> int:
         "--tool-budget", type=int, default=20,
         help="agent only: per-question tool-call budget (default 20; raise for the "
              "linking-heavy without-mentions track, e.g. 30).",
+    )
+    parser.add_argument(
+        "--no-auto-escalate", action="store_true",
+        help="agent only: disable the automatic empty-answer escalation pass (default: ON). "
+             "Every gold answer in this benchmark is non-empty, so a submission answer that "
+             "ends up empty is known-wrong; by default such questions get one more attempt "
+             "at generation with the tool budget raised by "
+             f"{_ESCALATION_BUDGET_BUMP} before the final submission is written.",
     )
     parser.add_argument(
         "--votes", type=int, default=1,
@@ -331,7 +452,10 @@ def main(argv=None) -> int:
             provider=args.provider,
             model=args.model,
         )
-    run_benchmark(dataset, generator, out_dir=args.out_dir, limit=args.limit)
+    run_benchmark(
+        dataset, generator, out_dir=args.out_dir, limit=args.limit,
+        auto_escalate=not args.no_auto_escalate,
+    )
     return 0
 
 

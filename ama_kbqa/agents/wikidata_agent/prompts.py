@@ -8,6 +8,8 @@ query. The synthesis step returns SPARQL, not a natural-language answer.
 
 from __future__ import annotations
 
+import re
+
 SYSTEM_PROMPT = """You are an expert Wikidata question-answering agent. Your goal is to
 produce ONE SPARQL query that answers the question against Wikidata.
 
@@ -88,7 +90,13 @@ CRITICAL OUTPUT RULES (the endpoint is QLever; answers are compared as exact set
 
 ANSWER CONVENTIONS (these match how the benchmark's gold answers are written):
 - Yes/no questions -> ASK. ("Is/Does/Are/Has ..." -> ASK { ... } or ASK { FILTER NOT EXISTS {...} } for negatives.)
+  For "at least/more than N times" (or any count-threshold) yes/no question, wrap a COUNT
+  subquery and FILTER the threshold inside the ASK; do NOT emit a bare COUNT scalar:
+    ASK { { SELECT (COUNT(DISTINCT ?x) AS ?cnt) WHERE { ... } } FILTER(?cnt >= N) }
 - "Which/what" list questions -> SELECT DISTINCT the entity ids.
+- SELECT exactly ONE variable - the answer variable. Never project helper variables or
+  labels alongside it (e.g. `SELECT ?x ?xLabel` or `SELECT ?x ?cnt` is wrong even when ?x
+  alone is correct); extra columns are scored as spurious answers.
 - Superlatives ("largest", "longest", "most", "highest", "smallest", "least") -> return
   ALL entities tied for the extreme, not just one. Prefer a MAX/MIN subquery over
   ORDER BY ... LIMIT 1 (which silently drops ties and loses recall):
@@ -138,6 +146,70 @@ ADDITIONAL MODELING CONVENTIONS (match the gold's systematic choices):
   CLASS, so bind its INSTANCES (?s wdt:P31/wdt:P279* X) and reach the place through the location
   hierarchy (?s wdt:P131*/wdt:P17 ?country). Do NOT read wdt:P17 off the class node X itself -
   the class has no country; its instances do."""
+
+# --- Conditional (per-question) extended rules -----------------------------------
+# 2026-07-15: the held-out A/B (see WikidataAgent docstring / ANSWER_CONVENTIONS.md)
+# showed that injecting the FULL extended bundle on every question HURTS (0.7311
+# minimal vs 0.6833 full) - most of R7-R10 only apply to a small slice of questions,
+# so always-on injection adds noise to the ~90% it doesn't help. Three of those rules
+# (the quantity-normalization rule, the currently/exclude-ended rule, and the
+# class-vs-instance location rule) have narrow, textually-detectable triggers, so we
+# inject them ONLY on questions that match - bounding the blast radius instead of
+# disabling them outright. This is what "minimal" conventions now means: R1-R6 always
+# on, plus these three injected conditionally. "full" is unaffected: it still gets the
+# entire EXTENDED_CONVENTIONS bundle unconditionally via the system prompt.
+#
+# Training-set trigger coverage (small, bounded slices): quantity 5q, currently 4q,
+# location 15q.
+QUANTITY_TRIGGER = re.compile(r"\b(heavy|mass|weigh|weight|tall|height|net worth)\b", re.IGNORECASE)
+CURRENTLY_TRIGGER = re.compile(r"\b(currently|still|nowadays|present-day)\b", re.IGNORECASE)
+LOCATION_TRIGGER = re.compile(r"\b(found in|are there in|which countries have)\b", re.IGNORECASE)
+
+_QUANTITY_RULE = (
+    "- Measurement/quantity VALUES (mass, height, weight, net worth): read the value through "
+    "the NORMALIZED statement path p:Pxxx/psn:Pxxx/wikibase:quantityAmount, NOT the wdt: "
+    "shortcut - the direct value is unit-inconsistent. Fall back to wdt:Pxxx only if the "
+    "normalized path returns nothing."
+)
+
+_CURRENTLY_RULE = (
+    "- \"currently\"/\"present-day\"/\"still\"/\"nowadays\" -> exclude entities that have ended "
+    "by adding MINUS { ?x wdt:P582 ?e } and/or MINUS { ?x wdt:P576 ?e } (end time / "
+    "dissolved-or-abolished). Apply this exclusion ONLY because THIS question uses one of those "
+    "words; never add it to a question that doesn't - it wrongly drops valid answers otherwise."
+)
+
+_LOCATION_RULE = (
+    "- \"Where is X found\" / \"in which countries/places is X\" / \"which countries have X\": X "
+    "is a CLASS, so bind its INSTANCES (?s wdt:P31/wdt:P279* X) and reach the place through the "
+    "location hierarchy (?s wdt:P131*/wdt:P17 ?country). Do NOT read wdt:P17 off the class node "
+    "X itself - the class has no country; its instances do."
+)
+
+# trigger -> condensed rule text. Order determines the order rules are appended when
+# multiple triggers fire on the same question.
+CONDITIONAL_CONVENTIONS = (
+    (QUANTITY_TRIGGER, _QUANTITY_RULE),
+    (CURRENTLY_TRIGGER, _CURRENTLY_RULE),
+    (LOCATION_TRIGGER, _LOCATION_RULE),
+)
+
+
+def get_conditional_conventions(question: str) -> str:
+    """Return extended-rule text for every trigger that matches `question`.
+
+    Empty string when nothing matches - the common case (~90% of questions carry
+    none of these triggers). Callers append the result to the per-question analysis
+    context rather than the (question-agnostic) system prompt, so the same agent
+    instance can answer different questions with different injected rules.
+    """
+    matched = [rule for trigger, rule in CONDITIONAL_CONVENTIONS if trigger.search(question)]
+    if not matched:
+        return ""
+    return (
+        "\nADDITIONAL MODELING CONVENTIONS FOR THIS QUESTION (trigger-matched, not "
+        "generally applicable):\n" + "\n".join(matched)
+    )
 
 # Prepended to the system prompt only on the without-mentions track (entity_search=True).
 # There the question hands over NO ids, so the agent must LINK names to ids itself
