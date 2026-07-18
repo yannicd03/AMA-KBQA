@@ -52,4 +52,4 @@ where = ["."]
 include = ["ama_kbqa*"]
 
 [tool.uv.sources]
-chatkit = { git = "https://github.com/yannicd03/ChatKIT.git", rev = "c9fcebc2a73065e8e00a2154327c859dc01403d8" }
+chatkit = { git = "https://github.com/yannicd03/ChatKIT.git", rev = "v1.0.0" }
