@@ -10,11 +10,15 @@
 
 | Document | Description |
 |----------|-------------|
-| [System/project_architecture.md](System/project_architecture.md) | Start here. Full structure, tech stack, MCP servers, CLI, frontend, batch pipeline, config system |
-| [System/agent_system.md](System/agent_system.md) | Agent lifecycle, question classification, loop detection (6 layers), journal/scratchpad data model |
+| [System/project_architecture.md](System/project_architecture.md) | Start here. Full structure, tech stack, MCP tool reference (29 KQAPro / 28 SciQA), CLI, frontend, batch pipeline, config system, CI/linting |
+| [System/agent_system.md](System/agent_system.md) | Pure index/orientation map for the 4 agent-system docs below (split out 2026-07-18; was a 1275-line monolith) |
+| [System/agent_framework.md](System/agent_framework.md) | `BaseKBQAAgent` shared mechanics: tool gating (qtype filter + denylist), synthesis funnel hard-stops, trace instrumentation, text-tool-call mode, MCP client pattern, token/duration tracking, reset patterns, LLM sampling seed |
+| [System/orchestrator_routing.md](System/orchestrator_routing.md) | Evidence-based two-step routing: `analyze_query_recommend_db` contract, `route_reason` span, design invariants |
+| [System/kqapro_agent.md](System/kqapro_agent.md) | KQAProAgent lifecycle, 10-type classification, 7-layer loop detection, journal data model, message history format |
+| [System/sciqa_agent.md](System/sciqa_agent.md) | SciQAAgent lifecycle, 8-type classification, multi-label classifier tolerance, raw-SPARQL denylist gate + A/B evidence, ORKG predicate reference |
 | [System/research_corpus.md](System/research_corpus.md) | Paper (`paper/`), dataset docs (`docs/`), and how research artifacts relate to code |
 
-> `System/database_schema.md` — referenced in older READMEs but file is absent; Qdrant/Virtuoso schema is documented inline in `System/project_architecture.md` and `System/agent_system.md`.
+> `System/database_schema.md` — referenced in older READMEs but file is absent; Qdrant/Virtuoso schema is documented inline in `System/project_architecture.md` and the per-agent docs above.
 
 ---
 
@@ -68,11 +72,10 @@
 
 | Document | Status | Description |
 |----------|--------|-------------|
-| [Tasks/benchmark_persistence_refactor.md](Tasks/benchmark_persistence_refactor.md) | Planned | Decouple benchmark runs from Streamlit session; incremental disk writes + job_id reconnect (see Orca's `batch_queue.py` for the reference pattern) |
+| [Tasks/active/benchmark_persistence_refactor.md](Tasks/active/benchmark_persistence_refactor.md) | Planned | Decouple benchmark runs from Streamlit session; incremental disk writes + job_id reconnect (see Orca's `batch_queue.py` for the reference pattern); still unshipped as of 2026-07-18 (moved from loose `Tasks/` into `Tasks/active/`) |
 | [Tasks/active/deferred-tool-loading.md](Tasks/active/deferred-tool-loading.md) | Planned | Two-tier tool schema loading (core always-on + on-demand `load_tools`) targeting ~33% token reduction; scheduled from architecture audit finding C3 |
-| [Tasks/archive/generic-framework-implementation.md](Tasks/archive/generic-framework-implementation.md) | Archived | Generic KBQA framework with BaseKBQAAgent, adapters, 97 tests |
-| [Tasks/archive/sciqa-agent-implementation.md](Tasks/archive/sciqa-agent-implementation.md) | Archived | SciQA/ORKG agent with 468-pair ground truth benchmark |
-| [Tasks/archive/scratchpad-enforced-agent-loop.md](Tasks/archive/scratchpad-enforced-agent-loop.md) | Archived | Scratchpad-first loop, tool response truncation, journal reflection |
+
+> ⚠️ **Drift flagged 2026-07-18:** `Tasks/archive/` does not exist and has never been a tracked directory on any branch (verified via `git ls-tree` across `dev`, `main`, and 3 other branches). Three rows previously listed here (`generic-framework-implementation.md`, `sciqa-agent-implementation.md`, `scratchpad-enforced-agent-loop.md`) pointed at files that were never committed — removed rather than left as dead links. If those PRDs' provenance is wanted, they'd need to be reconstructed from git history (the framework/SciQA-agent/scratchpad-loop features did ship — see `Decisions/root-cause-tool-generalization-2026-05-14.md` and `Decisions/sciqa-aggregation-and-coauthor-tools.md` for related context) rather than treated as an existing archive.
 
 ---
 
@@ -81,13 +84,12 @@
 | Document | Description |
 |----------|-------------|
 | [README.md](../README.md) | Setup instructions, environment variables, database bootstrap |
-| [AGENT_ARCHITECTURE.md](../AGENT_ARCHITECTURE.md) | Detailed agent architecture reference (1000+ lines) |
-| [TOOLS_REFERENCE.md](../TOOLS_REFERENCE.md) | Complete KQAPro MCP tool reference (25 tools) |
-| [CLAUDE.md](../CLAUDE.md) | AI assistant instructions and codebase context |
 | [docs/datasets/kqapro.md](../docs/datasets/kqapro.md) | KQAPro dataset structure (~94K Q&A, 1.6M RDF triples) |
 | [docs/datasets/sciqa.md](../docs/datasets/sciqa.md) | SciQA/ORKG dataset structure (468 Q&A, 1.1M triples) |
 | [docs/guides/dataset_integration.md](../docs/guides/dataset_integration.md) | How to integrate a new KG into the system |
 | [paper/main.tex](../paper/main.tex) | SEMANTiCS 2026 submission — AMA-KBQA system paper |
+
+> ⚠️ **Drift flagged 2026-07-18:** `AGENT_ARCHITECTURE.md`, `TOOLS_REFERENCE.md`, and `CLAUDE.md` were listed here but do not exist at the repo root on any branch. The first two were deleted from root in commit `d197a31` (2026-02-10, "remove unneeded files") when this content moved into `.agent/System/project_architecture.md` and the per-agent docs — the README rows were simply never removed. `CLAUDE.md` has no history in this repo at all (never existed). Rows removed rather than left as dead links; `.agent/System/project_architecture.md`'s own Related Documentation section had the same two stale links and was fixed in the same pass.
 
 ---
 

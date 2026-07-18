@@ -57,8 +57,8 @@ ama-kbqa/
 │   │   └── orchestrator_agent/ # Multi-agent router
 │   │       └── agent.py        # Orchestrator class
 │   ├── server/                 # MCP servers (FastMCP)
-│   │   ├── kqapro_server.py    # KQAPro tools (28 tools)
-│   │   ├── sciqa_server.py     # SciQA/ORKG tools (27 registered: 4 discovery, 6 retrieval, 12 domain, 1 SPARQL, 1 verification, 2 state, 1 hidden snapshot) ✅ Active
+│   │   ├── kqapro_server.py    # KQAPro tools (29 tool-decorated functions: 28 user-visible + 1 LLM-hidden `GetJournalStateJSON`; verified by grep 2026-07-18)
+│   │   ├── sciqa_server.py     # SciQA/ORKG tools (28 tool-decorated functions: 4 discovery, 6 retrieval, 12 domain, 1 SPARQL, 1 verification, 2 state, 1 hidden snapshot) ✅ Active
 │   │   └── orchestrator_server.py # Routing tools
 │   ├── frontend/               # Streamlit multi-page app
 │   │   ├── app.py              # Main entry point (page config + sidebar)
@@ -93,20 +93,26 @@ ama-kbqa/
 │   ├── utils/                  # Shared utilities
 │   │   ├── __init__.py
 │   │   └── trace_utils.py      # Tool trace extraction & few-shot export
-├── tests/                      # Test suite (219 tests total)
-│   ├── framework/              # Framework unit tests (168 tests)
-│   │   ├── test_operations.py  # Registry shape, two-level semantics, adapter coverage, binding-rot guard (source-level regex) ✅ NEW
-│   │   ├── test_deterministic.py # parse_numeric variants, compare_numeric correctness/error paths; pins byte-identical output ✅ NEW
+├── tests/                      # Test suite (382 tests total, verified 2026-07-18)
+│   ├── framework/               # Framework unit tests (202 tests) — base agent, journal, trace, adapters, operations, synthesis guards, tool loop
+│   │   ├── test_operations.py  # Registry shape, two-level semantics, adapter coverage, binding-rot guard (source-level regex)
+│   │   ├── test_deterministic.py # parse_numeric variants, compare_numeric correctness/error paths; pins byte-identical output
+│   │   ├── test_base_agent_synthesis_guards.py # Synthesis-funnel hard-stop guards: max-iterations→synthesis, malformed tool-args, GetJournalSummary fallback, empty-choices guard (audit B1/B2) ✨ NEW
+│   │   ├── test_base_agent_tool_loop.py # Tool-loop gating: qtype filter + denylist interaction ✨ NEW
 │   │   ├── test_config.py      # Configuration tests
 │   │   ├── test_state.py       # State management tests
 │   │   ├── test_adapters.py    # Adapter tests
-│   │   ├── test_trace.py       # TraceRecorder: nesting, contextvar isolation, sync/async parity, JSONL roundtrip; TestRecorderListeners (4 new)
+│   │   ├── test_trace.py       # TraceRecorder: nesting, contextvar isolation, sync/async parity, JSONL roundtrip, listeners
 │   │   ├── test_trace_render.py # trace_render helpers: tree-building, HTML, journal→graph
-│   │   └── test_base_agent_multiturn.py # reset semantics + first-turn vs follow-up hook skipping (221 lines, multiturn)
-│   └── frontend/               # Frontend unit tests (51 tests)
-│       ├── test_lifecycle_svg.py    # SVG generation, node state transitions (12 tests)
-│       ├── test_lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/B coverage (19 tests)
-│       └── test_lifecycle_runner.py  # start_run/drain_into with stub agent + threading.Event; continuation through real worker (extended +82 lines)
+│   │   └── test_base_agent_multiturn.py # reset semantics + first-turn vs follow-up hook skipping (multiturn)
+│   ├── agents/                  # Agent-level tests (33 tests) — orchestrator routing, sciqa denylist gate
+│   ├── server/                  # MCP server tests (41 tests) — kqapro_server.py, sciqa_server.py tool behavior
+│   ├── retrieval/                # Retrieval module tests (54 tests) — embeddings, search, reranker, BM25 hybrid
+│   ├── frontend/                # Frontend unit tests (42 tests)
+│   │   ├── test_lifecycle_svg.py    # SVG generation, node state transitions
+│   │   ├── test_lifecycle_mapping.py # SPAN_KIND_TO_NODE, TOOLS_A/B coverage
+│   │   └── test_lifecycle_runner.py  # start_run/drain_into with stub agent + threading.Event; continuation through real worker
+│   └── test_seed_and_progress.py # --seed → get_chat_seed() threading; benchmark progress-reporting fixes (10 tests) ✨ NEW
 ├── db/                         # Database utilities
 │   ├── docker-compose.yml      # Virtuoso + Qdrant + frontend (3 services on Hetzner)
 │   ├── populate_vector_db.py   # KQAPro Qdrant initialization
@@ -173,40 +179,9 @@ ama-kbqa/
 
 ### 0. Generic KBQA Framework (`ama_kbqa/framework/`)
 
-The framework provides abstract base classes that both KQAProAgent and SciQAAgent inherit from. This reduces code duplication by ~70% and ensures consistent behavior.
+The framework provides abstract base classes (`BaseKBQAAgent`, `BaseKGAdapter`) that both KQAProAgent and SciQAAgent inherit from, reducing code duplication by ~70% and ensuring consistent behavior — tool gating, synthesis funnel hard-stops, trace instrumentation, text-tool-call mode, MCP client pattern, token/duration tracking, reset patterns, and LLM sampling seed control.
 
-**Framework Components:**
-
-| Module | Purpose | Lines |
-|--------|---------|-------|
-| `operations.py` | Abstract operation contract: `AtomicOperation`, `ATOMIC_OPERATIONS` (11 required + 3 optional), `CoverageReport`, `validate_bindings()` | ~200 |
-| `deterministic.py` | Shared LLM-free math core: `parse_numeric`, `NumericComparison`, `compare_numeric`; both servers' `VerifyNumericCondition` tools wrap it (output strings byte-identical) | ~100 |
-| `config.py` | Configuration classes (NamespaceConfig, KnowledgeGraphConfig) | ~220 |
-| `state.py` | JournalState (Pydantic BaseModel, single source of truth with caps/helpers) and JournalManager | ~340 |
-| `mcp_client.py` | Shared MCPClient for MCP server communication | ~120 |
-| `base_agent.py` | BaseKBQAAgent ABC with full tool-calling loop + span instrumentation | ~600 |
-| `text_tool_calls.py` | Text-mode shim for models that can't emit native function calls | ~150 |
-| `trace.py` | `TraceEvent` (OTel-shaped dataclass) + `TraceRecorder` (ContextVar nesting, async/sync spans, point-in-time events, JSONL export, `add_listener`/`remove_listener` observer hooks for live streaming) | ~200 |
-| `adapters/base_adapter.py` | BaseKGAdapter ABC: `_create_config()` (abstract), `get_operation_bindings()` (abstract — maps abstract op name to concrete MCP tool name), `validate_operation_coverage()` (calls `validate_bindings()`), URI/SPARQL utilities | ~340 |
-| `adapters/kqapro_adapter.py` | KQAPro adapter: binds 11 required ops + optional `select_extreme`; sources `NS_*` / `SPARQL_PREFIXES` used by `kqapro_server.py` | ~150 |
-| `adapters/sciqa_adapter.py` | SciQA/ORKG adapter: binds 11 required ops (`count` → `AggregateComparisonValues` via `agg="count"`) + optional `aggregate` and `frequent_values`; includes `owl:` prefix in `sparql_prefixes` (advertised to LLM in `RunORKGSPARQL` docstring) | ~200 |
-
-**BaseKBQAAgent provides:**
-- MCP client management
-- Pre-agent hooks (classification, entity extraction) — **skipped on follow-up turns** in multiturn mode
-- KG-specific exact-attribute constraint hook (`_extract_exact_attribute_constraints`) and pre-analysis constraint injection
-- 6-layer loop detection (includes FindResource cap and RunORKGSPARQL cap)
-- Scratchpad-enforced tool-calling loop:
-  - Forced reflection after each non-journal tool
-  - Tool response truncation (2000 chars, except last 2 and journal tools)
-  - Journal refresh at index 1 (primacy bias, replacement mode)
-- Post-agent synthesis
-- Token and tool call tracking
-- `soft_reset()` for batch processing
-- **Multiturn conversation:** `reset(keep_history=True)` preserves `self._messages` across turns so follow-up questions resolve via the accumulated context (tool results + prior answers). A `_catalog_injected` flag prevents re-injecting the text-mode tool catalog on a reused stack. See `Decisions/multiturn-direct-agent-conversation.md`.
-- `self.recorder: TraceRecorder` — OTel-shaped span instrumentation (spans: `agent_run`, `classify`, `fast_path`, `llm_call`, `tool_call`, `synthesis`, `delegate`; events: `tool_loop_iter`, `journal_refresh`, `loop_detected`, `context_trim`, `intervention`)
-- `self.journal_snapshots: list` — structured KG snapshots captured after journal-mutating tool calls (bounds extra MCP RPCs to ~mutation count, not per-iteration)
-- `parent_recorder` + `parent_span_id` kwargs for sub-agent nesting under Orchestrator
+**This section moved to a dedicated doc during the 2026-07-18 `agent_system.md` split** (the framework module table, `BaseKBQAAgent` provides-list, and all mechanics detail live there now): see **[System/agent_framework.md](agent_framework.md)**. The 11 framework files (`operations.py`, `deterministic.py`, `config.py`, `state.py`, `mcp_client.py`, `base_agent.py`, `text_tool_calls.py`, `trace.py`, `adapters/base_adapter.py`, `adapters/kqapro_adapter.py`, `adapters/sciqa_adapter.py`) are listed in the directory tree above and detailed in that doc's Framework Files table.
 
 ### 1. KQAProAgent (`ama_kbqa/agents/kqapro_agent/agent.py`)
 
@@ -218,7 +193,7 @@ The main KBQA agent that answers questions by inheriting from `BaseKBQAAgent`:
 
 **Key Features (inherited from BaseKBQAAgent):**
 - Question type classification (10 types: Count, Verify, Select, SelectBetween, SelectAmong, QueryAttr, QueryAttrQualifier, QueryRelation, QueryRelationQualifier, QueryName)
-- Multi-layered loop detection (4 detection patterns)
+- 7-layer loop detection (KQAPro exercises layers 1-4 and 6-7; see [System/kqapro_agent.md](kqapro_agent.md#loop-detection-kqapro-exercises-layers-1-4-and-6-7-layer-5-is-sciqa-specific))
 - Automatic journal tracking (visited nodes, found values)
 - Separate synthesis model configuration
 - Token usage tracking
@@ -226,6 +201,8 @@ The main KBQA agent that answers questions by inheriting from `BaseKBQAAgent`:
 **File Organization:**
 - `agent.py` (~290 lines) - Implements abstract methods, KQAPro-specific logic
 - `prompts.py` (~665 lines) - All prompts extracted for maintainability
+
+**Full deep-dive (lifecycle diagram, journal data model, message history format):** [System/kqapro_agent.md](kqapro_agent.md)
 
 ### 1.1 Prompts Module (`ama_kbqa/agents/kqapro_agent/prompts.py`)
 
@@ -249,20 +226,22 @@ All prompts are centralized in a separate module for easier maintenance:
 The SciQA agent for Open Research Knowledge Graph (ORKG) scientific QA, inheriting from `BaseKBQAAgent`:
 
 1. **Pre-Agent Hook** - Classifies question type (8 types), extracts entities, loads type-specific strategy
-2. **Iterative Tool Loop** - Calls SciQA MCP tools (27 registered tools) to gather research information
+2. **Iterative Tool Loop** - Calls SciQA MCP tools (28 tool-decorated functions) to gather research information
 3. **Post-Agent Hook** - Synthesizes final answer from journal
 
 **Key Features (inherited from BaseKBQAAgent):**
 - Question type classification (8 types: Factoid, Count, List, Boolean, Comparison, Superlative, Aggregation, General)
 - Type-specific strategy loading (only the relevant strategy is injected after classification)
 - Lean SYSTEM_PROMPT with strategy-specific content in QTYPE_STRATEGIES
-- Same loop detection and journal system as KQAPro
+- 7-layer loop detection, same journal system as KQAPro, plus a `RunORKGSPARQL` cap (layer 5) and an env-gated denylist (`AMA_SCIQA_DISABLE_RAW_SPARQL`) — see [System/sciqa_agent.md](sciqa_agent.md#env-gated-tool-denylist-ama_sciqa_disable_raw_sparql)
 - Separate synthesis model configuration
 - Token and tool call duration tracking
 
 **File Organization:**
 - `agent.py` (~190 lines) - Implements abstract methods, SciQA-specific logic
-- `prompts.py` (~890 lines) - ORKG-specific prompts, 8 enriched strategies with few-shot examples (author search, negation, aggregation scoping, energy domain, boolean comparison-embedded values), predicate dictionary, 9 loop recovery entries. Current guidance is evidence-first: high-level aggregation tools before raw SPARQL for supported count/superlative/aggregation shapes.
+- `prompts.py` (~890 lines) - ORKG-specific prompts, 8 enriched strategies with few-shot examples (author search, negation, aggregation scoping, energy domain, boolean comparison-embedded values), predicate dictionary, 9 loop recovery entries. Current guidance is evidence-first: high-level aggregation tools before raw SPARQL for supported count/superlative/aggregation shapes. Deep-dive fixes (nested row extraction, paired grouping, anchor lint, final-answer contract) landed 2026-06-15, commit `7397cc3`.
+
+**Full deep-dive (lifecycle, multi-label classifier tolerance, tool fixes, predicate reference):** [System/sciqa_agent.md](sciqa_agent.md)
 
 ### 1.3 Prompts Module (`ama_kbqa/agents/sciqa_agent/prompts.py`)
 
@@ -280,7 +259,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
-Provides 28 tools for knowledge graph interaction, organized by tier. `NS_*` namespace constants and `SPARQL_PREFIXES` are sourced from `_ADAPTER = KQAProAdapter()` at module level (not hardcoded). The KQAPro adapter's `get_operation_bindings()` maps each of these tools to an abstract operation name; see `framework/operations.py` and `Decisions/abstract-operation-contract.md`.
+Provides 29 tool-decorated functions (28 user-visible + 1 LLM-hidden) for knowledge graph interaction, organized by tier. `NS_*` namespace constants and `SPARQL_PREFIXES` are sourced from `_ADAPTER = KQAProAdapter()` at module level (not hardcoded). The KQAPro adapter's `get_operation_bindings()` maps each of these tools to an abstract operation name; see `framework/operations.py` and `Decisions/abstract-operation-contract.md`.
 
 **T1 Discovery:**
 - `FindNode` - Semantic entity search (deduplicates via `visited_nodes` cache)
@@ -344,7 +323,7 @@ Provides 28 tools for knowledge graph interaction, organized by tier. `NS_*` nam
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
-Provides 27 registered tools for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, and 1 LLM-hidden journal snapshot tool. `NS_*` constants and `SPARQL_PREFIXES` (including `owl:`) are sourced from `_ADAPTER = SciQAAdapter()` at module level. The SciQA adapter's `get_operation_bindings()` covers the 11 required abstract operations plus optional `aggregate` and `frequent_values`; see `Decisions/abstract-operation-contract.md`.
+Provides 28 tool-decorated functions for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, 1 verification tool, and 1 LLM-hidden journal snapshot tool. `NS_*` constants and `SPARQL_PREFIXES` (including `owl:`) are sourced from `_ADAPTER = SciQAAdapter()` at module level. The SciQA adapter's `get_operation_bindings()` covers the 11 required abstract operations plus optional `aggregate` and `frequent_values`; see `Decisions/abstract-operation-contract.md`.
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource` - Semantic vector search for papers, authors, contributions, with high-confidence lexical label promotion when a query contains a resource title plus extra words; short title-like queries run strict token-coverage label lookup before broad token fallback
@@ -438,11 +417,9 @@ Environment variable overlay: `AMA_RETRIEVAL_<KEY>` (upper-cased key, typed) ove
 
 ### 4. Orchestrator Agent (`ama_kbqa/agents/orchestrator_agent/agent.py`)
 
-Multi-agent router that selects appropriate sub-agents:
+Multi-agent router that routes each question to `KQAProAgent` or `SciQAAgent` (the only two implemented sub-agents; `_agent_config` currently has exactly the `kqapro`/`sciqa` keys — CodeAgent/MathAgent placeholders mentioned in earlier docs were never implemented) in a single LLM round-trip: a direct MCP probe call (`analyze_query_recommend_db`) followed by one forced `select_agent` tool call. Falls back to KQAProAgent only if the router returns an unrecognised agent key.
 
-- Uses LLM to classify query type
-- Routes to KQAProAgent, CodeAgent, MathAgent, etc.
-- Falls back to KQAProAgent for knowledge base queries
+**Full deep-dive (evidence contract, `route_reason` span, design invariants):** [System/orchestrator_routing.md](orchestrator_routing.md)
 
 ### 5. CLI Entrypoint (`ama_kbqa/cli.py`)
 
@@ -489,9 +466,11 @@ ama-kbqa benchmark -s sciqa -n 50 --dataset auto --postprocessing simple
 |--------|-------------|
 | `--subagent, -s` | **Required.** The subagent to benchmark (`kqapro` or `sciqa`) |
 | `-n, --n_questions` | Number of questions to sample (default: 10) |
-| `--seed` | Random seed for reproducibility (default: 42) |
+| `--seed` | Random seed. Controls **both** dataset sampling (which questions are picked) **and**, as of 2026-06-15, the LLM `seed=` parameter on every sampled agent call (classify, tool-loop, text-only, orchestrator probe/judge) via `config.get_chat_seed()` / `AMA_LLM_SEED` — see [agent_framework.md](agent_framework.md#reproducibility-llm-sampling-seed). The judge call stays unseeded (`temperature=0`). (default: 42) |
 | `-p, --postprocessing` | Evaluation method: `choice`, `sparql`, `llm_judge`, or `simple` (default: `llm_judge`). `llm_judge` keeps the model judge but applies a deterministic single-number numeric-equivalence guard for harmless decimal formatting differences. |
 | `-d, --dataset` | SciQA only: `handcrafted` or `auto` (default: handcrafted) |
+
+**Note:** the direct multi-model batch CLI (`python -m ama_kbqa.benchmark_agents`, used by the frontend and `SOP/running_batch_processing.md`) additionally exposes `--concurrency N` (default 1 = strictly serial): an opt-in question-level parallelism path that spins up `N` fully isolated agents (each its own MCP subprocess) and processes questions concurrently. Orthogonal to the always-on within-question concurrent tool-call execution described in [agent_framework.md](agent_framework.md). Resolution order: CLI flag > `config.toml [benchmark] concurrency` > 1.
 
 ### 6. Fewshot Generator (`ama_kbqa/fewshot_generator.py`)
 
@@ -664,6 +643,19 @@ Interactive visualisation of the agent's discovered KG subgraph:
 
 ---
 
+### 8. CI / Linting (`.github/workflows/ci.yml`, `pyproject.toml`)
+
+**Added 2026-07-18** (commit `9788f47`, landed concurrently with this doc update): a single `lint-and-test` job runs on pushes to `main`/`dev` and on all pull requests:
+
+1. `actions/checkout` + `astral-sh/setup-uv` (cache enabled)
+2. `uv sync --group dev` — `pytest`/`ipykernel` moved into a `dev` uv dependency group (previously top-level), `ruff` added as a dependency
+3. **Lint:** `uv run ruff check .`
+4. **Test:** `uv run pytest -q` — the full 382-test suite is hermetic (fakes/mocks stand in for Qdrant/Virtuoso everywhere); verified to pass with no Docker services running and no `.env`/env vars set. If a future test genuinely needs a live Virtuoso/Qdrant instance, the convention is to mark and deselect it in the CI step rather than adding service containers.
+
+**Ruff config (`pyproject.toml` `[tool.ruff]`):** `target-version = "py312"`; lint rule set restricted to `["E4", "E7", "E9", "F"]` (pycodestyle errors + pyflakes — not the full default set, and no formatting/style rules like line length). `[tool.ruff.lint.per-file-ignores]` suppresses the pre-existing findings in the two large MCP server modules the user has asked not to be touched: `F401`/`F541`/`F841` in `ama_kbqa/server/sciqa_server.py`, and those plus `E402`/`F811`/`E722` in `ama_kbqa/server/kqapro_server.py`; violations there are suppressed rather than fixed in place (`tests/retrieval/test_search.py` also carries an `E402` ignore for a documented import-order workaround). Any new/other file is held to the full selected rule set. The same commit also fixed pre-existing lint findings elsewhere (unused imports/variables, bare excepts, placeholder-less f-strings, one-line compound statements) across several agent/server/frontend files.
+
+---
+
 ## Data Flow
 
 ```
@@ -772,19 +764,19 @@ result = await client.call_tool("FindNode", {"semantic_node_name": "Boston"})
 
 ### 1. Question Classification
 
-Uses LLM with structured JSON output to classify into 9 types:
+Uses LLM with structured JSON output. KQAPro classifies into 10 types (see [kqapro_agent.md](kqapro_agent.md#question-type-classification-10-types)); SciQA classifies into 8 types (see [sciqa_agent.md](sciqa_agent.md#question-type-classification-8-types)). Both use the shared `_extract_json_object` think-prefix/fence-stripping parser (see [agent_framework.md](agent_framework.md#classification-json-parsing-_extract_json_object)).
 
-- Count, Verify, SelectBetween, SelectAmong
-- QueryAttr, QueryAttrQualifier
-- QueryRelation, QueryRelationQualifier
-- QueryName
-
-### 2. Loop Detection (4 Layers)
+### 2. Loop Detection (7 Layers)
 
 1. **Identical Calls** - Same tool+params 3x in a row
 2. **Oscillation** - A-B-A-B or A-B-C-A-B-C patterns
 3. **Tool Spam** - Same tool 5/6 times (different params)
-4. **No Progress** - Journal unchanged for 5 iterations
+4. **FindResource/FindNode Cap** - 8 calls
+5. **RunORKGSPARQL Cap** - 10 calls (SciQA only)
+6. **No Progress** - Journal unchanged for 5 iterations (6-branch intervention tree)
+7. **Max Tool Calls** - domain-configured hard cap; exits through synthesis, not an error
+
+Full detail: [kqapro_agent.md](kqapro_agent.md#loop-detection-kqapro-exercises-layers-1-4-and-6-7-layer-5-is-sciqa-specific), [sciqa_agent.md](sciqa_agent.md#loop-detection-sciqa-exercises-all-7-layers)
 
 ### 3. Hybrid Search
 
@@ -806,7 +798,9 @@ Post-agent hook ensures consistent final answers:
 
 ## Related Documentation
 
-- [Agent System](agent_system.md) - Detailed agent architecture
-- [Database Schema](database_schema.md) - Qdrant and Virtuoso schemas
-- [../TOOLS_REFERENCE.md](../../TOOLS_REFERENCE.md) - Complete tool reference
-- [../AGENT_ARCHITECTURE.md](../../AGENT_ARCHITECTURE.md) - Full agent lifecycle
+- [Agent System (index)](agent_system.md) - orientation map for the agent-system docs below
+- [Agent Framework](agent_framework.md) - `BaseKBQAAgent` shared mechanics (tool gating, synthesis funnel, trace, reset patterns, seed control)
+- [Orchestrator Routing](orchestrator_routing.md) - evidence-based routing deep-dive
+- [KQAProAgent](kqapro_agent.md) / [SciQAAgent](sciqa_agent.md) - per-agent lifecycle, classification, journal, tools deep-dive
+- `database_schema.md` - referenced in older READMEs but file is absent; Qdrant/Virtuoso schema is documented inline in this doc and in the per-agent docs above
+- `TOOLS_REFERENCE.md` / `AGENT_ARCHITECTURE.md` - referenced in older docs but removed from the repo root in commit `d197a31` (2026-02-10); their content lives in this doc and the per-agent docs (`agent_framework.md`, `kqapro_agent.md`, `sciqa_agent.md`, `orchestrator_routing.md`) instead
