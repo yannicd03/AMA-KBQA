@@ -1,117 +1,61 @@
-"""Tests for the consolidated LLM library (retry core + KIT surface).
+"""Import-surface test for the ``chatkit`` dependency (formerly the vendored
+``ama_kbqa.llm`` module, now published at github.com/yannicd03/ChatKIT).
 
-Hermetic: the retry backoff is driven by an injected fake clock, and the KIT client
-is exercised via a stub so no network or real key is needed.
+The retry-core and KIT-client implementation tests now live in the ChatKIT
+package itself (its own ``tests/test_retry.py`` etc.) — no need to duplicate
+them here. This module only guards the contract this repo actually relies on:
+
+* every name AMA's code imports from ``chatkit`` is importable from the core
+  install (no langchain-openai / langchain-core required);
+* the LangChain-only surface (``ChatKIT``, ``get_kit_model``, ...) is NOT
+  silently usable in this environment — i.e. the ``chatkit[langchain]`` extra
+  hasn't snuck in as a transitive dependency of something else.
 """
 
 from __future__ import annotations
 
-import types
-
 import pytest
 
-from ama_kbqa.llm import (
-    TransientRetry,
-    create_with_retry,
-    is_transient_error,
-)
-from ama_kbqa.llm import kit
 
-
-def _client(create):
-    return types.SimpleNamespace(
-        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create))
+def test_core_surface_is_importable():
+    """Every chatkit name AMA's code uses must be importable eagerly (core install,
+    no langchain dependency)."""
+    from chatkit import (  # noqa: F401
+        DEFAULT_BACKOFF_STEPS,
+        DEFAULT_KIT_MODEL,
+        DEFAULT_MAX_ATTEMPTS,
+        KIT_API_KEY_ENV,
+        KIT_BASE_URL,
+        KIT_VPN_HOST,
+        NON_TRANSIENT_MARKERS,
+        TRANSIENT_MARKERS,
+        TransientRetry,
+        create_with_retry,
+        is_transient_error,
+        kit_api_key,
+        kit_chat_create,
+        kit_client,
     )
 
 
-# --- retry core ------------------------------------------------------------------
-def test_is_transient_error_classifies():
-    assert is_transient_error(Exception("Open WebUI: Server Connection Error"))
-    assert is_transient_error(Exception("429 rate limit"))
-    assert not is_transient_error(Exception("401 unauthorized"))
-    # Auth wins even if a transient-looking token co-occurs.
-    assert not is_transient_error(Exception("401 unauthorized (connection error)"))
+def test_langchain_is_not_installed():
+    """Guard against the `chatkit[langchain]` extra (or bare langchain) sneaking in
+    as a transitive dependency: this repo is deliberately langchain-free."""
+    with pytest.raises(ImportError):
+        import langchain  # noqa: F401
 
 
-def test_transient_retry_escalates_and_resets():
-    waits: list[float] = []
-    r = TransientRetry(sleep=waits.append)
-    n = {"i": 0}
+def test_langchain_only_names_raise_helpful_error():
+    """Without the `chatkit[langchain]` extra, LangChain-only names raise a helpful
+    ImportError rather than importing successfully or failing obscurely."""
+    import chatkit
 
-    def fn():
-        n["i"] += 1
-        if n["i"] <= 3:
-            raise Exception("503 service unavailable")
-        return "OK"
-
-    assert r.run(fn) == "OK"
-    assert waits == [2.0, 5.0, 10.0]
-    assert r.level == 0  # reset after success
-
-
-def test_transient_retry_reraises_deterministic():
-    waits: list[float] = []
-    r = TransientRetry(sleep=waits.append)
-    with pytest.raises(Exception, match="invalid api key"):
-        r.run(lambda: (_ for _ in ()).throw(Exception("invalid api key")))
-    assert waits == []
-
-
-def test_create_with_retry_wraps_client():
-    waits: list[float] = []
-    r = TransientRetry(sleep=waits.append)
-    n = {"i": 0}
-
-    def create(**kw):
-        n["i"] += 1
-        if n["i"] == 1:
-            raise Exception("connection reset")
-        return "resp"
-
-    out = create_with_retry(_client(create), retry=r, model="m", messages=[])
-    assert out == "resp"
-    assert waits == [2.0]
-
-
-# --- KIT surface -----------------------------------------------------------------
-def test_kit_api_key_prefers_explicit(monkeypatch):
-    monkeypatch.delenv("KIT_API_KEY", raising=False)
-    assert kit.kit_api_key("sk-explicit") == "sk-explicit"
-    monkeypatch.setenv("KIT_API_KEY", "sk-env")
-    assert kit.kit_api_key() == "sk-env"
-
-
-def test_kit_api_key_raises_when_unset(monkeypatch):
-    monkeypatch.delenv("KIT_API_KEY", raising=False)
-    with pytest.raises(KeyError, match="KIT_API_KEY"):
-        kit.kit_api_key()
-
-
-def test_kit_client_uses_kit_base_url(monkeypatch):
-    captured = {}
-
-    class _FakeOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    import openai
-
-    monkeypatch.setattr(openai, "OpenAI", _FakeOpenAI)
-    monkeypatch.setenv("KIT_API_KEY", "sk-env")
-    kit.kit_client()
-    assert captured["base_url"] == kit.KIT_BASE_URL
-    assert captured["api_key"] == "sk-env"
-    assert captured["max_retries"] == 0  # TransientRetry owns retries
-
-
-def test_chatkit_requires_langchain():
-    """Without langchain-openai installed, ChatKIT access raises a helpful ImportError
-    (the raw-SDK surface stays usable)."""
-    pytest.importorskip  # keep import-time light
-    try:
-        import langchain_openai  # noqa: F401
-    except ImportError:
-        with pytest.raises(ImportError, match="langchain-openai"):
-            _ = kit.ChatKIT  # triggers module __getattr__ -> _build_chatkit_class
-    else:  # pragma: no cover - only when the optional dep is present
-        assert kit.ChatKIT is not None
+    for name in (
+        "ChatKIT",
+        "get_kit_model",
+        "make_chat_kit_class",
+        "normalize_kit_messages",
+        "salvage_tool_calls",
+    ):
+        with pytest.raises(ImportError, match="langchain"):
+            getattr(chatkit, name)

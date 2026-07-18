@@ -15,8 +15,9 @@ from mcp.client.stdio import stdio_client
 from mcp.types import Tool as McpTool
 from asyncio.exceptions import CancelledError
 
+from chatkit import TransientRetry
+
 from ama_kbqa.config import get_chat_client, get_chat_model_name
-from ama_kbqa.llm.retry import TransientRetry
 
 load_dotenv(find_dotenv())
 
@@ -137,7 +138,7 @@ class Orchestrator:
         self.mcp: Optional[MCPClient] = None
         self._agents = {}
 
-        # Transient-error retry (shared core: ama_kbqa.llm.retry), mirroring
+        # Transient-error retry (shared core: chatkit.retry), mirroring
         # BaseKBQAAgent: one persistent instance so the backoff ramp carries
         # across the routing probe's decision call and the LLM-only fallback.
         self._retry = TransientRetry()
@@ -184,7 +185,7 @@ class Orchestrator:
 
     def _create_with_retry(self, client, call_params: Dict, label: str = "LLM"):
         """chat.completions.create with the same stepped-backoff retry as
-        BaseKBQAAgent (self._retry, shared core in ama_kbqa.llm.retry)."""
+        BaseKBQAAgent (self._retry, shared core in chatkit.retry)."""
         def _log(exc: BaseException, attempt: int, wait: float) -> None:
             self._trace(
                 f"{COLOR_YELLOW}Transient {label} error (attempt {attempt}, "

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
 from dotenv import load_dotenv
+from chatkit import TransientRetry, is_transient_error
 
 from ama_kbqa.config import (
     get_chat_client,
@@ -37,7 +38,6 @@ from ama_kbqa.config import (
 )
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
-from ama_kbqa.llm.retry import TransientRetry, is_transient_error
 from ama_kbqa.framework.trace import (
     JOURNAL_MUTATING_TOOLS,
     TraceRecorder,
@@ -118,7 +118,7 @@ class BaseKBQAAgent(ABC):
         # Initialize LLM clients. max_retries=0: the OpenAI SDK's own retries are
         # disabled here because this client is wrapped by self._retry below —
         # layering SDK retries under TransientRetry would double the backoff and,
-        # per ama_kbqa/llm/kit.py's rationale, still miss KIT's non-5xx transient
+        # per chatkit's rationale (see chatkit.raw), still miss KIT's non-5xx transient
         # ("Open WebUI: Server Connection Error").
         try:
             self.client = get_chat_client(max_retries=0)
@@ -140,7 +140,7 @@ class BaseKBQAAgent(ABC):
 
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
-        # Transient-error retry (shared core: ama_kbqa.llm.retry). One instance per
+        # Transient-error retry (shared core: chatkit.retry). One instance per
         # agent so the stepped-backoff level persists across this question's calls
         # (classification, tool loop, synthesis/text-only) and resets on the first
         # success — a still-flaky endpoint waits longer on each new call, not from
@@ -2257,7 +2257,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         """chat.completions.create with stepped-backoff retry on transient errors.
 
         Delegates to the per-agent :class:`TransientRetry` (``self._retry``, shared
-        core in ``ama_kbqa.llm.retry``) so classification, the tool loop, and
+        core in ``chatkit.retry``) so classification, the tool loop, and
         synthesis all back off identically and share one persistent ramp per
         question. Deterministic errors (auth, bad request) re-raise at once.
         """

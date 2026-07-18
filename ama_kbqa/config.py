@@ -61,10 +61,10 @@ def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
 
     Args:
         max_retries: Override the SDK's own retry count. Pass 0 when the caller
-            wraps this client in a :class:`ama_kbqa.llm.retry.TransientRetry`
+            wraps this client in a :class:`chatkit.retry.TransientRetry`
             (e.g. ``BaseKBQAAgent``, ``Orchestrator``) — layering the SDK's
             retries under that stepped backoff would double the backoff and,
-            per ``ama_kbqa/llm/kit.py``'s rationale, still miss KIT's non-5xx
+            per ``chatkit.raw``'s rationale, still miss KIT's non-5xx
             "Open WebUI: Server Connection Error" transient. Leave unset
             (default SDK retries) for callers that don't retry themselves.
 
@@ -427,7 +427,7 @@ def get_synthesis_client(max_retries: Optional[int] = None) -> OpenAI:
 
     Args:
         max_retries: Override the SDK's own retry count. Pass 0 when the caller
-            wraps this client in a :class:`ama_kbqa.llm.retry.TransientRetry`
+            wraps this client in a :class:`chatkit.retry.TransientRetry`
             (see ``get_chat_client`` for the full rationale).
 
     Returns:

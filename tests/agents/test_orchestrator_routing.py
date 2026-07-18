@@ -17,8 +17,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from chatkit import TransientRetry
+
 from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
-from ama_kbqa.llm.retry import TransientRetry
 
 
 @pytest.fixture(autouse=True)
@@ -242,7 +243,7 @@ class TestRouteAutonomouslyDegradedAndFailurePaths:
 class TestOrchestratorRetry:
     """The routing decision call and the last-resort LLM fallback both go through
     Orchestrator._create_with_retry (self._retry, shared core in
-    ama_kbqa.llm.retry) — same stepped-backoff resilience as BaseKBQAAgent, and
+    chatkit.retry) — same stepped-backoff resilience as BaseKBQAAgent, and
     the same persistent-per-instance ramp (a still-flaky endpoint waits longer on
     the next call, not from scratch)."""
 

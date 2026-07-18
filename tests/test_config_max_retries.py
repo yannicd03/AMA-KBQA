@@ -1,9 +1,9 @@
 """Tests for the max_retries override threaded through config.py's client builders.
 
 BaseKBQAAgent and Orchestrator now wrap their chat/synthesis clients in a
-TransientRetry (ama_kbqa/llm/retry.py). Layering the OpenAI SDK's own retries
+TransientRetry (chatkit.retry). Layering the OpenAI SDK's own retries
 under that stepped backoff would double the backoff and, per
-ama_kbqa/llm/kit.py's rationale, still miss KIT's non-5xx "Open WebUI: Server
+chatkit.raw's rationale, still miss KIT's non-5xx "Open WebUI: Server
 Connection Error" transient — so those call sites now build their client with
 max_retries=0. Callers that stay unwrapped (postprocessing.py's judge/choice
 client, get_embedding_client) must keep the SDK's own retries (default 3).

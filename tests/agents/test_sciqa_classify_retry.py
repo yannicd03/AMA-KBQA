@@ -12,7 +12,7 @@ import types
 import pytest
 
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
-from ama_kbqa.llm.retry import TransientRetry
+from chatkit import TransientRetry
 
 
 def _completion(content: str):

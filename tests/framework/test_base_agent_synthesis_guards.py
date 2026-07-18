@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.framework.trace import TraceRecorder
-from ama_kbqa.llm.retry import TransientRetry
+from chatkit import TransientRetry
 
 
 def _run(coro):
