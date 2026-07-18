@@ -331,6 +331,25 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
     return api_key
 
 
+def get_benchmark_concurrency() -> int:
+    """Number of questions to process concurrently in the benchmark runner.
+
+    Default 1 preserves the original strictly-serial behavior exactly (opt-in
+    concurrency only). Values > 1 spin up a pool of that many isolated agents
+    (each with its own MCP subprocess). A CLI flag (--concurrency) overrides
+    this. Respect provider rate limits when raising it.
+
+    Returns:
+        int: concurrency level (>= 1)
+    """
+    config = load_config()
+    try:
+        value = int(config.get("benchmark", {}).get("concurrency", 1))
+    except (TypeError, ValueError):
+        return 1
+    return max(1, value)
+
+
 def get_database_config() -> dict:
     """Get database configuration.
 

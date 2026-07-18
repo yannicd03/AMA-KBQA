@@ -59,6 +59,7 @@
 | [Decisions/root-cause-tool-generalization-2026-05-14.md](Decisions/root-cause-tool-generalization-2026-05-14.md) | Root-cause fixes from the seed-43 trace audit: answer cleanup, branch-local `CountUnion` relations, qualifier aliases, `QueryComparisonRows`, multi-predicate aggregation, and subject-scope frequencies |
 | [Decisions/multiturn-direct-agent-conversation.md](Decisions/multiturn-direct-agent-conversation.md) | Multiturn conversation for directly-selected sub-agents: persistent agent instance + `reset(keep_history=True)`; skip pre-agent hook on follow-ups; fast-path answer recording; asyncio event-loop safety; Orchestrator stays stateless |
 | [Decisions/orchestrator-evidence-based-routing.md](Decisions/orchestrator-evidence-based-routing.md) | Orchestrator routing reworked from collapsed heuristic verdict (avg_confidence > 0.7) to evidence-based two-step LLM routing: tool returns raw JSON (terms_probed/matched/avg_score/labels); LLM calls `select_agent(agent, reason)`; `route_reason` on classify span; degraded paths no longer silently KQAPro |
+| [Decisions/architecture-audit-2026-07-05.md](Decisions/architecture-audit-2026-07-05.md) | 18-point architecture & implementation audit (correctness, architecture, performance, housekeeping): 12 FIX (synthesis-bypass hard-stops, unguarded synthesis I/O, malformed tool-args, MCP client dedup, SciQA embedding cache, benchmark parallelization, routing round-trip cuts, cheap tool-qtype filtering, MCP lifecycle cleanup, `.gitignore` fix) + 6 LEAVE + 1 WONTFIX (leaked key, ~€2, accepted risk), each with rationale and reopen triggers |
 
 ---
 
@@ -67,6 +68,7 @@
 | Document | Status | Description |
 |----------|--------|-------------|
 | [Tasks/benchmark_persistence_refactor.md](Tasks/benchmark_persistence_refactor.md) | Planned | Decouple benchmark runs from Streamlit session; incremental disk writes + job_id reconnect (see Orca's `batch_queue.py` for the reference pattern) |
+| [Tasks/active/deferred-tool-loading.md](Tasks/active/deferred-tool-loading.md) | Planned | Two-tier tool schema loading (core always-on + on-demand `load_tools`) targeting ~33% token reduction; scheduled from architecture audit finding C3 |
 | [Tasks/archive/generic-framework-implementation.md](Tasks/archive/generic-framework-implementation.md) | Archived | Generic KBQA framework with BaseKBQAAgent, adapters, 97 tests |
 | [Tasks/archive/sciqa-agent-implementation.md](Tasks/archive/sciqa-agent-implementation.md) | Archived | SciQA/ORKG agent with 468-pair ground truth benchmark |
 | [Tasks/archive/scratchpad-enforced-agent-loop.md](Tasks/archive/scratchpad-enforced-agent-loop.md) | Archived | Scratchpad-first loop, tool response truncation, journal reflection |

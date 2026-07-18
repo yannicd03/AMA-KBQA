@@ -1312,8 +1312,14 @@ async def run_benchmark_for_model_agent(
     use_fewshot: bool = True,
     postprocessing_mode: str = "",
     generate_fewshot: bool = False,
+    concurrency: int = 1,
 ) -> Dict[str, Any]:
-    """Run benchmark for a specific model/agent combination."""
+    """Run benchmark for a specific model/agent combination.
+
+    concurrency=1 keeps the original strictly-serial path. concurrency>1 runs a
+    pool of that many isolated agents (each its own MCP subprocess) over a shared
+    question queue — see run_benchmark_for_model_agent_parallel.
+    """
     result_dir = output_dir / agent_name / model.name
     result_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1344,6 +1350,24 @@ async def run_benchmark_for_model_agent(
             postprocessor = PostProcessor(mode=postprocessing_mode, agent_name=agent_name)
         except Exception as e:
             log_print(f"[WARNING] Could not init PostProcessor: {e}, using built-in judge")
+
+    # C1: opt-in parallel path. Default (concurrency<=1) falls through to the
+    # original serial loop below, unchanged.
+    if concurrency and concurrency > 1:
+        return await run_benchmark_for_model_agent_parallel(
+            model=model,
+            agent_name=agent_name,
+            questions=questions,
+            timeout=timeout,
+            result_dir=result_dir,
+            console_log=console_log,
+            log_print=log_print,
+            postprocessor=postprocessor,
+            postprocessing_mode=postprocessing_mode,
+            generate_fewshot=generate_fewshot,
+            use_fewshot=use_fewshot,
+            concurrency=concurrency,
+        )
 
     agent = create_agent(agent_name, use_fewshot=use_fewshot)
     results: List[QuestionResult] = []
@@ -1501,6 +1525,165 @@ async def run_benchmark_for_model_agent(
     return summary
 
 
+async def run_benchmark_for_model_agent_parallel(
+    model: ModelConfig,
+    agent_name: str,
+    questions: List[Dict[str, Any]],
+    timeout: int,
+    result_dir: Path,
+    console_log: "StringIO",
+    log_print,
+    postprocessor: Optional[PostProcessor],
+    postprocessing_mode: str,
+    generate_fewshot: bool,
+    use_fewshot: bool,
+    concurrency: int,
+) -> Dict[str, Any]:
+    """Concurrent variant of the per-model/agent run (C1).
+
+    Spins up `concurrency` fully isolated agents (each its own MCP subprocess)
+    and drains a shared question queue. Each agent processes one question at a
+    time and soft-resets between, exactly like the serial loop — only several
+    run at once. Results are appended and persisted incrementally under a lock.
+
+    The infra-failure watchdog is preserved but adapted: it counts infra errors
+    in completion order and aborts (stops scheduling new questions) once
+    INFRA_FAILURE_ABORT_THRESHOLD accumulate consecutively, matching the serial
+    intent (a genuinely-down endpoint won't yield that many in a row while
+    healthy work also completes).
+    """
+    log_print(f"[PARALLEL] Running with concurrency={concurrency}")
+
+    # Same infra patterns/threshold as the serial path.
+    INFRA_ERROR_PATTERNS = (
+        "NotFoundError", "404",
+        "NoneType' object has no attribute 'choices'",
+        "litellm.NotFoundError", "Hosted_vllmException",
+        "ConnectError", "ReadTimeout", "WriteTimeout", "PoolTimeout",
+        "ConnectTimeout", "RemoteProtocolError",
+    )
+    INFRA_FAILURE_ABORT_THRESHOLD = 5
+
+    def _is_infra_error(err: Optional[str]) -> bool:
+        return bool(err) and any(p in err for p in INFRA_ERROR_PATTERNS)
+
+    # Build the worker pool. Each agent gets its own MCP subprocess.
+    n_workers = min(concurrency, len(questions)) or 1
+    agents = [create_agent(agent_name, use_fewshot=use_fewshot) for _ in range(n_workers)]
+
+    # Fail-fast: if any worker's MCP can't start, abort the whole run cleanly.
+    try:
+        await asyncio.gather(*(a._init_mcp() for a in agents))
+    except Exception as e:
+        log_print(f"[FATAL] MCP server failed to start for {model.name}/{agent_name}: {e}")
+        log_print("[FATAL] Aborting this model/agent run; no questions will be processed.")
+        for a in agents:
+            try:
+                await a.close()
+            except Exception:
+                pass
+        (result_dir / "console_output.txt").write_text(console_log.getvalue(), encoding="utf-8")
+        return {"error": f"MCP startup failed: {e}", "model": model.name, "agent": agent_name}
+
+    results: List[QuestionResult] = []
+    summary_holder: Dict[str, Any] = {"summary": {}}
+    q_queue: "asyncio.Queue" = asyncio.Queue()
+    for question in questions:
+        q_queue.put_nowait(question)
+
+    lock = asyncio.Lock()
+    stop_event = asyncio.Event()
+    watchdog = {"consecutive_infra_failures": 0, "aborted_for_infra": False}
+    pbar = tqdm(total=len(questions), desc=f"{model.name}/{agent_name}", unit="q")
+
+    async def worker(agent) -> None:
+        while not stop_event.is_set():
+            try:
+                question = q_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            result = await process_single_question(
+                agent=agent,
+                question=question,
+                agent_name=agent_name,
+                timeout=timeout,
+                postprocessor=postprocessor,
+            )
+            async with lock:
+                results.append(result)
+                correct = sum(1 for r in results if r.accuracy)
+                pbar.update(1)
+                pbar.set_postfix({"acc": f"{correct}/{len(results)}", "time": f"{result.elapsed_time:.1f}s"})
+
+                status = "CORRECT" if result.accuracy else "INCORRECT"
+                if result.error:
+                    status = f"ERROR: {result.error[:50]}"
+                log_print(f"  [{result.question_id}] {status} | {result.elapsed_time:.1f}s")
+                log_print(f"      Gold: {result.gold_answer}")
+                log_print(f"      Pred: {result.predicted_answer}")
+
+                summary_holder["summary"] = save_results_to_disk(
+                    results=results,
+                    model=model,
+                    agent_name=agent_name,
+                    result_dir=result_dir,
+                    console_log=console_log,
+                    is_complete=False,
+                    postprocessing_mode=postprocessing_mode,
+                )
+
+                if _is_infra_error(result.error):
+                    watchdog["consecutive_infra_failures"] += 1
+                    log_print(
+                        f"  [infra-watchdog] consecutive infra failures: "
+                        f"{watchdog['consecutive_infra_failures']}/{INFRA_FAILURE_ABORT_THRESHOLD}"
+                    )
+                    if watchdog["consecutive_infra_failures"] >= INFRA_FAILURE_ABORT_THRESHOLD:
+                        log_print(
+                            f"\n[FATAL] Endpoint unhealthy: "
+                            f"{watchdog['consecutive_infra_failures']} consecutive infrastructure errors "
+                            f"(model={model.name}, agent={agent_name}). "
+                            f"Last error: {result.error[:120]}\n"
+                            f"Aborting run after {len(results)} questions to avoid logging "
+                            f"a wall of fake INCORRECT rows. Re-run when the endpoint is back."
+                        )
+                        watchdog["aborted_for_infra"] = True
+                        stop_event.set()
+                else:
+                    watchdog["consecutive_infra_failures"] = 0
+
+    try:
+        await asyncio.gather(*(worker(a) for a in agents))
+    finally:
+        pbar.close()
+        for a in agents:
+            try:
+                await a.close()
+            except Exception:
+                pass
+        if results:
+            summary_holder["summary"] = save_results_to_disk(
+                results=results,
+                model=model,
+                agent_name=agent_name,
+                result_dir=result_dir,
+                console_log=console_log,
+                is_complete=True,
+                postprocessing_mode=postprocessing_mode,
+                generate_fewshot=generate_fewshot,
+            )
+
+    summary = summary_holder["summary"]
+    if results and summary:
+        stats = summary.get("statistics", {})
+        total = stats.get("total_questions", len(results))
+        correct = stats.get("correct", 0)
+        accuracy_pct = stats.get("accuracy", 0) * 100
+        print(f"\nCompleted {model.name}/{agent_name}: {correct}/{total} ({accuracy_pct:.1f}%)")
+
+    return summary
+
+
 def is_run_completed(output_dir: Path, agent_name: str, model_name: str) -> bool:
     result_dir = output_dir / agent_name / model_name
     return (result_dir / "summary.json").exists()
@@ -1523,6 +1706,7 @@ async def run_full_benchmark(
     stratified: bool = False,
     generate_fewshot: bool = False,
     question_indices: Optional[List[int]] = None,
+    concurrency: int = 1,
 ):
     """Run the full benchmark across models and agents."""
     is_single_model = len(models) == 1 and models[0].name == "default"
@@ -1595,6 +1779,7 @@ async def run_full_benchmark(
                 use_fewshot=use_fewshot,
                 postprocessing_mode=postprocessing_mode,
                 generate_fewshot=generate_fewshot,
+                concurrency=concurrency,
             )
             all_summaries.append(summary)
         except Exception as e:
@@ -1835,6 +2020,10 @@ Examples:
                         help="Comma-separated 0-based indices after questionnaire/sampling selection, e.g. 0,8,15")
     parser.add_argument("--generate-fewshot", action="store_true", default=None,
                         help="Generate LLM-based fewshot examples from results (default: from config.toml)")
+    parser.add_argument("--concurrency", type=int, default=None,
+                        help="Number of questions to process concurrently (default: from "
+                             "config.toml [benchmark] concurrency, which defaults to 1 = serial). "
+                             "Values > 1 use a pool of isolated agents; mind provider rate limits.")
 
     args = parser.parse_args()
 
@@ -1949,6 +2138,18 @@ Examples:
         except Exception:
             generate_fewshot = False
 
+    # Resolve concurrency: CLI flag > config.toml [benchmark] concurrency > 1.
+    if args.concurrency is not None:
+        concurrency = max(1, args.concurrency)
+    else:
+        try:
+            from ama_kbqa.config import get_benchmark_concurrency
+            concurrency = get_benchmark_concurrency()
+        except Exception:
+            concurrency = 1
+    if concurrency > 1:
+        print(f"[PARALLEL] Benchmark concurrency = {concurrency}")
+
     result = asyncio.run(run_full_benchmark(
         models=models,
         agents=list(args.agents),
@@ -1966,6 +2167,7 @@ Examples:
         stratified=args.stratified,
         generate_fewshot=generate_fewshot,
         question_indices=question_indices,
+        concurrency=concurrency,
     ))
 
     # Exit with non-zero code if all runs failed

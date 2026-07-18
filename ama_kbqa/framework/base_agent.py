@@ -1301,7 +1301,12 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     "max_iterations_reached",
                     attributes={"iteration_count": iteration_count, "max": max_iterations},
                 )
-                return "Error: Agent reached maximum iteration limit."
+                # Exit through synthesis rather than discarding the investigation
+                # (ADR invariant: always exit through synthesis). By the time we
+                # hit the cap the journal usually holds discovered values; a
+                # best-effort synthesized answer strictly dominates a guaranteed
+                # "Error:" miss. Mirrors the max_tool_calls path below.
+                return await self._run_synthesis(query, qtype=qtype)
 
             # Per-iteration point-in-time event. We don't wrap the iteration
             # in an interval span because the loop has many `continue`/`break`
@@ -1666,8 +1671,21 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             try:
                 args_str = tool_call.function.arguments
                 func_args = json.loads(args_str) if args_str else {}
-            except json.JSONDecodeError:
-                func_args = {}
+            except json.JSONDecodeError as e:
+                # Don't silently execute the tool with empty args — that runs a
+                # phantom call (e.g. FindNode with no name), burns an iteration,
+                # and hands the model a confusing downstream error. Feed the
+                # parse failure straight back so it re-emits the call cleanly.
+                self._trace(
+                    f"Malformed tool arguments for {func_name}: {e}", COLOR_RED
+                )
+                _append_tool_result(
+                    tool_call,
+                    func_name,
+                    f"Error: could not parse arguments as JSON ({e}). "
+                    f"Re-emit the call with valid JSON arguments on a single line.",
+                )
+                continue
 
             args_pretty = json.dumps(func_args, indent=2, ensure_ascii=False)
             self._trace(f"Tool Call: {func_name}\n   Params: {args_pretty}", COLOR_YELLOW)
@@ -2093,8 +2111,24 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
     async def _run_synthesis_impl(self, query: str, _syn_span, qtype: str = "") -> str:
         self._trace("Starting synthesis step", COLOR_CYAN)
 
-        # Get journal summary
-        journal_summary = await self.mcp.call_tool("GetJournalSummary", {})
+        # Get journal summary. This is the last mile: a dead MCP subprocess or a
+        # transient tool error here must NOT throw away a completed investigation
+        # (especially now that the max-iterations path also funnels through
+        # synthesis). Fall back to the most recent structured journal snapshot,
+        # then to an empty summary, rather than propagating the exception.
+        try:
+            journal_summary = await self.mcp.call_tool("GetJournalSummary", {})
+        except Exception as e:
+            self._trace(f"GetJournalSummary failed during synthesis: {e}", COLOR_YELLOW)
+            journal_summary = ""
+            if self.journal_snapshots:
+                try:
+                    journal_summary = json.dumps(
+                        self.journal_snapshots[-1].get("state", {}), ensure_ascii=False
+                    )
+                except Exception:
+                    journal_summary = ""
+        journal_summary = journal_summary or ""
         self._trace(f"Journal fetched ({len(journal_summary)} chars)", COLOR_GREEN)
         _syn_span.set_attribute("journal_chars", len(journal_summary) if journal_summary else 0)
         _syn_span.set_payload("journal_summary", journal_summary)
@@ -2372,12 +2406,24 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                         "completion_tokens": response.usage.completion_tokens,
                     })
 
+                # Guard against an empty `choices` array — some endpoints return
+                # one under load / content filtering. Treat as empty content so
+                # the caller's existing empty-answer fallback fires instead of an
+                # IndexError crashing the whole question at the finish line.
+                if not response.choices:
+                    self._trace("Synthesis returned no choices", COLOR_YELLOW)
+                    _span.set_attribute("empty_choices", True)
+                    return ""
                 content = response.choices[0].message.content
                 _span.set_payload("assistant_content", (content or "")[:4000])
                 return content
             except Exception as e:
+                # Never let a synthesis LLM failure propagate and error out an
+                # otherwise-complete question. Return empty so _run_synthesis_impl
+                # falls back to its "synthesis failed" answer.
                 self._trace(f"Synthesis LLM call failed: {e}", COLOR_RED)
-                raise
+                _span.set_attribute("error", str(e))
+                return ""
 
     # =========================================================================
     # MCP MANAGEMENT
