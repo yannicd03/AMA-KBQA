@@ -18,6 +18,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from mcp.types import Tool as McpTool
+from chatkit import TransientRetry, is_transient_error
 
 from ama_kbqa.config import (
     get_chat_client,
@@ -37,7 +38,6 @@ from ama_kbqa.config import (
 )
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
-from ama_kbqa.llm.retry import TransientRetry, is_transient_error
 from ama_kbqa.framework.trace import (
     JOURNAL_MUTATING_TOOLS,
     TraceRecorder,
@@ -164,7 +164,7 @@ class BaseKBQAAgent(ABC):
 
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
 
-        # Transient-error retry (shared core: ama_kbqa.llm.retry). One instance per
+        # Transient-error retry (shared core: chatkit.retry). One instance per
         # agent so the stepped-backoff level persists across this question's calls and
         # resets on the first success. This is the sole resilience layer now that there
         # is no per-question wall-clock.
@@ -2194,7 +2194,7 @@ Change strategy or acknowledge the data doesn't exist."""
         """chat.completions.create with stepped-backoff retry on transient errors.
 
         Delegates to the per-agent :class:`TransientRetry` (shared core in
-        ``ama_kbqa.llm.retry``), so the raw-SDK path, ChatKIT, and this agent all back
+        ``chatkit.retry``), so the raw-SDK path, ChatKIT, and this agent all back
         off identically. No per-question wall-clock remains, so this is the sole
         resilience layer for provider flakiness; deterministic errors re-raise at once.
         """

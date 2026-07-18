@@ -14,7 +14,7 @@ import pytest
 
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.framework.config import KnowledgeGraphConfig
-from ama_kbqa.llm.retry import DEFAULT_MAX_ATTEMPTS, TransientRetry
+from chatkit import DEFAULT_MAX_ATTEMPTS, TransientRetry
 
 
 class _ConcreteAgent(BaseKBQAAgent):
