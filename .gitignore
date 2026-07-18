@@ -229,3 +229,6 @@ claude.md
 /batch_results
 /used_results
 /graphify-out/
+
+# Local MCP server config — machine-specific, may reference local paths/keys.
+.mcp.json

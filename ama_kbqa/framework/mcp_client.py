@@ -195,8 +195,12 @@ class MCPClient:
 
         try:
             await self.exit_stack.aclose()
-            # Allow time for subprocess cleanup and stdio buffer flushing
-            await asyncio.sleep(0.5)
+            # Brief yield for subprocess cleanup and stdio buffer flushing.
+            # Trimmed from 0.5s: on stdio, aclose() already tears down the
+            # transport; the long sleep was pure dead time paid on every close
+            # (notably the orchestrator, which closes its probe server on every
+            # question). A short yield is enough to let the child reap.
+            await asyncio.sleep(0.05)
 
         except (CancelledError, RuntimeError) as e:
             trace(
@@ -217,8 +221,6 @@ class MCPClient:
             self._connected = False
             self.session = None
             self.exit_stack = AsyncExitStack()
-            # Additional cleanup delay to ensure resources are fully released
-            await asyncio.sleep(0.2)
 
     @staticmethod
     def _compress_description(description: str, max_chars: int = 300) -> str:

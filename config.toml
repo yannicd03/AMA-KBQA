@@ -9,6 +9,14 @@ embedding_temperature = 0.0
 auto_inject_journal = true
 zero_tool_call_retry_max = 3
 
+[benchmark]
+# Number of questions processed concurrently by the benchmark runner.
+# 1 = strictly serial (original behavior). Values > 1 use a pool of that many
+# isolated agents (each with its own MCP subprocess) for near-linear throughput
+# on the I/O-bound workload. Overridable per-run with --concurrency.
+# Raise carefully: high values will hit provider rate limits.
+concurrency = 1
+
 [synthesis]
 synthesis_enabled = false
 synthesis_provider = "openrouter"

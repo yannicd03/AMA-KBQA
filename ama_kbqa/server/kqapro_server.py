@@ -448,6 +448,55 @@ mcp = FastMCP("KG-Search-Server", lifespan=server_lifespan)
 # reranker stages controlled by the [retrieval] config section).
 
 
+# C6c: GetSchemaForAttribute used to (a) SPARQL-fetch the full distinct-attribute
+# list AND (b) re-embed the first 100 attributes on *every* call. Both are static
+# for the lifetime of the server, so memoize them once. The per-query embedding
+# still goes through retrieval.embed_query() (itself LRU-cached).
+_schema_attributes_cache: Optional[list] = None
+_schema_attr_embeddings_cache: Optional[list] = None
+
+
+def _get_schema_attributes(sparql) -> list:
+    """Return the KG's distinct attribute names, fetched once and memoized."""
+    global _schema_attributes_cache
+    if _schema_attributes_cache is not None:
+        return _schema_attributes_cache
+
+    query = """
+    SELECT DISTINCT ?attr WHERE {
+        ?s ?attr ?o .
+        FILTER(STRSTARTS(STR(?attr), "http://kqapro.org/attribute/"))
+    }
+    """
+    sparql.setQuery(SPARQL_PREFIXES + query)
+    sparql.setReturnFormat(JSON)
+    results = sparql.query().convert()
+    bindings = results.get("results", {}).get("bindings", [])
+
+    attributes = []
+    for binding in bindings:
+        attr_uri = binding.get("attr", {}).get("value", "")
+        attr_name = attr_uri.split("/")[-1].replace("_", " ")
+        attributes.append(attr_name)
+
+    _schema_attributes_cache = attributes
+    return attributes
+
+
+def _get_schema_attr_embeddings(client: OpenAI, attributes: list) -> list:
+    """Return embeddings for the first 100 attributes, computed once and memoized."""
+    global _schema_attr_embeddings_cache
+    if _schema_attr_embeddings_cache is not None:
+        return _schema_attr_embeddings_cache
+
+    attr_embeddings = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=attributes[:100]  # Limit to avoid API limits
+    )
+    _schema_attr_embeddings_cache = [d.embedding for d in attr_embeddings.data]
+    return _schema_attr_embeddings_cache
+
+
 def log_tool_duration(func):
     """Decorator to log the duration of tool execution."""
     @wraps(func)
@@ -703,29 +752,11 @@ async def GetSchemaForAttribute(
         JSON with exact_match, fuzzy_matches, and recommendation
     """
     try:
-        # Query all distinct attributes from Virtuoso
-        query = """
-        SELECT DISTINCT ?attr WHERE {
-            ?s ?attr ?o .
-            FILTER(STRSTARTS(STR(?attr), "http://kqapro.org/attribute/"))
-        }
-        """
-        
-        full_query = SPARQL_PREFIXES + query
         app_context = _resolve_app_context(app_context)
-        app_context.sparql.setQuery(full_query)         # ✅ CORRECT!
-        app_context.sparql.setReturnFormat(JSON)        # ✅ CORRECT!
-    
-        results = app_context.sparql.query().convert()  # ✅ CORRECT!
-        bindings = results.get("results", {}).get("bindings", [])
-        
-        # Extract attribute names
-        all_attributes = []
-        for binding in bindings:
-            attr_uri = binding.get("attr", {}).get("value", "")
-            attr_name = attr_uri.split("/")[-1].replace("_", " ")
-            all_attributes.append(attr_name)
-        
+        # C6c: the distinct-attribute list is static for the server lifetime —
+        # fetched once via SPARQL and memoized instead of re-queried every call.
+        all_attributes = _get_schema_attributes(app_context.sparql)
+
         # Normalize query
         query_normalized = attribute_name.lower().strip().replace("_", " ")
         
@@ -757,28 +788,21 @@ async def GetSchemaForAttribute(
             }
             return json.dumps(response, indent=2)
         
-        # Fuzzy matching using embeddings
-        # Generate embedding for query
-        emb_response = app_context.embedding_client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=[query_normalized]
-        )
-        query = emb_response.data[0].embedding
-        
-        # Generate embeddings for all attributes
-        attr_embeddings = app_context.embedding_client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=all_attributes[:100]  # Limit to avoid API limits
-        )
-        
+        # Fuzzy matching using embeddings.
+        # C6c: query embedding goes through the shared LRU-cached retrieval.embed_query();
+        # the attribute embeddings are memoized once (static for the server lifetime)
+        # instead of re-embedding up to 100 attributes on every call.
+        query_vec = retrieval.embed_query(app_context.embedding_client, query_normalized)
+        attr_vectors = _get_schema_attr_embeddings(app_context.embedding_client, all_attributes)
+
         # Compute cosine similarities
         from numpy import dot
         from numpy.linalg import norm
-        
+
         similarities = []
         for i, attr in enumerate(all_attributes[:100]):
-            attr_vec = attr_embeddings.data[i].embedding
-            similarity = dot(query, attr_vec) / (norm(query) * norm(attr_vec))
+            attr_vec = attr_vectors[i]
+            similarity = dot(query_vec, attr_vec) / (norm(query_vec) * norm(attr_vec))
             similarities.append((attr, float(similarity)))
         
         # Sort by similarity
