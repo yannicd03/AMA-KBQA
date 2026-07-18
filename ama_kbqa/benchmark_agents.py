@@ -1129,7 +1129,7 @@ def save_results_to_disk(
         _save_judgments(result_dir, results, accuracy_rate, summary.get("config", {}))
 
         # Export few-shot examples from correct answers
-        print(f"\n[INFO] Exporting tool-trace few-shot examples...")
+        print("\n[INFO] Exporting tool-trace few-shot examples...")
         export_counts = export_fewshot_examples_from_traces(
             results=results_data,
             max_tool_count=15,
@@ -1139,13 +1139,13 @@ def save_results_to_disk(
         if total_exported > 0:
             print(f"[OK] Exported {total_exported} new tool-trace examples")
         else:
-            print(f"[INFO] No new tool-trace examples to export")
+            print("[INFO] No new tool-trace examples to export")
 
         # LLM-based fewshot generation
         if generate_fewshot:
             from ama_kbqa.fewshot_generator import generate_and_save_fewshot_examples
-            print(f"\n[INFO] Running LLM-based fewshot example generation...")
-            gen_counts = generate_and_save_fewshot_examples(
+            print("\n[INFO] Running LLM-based fewshot example generation...")
+            generate_and_save_fewshot_examples(
                 results_data=results_data,
                 full_results=results,
                 agent_name=agent_name,
@@ -1171,18 +1171,18 @@ def _save_detailed_log(result_dir: Path, results: List[QuestionResult]):
             f.write(f"Type: {r.q_type}\n")
             f.write(f"Gold Answer: {r.gold_answer}\n\n")
 
-            f.write(f"--- Predicted Answer ---\n")
+            f.write("--- Predicted Answer ---\n")
             f.write(f"{r.predicted_answer or 'N/A'}\n\n")
 
-            f.write(f"--- Accuracy ---\n")
+            f.write("--- Accuracy ---\n")
             f.write(f"{'CORRECT' if r.accuracy else 'INCORRECT'}\n\n")
 
-            f.write(f"--- Intermediate Thinking Process ---\n")
+            f.write("--- Intermediate Thinking Process ---\n")
             f.write(f"{r.intermediate_thinking or 'No thinking recorded'}\n\n")
 
             if r.judgment:
                 j = r.judgment
-                f.write(f"--- LLM Judge Evaluation ---\n")
+                f.write("--- LLM Judge Evaluation ---\n")
                 f.write(f"Correctness: {'CORRECT' if j.get('is_correct', False) else 'INCORRECT'}\n")
                 f.write(f"Argumentation Score: {j.get('argumentation_score', 'N/A')}/5\n\n")
                 f.write(f"Correctness Reasoning:\n{j.get('correctness_reasoning', 'N/A')}\n\n")
@@ -1191,7 +1191,7 @@ def _save_detailed_log(result_dir: Path, results: List[QuestionResult]):
 
             ts = r.tool_call_summary
             if ts.get('total_calls', 0) > 0:
-                f.write(f"--- Tool Call Summary ---\n")
+                f.write("--- Tool Call Summary ---\n")
                 f.write(f"Total Calls: {ts.get('total_calls', 0)}\n")
                 f.write(f"Total Duration: {ts.get('total_duration_seconds', 0)}s\n")
                 for tool_name, stats in ts.get('tool_breakdown', {}).items():
@@ -1200,7 +1200,7 @@ def _save_detailed_log(result_dir: Path, results: List[QuestionResult]):
                             f"avg {stats.get('avg_duration', 0)}s\n")
                 f.write("\n")
 
-            f.write(f"--- Metadata ---\n")
+            f.write("--- Metadata ---\n")
             f.write(f"Duration: {r.elapsed_time:.2f}s\n")
             f.write(f"Tokens Used: {r.token_usage.get('total_tokens', 0)}\n")
             f.write(f"Success: {r.error is None}\n")
@@ -1336,7 +1336,7 @@ async def run_benchmark_for_model_agent(
     if postprocessing_mode:
         log_print(f"Postprocessing: {postprocessing_mode}")
     if not use_fewshot:
-        log_print(f"[ABLATION] Few-shot examples DISABLED")
+        log_print("[ABLATION] Few-shot examples DISABLED")
     log_print(f"{'='*80}\n")
 
     # Override config for this model (skip for "default" which uses config.toml as-is)
@@ -1380,7 +1380,7 @@ async def run_benchmark_for_model_agent(
         await agent._init_mcp()
     except Exception as e:
         log_print(f"[FATAL] MCP server failed to start for {model.name}/{agent_name}: {e}")
-        log_print(f"[FATAL] Aborting this model/agent run; no questions will be processed.")
+        log_print("[FATAL] Aborting this model/agent run; no questions will be processed.")
         try:
             await agent.close()
         except Exception:
@@ -1411,7 +1411,6 @@ async def run_benchmark_for_model_agent(
     )
     INFRA_FAILURE_ABORT_THRESHOLD = 5
     consecutive_infra_failures = 0
-    aborted_for_infra = False
 
     def _is_infra_error(err: Optional[str]) -> bool:
         if not err:
@@ -1485,7 +1484,6 @@ async def run_benchmark_for_model_agent(
                         f"Aborting run after {len(results)} questions to avoid logging "
                         f"a wall of fake INCORRECT rows. Re-run when the endpoint is back."
                     )
-                    aborted_for_infra = True
                     break
             else:
                 consecutive_infra_failures = 0

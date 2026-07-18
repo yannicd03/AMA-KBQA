@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 
 import toml
 from openai import OpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ama_kbqa.postprocessing import load_judge_config
 

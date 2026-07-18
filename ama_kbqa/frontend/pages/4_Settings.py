@@ -1,5 +1,8 @@
 """Settings page - edit LLM and search configuration."""
 
+import copy
+import importlib.util as _ilu
+
 import streamlit as st
 
 from ama_kbqa.frontend.utils.styling import inject_css
@@ -22,7 +25,6 @@ except Exception as e:
     st.stop()
 
 # We work on a deep copy so edits don't affect the loaded dict until save
-import copy
 edited = copy.deepcopy(config)
 
 PROVIDERS = ["openrouter", "kit", "llamacpp"]
@@ -263,8 +265,6 @@ with ret_col2:
         key="retrieval_prefetch_limit",
     )
     retrieval["prefetch_limit"] = int(prefetch_limit)
-
-import importlib.util as _ilu
 
 _rerank_installed = _ilu.find_spec("sentence_transformers") is not None
 

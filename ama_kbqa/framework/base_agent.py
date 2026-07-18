@@ -14,11 +14,9 @@ import json
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from pathlib import Path
 from datetime import datetime
 
 from dotenv import load_dotenv
-from mcp.types import Tool as McpTool
 
 from ama_kbqa.config import (
     get_chat_client,

@@ -1,2 +1,2 @@
 # Diese Zeile macht den Ordner 'orchestrator_agent' nach außen sichtbar
-from . import orchestrator_agent
+from . import orchestrator_agent as orchestrator_agent

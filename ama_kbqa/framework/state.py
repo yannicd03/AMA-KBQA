@@ -84,7 +84,7 @@ class JournalState(BaseModel):
                 lines.append(f"  ... and {len(self.visited_nodes) - 5} more")
 
         if self.found_values:
-            lines.append(f"\nDISCOVERED VALUES:")
+            lines.append("\nDISCOVERED VALUES:")
             for entity_id, attrs in self.found_values.items():
                 entity_name = self.visited_nodes.get(entity_id, entity_id)
                 lines.append(f"  {entity_name}:")
@@ -106,7 +106,7 @@ class JournalState(BaseModel):
                 lines.append(f"  \u2713 {step}")
 
         if self.current_plan:
-            lines.append(f"\nNEXT STEPS:")
+            lines.append("\nNEXT STEPS:")
             for i, step in enumerate(self.current_plan[:3], 1):
                 lines.append(f"  {i}. {step}")
 

@@ -1,6 +1,5 @@
 """Tests for framework configuration classes."""
 
-import pytest
 import json
 from ama_kbqa.framework.config import (
     NamespaceConfig,

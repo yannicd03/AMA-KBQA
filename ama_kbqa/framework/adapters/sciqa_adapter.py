@@ -295,8 +295,6 @@ PREFIX owl:   <http://www.w3.org/2002/07/owl#>
         Returns:
             SPARQL query string
         """
-        predicates = self.get_common_predicates()
-
         query = f"""
 SELECT ?predicate ?object ?objectLabel WHERE {{
     orkgr:{paper_id} ?predicate ?object .

@@ -472,12 +472,12 @@ if __name__ == "__main__":
             print(f"\n[KQAPro Agent Answer]\n{answer}")
 
             counts = agent.get_tool_call_counts()
-            print(f"\n[Tool Call Counts]")
+            print("\n[Tool Call Counts]")
             for tool_name, count in sorted(counts.items(), key=lambda x: x[1], reverse=True):
                 print(f"  {tool_name}: {count}x")
 
             summary = agent.get_tool_call_summary()
-            print(f"\n[Tool Call Summary]")
+            print("\n[Tool Call Summary]")
             print(f"Total calls: {summary['total_calls']}")
             print(f"Total duration: {summary['total_duration_seconds']}s")
             for tool_name, stats in summary['tool_breakdown'].items():

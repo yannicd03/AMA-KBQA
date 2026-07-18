@@ -1,6 +1,5 @@
 """Evaluation Dashboard - view batch run results, charts, and per-question details."""
 
-import json
 
 import pandas as pd
 import streamlit as st

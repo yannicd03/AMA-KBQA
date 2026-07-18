@@ -170,24 +170,40 @@ def _anchor(n: Node, side: str) -> tuple[float, float]:
     hw, hh = n.w / 2, n.h / 2
     if n.shape == "diamond":
         # Anchor at the diamond's tip points for the four cardinal sides.
-        if side == "n": return (n.cx, n.cy - hh)
-        if side == "s": return (n.cx, n.cy + hh)
-        if side == "e": return (n.cx + hw, n.cy)
-        if side == "w": return (n.cx - hw, n.cy)
+        if side == "n":
+            return (n.cx, n.cy - hh)
+        if side == "s":
+            return (n.cx, n.cy + hh)
+        if side == "e":
+            return (n.cx + hw, n.cy)
+        if side == "w":
+            return (n.cx - hw, n.cy)
         # Diagonal sides: roughly half-way along each face.
-        if side == "ne": return (n.cx + hw * 0.5, n.cy - hh * 0.5)
-        if side == "nw": return (n.cx - hw * 0.5, n.cy - hh * 0.5)
-        if side == "se": return (n.cx + hw * 0.5, n.cy + hh * 0.5)
-        if side == "sw": return (n.cx - hw * 0.5, n.cy + hh * 0.5)
+        if side == "ne":
+            return (n.cx + hw * 0.5, n.cy - hh * 0.5)
+        if side == "nw":
+            return (n.cx - hw * 0.5, n.cy - hh * 0.5)
+        if side == "se":
+            return (n.cx + hw * 0.5, n.cy + hh * 0.5)
+        if side == "sw":
+            return (n.cx - hw * 0.5, n.cy + hh * 0.5)
     # Rectangles (box / smallbox)
-    if side == "n": return (n.cx, n.cy - hh)
-    if side == "s": return (n.cx, n.cy + hh)
-    if side == "e": return (n.cx + hw, n.cy)
-    if side == "w": return (n.cx - hw, n.cy)
-    if side == "ne": return (n.cx + hw, n.cy - hh)
-    if side == "nw": return (n.cx - hw, n.cy - hh)
-    if side == "se": return (n.cx + hw, n.cy + hh)
-    if side == "sw": return (n.cx - hw, n.cy + hh)
+    if side == "n":
+        return (n.cx, n.cy - hh)
+    if side == "s":
+        return (n.cx, n.cy + hh)
+    if side == "e":
+        return (n.cx + hw, n.cy)
+    if side == "w":
+        return (n.cx - hw, n.cy)
+    if side == "ne":
+        return (n.cx + hw, n.cy - hh)
+    if side == "nw":
+        return (n.cx - hw, n.cy - hh)
+    if side == "se":
+        return (n.cx + hw, n.cy + hh)
+    if side == "sw":
+        return (n.cx - hw, n.cy + hh)
     return (n.cx, n.cy)
 
 

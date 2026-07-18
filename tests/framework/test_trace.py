@@ -9,7 +9,6 @@ import pytest
 
 from ama_kbqa.framework.trace import (
     JOURNAL_MUTATING_TOOLS,
-    TraceEvent,
     TraceRecorder,
 )
 

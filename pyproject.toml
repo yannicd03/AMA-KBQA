@@ -15,7 +15,6 @@ authors = [
     {name = "Yuyang Li"}
 ]
 dependencies = [
-    "ipykernel>=7.1.0",
     "openai-agents>=0.5.1",
     "qdrant-client>=1.17.0",
     "rdflib>=7.4.0",
@@ -30,7 +29,6 @@ dependencies = [
     "fastmcp>=2.13.1",
     "sparqlwrapper>=2.0.0",
     "htbuilder>=0.9.0",
-    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +44,35 @@ rerank = [
 ama-kbqa = "ama_kbqa.cli:main"
 ama-kbqa-frontend = "ama_kbqa.cli:frontend"
 
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+    "pytest>=9.0.2",
+    "ruff>=0.15.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ama_kbqa*"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Default rule set: pyflakes (F), pycodestyle errors (E4/E7/E9).
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Large, pre-existing server modules the user has asked not to be touched
+# (see task constraints). Lint violations are suppressed here rather than
+# fixed in place. Codes below are the exact violation types found in each
+# file: unused imports, late imports (deferred to avoid heavy import-time
+# side effects), placeholder-less f-strings, a shadowed re-import, unused
+# locals, and bare excepts.
+"ama_kbqa/server/sciqa_server.py" = ["F401", "F541", "F841"]
+"ama_kbqa/server/kqapro_server.py" = ["F401", "E402", "F541", "F811", "E722", "F841"]
+# The `importlib.import_module(...)` call must run before the `from ... import`
+# below it (it resolves the submodule so the package `__init__` re-export
+# doesn't shadow it); reordering would break the workaround the comment above
+# it documents.
+"tests/retrieval/test_search.py" = ["E402"]

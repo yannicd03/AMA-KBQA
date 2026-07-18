@@ -8,10 +8,8 @@ from typing import Any, Dict, List, Optional
 from contextlib import AsyncExitStack
 from datetime import datetime
 import traceback
-import signal
 
 from dotenv import load_dotenv, find_dotenv
-from openai import OpenAI
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import Tool as McpTool
@@ -182,7 +180,7 @@ class Orchestrator:
                 # Try to parse string as JSON for better display
                 try:
                     data = json.loads(data)
-                except:
+                except Exception:
                     pass  # Just a normal string
 
             # Use ensure_ascii=True to avoid Unicode encoding issues on Windows
@@ -190,7 +188,7 @@ class Orchestrator:
             # Indent the JSON so it appears cleanly under the label
             indented_json = "\n".join([f"    {line}" for line in pretty_json.splitlines()])
             print(f"{color}    {label}:{COLOR_END}\n{color}{indented_json}{COLOR_END}")
-        except Exception as e:
+        except Exception:
             # Fallback with ASCII-safe output
             print(f"{color}    {label}: {str(data).encode('ascii', 'replace').decode('ascii')}{COLOR_END}")
 

@@ -1,9 +1,7 @@
 from pathlib import Path
 from openai import OpenAI
 from qdrant_client import QdrantClient
-import os
 import json
-import sys
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 from dotenv import load_dotenv, find_dotenv
@@ -14,7 +12,6 @@ from ama_kbqa.config import (
     get_chat_client,
     get_chat_model_name,
     get_chat_seed,
-    get_embedding_model_name,
     get_provider_preferences,
     get_qdrant_host,
     get_qdrant_port,

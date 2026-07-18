@@ -1,7 +1,5 @@
 """Tests for framework adapters."""
 
-import pytest
-from ama_kbqa.framework.adapters.base_adapter import BaseKGAdapter
 from ama_kbqa.framework.adapters.kqapro_adapter import KQAProAdapter
 from ama_kbqa.framework.adapters.sciqa_adapter import SciQAAdapter
 

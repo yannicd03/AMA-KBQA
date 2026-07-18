@@ -10,7 +10,6 @@
   distinguishable rather than all "[0]".
 """
 
-import importlib
 import os
 
 import pytest
@@ -120,8 +119,6 @@ def test_main_exports_seed_env(monkeypatch):
 # =============================================================================
 
 def test_question_index_used_as_id_fallback():
-    import asyncio
-    import ama_kbqa.benchmark_agents as ba
 
     class _Agent:
         async def soft_reset(self):

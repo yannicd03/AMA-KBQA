@@ -8,7 +8,6 @@ that all KG adapters share.
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
-import re
 
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.operations import CoverageReport, validate_bindings

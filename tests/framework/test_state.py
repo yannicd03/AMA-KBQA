@@ -1,6 +1,5 @@
 """Tests for framework state management."""
 
-import pytest
 import json
 from ama_kbqa.framework.state import JournalState, JournalManager
 

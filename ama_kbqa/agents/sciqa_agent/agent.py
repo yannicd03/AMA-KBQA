@@ -7,7 +7,6 @@ the SciQA dataset to answer scientific research questions.
 
 from __future__ import annotations
 import asyncio
-import json
 import os
 import re
 from pathlib import Path
@@ -243,8 +242,8 @@ class SciQAAgent(BaseKBQAAgent):
             result = self._extract_json_object(json_content)
             if result is None:
                 self._trace(
-                    f"SciQA classification: no parseable JSON in response, "
-                    f"defaulting to General",
+                    "SciQA classification: no parseable JSON in response, "
+                    "defaulting to General",
                     "\033[93m",
                 )
                 return {"question_type": "General", "fewshot_examples": ""}
@@ -346,12 +345,12 @@ if __name__ == "__main__":
             print(f"\n[SciQA Agent Answer]\n{answer}")
 
             counts = agent.get_tool_call_counts()
-            print(f"\n[Tool Call Counts]")
+            print("\n[Tool Call Counts]")
             for tool_name, count in sorted(counts.items(), key=lambda x: x[1], reverse=True):
                 print(f"  {tool_name}: {count}x")
 
             summary = agent.get_tool_call_summary()
-            print(f"\n[Tool Call Summary]")
+            print("\n[Tool Call Summary]")
             print(f"Total calls: {summary['total_calls']}")
             print(f"Total duration: {summary['total_duration_seconds']}s")
             for tool_name, stats in summary['tool_breakdown'].items():

@@ -15,7 +15,7 @@ import json
 import os
 import re
 import toml
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -519,7 +519,7 @@ def extract_intermediate_thinking(agent_messages: List[Any]) -> str:
                     thinking_steps.append(f"Arguments: {tool_args}")
 
         elif role == "tool" and content:
-            thinking_steps.append(f"\n=== Tool Result ===")
+            thinking_steps.append("\n=== Tool Result ===")
             thinking_steps.append(content)
 
     return "\n".join(thinking_steps) if thinking_steps else "No intermediate thinking recorded"
@@ -710,7 +710,7 @@ Respond ONLY with the JSON object, no additional text."""
             try:
                 raw_content = response.choices[0].message.content if response.choices else None
                 if raw_content:
-                    print(f"[WARNING] Judge returned unparsed content, attempting fallback analysis")
+                    print("[WARNING] Judge returned unparsed content, attempting fallback analysis")
                     content_lower = raw_content.lower()
                     is_correct = (
                         "correct" in content_lower and "incorrect" not in content_lower or

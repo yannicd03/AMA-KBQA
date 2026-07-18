@@ -2,7 +2,7 @@ import json
 import os
 import sys
 from tqdm import tqdm
-from typing import Dict, List, Any
+from typing import Dict, List
 from qdrant_client import QdrantClient, models
 from openai import OpenAI
 from dotenv import load_dotenv, find_dotenv
