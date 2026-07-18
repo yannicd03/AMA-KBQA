@@ -451,7 +451,7 @@ mcp = FastMCP("KG-Search-Server", lifespan=server_lifespan)
 # C6c: GetSchemaForAttribute used to (a) SPARQL-fetch the full distinct-attribute
 # list AND (b) re-embed the first 100 attributes on *every* call. Both are static
 # for the lifetime of the server, so memoize them once. The per-query embedding
-# still goes through get_embedding() (itself cached).
+# still goes through retrieval.embed_query() (itself LRU-cached).
 _schema_attributes_cache: Optional[list] = None
 _schema_attr_embeddings_cache: Optional[list] = None
 
@@ -789,10 +789,10 @@ async def GetSchemaForAttribute(
             return json.dumps(response, indent=2)
         
         # Fuzzy matching using embeddings.
-        # C6c: query embedding goes through the cached get_embedding(); the
-        # attribute embeddings are memoized once (static for the server lifetime)
+        # C6c: query embedding goes through the shared LRU-cached retrieval.embed_query();
+        # the attribute embeddings are memoized once (static for the server lifetime)
         # instead of re-embedding up to 100 attributes on every call.
-        query_vec = get_embedding(app_context.embedding_client, query_normalized)
+        query_vec = retrieval.embed_query(app_context.embedding_client, query_normalized)
         attr_vectors = _get_schema_attr_embeddings(app_context.embedding_client, all_attributes)
 
         # Compute cosine similarities

@@ -1588,8 +1588,8 @@ async def run_benchmark_for_model_agent_parallel(
     results: List[QuestionResult] = []
     summary_holder: Dict[str, Any] = {"summary": {}}
     q_queue: "asyncio.Queue" = asyncio.Queue()
-    for question in questions:
-        q_queue.put_nowait(question)
+    for idx, question in enumerate(questions):
+        q_queue.put_nowait((idx, question))
 
     lock = asyncio.Lock()
     stop_event = asyncio.Event()
@@ -1599,7 +1599,7 @@ async def run_benchmark_for_model_agent_parallel(
     async def worker(agent) -> None:
         while not stop_event.is_set():
             try:
-                question = q_queue.get_nowait()
+                q_index, question = q_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
             result = await process_single_question(
@@ -1608,6 +1608,7 @@ async def run_benchmark_for_model_agent_parallel(
                 agent_name=agent_name,
                 timeout=timeout,
                 postprocessor=postprocessor,
+                question_index=q_index,
             )
             async with lock:
                 results.append(result)
