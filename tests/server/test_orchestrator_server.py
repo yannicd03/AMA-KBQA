@@ -35,6 +35,10 @@ class TestLifespanDegradation:
     def test_boots_with_qdrant_none_when_unreachable(self, monkeypatch):
         # Point Qdrant at a port with nothing listening -> connectivity
         # check fails, but the server should still yield a context.
+        # Dummy provider keys: the lifespan builds an OpenAI client from
+        # config, which must not depend on the developer's .env being present.
+        monkeypatch.setenv("KIT_API_KEY", "test-not-used")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-not-used")
         monkeypatch.setattr(orch, "QDRANT_PORT", 59999)
 
         async def main():
@@ -48,6 +52,8 @@ class TestLifespanDegradation:
     def test_shutdown_is_clean_in_degraded_mode(self, monkeypatch):
         # The finally block guards qdrant.close() against None; entering and
         # exiting the lifespan must not raise even with no Qdrant.
+        monkeypatch.setenv("KIT_API_KEY", "test-not-used")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-not-used")
         monkeypatch.setattr(orch, "QDRANT_PORT", 59999)
 
         async def main():
