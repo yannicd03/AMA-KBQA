@@ -16,6 +16,7 @@ from mcp.types import Tool as McpTool
 from asyncio.exceptions import CancelledError
 
 from ama_kbqa.config import get_chat_client, get_chat_model_name
+from ama_kbqa.llm.retry import TransientRetry
 
 load_dotenv(find_dotenv())
 
@@ -128,10 +129,18 @@ class Orchestrator:
     def __init__(self, session_id: str = "default"):
         self.name = "ORCHESTRATOR"
         self.session_id = session_id
-        self.client = get_chat_client()
+        # max_retries=0: this client is wrapped by self._retry (see
+        # _create_with_retry below) so the SDK's own retries don't double the
+        # backoff — same rationale as BaseKBQAAgent.
+        self.client = get_chat_client(max_retries=0)
         self.model = get_chat_model_name()
         self.mcp: Optional[MCPClient] = None
         self._agents = {}
+
+        # Transient-error retry (shared core: ama_kbqa.llm.retry), mirroring
+        # BaseKBQAAgent: one persistent instance so the backoff ramp carries
+        # across the routing probe's decision call and the LLM-only fallback.
+        self._retry = TransientRetry()
 
         # Frontend reads these — Orchestrator mirrors the BaseKBQAAgent
         # surface so the Chat page can capture trace events + journal
@@ -172,6 +181,20 @@ class Orchestrator:
 
     def _trace(self, msg: str, color: str = COLOR_BLUE):
         trace(self.name, msg, color)
+
+    def _create_with_retry(self, client, call_params: Dict, label: str = "LLM"):
+        """chat.completions.create with the same stepped-backoff retry as
+        BaseKBQAAgent (self._retry, shared core in ama_kbqa.llm.retry)."""
+        def _log(exc: BaseException, attempt: int, wait: float) -> None:
+            self._trace(
+                f"{COLOR_YELLOW}Transient {label} error (attempt {attempt}, "
+                f"waiting {wait:.0f}s before retry): {str(exc)[:90]}{COLOR_END}",
+                COLOR_YELLOW,
+            )
+
+        return self._retry.run(
+            lambda: client.chat.completions.create(**call_params), on_retry=_log
+        )
 
     def _log_pretty(self, label: str, data: Any, color: str = COLOR_MAGENTA):
         """Helper function for pretty-printing JSON data."""
@@ -313,12 +336,13 @@ class Orchestrator:
         ]
 
         try:
-            decision = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=[self._select_agent_tool()],
-                tool_choice={"type": "function", "function": {"name": "select_agent"}},
-            )
+            call_params = {
+                "model": self.model,
+                "messages": messages,
+                "tools": [self._select_agent_tool()],
+                "tool_choice": {"type": "function", "function": {"name": "select_agent"}},
+            }
+            decision = self._create_with_retry(self.client, call_params, label="routing")
 
             decision_msg = decision.choices[0].message
             if not decision_msg.tool_calls:
@@ -473,10 +497,12 @@ class Orchestrator:
 
     def _fallback_llm(self, query: str) -> str:
         """Last resort: Use LLM directly without knowledge base."""
-        return self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": query}]
-        ).choices[0].message.content
+        call_params = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": query}],
+        }
+        response = self._create_with_retry(self.client, call_params, label="LLM fallback")
+        return response.choices[0].message.content
 
 
 async def main():

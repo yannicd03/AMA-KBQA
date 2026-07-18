@@ -56,8 +56,17 @@ def load_config() -> dict:
         raise ValueError(f"Failed to parse config.toml: {e}")
 
 
-def get_chat_client() -> OpenAI:
+def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
     """Get an OpenAI client configured for chat/reasoning tasks.
+
+    Args:
+        max_retries: Override the SDK's own retry count. Pass 0 when the caller
+            wraps this client in a :class:`ama_kbqa.llm.retry.TransientRetry`
+            (e.g. ``BaseKBQAAgent``, ``Orchestrator``) — layering the SDK's
+            retries under that stepped backoff would double the backoff and,
+            per ``ama_kbqa/llm/kit.py``'s rationale, still miss KIT's non-5xx
+            "Open WebUI: Server Connection Error" transient. Leave unset
+            (default SDK retries) for callers that don't retry themselves.
 
     Returns:
         OpenAI: Configured OpenAI client instance
@@ -69,7 +78,7 @@ def get_chat_client() -> OpenAI:
     config = load_config()
     provider = config["llm"]["chat_provider"]
 
-    return _create_client(provider, model_type="chat")
+    return _create_client(provider, model_type="chat", max_retries=max_retries)
 
 
 def get_embedding_client() -> OpenAI:
@@ -225,13 +234,16 @@ def get_provider_preferences() -> Optional[dict]:
 
 def _create_client(
     provider: str,
-    model_type: Literal["chat", "embedding"] = "chat"
+    model_type: Literal["chat", "embedding"] = "chat",
+    max_retries: Optional[int] = None,
 ) -> OpenAI:
     """Create an OpenAI client for the specified provider.
 
     Args:
         provider: The LLM provider name
         model_type: Type of model (chat or embedding)
+        max_retries: Override the SDK's own retry count (default 3 when None).
+            Pass 0 for a client that a caller wraps in its own retry layer.
 
     Returns:
         OpenAI: Configured OpenAI client instance
@@ -267,7 +279,7 @@ def _create_client(
         "base_url": base_url,
         "api_key": api_key,
         "timeout": httpx.Timeout(connect=20.0, read=60.0, write=10.0, pool=5.0),
-        "max_retries": 3,
+        "max_retries": 3 if max_retries is None else max_retries,
     }
 
     # Add OpenRouter-specific headers for rankings
@@ -410,8 +422,13 @@ def get_score_threshold() -> float:
 
 
 # Synthesis configuration functions
-def get_synthesis_client() -> OpenAI:
+def get_synthesis_client(max_retries: Optional[int] = None) -> OpenAI:
     """Get an OpenAI client configured for final answer synthesis.
+
+    Args:
+        max_retries: Override the SDK's own retry count. Pass 0 when the caller
+            wraps this client in a :class:`ama_kbqa.llm.retry.TransientRetry`
+            (see ``get_chat_client`` for the full rationale).
 
     Returns:
         OpenAI: Configured OpenAI client instance
@@ -432,7 +449,7 @@ def get_synthesis_client() -> OpenAI:
         )
         provider = config["llm"]["chat_provider"]
 
-    return _create_client(provider, model_type="chat")
+    return _create_client(provider, model_type="chat", max_retries=max_retries)
 
 
 def get_synthesis_model_name() -> str:

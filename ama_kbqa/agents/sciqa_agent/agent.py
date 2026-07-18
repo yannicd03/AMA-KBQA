@@ -216,11 +216,11 @@ class SciQAAgent(BaseKBQAAgent):
         prompt = self._get_classification_prompt(question)
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "system", "content": prompt}],
-                temperature=get_chat_temperature(),
-                response_format={"type": "json_object"},
+            call_params: Dict[str, object] = {
+                "model": self.model,
+                "messages": [{"role": "system", "content": prompt}],
+                "temperature": get_chat_temperature(),
+                "response_format": {"type": "json_object"},
                 # Bumped from default to leave headroom for minimax-m2.7's
                 # `<think>...</think>` reasoning prefix that precedes JSON.
                 # Without this, the response truncates inside the think block
@@ -229,9 +229,12 @@ class SciQAAgent(BaseKBQAAgent):
                 # SciQA agent flies blind on aggregation/comparison/count
                 # questions. Verified empirically (KQAPro side: 100/100
                 # questions classified as "Query" before this fix).
-                max_tokens=1500,
-                timeout=30.0
-            )
+                "max_tokens": 1500,
+                "timeout": 30.0,
+            }
+            # Same stepped-backoff retry as the base agent's tool loop/synthesis
+            # calls (self._retry, set up in BaseKBQAAgent.__init__).
+            response = self._create_with_retry(self.client, call_params, label="SciQA classification")
 
             if response.usage:
                 self._track_token_usage(response.usage)

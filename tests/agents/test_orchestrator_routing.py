@@ -15,7 +15,16 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
+from ama_kbqa.llm.retry import TransientRetry
+
+
+@pytest.fixture(autouse=True)
+def _no_sleep(monkeypatch):
+    """Retry backoff uses real time.sleep; keep these hermetic tests instant."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +86,7 @@ def _make_orchestrator(mcp, client, agent_config=None):
     o.client = client
     o.model = "test-model"
     o.last_routing_reason = None
+    o._retry = TransientRetry()
     o._agent_config = agent_config or {
         "kqapro_agent": {
             "module": "ama_kbqa.agents.kqapro_agent.agent",
@@ -227,3 +237,79 @@ class TestRouteAutonomouslyDegradedAndFailurePaths:
         result = _run(o._route_autonomously("Anything"))
 
         assert result is None
+
+
+class TestOrchestratorRetry:
+    """The routing decision call and the last-resort LLM fallback both go through
+    Orchestrator._create_with_retry (self._retry, shared core in
+    ama_kbqa.llm.retry) — same stepped-backoff resilience as BaseKBQAAgent, and
+    the same persistent-per-instance ramp (a still-flaky endpoint waits longer on
+    the next call, not from scratch)."""
+
+    def test_route_autonomously_retries_transient_error_then_succeeds(self, monkeypatch):
+        waits: list[float] = []
+        monkeypatch.setattr("time.sleep", lambda s: waits.append(s))
+
+        decision_tc = [_make_tool_call(
+            arguments='{"agent": "sciqa_agent", "reason": "scholarly"}',
+        )]
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+
+        calls = {"n": 0}
+
+        def _create(**kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise Exception("Open WebUI: Server Connection Error")
+            return _make_completion(tool_calls=decision_tc)
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = _create
+        o = _make_orchestrator(mcp, client)
+
+        result = _run(o._route_autonomously("Who invented quantum computing?"))
+
+        assert result == "sciqa_agent"
+        assert calls["n"] == 2
+        assert waits == [2.0]
+        assert o._retry.level == 0  # reset after the eventual success
+
+    def test_fallback_llm_goes_through_retry_and_shares_the_agent_level(self, monkeypatch):
+        waits: list[float] = []
+        monkeypatch.setattr("time.sleep", lambda s: waits.append(s))
+
+        calls = {"n": 0}
+
+        def _create(**kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise Exception("503 Service Unavailable")
+            message = SimpleNamespace(content="fallback answer")
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = _create
+        o = _make_orchestrator(mcp=None, client=client)
+        o._retry.level = 1  # as if a prior call on this instance already ramped it
+
+        answer = o._fallback_llm("Some question")
+
+        assert answer == "fallback answer"
+        assert calls["n"] == 2
+        # Starts at the persisted level (index 1 = 5s), not from scratch.
+        assert waits == [5.0]
+
+    def test_deterministic_error_in_route_autonomously_does_not_retry(self, monkeypatch):
+        waits: list[float] = []
+        monkeypatch.setattr("time.sleep", lambda s: waits.append(s))
+
+        mcp = _FakeMcp(_EVIDENCE_JSON)
+        client = MagicMock()
+        client.chat.completions.create.side_effect = Exception("401 Unauthorized")
+        o = _make_orchestrator(mcp, client)
+
+        result = _run(o._route_autonomously("Anything"))
+
+        assert result is None
+        assert client.chat.completions.create.call_count == 1
+        assert waits == []

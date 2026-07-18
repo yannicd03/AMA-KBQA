@@ -29,10 +29,10 @@ class _ConcreteAgent(BaseKBQAAgent):
 @pytest.fixture
 def patched_clients(monkeypatch):
     """Chat client builds fine; synthesis raises like a missing API key would."""
-    monkeypatch.setattr(base_agent, "get_chat_client", lambda: object())
+    monkeypatch.setattr(base_agent, "get_chat_client", lambda **kw: object())
     monkeypatch.setattr(base_agent, "get_chat_model_name", lambda: "chat-model")
 
-    def _raise_synthesis():
+    def _raise_synthesis(**kw):
         raise KeyError("Environment variable 'OPENROUTER_API_KEY' ... is not set.")
 
     monkeypatch.setattr(base_agent, "get_synthesis_client", _raise_synthesis)
@@ -53,9 +53,9 @@ def test_synthesis_client_raises_lazily_only_on_access(patched_clients):
 
 def test_synthesis_client_builds_when_provider_available(monkeypatch):
     sentinel = object()
-    monkeypatch.setattr(base_agent, "get_chat_client", lambda: object())
+    monkeypatch.setattr(base_agent, "get_chat_client", lambda **kw: object())
     monkeypatch.setattr(base_agent, "get_chat_model_name", lambda: "chat-model")
-    monkeypatch.setattr(base_agent, "get_synthesis_client", lambda: sentinel)
+    monkeypatch.setattr(base_agent, "get_synthesis_client", lambda **kw: sentinel)
     monkeypatch.setattr(base_agent, "get_synthesis_model_name", lambda: "synth-model")
 
     agent = _ConcreteAgent(name="kqapro_agent", session_id="t")

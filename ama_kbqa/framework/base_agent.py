@@ -37,6 +37,7 @@ from ama_kbqa.config import (
 )
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
+from ama_kbqa.llm.retry import TransientRetry, is_transient_error
 from ama_kbqa.framework.trace import (
     JOURNAL_MUTATING_TOOLS,
     TraceRecorder,
@@ -114,9 +115,13 @@ class BaseKBQAAgent(ABC):
         self.journal_snapshots: List[Dict[str, Any]] = []
         self._last_journal_summary_hash: Optional[str] = None
 
-        # Initialize LLM clients
+        # Initialize LLM clients. max_retries=0: the OpenAI SDK's own retries are
+        # disabled here because this client is wrapped by self._retry below —
+        # layering SDK retries under TransientRetry would double the backoff and,
+        # per ama_kbqa/llm/kit.py's rationale, still miss KIT's non-5xx transient
+        # ("Open WebUI: Server Connection Error").
         try:
-            self.client = get_chat_client()
+            self.client = get_chat_client(max_retries=0)
             self.model = get_chat_model_name()
         except (FileNotFoundError, ValueError, KeyError) as e:
             raise RuntimeError(f"Failed to initialize LLM client from config.toml: {e}")
@@ -134,6 +139,13 @@ class BaseKBQAAgent(ABC):
         self._synthesis_model = None
 
         self.request_timeout = REQUEST_TIMEOUT_SECONDS
+
+        # Transient-error retry (shared core: ama_kbqa.llm.retry). One instance per
+        # agent so the stepped-backoff level persists across this question's calls
+        # (classification, tool loop, synthesis/text-only) and resets on the first
+        # success — a still-flaky endpoint waits longer on each new call, not from
+        # scratch.
+        self._retry = TransientRetry()
 
         # Token tracking
         self.token_usage = {
@@ -183,7 +195,10 @@ class BaseKBQAAgent(ABC):
         if self._synthesis_client is not None:
             return
         try:
-            self._synthesis_client = get_synthesis_client()
+            # max_retries=0: synthesis calls go through self._retry (see
+            # _create_with_retry / _llm_call_synthesis) for the same reason as the
+            # chat client above.
+            self._synthesis_client = get_synthesis_client(max_retries=0)
             self._synthesis_model = get_synthesis_model_name()
         except (FileNotFoundError, ValueError, KeyError) as e:
             raise RuntimeError(f"Failed to initialize synthesis LLM client from config.toml: {e}")
@@ -615,13 +630,11 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         ) as _cls_span:
             try:
                 _classify_seed = get_chat_seed()
-                _seed_kwargs = {"seed": _classify_seed} if _classify_seed is not None else {}
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[{"role": "system", "content": prompt}],
-                    temperature=get_chat_temperature(),
-                    response_format={"type": "json_object"},
-                    **_seed_kwargs,
+                call_params: Dict[str, Any] = {
+                    "model": self.model,
+                    "messages": [{"role": "system", "content": prompt}],
+                    "temperature": get_chat_temperature(),
+                    "response_format": {"type": "json_object"},
                     # Bumped from 300 to 1500: minimax-m2.7 emits a
                     # `<think>...</think>` reasoning prefix before the JSON
                     # object even with response_format=json_object. With
@@ -630,8 +643,13 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     # silently defaulting question_type to "Query" for every
                     # question. 1500 tokens leaves headroom for the think
                     # block plus the actual JSON.
-                    max_tokens=1500,
-                    timeout=30.0,
+                    "max_tokens": 1500,
+                    "timeout": 30.0,
+                }
+                if _classify_seed is not None:
+                    call_params["seed"] = _classify_seed
+                response = self._create_with_retry(
+                    self.client, call_params, label="classification"
                 )
 
                 if response.usage:
@@ -2231,6 +2249,29 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
     # LLM CALLS
     # =========================================================================
 
+    # Transient detection kept as a method for back-compat / readability; the logic
+    # lives in the shared retry core (single source of truth).
+    _is_transient_error = staticmethod(is_transient_error)
+
+    def _create_with_retry(self, client, call_params: Dict[str, Any], label: str = "LLM"):
+        """chat.completions.create with stepped-backoff retry on transient errors.
+
+        Delegates to the per-agent :class:`TransientRetry` (``self._retry``, shared
+        core in ``ama_kbqa.llm.retry``) so classification, the tool loop, and
+        synthesis all back off identically and share one persistent ramp per
+        question. Deterministic errors (auth, bad request) re-raise at once.
+        """
+        def _log(exc: BaseException, attempt: int, wait: float) -> None:
+            self._trace(
+                f"Transient {label} error (attempt {attempt}, waiting {wait:.0f}s "
+                f"before retry): {str(exc)[:90]}",
+                COLOR_YELLOW,
+            )
+
+        return self._retry.run(
+            lambda: client.chat.completions.create(**call_params), on_retry=_log
+        )
+
     def _llm_call(
         self,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -2273,7 +2314,11 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             payload={"messages": self._messages_for_payload()},
         ) as _llm_span:
             try:
-                response = self.client.chat.completions.create(**call_params)
+                # Transient provider errors (KIT's "Open WebUI: Server Connection
+                # Error", 5xx, connection drops, rate limits) are retried with
+                # stepped backoff; deterministic errors (bad request, auth) re-raise
+                # at once.
+                response = self._create_with_retry(self.client, call_params, label="LLM")
                 self._trace("LLM call completed", COLOR_GREEN)
                 if response.usage:
                     _llm_span.update_attributes({
@@ -2347,7 +2392,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             payload={"messages": self._messages_for_payload()},
         ) as _span:
             try:
-                response = self.client.chat.completions.create(**call_params)
+                response = self._create_with_retry(self.client, call_params, label="LLM (text)")
 
                 if response.usage:
                     self._track_token_usage(response.usage)
@@ -2394,7 +2439,11 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             ]},
         ) as _span:
             try:
-                response = self.synthesis_client.chat.completions.create(**call_params)
+                # Synthesis produces the FINAL answer, so it must survive a transient
+                # blip too — retry with the same stepped backoff before giving up.
+                response = self._create_with_retry(
+                    self.synthesis_client, call_params, label="synthesis"
+                )
                 self._trace("Synthesis LLM call completed", COLOR_GREEN)
 
                 if response.usage:

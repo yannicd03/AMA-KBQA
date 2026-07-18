@@ -21,6 +21,7 @@ from types import SimpleNamespace
 
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
 from ama_kbqa.framework.trace import TraceRecorder
+from ama_kbqa.llm.retry import TransientRetry
 
 
 def _run(coro):
@@ -139,6 +140,7 @@ class _SynthAgent(BaseKBQAAgent):
         self._synthesis_model = "test-synth-model"
         self.request_timeout = 30
         self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self._retry = TransientRetry()
 
     def get_config(self):
         raise NotImplementedError
