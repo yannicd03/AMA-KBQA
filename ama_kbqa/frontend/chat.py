@@ -196,7 +196,7 @@ suggestions = AGENT_SUGGESTIONS.get(selected_agent, {})
 # ── Header ───────────────────────────────────────────────────────────────────
 title_row = st.container(horizontal=True, vertical_alignment="bottom")
 with title_row:
-    st.title("AMA KBQA Assistant", anchor=False)
+    st.title("AMA-KBQA Assistant", anchor=False)
 
 # ── Session state ────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
