@@ -167,7 +167,7 @@ ama-kbqa/
 | **Agent Framework** | openai-agents, FastMCP | Tool-calling agents with MCP |
 | **Vector DB** | Qdrant (`qdrant-client>=1.17.0`; image `v1.17.1`) | Semantic entity/relation search; hybrid BM25+dense via Query API (RRF/DBSF); server-side BM25 inference requires >= 1.15.2 |
 | **Graph DB** | Virtuoso 7 | RDF triple store, SPARQL queries |
-| **LLM Access** | OpenAI SDK | Compatible with OpenRouter, LMStudio, etc. |
+| **LLM Access** | OpenAI SDK + `chatkit` (git dep, pinned tag `v1.0.0`) | Compatible with OpenRouter, LMStudio, KIT; `chatkit.retry.TransientRetry` wraps every sampled agent LLM call to catch KIT's non-5xx transient errors — see [agent_framework.md](agent_framework.md#transient-llm-retry-chatkitretrytransientretry) |
 | **Embedding** | qwen/qwen3-embedding-8b (4096 dim) | Entity/relation embeddings |
 | **Frontend** | Streamlit | Multi-page web UI (Chat, Batch, Evaluation, Settings) |
 | **Configuration** | TOML + dotenv | Centralized config management |

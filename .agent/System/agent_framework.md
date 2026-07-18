@@ -157,6 +157,46 @@ class MCPClient:
 
 ---
 
+## Transient LLM Retry (`chatkit.retry.TransientRetry`)
+
+**Package:** `chatkit` (git dependency, pinned to tag `v1.0.0` — `github.com/yannicd03/ChatKIT`).
+Replaces the vendored `ama_kbqa/llm/` module that lived in this repo until the 2026-07-18
+consolidation (see `Decisions/transient-retry-and-chatkit-extraction.md`). Also consumed
+by the sibling `wikikgqa-2026` repo (raw-SDK surface) and by ORCA, a separate LangGraph
+project, via the package's `[langchain]` extra — `chatkit` core has no LangChain
+dependency; a test asserts `langchain` is not importable in this repo's environment as a
+regression guard.
+
+**Why it exists:** KIT (the KIT AI Toolbox endpoint) sometimes returns an
+`"Open WebUI: Server Connection Error"` message inside a non-5xx HTTP response — the
+OpenAI SDK's own `max_retries` only fires on 5xx/connection failures, so this transient
+was silently treated as a valid completion. `TransientRetry` does message-marker
+detection (`chatkit.retry.is_transient_error`) with stepped, self-resetting backoff.
+
+**`BaseKBQAAgent._create_with_retry(client, call_params, label="LLM")`** (`base_agent.py:2256`):
+wraps `client.chat.completions.create(**call_params)` in `self._retry.run(...)`, logging
+each retry attempt via `self._trace(...)` (attempt number, wait seconds, truncated error).
+Used by all four sampled-LLM call sites: `_classify_question`, `_llm_call` (main tool
+loop), `_llm_call_text_only`, `_llm_call_synthesis`. `SciQAAgent._classify_question`
+overrides the base classify method and also routes through `_create_with_retry`.
+
+**Orchestrator** (`ama_kbqa/agents/orchestrator_agent/agent.py`) owns its own
+`self._retry = TransientRetry()` and its own `_create_with_retry`, wrapping the routing
+decision call and the LLM-fallback call. Previously the Orchestrator had no retry
+coverage at all.
+
+**Double-retry avoidance:** clients that feed a `TransientRetry`-wrapped call site are
+constructed with `get_chat_client(max_retries=0)` / `get_synthesis_client(max_retries=0)`
+(`ama_kbqa/config.py`) — the SDK's own retry loop is disabled so backoff isn't stacked
+twice. Callers that don't wrap their client keep the SDK default of 3 retries.
+
+**Known gap (deliberate):** `ama_kbqa/server/orchestrator_server.py`'s `extract_semantics`
+runs in a separate MCP subprocess and is **not** wrapped — it stays on plain SDK retries.
+See `Decisions/transient-retry-and-chatkit-extraction.md` for the full rationale and the
+`wikikgqa-2026` cross-reference.
+
+---
+
 ## Token Tracking
 
 ```python
