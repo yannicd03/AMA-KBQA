@@ -1,4 +1,4 @@
-"""AMA KBQA Assistant - demo entry point.
+"""AMA-KBQA Assistant - demo entry point.
 
 This is a single-page demo: the only page is the Chat interface, served at the
 root URL. The multi-page dashboard (Evaluation, Settings, ...) is intentionally
@@ -13,14 +13,14 @@ import streamlit as st
 from ama_kbqa.frontend.utils.styling import inject_css
 
 st.set_page_config(
-    page_title="AMA KBQA Assistant",
+    page_title="AMA-KBQA Assistant",
     layout="centered",
 )
 
 inject_css()
 
 ABOUT_MD = """
-### AMA KBQA: Ask Me Anything Knowledgebase Question Answering
+### AMA-KBQA: An Adaptable Multi-Agent Framework for Generalizable Knowledge Base Question Answering
 
 This is a research demo of a **Knowledge Base Question Answering** system. It
 answers natural-language questions by *grounding* every answer in a structured
@@ -54,6 +54,26 @@ drill down on an answer.
 Every answer shows its reasoning trace, how long it took, how many tokens it used,
 and an *illustrative* cost. The cost is for intuition only: this demo runs on a
 free KIT-hosted endpoint, so nobody is actually billed.
+
+#### What can go wrong
+
+This is a research prototype, so expect a few rough edges:
+
+- **Entity linking** can resolve a name to the wrong entity (e.g. a person with
+  a similar name or occupation), producing a confidently wrong answer. Check
+  the linked entity in the reasoning trace if something looks off.
+- **Definitional questions** ("What is X?") often fail when the knowledge graph
+  has no explicit definition. The system only reports what is in the graph,
+  not what it separately "knows".
+- **"I don't know"** is a valid answer: the agent says so whenever it cannot
+  ground a claim in the graph, even if the fact seems like common knowledge.
+- **Broad or superlative questions** ("the most famous...") can be slow and
+  sometimes return no results, since they require expensive aggregation over
+  the graph.
+- **Answers take time**, typically one to a few minutes, depending on question
+  complexity and model load.
+- **Follow-ups aren't remembered yet.** Each question is answered
+  independently; corrections and clarifications don't carry over.
 
 :gray[Click the **?** button in the corner anytime to reopen this panel.]
 """
