@@ -79,8 +79,6 @@ PREFIX owl:   <http://www.w3.org/2002/07/owl#>
             graph=GraphConfig(
                 endpoint="http://localhost:8890/sparql",
                 graph_uri="http://sciqa.org/kg",  # Named graph
-                supports_reification=False,
-                has_temporal_data=False,
                 timeout_ms=30000,
             ),
             node_types={

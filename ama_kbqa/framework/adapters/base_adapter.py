@@ -7,6 +7,7 @@ that all KG adapters share.
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import Dict, Optional
 
 from ama_kbqa.framework.config import KnowledgeGraphConfig
@@ -24,13 +25,51 @@ class BaseKGAdapter(ABC):
     def __init__(self):
         """Initialize the adapter with its configuration."""
         self._config: Optional[KnowledgeGraphConfig] = None
+        self._resolved_config: Optional[KnowledgeGraphConfig] = None
 
     @property
     def config(self) -> KnowledgeGraphConfig:
-        """Get the KG configuration, creating it if needed."""
+        """Get the KG's declared configuration, creating it if needed.
+
+        This is the adapter's own defaults, unmodified by deployment
+        overrides. Namespaces, prompts, node types, and domain settings are
+        KG constants that always come from here. For ``graph`` and
+        ``vectors``, prefer :attr:`resolved_config`, which is what the same
+        values resolve to once config.toml / environment overrides are
+        applied — that is what servers should read at runtime.
+        """
         if self._config is None:
             self._config = self._create_config()
         return self._config
+
+    @property
+    def resolved_config(self) -> KnowledgeGraphConfig:
+        """Get this KG's configuration with ``graph``/``vectors`` resolved
+        against deployment-time overrides.
+
+        The adapter still declares the defaults (single source of truth per
+        KG); ``config.toml`` and ``AMA_KBQA_<CODE>_<FIELD>`` environment
+        variables may override the endpoint, named graph, and vector
+        collections for a given deployment. See
+        ``ama_kbqa.framework.adapters.resolve`` for the precedence rules.
+        This is what servers and the reasoning core should read at runtime
+        instead of the per-KG getters in ``ama_kbqa/config.py``.
+        """
+        if self._resolved_config is None:
+            # Local import to avoid a hard dependency on ama_kbqa.config
+            # (which reads config.toml from disk) at adapter-import time.
+            from ama_kbqa.framework.adapters.resolve import (
+                resolve_graph_config,
+                resolve_vector_config,
+            )
+
+            base = self.config
+            self._resolved_config = replace(
+                base,
+                graph=resolve_graph_config(base.code, base.graph),
+                vectors=resolve_vector_config(base.code, base.vectors),
+            )
+        return self._resolved_config
 
     @abstractmethod
     def _create_config(self) -> KnowledgeGraphConfig:
@@ -319,16 +358,8 @@ class BaseKGAdapter(ABC):
         return prop_name
 
     # =========================================================================
-    # Feature Detection
+    # KG Identity
     # =========================================================================
-
-    def supports_reification(self) -> bool:
-        """Check if this KG supports reification (facts about facts)."""
-        return self.config.graph.supports_reification
-
-    def has_temporal_data(self) -> bool:
-        """Check if this KG has temporal (time-based) data."""
-        return self.config.graph.has_temporal_data
 
     def get_kg_name(self) -> str:
         """Get the human-readable name of this KG."""

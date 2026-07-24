@@ -125,15 +125,11 @@ class TestGraphConfig:
         gc = GraphConfig(
             endpoint="http://localhost:8890/sparql",
             graph_uri="http://example.org/graph",
-            supports_reification=True,
-            has_temporal_data=True,
             timeout_ms=60000,
         )
 
         assert gc.endpoint == "http://localhost:8890/sparql"
         assert gc.graph_uri == "http://example.org/graph"
-        assert gc.supports_reification is True
-        assert gc.has_temporal_data is True
         assert gc.timeout_ms == 60000
 
     def test_graph_config_defaults(self):
@@ -141,8 +137,6 @@ class TestGraphConfig:
         gc = GraphConfig(endpoint="http://localhost:8890/sparql")
 
         assert gc.graph_uri is None
-        assert gc.supports_reification is False
-        assert gc.has_temporal_data is False
         assert gc.timeout_ms == 30000
 
 
@@ -274,8 +268,6 @@ class TestDefaultConfigs:
         assert config.code == "kqapro"
         assert config.namespaces.entity_prefix == "http://kqapro.org/entity/"
         assert config.namespaces.qualifier_prefix == "http://kqapro.org/qualifier/"
-        assert config.graph.supports_reification is True
-        assert config.graph.has_temporal_data is True
         assert "kqapro_entities" in config.vectors.entity_collection
 
     def test_create_default_sciqa_config(self):
@@ -286,7 +278,6 @@ class TestDefaultConfigs:
         assert config.code == "sciqa"
         assert config.namespaces.entity_prefix == "http://orkg.org/orkg/resource/"
         assert config.namespaces.qualifier_prefix is None
-        assert config.graph.supports_reification is False
         assert config.graph.graph_uri == "http://sciqa.org/kg"
         assert "sciqa" in config.vectors.entity_collection
 

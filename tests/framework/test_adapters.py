@@ -138,16 +138,6 @@ class TestKQAProAdapter:
         result = adapter.inject_sparql_prefixes(query_with_prefix)
         assert result == query_with_prefix
 
-    def test_supports_reification(self):
-        """Test reification support check."""
-        adapter = KQAProAdapter()
-        assert adapter.supports_reification() is True
-
-    def test_has_temporal_data(self):
-        """Test temporal data support check."""
-        adapter = KQAProAdapter()
-        assert adapter.has_temporal_data() is True
-
     def test_get_reification_predicates(self):
         """Test getting reification predicates."""
         adapter = KQAProAdapter()
@@ -235,16 +225,6 @@ class TestSciQAAdapter:
 
         assert adapter.normalize_entity_id("R123") == "R123"
         assert adapter.normalize_entity_id("r123") == "R123"
-
-    def test_supports_reification(self):
-        """Test reification support check."""
-        adapter = SciQAAdapter()
-        assert adapter.supports_reification() is False
-
-    def test_has_temporal_data(self):
-        """Test temporal data support check."""
-        adapter = SciQAAdapter()
-        assert adapter.has_temporal_data() is False
 
     def test_inject_graph_clause(self):
         """Test injecting named graph clause."""

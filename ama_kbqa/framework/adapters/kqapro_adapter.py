@@ -79,8 +79,6 @@ PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
             graph=GraphConfig(
                 endpoint="http://localhost:8890/sparql",
                 graph_uri=None,  # KQAPro uses default graph
-                supports_reification=True,
-                has_temporal_data=True,
                 timeout_ms=30000,
             ),
             node_types={

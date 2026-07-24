@@ -92,12 +92,22 @@ class GraphConfig:
     """
     Configuration for the graph database endpoint.
 
-    Defines connection settings and KG-specific features.
+    Defines connection settings: the SPARQL endpoint, the named graph (if
+    the KG is scoped to one within a shared triple store), and a query
+    timeout. Deployment-time overrides (config.toml, AMA_KBQA_* env vars) are
+    applied on top of adapter-declared defaults by
+    ``ama_kbqa.framework.adapters.resolve`` — see
+    ``BaseKGAdapter.resolved_config``.
+
+    Note: this previously also carried ``supports_reification`` and
+    ``has_temporal_data`` flags. They were removed (2026-07) because nothing
+    at runtime ever read them — KQAPro's reification/temporal query paths and
+    SciQA's lack thereof are implemented directly in the respective MCP
+    server modules, not gated by a shared flag. Re-add only if a genuine
+    shared code path needs to branch on them.
     """
     endpoint: str
     graph_uri: Optional[str] = None
-    supports_reification: bool = False
-    has_temporal_data: bool = False
     timeout_ms: int = 30000
 
     def to_dict(self) -> Dict[str, Any]:

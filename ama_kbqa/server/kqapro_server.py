@@ -7,9 +7,6 @@ from ama_kbqa.config import (
     get_chat_max_tokens,
     get_qdrant_host,
     get_qdrant_port,
-    get_virtuoso_endpoint,
-    get_collection_entities,
-    get_collection_relations,
     get_top_n,
     get_score_threshold,
 )
@@ -61,9 +58,6 @@ logger.add(
 # --- Configuration from config.toml ---
 QDRANT_HOST = get_qdrant_host()
 QDRANT_PORT = get_qdrant_port()
-COLLECTION_ENTITIES = get_collection_entities()
-COLLECTION_RELATIONS = get_collection_relations()
-VIRTUOSO_ENDPOINT = get_virtuoso_endpoint()
 EMBEDDING_MODEL = get_embedding_model_name()
 CHAT_MODEL = get_chat_model_name()
 CHAT_TEMPERATURE = get_chat_temperature()
@@ -73,10 +67,15 @@ SCORE_THRESHHOLD = get_score_threshold()
 
 # --- 1. Define a Context Class for Type Safety ---
 
-# Namespaces and SPARQL prefixes are owned by the KG adapter (single source
-# of truth); the server only consumes them.
+# Namespaces, endpoint, and vector-collection bindings are owned by the KG
+# adapter (single source of truth); the server only consumes them.
+# `.config` is the adapter's declared defaults (namespaces are KG constants,
+# never overridden); `.resolved_config` applies config.toml / AMA_KBQA_*
+# env overrides on top of the endpoint/collection defaults — see
+# ama_kbqa.framework.adapters.resolve.
 _ADAPTER = KQAProAdapter()
 _NAMESPACES = _ADAPTER.config.namespaces
+_RESOLVED = _ADAPTER.resolved_config
 
 NS_ENTITY = _NAMESPACES.entity_prefix
 NS_PROPERTY = _NAMESPACES.property_prefix
@@ -84,6 +83,10 @@ NS_QUALIFIER = _NAMESPACES.qualifier_prefix
 
 # We inject these prefixes into every SPARQL query for convenience/safety
 SPARQL_PREFIXES = "\n" + _NAMESPACES.sparql_prefixes.rstrip() + "\n"
+
+COLLECTION_ENTITIES = _RESOLVED.vectors.entity_collection
+COLLECTION_RELATIONS = _RESOLVED.vectors.relation_collection
+VIRTUOSO_ENDPOINT = _RESOLVED.graph.endpoint
 
 
 class AppContext(BaseModel):

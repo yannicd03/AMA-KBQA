@@ -394,7 +394,16 @@ def get_qdrant_port() -> int:
 
 
 def get_virtuoso_endpoint() -> str:
-    """Get Virtuoso SPARQL endpoint from config."""
+    """Get Virtuoso SPARQL endpoint from config.
+
+    Deprecated: the KQAPro and SciQA MCP servers no longer call this — they
+    read the endpoint through their KG adapter's ``resolved_config.graph``
+    (``ama_kbqa.framework.adapters.resolve``), which applies the same
+    ``[database] virtuoso_endpoint`` config.toml value plus an
+    ``AMA_KBQA_<CODE>_ENDPOINT`` env override. Kept for other call sites
+    (e.g. ``ama_kbqa/utils/artifact_golds.py``, ``db/migrate_add_bm25.py``)
+    that only ever need the generic default endpoint.
+    """
     return get_database_config().get(
         "virtuoso_endpoint",
         "http://localhost:8890/sparql"
@@ -402,12 +411,22 @@ def get_virtuoso_endpoint() -> str:
 
 
 def get_collection_entities() -> str:
-    """Get entities collection name from config."""
+    """Get entities collection name from config.
+
+    Deprecated: superseded by ``KQAProAdapter().resolved_config.vectors``.
+    Kept for other call sites (e.g. ``db/migrate_add_bm25.py``) that predate
+    the adapter-based resolution.
+    """
     return get_database_config().get("collection_entities", "kqapro-entities")
 
 
 def get_collection_relations() -> str:
-    """Get relations collection name from config."""
+    """Get relations collection name from config.
+
+    Deprecated: superseded by ``KQAProAdapter().resolved_config.vectors``.
+    Kept for other call sites (e.g. ``db/migrate_add_bm25.py``) that predate
+    the adapter-based resolution.
+    """
     return get_database_config().get("collection_relations", "kqapro-relations")
 
 
@@ -753,6 +772,10 @@ def get_rerank_threshold() -> Optional[float]:
 def get_sciqa_collection_entities() -> str:
     """Get the SciQA entities collection name from config.
 
+    Deprecated: superseded by ``SciQAAdapter().resolved_config.vectors``,
+    which the SciQA MCP server now reads. Kept for other call sites (e.g.
+    ``db/migrate_add_bm25.py``) that predate the adapter-based resolution.
+
     Returns:
         str: The SciQA entities collection name
     """
@@ -763,6 +786,10 @@ def get_sciqa_collection_entities() -> str:
 def get_sciqa_collection_relations() -> str:
     """Get the SciQA relations collection name from config.
 
+    Deprecated: superseded by ``SciQAAdapter().resolved_config.vectors``,
+    which the SciQA MCP server now reads. Kept for other call sites (e.g.
+    ``db/migrate_add_bm25.py``) that predate the adapter-based resolution.
+
     Returns:
         str: The SciQA relations collection name
     """
@@ -772,6 +799,11 @@ def get_sciqa_collection_relations() -> str:
 
 def get_sciqa_virtuoso_graph() -> str:
     """Get the SciQA Virtuoso graph URI from config.
+
+    Deprecated: superseded by ``SciQAAdapter().resolved_config.graph.graph_uri``,
+    which the SciQA MCP server now reads (see
+    ``ama_kbqa.framework.adapters.resolve``). Kept in case other call sites
+    need the named-graph URI directly.
 
     Returns:
         str: The SciQA Virtuoso graph URI
