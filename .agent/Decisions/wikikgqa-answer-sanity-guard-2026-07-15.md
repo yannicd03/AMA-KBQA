@@ -16,11 +16,25 @@
 
 The 2026-07-15 post-deadline resubmission scored WM (with-mentions) 0.85 →
 0.84 (a regression) and WOM (without-mentions) 0.78 → 0.79 (an improvement).
-The WM regression traced entirely to **q113**: an `AgentSparqlGenerator(votes=3)`
-self-consistency round committed a query whose result was 50 rows of
-`entity/statement/` URIs and `Special:EntityData` URLs, replacing what had
-previously been a correct single-answer result. That one question accounts
-for ~-0.013 macro F1 — the entire with-mentions regression.
+The WM regression's **dominant single cause** was **q113**: an
+`AgentSparqlGenerator(votes=3)` self-consistency round committed a query
+whose result was 50 rows of `entity/statement/` URIs and `Special:EntityData`
+URLs, replacing what had previously been a correct single-answer result. That
+one question accounts for ~-0.013 macro F1 (1/75 questions).
+
+**Correction (2026-07-25 submission-artifact verification pass):** q113 is
+the largest single regression but not the sole cause of the -0.01 net. A
+question-by-question diff of the two scored submissions'
+`benchmark_results/wikikgqa/TEST-en-with-mentions-v2/submission.json` (commit
+`877551c`) vs `TEST-wm-votes3-20260714/submission.json` (commit `eeb9772`)
+answer *sets* found 9 questions with an actually-changed answer set (13, 22,
+44, 64, 75, 76, 92, 113, 129) — an order-sensitive list diff shows 13 rows
+differing, but 4 of those (72, 83, 93, 103) are pure answer-set reorderings
+with identical content, not real changes. The scored -0.01 is a net across
+the 9 real changes, of which q113 (1 correct → 50 rows, 49 invalid) is the
+largest single contributor; q76 also regressed (RDF-predicate junk rows: 5 →
+6). See `.agent/System/wikikgqa_agent.md` for the corrected wording and
+`.agent/CHANGELOG.md` for the dated entry.
 
 The root cause is two compounding gaps:
 
@@ -151,6 +165,45 @@ passing after; full suite green (184 passed, `tests/wikikgqa/`).
 evaluated system did not include it. See `.agent/System/wikikgqa_agent.md`'s
 answer-sanity-guard section for the current-state description and
 `.agent/CHANGELOG.md` for the dated entry.
+
+## Verification pass (2026-07-25): did the pre-fix gap ever hit scored output?
+
+Method: map run directories to scored submissions via `run_manifest.json` git
+commits (see `.agent/SOP/analyzing_wikikgqa_benchmark_runs.md` — directory
+names/dates are misleading), then scan every
+`benchmark_results/wikikgqa/TEST-*/submission.json` for values `_result_is_sane`
+would reject (`://`, `wikidata.org`, `statement/`, or a leading `_:`).
+
+| Submission | Commit | Run dirs | Invalid values found |
+|---|---|---|---|
+| 1 (2026-07-03) | `877551c` | `TEST-en-with-mentions-v2`, `TEST-en-without-mentions-v2` | 5, on q76 |
+| 2 (2026-07-14, uploaded as the 07-15 submission) | `eeb9772` | `TEST-wm-votes3-20260714`, `TEST-wom-votes3-20260714` | 55 — q76 (6), q113 (49) |
+| 3 (2026-07-15) | `57fcf56` | `TEST-wm-round2-20260715`, `TEST-wom-round2-20260715` | 0 |
+
+**Both final-submission tracks (submission 3) are completely clean: zero
+invalid values, zero empty answers.** The pre-fix 0-row-recovery gap
+(closed 2026-07-24, after all three submissions) never manifested in scored
+output — the answer-sanity guard added by *this* ADR (commit `fde0c62`,
+already live for submission 3) was sufficient in practice even though its
+0-row path had the latent gap.
+
+**q76 behavior changed again by submission 3**, independent of the sanity
+guard. q76 asks "What contraindications are linked with drugs used in
+asthma treatment?":
+- Submissions 1 and 2 committed `SELECT ?p ?o WHERE { wd:Qxxx ?p ?o }`-shaped
+  queries that returned RDF **predicates** as answers (`http://schema.org/description`,
+  `http://schema.org/name`, ...) — these are exactly the `://`-shaped values
+  the invalid-value scan flags.
+- Submission 3 commits `SELECT ?drug WHERE { ?drug wdt:P2175 wd:Q35869 }` and
+  returns 33 bare Q-ids, no invalid values — but this query asks for drugs
+  *used to treat* asthma (P2175 = "medical condition treated"), not the
+  contraindications of those drugs. It has stopped projecting junk predicates
+  but now appears to under-resolve the actual relation the question asks for.
+
+**Gold for this challenge is held out**, so only answer *shape* and
+*between-run changes* are verifiable this way — this is not a correctness
+claim about q76 in either direction, only a record that its answer shape and
+apparent query intent changed between submissions.
 
 ## Key transferable lesson
 

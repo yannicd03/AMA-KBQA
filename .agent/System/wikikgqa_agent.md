@@ -146,8 +146,13 @@ statement-node URI (`entity/statement/Qxxx-UUID`), `Special:EntityData` URL,
 or other unmapped URI junk. `_result_is_sane` (`generator.py`) names that
 failure mode — surfaced by q113, where a `votes=3` self-consistency round
 committed a 50-row statement-node-URI result over a correct single answer,
-costing the entire 2026-07-15 with-mentions regression (0.85→0.84). The
-check is wired into three commit-time stages: (1) journal-alternate
+costing the **dominant single regression** in the 2026-07-15 with-mentions
+score (0.85→0.84); a 2026-07-25 submission-artifact verification pass found
+9 questions with genuinely changed answer sets between the two submissions
+(not just q113), so the -0.01 is a net across those, with q113 the largest
+single contributor (~-0.013 alone). See
+[Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md)'s
+2026-07-25 correction note. The check is wired into three commit-time stages: (1) journal-alternate
 recovery — on **both** the 0-row path and the has-rows-but-unsane path
 (`generator.py:594-598` and `:623-627`) — adopts the journal alternate only
 if it has rows *and* is sane; (2) closure-expansion escalation (above) only
