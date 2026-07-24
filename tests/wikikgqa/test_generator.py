@@ -493,6 +493,36 @@ def test_generate_once_keeps_unsane_committed_when_no_alternate(monkeypatch):
     assert out.attempts == 1
 
 
+def test_generate_once_rejects_unsane_alternate_on_zero_row_recovery(monkeypatch):
+    # Regression: the 0-row journal-recovery path (distinct from the
+    # has-rows-but-unsane path above) must also reject an alternate that HAS
+    # rows but is unsane, rather than adopting statement-node/blank-node junk
+    # just because _has_rows was true. It must also leave used_recovery False
+    # so it doesn't stand in the way of it being reconsidered (there is no
+    # sane alternate here either, so the committed empty result is kept).
+    committed = "SELECT ?x WHERE { ?x wdt:BAD wd:Q5 }"
+    recovered = "SELECT ?y WHERE { ?y wdt:P31/wdt:P279* wd:Q5 }"
+    monkeypatch.setattr(
+        "ama_kbqa.agents.wikidata_agent.agent.WikidataAgent",
+        _fake_agent_cls(f"```sparql\n{committed}\n```"),
+    )
+
+    def _exec(q, endpoint=None, timeout=120):
+        if q.strip() == recovered:
+            return _statement_uri_result()  # journal alt: has rows, but unsane
+        return _select_result(rows=False)  # committed: 0 rows
+
+    monkeypatch.setattr(generator_mod, "execute", _exec)
+    monkeypatch.setattr(generator_mod, "_best_query_from_snapshots", lambda agent: recovered)
+
+    out = AgentSparqlGenerator()._generate_once(_question())
+    # The unsane alternate must NOT be adopted: the committed (empty) query/result
+    # stays as-is, leaving the empty-answer escalation in benchmark.py to handle it.
+    assert out.sparql == committed
+    assert out.result.json == _select_result(rows=False).json
+    assert out.attempts == 1
+
+
 # --- class-closure expansion repair (ANSWER_CONVENTIONS.md rule 10) ---
 # Committed queries that constrain class membership with bare `wdt:P31 wd:QX`
 # score precision=1.0/recall~=0 against gold's transitive closure. These tests

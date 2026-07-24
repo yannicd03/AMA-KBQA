@@ -587,12 +587,15 @@ class AgentSparqlGenerator:
         result = execute(sparql, endpoint=self.endpoint, timeout=self.timeout)
         # Non-empty prior: every gold answer in this benchmark is non-empty, so a
         # committed query that fails or returns 0 rows is known-wrong. If the journal
-        # holds a different query that returned rows during exploration, prefer it.
+        # holds a different query that returned rows during exploration, prefer it,
+        # but only when that alternate is sane. Adopting an unsane alternate here
+        # would also set used_recovery and so suppress the guarded re-check below,
+        # which is why the check has to happen at adoption time.
         if not _has_rows(result) and recovered and not used_recovery:
             alt = strip_sparql(recovered)
             if alt and alt != sparql:
                 alt_result = execute(alt, endpoint=self.endpoint, timeout=self.timeout)
-                if _has_rows(alt_result):
+                if _has_rows(alt_result) and _result_is_sane(alt_result.json):
                     sparql, result, used_recovery = alt, alt_result, True
         # Projection trim: 94% of gold SELECT queries project exactly one
         # variable, so a committed multi-column SELECT is almost always
