@@ -4,7 +4,7 @@
 - [Decisions/wikikgqa-2026-adaptation.md](../Decisions/wikikgqa-2026-adaptation.md) — why this subsystem exists: SPARQL-generate→execute head, no local Wikidata embedding, challenge endpoint backend, with-mentions-first scope
 - [Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md](../Decisions/wikikgqa-tool-budget-and-resilience-2026-06-30.md) — why the tool-call budget became the binding limit and why provider-error retries were added
 - [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) — why synthesis context defaults to minimal (journal-only), not full transcript
-- [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) — non-empty-prior recovery at commit time, ASK self-consistency voting, run manifests; open framework-level gaps still discarding validated queries
+- [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md) — non-empty-prior recovery at commit time, self-consistency voting (shipped ASK-only, generalized to all question types the same day — see current-state section below), run manifests; open framework-level gaps still discarding validated queries
 - [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) — why `conventions` defaults to minimal (R1-R6): held-out seed-99 A/B found no benefit from the extended R7-R10 rules
 - [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) — commit-time class-closure expansion (rule 10 applied mechanically) and NOW() pinned to the frozen gold reference instant
 - [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md) — commit-time answer-sanity guard (`_result_is_sane`) and `_bare_id` property-namespace normalization; fixes the q113 with-mentions regression
@@ -82,12 +82,27 @@ SPARQL queries, which both produced a guaranteed failure *and* skipped the
 recovery branch (it only fired on genuinely empty output). See
 [Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md).
 
-**ASK self-consistency voting.** `AgentSparqlGenerator(ask_votes=N)` /
-`benchmark.py --ask-votes N` (default `1` = off). When the committed query
-executes to a boolean (`ASK`) result and `ask_votes > 1`, the full generation
-re-runs up to `ask_votes` times and majority-votes the booleans; ties keep
-the first run. SELECT-result questions are never re-run. Targets the ASK
-slice (~7% of questions), identified as the noisier/less-deterministic class.
+**Self-consistency voting, all question types (`AgentSparqlGenerator`, since
+2026-07-03).** `AgentSparqlGenerator(votes=N)` / `benchmark.py --votes N`
+(`generator.py:492,521`; `benchmark.py:366-372`; default `1` = off). Voting
+is over **executed answer sets for every question type**, not just `ASK`:
+`_answer_key` (`generator.py:687-697`) keys a boolean result on its value and
+a `SELECT` result on the frozen set of codabench-reduced values
+(`to_codabench_answers`), so two structurally different queries that produce
+the same answer set vote together. `generate()` (`generator.py:707-748`) runs
+`_generate_once` up to `votes` times, **stopping early** as soon as two runs'
+keys agree (`Counter(keys).most_common(1)[0][1] >= 2`), and commits the modal
+key. A tie resolves to the first-seen key, **except** that a tied key with at
+least one sane run (`_result_is_sane`) beats a tied key whose runs are all
+unsane (`generator.py:719-745`) — see the answer-sanity guard below. Off by
+default; benchmark runs have used `--votes 3` (e.g.
+`run-rand30-seed99-votes3-postfix/run_manifest.json`). Introduced ASK-only in
+commit `9c2a431` (2026-07-03) and generalized to all question types the same
+day in `f6b313c` — the generalization was never recorded in
+`.agent/CHANGELOG.md` at the time, which is why this section stayed
+ASK-only long after the code moved on. See
+[Decisions/wikikgqa-commit-time-recovery-2026-07-03.md](../Decisions/wikikgqa-commit-time-recovery-2026-07-03.md)
+(records the original ASK-only decision as made that morning).
 
 **Class-closure expansion (`AgentSparqlGenerator`, since 2026-07-14).**
 `ANSWER_CONVENTIONS.md` rule 10 — gold uses `wdt:P31/wdt:P279*` transitive
@@ -133,11 +148,17 @@ failure mode — surfaced by q113, where a `votes=3` self-consistency round
 committed a 50-row statement-node-URI result over a correct single answer,
 costing the entire 2026-07-15 with-mentions regression (0.85→0.84). The
 check is wired into three commit-time stages: (1) journal-alternate
-recovery now also fires on a has-rows-but-unsane result, not just 0 rows;
-(2) closure-expansion escalation (above) only adopts a strict-superset
-candidate if it is also sane; (3) `votes=N` tie-breaks prefer a sane tied
-answer over an earlier-seen unsane one. Always on, not configurable via
-flag. Companion fix in `submission.py::_bare_id`: `prop/statement/` and
+recovery — on **both** the 0-row path and the has-rows-but-unsane path
+(`generator.py:594-598` and `:623-627`) — adopts the journal alternate only
+if it has rows *and* is sane; (2) closure-expansion escalation (above) only
+adopts a strict-superset candidate if it is also sane; (3) `votes=N`
+tie-breaks prefer a sane tied answer over an earlier-seen unsane one. Always
+on, not configurable via flag. The 0-row path's own sanity gate at adoption
+was missing until 2026-07-24 (it adopted on `_has_rows` alone, and since
+adopting also set `used_recovery = True`, that skipped the has-rows-but-unsane
+recheck too) — see [Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md](../Decisions/wikikgqa-answer-sanity-guard-2026-07-15.md)'s
+follow-up note; this fix landed after the three scored challenge submissions.
+Companion fix in `submission.py::_bare_id`: `prop/statement/` and
 `prop/qualifier/` URI namespaces now normalize to bare `Pxxx` (mirrors
 `dataset.py::_PROPERTY_PREFIXES`); entity statement nodes deliberately
 still pass through un-laundered so `_result_is_sane` catches them. See
@@ -376,7 +397,7 @@ by WikiKGQA's exposure to transient KIT proxy failures but generally useful:
 | Knob | Value | Note |
 |---|---|---|
 | `AgentSparqlGenerator.agent_timeout` | **280s** (was 180s) | Wall-clock safety net; rarely fires now that the tool-call budget is the binding limit |
-| `AgentSparqlGenerator.ask_votes` / `benchmark.py --ask-votes` | 1 (off) | ASK self-consistency vote count; see above |
+| `AgentSparqlGenerator.votes` / `benchmark.py --votes` | 1 (off); runs have used `--votes 3` | Self-consistency vote count over executed answer sets, all question types (generalized from ASK-only same day it shipped); see above |
 | `WikidataAgent._synthesis_full_context()` / `WIKIKGQA_FULL_SYNTHESIS` / `benchmark.py --full-synthesis` | **minimal (off)** by default | Full exploration-transcript context for synthesis vs journal-only; A/B found no benefit (0.781 vs 0.807 F1) — see [Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md](../Decisions/wikikgqa-synthesis-context-ab-2026-07-02.md) |
 | `WikidataAgent(conventions=)` / `AgentSparqlGenerator(conventions=)` / `benchmark.py --conventions` | **`"minimal"`** (was `"full"`) since 2026-07-03 | R1-R6 vs R7-R10 extended modeling rules; held-out seed-99 A/B found no benefit from R7-R10 (0.7311 vs 0.6833 F1) — see [Decisions/wikikgqa-conventions-default-2026-07-03.md](../Decisions/wikikgqa-conventions-default-2026-07-03.md) |
 | `AgentSparqlGenerator.closure_expansion` / `benchmark.py --no-closure-expansion` | **on** by default, since 2026-07-14 | Rule-10 class-membership closure applied mechanically at commit time, strict-superset-gated — see above and [Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md](../Decisions/wikikgqa-closure-expansion-and-now-pinning-2026-07-14.md) |

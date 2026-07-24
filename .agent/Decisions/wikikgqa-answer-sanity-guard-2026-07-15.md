@@ -120,6 +120,38 @@ closure-expansion ADR), +19 tests covering `_bare_id` namespace stripping
 (`tests/wikikgqa/test_submission.py`, new file) and `_result_is_sane` plus
 its three call sites (`tests/wikikgqa/test_generator.py`).
 
+## Follow-up: the 0-row path itself was left ungated (fixed 2026-07-24)
+
+The "wired in at three points" list above is accurate for the
+**has-rows-but-unsane** journal-alternate recovery, closure escalation, and
+vote tie-breaks. It is *not* a complete inventory: the pre-existing **0-row**
+journal-recovery path from the 2026-07-03 ADR (`generator.py`, then
+~lines 588-596) was never updated by this commit to also require
+`_result_is_sane` at adoption — it kept adopting on `_has_rows(alt_result)`
+alone. Because adopting also sets `used_recovery = True`, that skipped the
+has-rows-but-unsane recheck too (guarded by `and not used_recovery`), so an
+invalid alternate swapped in for a 0-row commit was never re-validated
+downstream either. Net effect: a committed empty query could be swapped for
+a non-empty but **invalid** (statement-node / blank-node) journal alternate
+that flowed through to the submission unchecked — the exact class of bug
+this ADR was supposed to close, reachable through the one path this ADR
+didn't touch.
+
+**Fixed 2026-07-24:** the 0-row path's adoption condition now also requires
+`_result_is_sane(alt_result.json)`, and `used_recovery` is set only on
+actual adoption, so declining an invalid alternate leaves the
+has-rows-but-unsane recheck reachable. When no valid alternate exists, the
+committed empty result is kept, leaving `benchmark.py::_escalate_empty_answers`
+as the designed handler. Regression test:
+`test_generate_once_rejects_unsane_alternate_on_zero_row_recovery`
+(`tests/wikikgqa/test_generator.py`), verified failing before the fix and
+passing after; full suite green (184 passed, `tests/wikikgqa/`).
+
+**This fix landed after the three scored challenge submissions** — the
+evaluated system did not include it. See `.agent/System/wikikgqa_agent.md`'s
+answer-sanity-guard section for the current-state description and
+`.agent/CHANGELOG.md` for the dated entry.
+
 ## Key transferable lesson
 
 The `_bare_id` bug was assessed **inert** on 2026-07-14 because gold never
