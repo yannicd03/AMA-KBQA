@@ -3,12 +3,27 @@
 **Date:** 2026-07-25
 **Scope:** Why the KBQA agents get questions wrong, and which of those causes are missing
 capabilities versus unused ones.
-**Status:** Analysis complete and triaged. Small fixes (items 3, 4, 5, 8, 10 below) are being
-implemented **concurrently in this same session by a separate agent** — this ADR records the
-analysis and the triage decision, not their landing. Do not treat any of them as verified or
-shipped from this document; verify against the code/tests/CHANGELOG directly. Items 1, 2, 6, 7, 9
-are explicitly deferred to a dedicated session (see the four new Tasks/active/ docs and the
-existing `deferred-tool-loading.md`).
+**Status:** Analysis complete and triaged. Small fixes (items 3, 4, 5, 8, 10 below) **landed and
+were verified** in commit `8d519ca`; a second batch landed in `e1ce3bf` (see the addendum at the
+end of this document). Items 1, 2, 6, 7, 9 remain deferred to a dedicated session (see the five
+`Tasks/active/` docs and the existing `deferred-tool-loading.md`).
+
+> This status line originally read "being implemented concurrently, do not treat as verified".
+> Updated 2026-07-25 after verification. Retained here rather than deleted, because the
+> verification turned up something worth keeping: see below.
+
+**Verification note — mock tests passed a broken fix.** Item 3 (the qualifier tools' bnode
+assumption) was implemented with 15 passing unit tests and was still wrong. The tests use a
+`FakeSPARQL` that returns canned bindings and therefore never exercises RDF datatypes. Checked
+against live Virtuoso, `attr:ranking` values are stored as `xsd:decimal`, so the tool's
+`FILTER(?value = "64")` — a plain-string comparison — matched nothing and returned zero
+qualifiers for data that is present. That single missing `STR()` was the actual cause of idx 68
+("who was the reviewer ... ranking of 64" → `FIFA`) being unanswerable; the bnode/direct-literal
+UNION alone would not have fixed it. `GetQualifierValue` already normalised this way, which is
+why the inconsistency survived review. **Takeaway for future tool fixes in this repo: a
+SPARQL-shape change is not verified until it has been run against a real endpoint.** The
+regression test now asserts on the generated query text (`FILTER(STR(?value) = ...)`) rather than
+on mock bindings.
 
 ## Related Docs
 - [root-cause-tool-generalization-2026-05-14.md](root-cause-tool-generalization-2026-05-14.md) — this analysis continues that thread: several 2026-05-14/05-15 findings (qualifier discoverability via `GetAttributeDetails`, `QualifierFilter` adoption) recur here, now with root cause and a fix design instead of a symptom description
@@ -61,14 +76,14 @@ revises it, because empty tool results carry no information that would force a r
 |---|---|---|---|---|
 | 1 | `LocateTerm(entity_id, term)` → role (attribute / relation / qualifier), namespace, owning statement | new tool | 5 of 14 KQAPro failures | **DEFERRED** — see [locate-term-tool.md](../Tasks/active/locate-term-tool.md), highest priority |
 | 2 | Self-diagnosing empty results: on the zero-result path only, report which conjunct failed | tool contract | the revision-failure enabler; raw-SPARQL escalation | **DEFERRED** — see [self-diagnosing-empty-results.md](../Tasks/active/self-diagnosing-empty-results.md) |
-| 3 | Fix bnode assumption in `GetEdgeQualifiers` / `GetQualifierValue` | bug | idx 20 class | FIX NOW (this session, concurrent — not yet verified by this ADR) |
-| 4 | Fix `FindNode` `limit=5`; return same-label candidates with discriminating attributes | bug | common-name collisions | FIX NOW (this session, concurrent — not yet verified by this ADR) |
-| 5 | `CountEntities.or_conditions` accept relation-shaped branches; reject rather than drop unmatched | bug | `Or` at 0/3 | FIX NOW (this session, concurrent — not yet verified by this ADR) |
+| 3 | Fix bnode assumption in `GetEdgeQualifiers` / `GetQualifierValue` | bug | idx 20 class | LANDED + VERIFIED (`8d519ca`) |
+| 4 | Fix `FindNode` `limit=5`; return same-label candidates with discriminating attributes | bug | common-name collisions | LANDED + VERIFIED (`8d519ca`) |
+| 5 | `CountEntities.or_conditions` accept relation-shaped branches; reject rather than drop unmatched | bug | `Or` at 0/3 | LANDED + VERIFIED (`8d519ca`) |
 | 6 | `SelectExtreme` relation filter (avoid pasting 311 IDs) | ergonomics | idx 55/98 class | **DEFERRED** — see [selectextreme-relation-filter.md](../Tasks/active/selectextreme-relation-filter.md) |
 | 7 | SciQA `FindTopByRelationCount` + `having`/extremum filter on aggregates | new tool | the 0% bucket | **DEFERRED** — see [sciqa-grouped-aggregation-tools.md](../Tasks/active/sciqa-grouped-aggregation-tools.md) |
-| 8 | `FindFrequentValues` scope default + truncation warning | bug | graph-wide questions | FIX NOW (this session, concurrent — not yet verified by this ADR) |
+| 8 | `FindFrequentValues` scope default + truncation warning | bug | graph-wide questions | LANDED + VERIFIED (`8d519ca`) |
 | 9 | Audit few-shot bank against gold; decouple few-shot retrieval from the single classifier label | prompt architecture | §4.1 and §4.2 | **DEFERRED** — see [fewshot-bank-audit.md](../Tasks/active/fewshot-bank-audit.md) |
-| 10 | Fix `GetJournalSummary` placeholder rendering | bug | §4.3 | FIX NOW (this session, concurrent — not yet verified by this ADR) |
+| 10 | Fix `GetJournalSummary` placeholder rendering | bug | §4.3 | LANDED + VERIFIED (`8d519ca`) |
 
 Items 3, 4, 5, 8, 10 are small, code-verified, independently testable, and were judged safe to land
 without a dedicated design doc. Items 1 and 2 are the ones expected to move accuracy the most.
@@ -264,3 +279,87 @@ shipped). Track items 1, 2, 6, 7, 9 as separate `Tasks/active/` design docs for 
 each requires either a benchmark A/B or enough new-tool design work that it doesn't belong in an
 opportunistic bug-fix pass. De-prioritise `deferred-tool-loading.md` given the adoption evidence
 above; do not resume it until items 1/2/6 have shipped and been measured.
+
+---
+
+## Addendum 2026-07-25: second fix batch (commit `e1ce3bf`) and a correction
+
+Items 3, 4, 5, 8, 10 above landed in commit `8d519ca` ("Reasoning-error analysis + five verified
+tool fixes"), concurrently with this ADR being written, as flagged throughout. A second,
+independent batch of harness and generator defects — found while producing the trace evidence this
+ADR is built on, not predicted by it — landed afterward in commit `e1ce3bf` ("Harness and generator
+fixes: trace joins, resume, escaping, fewshot routing"). Two of these are worth recording because
+they affect how any future trace analysis on this codebase should be trusted or conducted.
+
+### The `tool_traces/question_NNN.json` ↔ `results.json` join did not hold under concurrency
+
+`_save_tool_traces` (`ama_kbqa/benchmark_agents.py`, ~line 1215) named each trace file by the
+result's *position* in the `results` list via `enumerate(results)`. `results` is populated by
+`run_benchmark_for_model_agent_parallel` in **completion order**, not launch order — with variable
+per-question latency the append order can be e.g. `[3, 0, 4, 2, 1, 5, 8, 6, ...]`. So
+`tool_traces/question_007.json` could silently hold the trace for a different question than row 7
+of `results.json`. Fixed by keying trace filenames on `r.question_id` directly (now documented
+in-line at `benchmark_agents.py:1221-1225`).
+
+**Implication:** any trace-level analysis of a *concurrent* benchmark run performed before this
+commit — including earlier passes feeding this same investigation — could not assume
+`tool_traces/question_NNN.json` and `results.json` row `NNN` describe the same question, and had to
+be cross-checked or worked around. Analysis of *serial* runs is unaffected (completion order equals
+launch order). Trust the join only for runs captured at or after `e1ce3bf`.
+
+### Empty `benchmark_results/2026-*` dirs and `logs/*.log` noise were test pollution, not failed runs
+
+23 empty dated directories (`2026-07-18-1` through `-18`, `2026-07-24-1` through `-5`) were initially
+read as evidence of dead/crashed benchmark runs during this investigation. They were not: root cause
+was `tests/test_seed_and_progress.py::test_main_exports_seed_env` calling `main()` with no
+`--output-dir`, while `ama_kbqa/benchmark_agents.py:2139` unconditionally ran `output_dir.mkdir(...)`
+— every test invocation left an empty dated directory in the real `benchmark_results/`. Separately,
+the three server modules (`ama_kbqa/server/{kqapro,sciqa,orchestrator}_server.py`) construct a
+loguru file sink at **import time**, so any test that imports them appends fixture strings (`"boom"`,
+`"bad"`, `"localhost:59999"`) into the real production log files. Both are fixed: the test now uses
+`tmp_path`, and a new `tests/conftest.py` sets an `AMA_KBQA_LOG_DIR` override the server modules
+respect. Verified: a full suite run now leaves `logs/` byte-identical and creates no new directories.
+
+**Implication:** do not treat empty `benchmark_results/` directories or unfamiliar strings in
+`logs/*.log` as evidence of a failed or anomalous run without first checking whether the test suite
+ran against production paths at some point — it did, for every run on `dev` before this commit.
+
+### Correction: `question_id: 0` is not a live defect
+
+An earlier point in this investigation reported `question_id: 0` on every row of certain
+`results.json` files as a currently-live bug. **It is not.** That bug was already fixed on `dev`,
+before this investigation started, by commits `eacc4c1` (2026-06-14, "Make `--seed` control agent
+LLM sampling; fix benchmark progress reporting") and `85c3b0f` (2026-07-18, "Fix review findings on
+reconciliation port + add reconciliation ADR"). The all-zero-`question_id` files observed came from
+runs dated 2026-06-07, 2026-06-12, and 2026-06-13 — all of which predate the fix. The 2026-06-15 run
+onward is unaffected. If this document or any `Tasks/active/` doc is read as asserting all-zero
+`question_id` is a current defect, that reading is wrong; this note supersedes it.
+
+### Other `e1ce3bf` fixes (brief)
+
+- `is_run_completed()` (`ama_kbqa/benchmark_agents.py:108`) now requires `is_complete: true` in
+  `summary.json` rather than treating the file's mere existence as "done." `summary.json` is written
+  after *every* question with `is_complete: false` until the final write, so `--resume` previously
+  treated a run that crashed at 5/100 as finished and skipped it forever.
+- `FindByAttribute`'s URI-literal branch spliced raw values into a `<...>` fragment guarded only by a
+  runtime `!CONTAINS` filter; since the fragment is static query text, any whitespace-bearing value
+  (e.g. every ISNI code) failed at SPARQL parse time before the guard could run. The URI branch is
+  now gated in Python. The literal branch's escaping, previously handling only double quotes, now
+  also escapes backslash, LF, and CR.
+- The fewshot exporter (`ama_kbqa/fewshot_generator.py`) hardcoded the KQAPro output directory for
+  every agent and did not sanitise qtype labels, so SciQA's newline-joined compound types (e.g.
+  `"Factoid\nSuperlative"`) produced filenames with embedded newlines, and shared `_general.json` /
+  `_tool_tips.json` sinks merged SciQA insights into the prompt injected for KQAPro. The exporter is
+  now agent-aware with sanitised filenames; three mis-filed files moved to
+  `db/datasets/sciqa/fewshot-examples/`.
+  - **Open caveat:** `SciQAAgent` still reads few-shot examples from the static in-code
+    `FEWSHOT_EXAMPLES` dict in `ama_kbqa/agents/sciqa_agent/prompts.py` (~line 877), not from the
+    files this exporter now correctly routes. The files are written but nothing consumes them yet.
+    This is the intended scope of this fix — the goal was stopping SciQA-KQAPro prompt contamination,
+    not wiring SciQA's runtime prompt to the exported bank. Wiring SciQA to consume its own exported
+    fewshots is separate follow-on work, not yet tracked as a `Tasks/active/` doc.
+
+None of `e1ce3bf`'s fixes correspond to an existing `Tasks/active/` PRD — they were harness/generator
+bugs surfaced opportunistically during analysis, not planned feature work, so nothing in
+`Tasks/active/` moves to archive as a result of this commit. Test suite: 479 passing (441 → 479 in
+this commit; commit `8d519ca` had already brought it from an earlier baseline to 441).
