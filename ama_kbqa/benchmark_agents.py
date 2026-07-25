@@ -1133,7 +1133,11 @@ def save_results_to_disk(
         export_counts = export_fewshot_examples_from_traces(
             results=results_data,
             max_tool_count=15,
-            max_per_type=5
+            max_per_type=5,
+            # Without this the export defaults to the KQAPro directory for every
+            # agent, so SciQA-derived examples land in (and contaminate) KQAPro's
+            # fewshot bank. See resolve_fewshot_dir() in utils/trace_utils.py.
+            agent_name=agent_name,
         )
         total_exported = sum(export_counts.values())
         if total_exported > 0:
@@ -1212,11 +1216,19 @@ def _save_detailed_log(result_dir: Path, results: List[QuestionResult]):
 
 
 def _save_tool_traces(result_dir: Path, results: List[QuestionResult]):
-    """Save full tool traces as separate JSON files per question."""
+    """Save full tool traces as separate JSON files per question.
+
+    Filenames are keyed by r.question_id, not by position in `results`. The
+    concurrent runner (run_benchmark_for_model_agent_parallel) appends results
+    in completion order, not launch order, so the list position of a result no
+    longer matches the question it belongs to. Keying by question_id keeps
+    tool_traces/question_NNN.json joinable with the question_id column in
+    results.json regardless of processing order.
+    """
     traces_dir = result_dir / "tool_traces"
     traces_dir.mkdir(exist_ok=True)
 
-    for i, r in enumerate(results):
+    for r in results:
         if not r.full_messages:
             continue
 
@@ -1248,7 +1260,12 @@ def _save_tool_traces(result_dir: Path, results: List[QuestionResult]):
             "messages": processed_messages,
         }
 
-        trace_file = traces_dir / f"question_{i:03d}.json"
+        try:
+            qid_suffix = f"{int(r.question_id):03d}"
+        except (TypeError, ValueError):
+            # Non-numeric ids (unexpected, but keep this from crashing the run).
+            qid_suffix = str(r.question_id)
+        trace_file = traces_dir / f"question_{qid_suffix}.json"
         with open(trace_file, "w", encoding="utf-8") as f:
             json.dump(trace_data, f, indent=2, ensure_ascii=False, default=str)
 
@@ -1684,8 +1701,27 @@ async def run_benchmark_for_model_agent_parallel(
 
 
 def is_run_completed(output_dir: Path, agent_name: str, model_name: str) -> bool:
-    result_dir = output_dir / agent_name / model_name
-    return (result_dir / "summary.json").exists()
+    """Return True only if the run's summary.json reports is_complete: true.
+
+    save_results_to_disk() writes summary.json after *every* question, with
+    is_complete: false until the run's finally-block writes the last, complete
+    summary. Treating mere existence as "done" (the old behavior) meant a
+    --resume launch would treat a run that crashed at question 5/100 as
+    finished and skip it forever. Missing, unreadable, or malformed summaries
+    are treated conservatively as not completed so the combination gets
+    retried rather than silently skipped.
+    """
+    summary_path = output_dir / agent_name / model_name / "summary.json"
+    if not summary_path.exists():
+        return False
+    try:
+        with open(summary_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    return data.get("is_complete") is True
 
 
 async def run_full_benchmark(

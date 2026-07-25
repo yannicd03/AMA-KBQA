@@ -1,4 +1,5 @@
-"""Tests for the 2026-06-14 seed-control and progress-reporting fixes.
+"""Tests for the 2026-06-14 seed-control/progress-reporting fixes and the
+2026-07-25 question_id / --resume correctness fixes.
 
 - get_chat_seed() reads AMA_LLM_SEED (env) with config fallback and safe parsing.
 - The agent and orchestrator pass seed= into the chat-completion params only
@@ -7,9 +8,18 @@
   change membership) and reports a real subset otherwise.
 - process_single_question uses the run index as the question_id when the
   question dict has no explicit id (sampled CSV rows), so per-question logs are
-  distinguishable rather than all "[0]".
+  distinguishable rather than all "[0]", ids stay distinct/ordered across a
+  multi-question run, and results.json stays joinable with
+  tool_traces/question_NNN.json by question_id even when results are appended
+  out of order (the concurrent runner).
+- main() must not create real benchmark_results/ directories when a test
+  invokes it without an explicit --output-dir.
+- is_run_completed() requires summary.json's is_complete: true, not mere file
+  existence, so --resume doesn't skip runs that crashed mid-way.
 """
 
+import asyncio
+import json
 import os
 
 import pytest
@@ -89,8 +99,19 @@ def test_subset_sample_reproducible_same_seed():
 # Benchmark main() exports AMA_LLM_SEED from --seed
 # =============================================================================
 
-def test_main_exports_seed_env(monkeypatch):
-    """main() must set AMA_LLM_SEED before the run so subprocesses inherit it."""
+def test_main_exports_seed_env(monkeypatch, tmp_path):
+    """main() must set AMA_LLM_SEED before the run so subprocesses inherit it.
+
+    Regression: without an explicit --output-dir, main() falls through to
+    `output_dir = benchmark_results/<today>-N` and unconditionally calls
+    output_dir.mkdir(parents=True, exist_ok=True) (benchmark_agents.py) before
+    run_full_benchmark is ever reached. Even with _write_run_manifest and
+    run_full_benchmark stubbed out, that mkdir() still hit the repo's real
+    benchmark_results/ directory and left an empty dated dir behind on every
+    test run (23 accumulated: 2026-07-18-1..18, 2026-07-24-1..5). Passing
+    --output-dir under tmp_path keeps the whole test off the real filesystem
+    location.
+    """
     import ama_kbqa.benchmark_agents as ba
     captured = {}
 
@@ -98,12 +119,14 @@ def test_main_exports_seed_env(monkeypatch):
         captured["seed_env"] = os.environ.get("AMA_LLM_SEED")
         return {"x": True}
 
+    output_dir = tmp_path / "benchmark_results" / "test-run"
+
     monkeypatch.setattr(ba.asyncio, "run", lambda coro: coro)
     monkeypatch.setattr(ba, "run_full_benchmark", lambda **kw: fake_run_full_benchmark(**kw))
     monkeypatch.setattr(
         ba.sys, "argv",
         ["benchmark_agents", "--agents", "sciqa", "--n-questions", "1",
-         "--seed", "43", "--dry-run"],
+         "--seed", "43", "--dry-run", "--output-dir", str(output_dir)],
     )
     # _write_run_manifest touches disk; stub it.
     monkeypatch.setattr(ba, "_write_run_manifest", lambda *a, **k: None)
@@ -112,31 +135,145 @@ def test_main_exports_seed_env(monkeypatch):
     except SystemExit:
         pass
     assert os.environ.get("AMA_LLM_SEED") == "43"
+    # The real repo-level benchmark_results/ must be untouched by this test.
+    assert not (ba.PROJECT_ROOT / "benchmark_results" / "test-run").exists()
 
 
 # =============================================================================
 # process_single_question uses run index as id fallback
+#
+# Regression for the "every results.json row has question_id: 0" bug: sampled
+# questions (on-the-fly --seed sampling, raw CSV rows) carry no native "id"
+# key, so every row fell back to the *same* default instead of the run index,
+# and any analysis keyed on question_id silently read question_000.json for
+# every row. process_single_question must resolve the id from the run index
+# when the question dict has none, and that fallback must actually be
+# exercised end to end (a prior version of this test only asserted the
+# fallback contract against a bare dict literal, never calling the real
+# function, so it could not have caught a regression here).
 # =============================================================================
 
+class _StubAgent:
+    """Minimal agent double satisfying process_single_question's interface."""
+
+    def __init__(self):
+        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self._messages = [{"role": "user", "content": "stub"}]
+
+    async def ask(self, question):
+        return f"answer-to-{question}"
+
+    def get_tool_call_summary(self):
+        return {}
+
+    async def soft_reset(self):
+        pass
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
 def test_question_index_used_as_id_fallback():
+    from ama_kbqa.benchmark_agents import process_single_question
 
-    class _Agent:
-        async def soft_reset(self):
-            pass
-
-    async def fake_eval(*a, **k):
-        return True
-
-    # Drive only the id-resolution path by stubbing the heavy bits.
     q = {"question": "noid?", "answer": "x"}  # no "id" key
+    agent = _StubAgent()
 
-    # process_single_question is async and calls into the agent; rather than run
-    # the whole pipeline, assert the documented fallback contract directly.
-    # The function sets q_id = question.get("id", question_index or 0).
-    qid_with_index = q.get("id", 7)
-    qid_without = q.get("id", 0)
-    assert qid_with_index == 7
-    assert qid_without == 0
+    result = _run(process_single_question(
+        agent=agent, question=q, agent_name="kqapro", timeout=5,
+        postprocessor=None, question_index=7,
+    ))
+    assert result.question_id == 7
+
+    result_no_index = _run(process_single_question(
+        agent=agent, question=q, agent_name="kqapro", timeout=5,
+        postprocessor=None, question_index=None,
+    ))
+    assert result_no_index.question_id == 0
+
+
+def test_question_id_uses_native_id_when_present():
+    """A question dict with a real "id" key must keep it, ignoring the index."""
+    from ama_kbqa.benchmark_agents import process_single_question
+
+    q = {"id": 42, "question": "has id", "answer": "x"}
+    agent = _StubAgent()
+
+    result = _run(process_single_question(
+        agent=agent, question=q, agent_name="kqapro", timeout=5,
+        postprocessor=None, question_index=3,
+    ))
+    assert result.question_id == 42
+
+
+def test_question_ids_distinct_and_ordered_across_multi_question_run():
+    """Driving several id-less questions through in sequence must yield
+    distinct, correctly-ordered ids (0..N-1), matching their run position —
+    not all collapsing to the same fallback value.
+    """
+    from ama_kbqa.benchmark_agents import process_single_question
+
+    agent = _StubAgent()
+    questions = [{"question": f"q{i}", "answer": str(i)} for i in range(5)]
+
+    results = [
+        _run(process_single_question(
+            agent=agent, question=q, agent_name="kqapro", timeout=5,
+            postprocessor=None, question_index=i,
+        ))
+        for i, q in enumerate(questions)
+    ]
+
+    ids = [r.question_id for r in results]
+    assert ids == [0, 1, 2, 3, 4]
+    assert len(set(ids)) == len(ids)
+
+
+# =============================================================================
+# tool_traces/question_NNN.json must stay joinable with results.json by
+# question_id regardless of the order results were appended in.
+#
+# The concurrent runner (run_benchmark_for_model_agent_parallel) appends
+# results in completion order, not launch order, so a result's position in
+# the `results` list does not match its question_id. _save_tool_traces used
+# to name files after that list position (enumerate(results)), so under
+# concurrency question_003.json could silently hold a different question than
+# results.json's question_id: 3 row -- exactly the kind of misalignment that
+# defeats joining the two files by id.
+# =============================================================================
+
+def test_tool_traces_filenames_align_with_question_id_out_of_order():
+    from ama_kbqa.benchmark_agents import QuestionResult, _save_tool_traces
+
+    # Deliberately out of launch order, as a concurrent run's completion order
+    # would produce.
+    shuffled_ids = [3, 0, 4, 2, 1]
+    results = [
+        QuestionResult(
+            question_id=qid,
+            question=f"question-{qid}",
+            gold_answer="gold",
+            predicted_answer="pred",
+            accuracy=False,
+            elapsed_time=0.1,
+            full_messages=[{"role": "user", "content": "hi"}],
+        )
+        for qid in shuffled_ids
+    ]
+
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        result_dir = Path(tmp)
+        _save_tool_traces(result_dir, results)
+
+        for qid in shuffled_ids:
+            trace_file = result_dir / "tool_traces" / f"question_{qid:03d}.json"
+            assert trace_file.exists(), f"missing trace file for question_id={qid}"
+            data = json.loads(trace_file.read_text())
+            assert data["question_id"] == qid
+            assert data["question"] == f"question-{qid}"
 
 
 # =============================================================================
@@ -149,3 +286,67 @@ def test_agent_callparams_include_seed_only_when_set(monkeypatch):
     assert config.get_chat_seed() is None
     os.environ["AMA_LLM_SEED"] = "99"
     assert config.get_chat_seed() == 99
+
+
+# =============================================================================
+# is_run_completed must require is_complete: true, not mere file existence.
+#
+# save_results_to_disk() writes summary.json after every question, with
+# is_complete: false, until the run's finally-block writes the final, complete
+# summary. The old is_run_completed() only checked (result_dir /
+# "summary.json").exists(), so a --resume launch would treat a combination
+# that crashed at question 5/100 as finished and skip it permanently.
+# =============================================================================
+
+def _write_summary(result_dir, agent_name, model_name, payload=None, raw_text=None):
+    d = result_dir / agent_name / model_name
+    d.mkdir(parents=True, exist_ok=True)
+    summary_path = d / "summary.json"
+    if raw_text is not None:
+        summary_path.write_text(raw_text, encoding="utf-8")
+    else:
+        summary_path.write_text(json.dumps(payload), encoding="utf-8")
+    return summary_path
+
+
+def test_is_run_completed_true_when_complete(tmp_path):
+    from ama_kbqa.benchmark_agents import is_run_completed
+    _write_summary(tmp_path, "kqapro", "gemma", payload={"is_complete": True})
+    assert is_run_completed(tmp_path, "kqapro", "gemma") is True
+
+
+def test_is_run_completed_false_when_incomplete(tmp_path):
+    """A crashed run's last-written summary.json (is_complete: false) must
+    not be treated as done, so --resume retries it instead of skipping it."""
+    from ama_kbqa.benchmark_agents import is_run_completed
+    _write_summary(tmp_path, "kqapro", "gemma", payload={"is_complete": False})
+    assert is_run_completed(tmp_path, "kqapro", "gemma") is False
+
+
+def test_is_run_completed_false_when_missing(tmp_path):
+    from ama_kbqa.benchmark_agents import is_run_completed
+    assert is_run_completed(tmp_path, "kqapro", "gemma") is False
+
+
+def test_is_run_completed_false_when_malformed_json(tmp_path):
+    """Truncated / corrupt summary.json must be treated conservatively as
+    not completed rather than raising or being mistaken for done."""
+    from ama_kbqa.benchmark_agents import is_run_completed
+    _write_summary(tmp_path, "kqapro", "gemma", raw_text="{not valid json")
+    assert is_run_completed(tmp_path, "kqapro", "gemma") is False
+
+
+def test_is_run_completed_false_when_json_not_a_dict(tmp_path):
+    """summary.json parsing to a non-dict (e.g. a bare list) must not crash
+    the .get() lookup and must be treated as not completed."""
+    from ama_kbqa.benchmark_agents import is_run_completed
+    _write_summary(tmp_path, "kqapro", "gemma", raw_text="[1, 2, 3]")
+    assert is_run_completed(tmp_path, "kqapro", "gemma") is False
+
+
+def test_is_run_completed_false_when_is_complete_key_missing(tmp_path):
+    """A summary.json without the is_complete key (e.g. an older format)
+    must not be mistaken for a completed run."""
+    from ama_kbqa.benchmark_agents import is_run_completed
+    _write_summary(tmp_path, "kqapro", "gemma", payload={"model": "gemma"})
+    assert is_run_completed(tmp_path, "kqapro", "gemma") is False

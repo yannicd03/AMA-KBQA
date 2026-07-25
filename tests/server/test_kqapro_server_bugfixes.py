@@ -26,6 +26,18 @@
   verified_facts) that many tools — RunSPARQL chief among them — don't
   produce, rendering literal "?" placeholders. Fixed by handling the actual
   shapes each tool writes and falling back to the raw entry instead of "?".
+- Fix E: FindByAttribute spliced the raw attribute value directly into a
+  URI literal (`?attrValue = <{NS_ENTITY}{value}>`) while only guarding it
+  with a runtime `!CONTAINS(value, " ")` FILTER. That guard is evaluated at
+  SPARQL runtime, but the `<...>` fragment is static query TEXT, so any
+  value containing a space (e.g. ISNI codes like "0000 0003 6864 0824")
+  produced an unparseable IRI and the whole query failed with
+  QueryBadFormed before the FILTER ever ran. Fixed by deciding in Python,
+  at query-construction time, whether a value could possibly be a valid
+  entity ID (no whitespace or reserved IRI characters) and only emitting
+  the URI-comparison branch then. Also hardened the literal-comparison
+  branch's escaping, which only escaped double quotes and left backslash,
+  newline, and CR unescaped.
 
 No live Virtuoso/Qdrant: fakes return canned bindings/points and record the
 generated query for inspection, following the pattern in
@@ -470,3 +482,93 @@ def test_journal_summary_still_renders_relation_triples():
     summary = _fn(kqa.GetJournalSummary)(_journal_context())
 
     assert "Duran Duran (Q1) ->[country]-> United Kingdom (Q2)" in summary
+
+
+# =============================================================================
+# Fix E: FindByAttribute parse-time-vs-runtime URI construction
+# =============================================================================
+
+def test_find_by_attribute_whitespace_value_omits_uri_branch():
+    """An ISNI-shaped value ("0000 0003 6864 0824") contains spaces and can
+    never be a valid entity ID. The URI-comparison branch must not be
+    generated at all — not merely guarded by a runtime FILTER, since the
+    `<...>` fragment is static query text and a space inside it makes the
+    whole query fail to parse."""
+    _reset_journal()
+    isni = "0000 0003 6864 0824"
+    sparql = FakeSPARQL([{
+        "entity": {"type": "uri", "value": "http://kqapro.org/entity/Q42"},
+        "entityName": {"type": "literal", "value": "Some Person"},
+    }])
+    resp = _fn(kqa.FindByAttribute)(
+        value=isni,
+        attribute_name="ISNI",
+        context=_context(sparql),
+    )
+    query = sparql.last_query
+
+    # No URI branch at all for a whitespace-bearing value (PREFIX ex: is
+    # always present, but the ?attrValue = <...> comparison must not be).
+    assert "?attrValue = <" not in query
+    # The literal-comparison branch is preserved, value intact (no escaping
+    # needed here since there's no quote/backslash).
+    assert f'STR(?attrValue) = "{isni}"' in query
+    # No leftover debug comments from the earlier broken fix attempt.
+    assert "HIER" not in query
+    assert "DAS L" not in query
+    assert resp.result_count == 1
+
+
+def test_find_by_attribute_entity_id_shape_includes_uri_branch():
+    """A plain, whitespace-free value like a NUTS code still gets compared
+    against a URI built from the value, exactly as before the fix."""
+    _reset_journal()
+    sparql = FakeSPARQL([{
+        "entity": {"type": "uri", "value": "http://kqapro.org/entity/Q99"},
+        "entityName": {"type": "literal", "value": "Some City"},
+    }])
+    _fn(kqa.FindByAttribute)(
+        value="UKE11",
+        attribute_name="NUTS code",
+        context=_context(sparql),
+    )
+    query = sparql.last_query
+
+    assert "?attrValue = <http://kqapro.org/entity/UKE11>" in query
+    assert 'STR(?attrValue) = "UKE11"' in query
+
+
+def test_find_by_attribute_quote_bearing_value_is_escaped():
+    """A value containing a double quote must not break the generated
+    string literal; it must be backslash-escaped, and (since a quote is not
+    valid inside an IRI) the URI branch must be omitted."""
+    _reset_journal()
+    value = 'the "best" one'
+    sparql = FakeSPARQL([])
+    _fn(kqa.FindByAttribute)(
+        value=value,
+        attribute_name="nickname",
+        context=_context(sparql),
+    )
+    query = sparql.last_query
+
+    assert 'STR(?attrValue) = "the \\"best\\" one"' in query
+    assert '"the "best" one"' not in query  # the naive, unescaped form
+    assert "?attrValue = <" not in query
+
+
+def test_find_by_attribute_backslash_and_newline_are_escaped():
+    """Backslashes and embedded newlines must also be escaped in the string
+    literal branch — the pre-fix code only escaped double quotes, so a raw
+    backslash or newline could still desync the SPARQL string literal."""
+    _reset_journal()
+    value = 'a\\b\nc'
+    sparql = FakeSPARQL([])
+    _fn(kqa.FindByAttribute)(
+        value=value,
+        attribute_name="raw_id",
+        context=_context(sparql),
+    )
+    query = sparql.last_query
+
+    assert 'STR(?attrValue) = "a\\\\b\\nc"' in query

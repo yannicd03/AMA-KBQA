@@ -45,7 +45,10 @@ FEWSHOT_EXAMPLES_DIR = REPO_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examp
 sys.path.insert(0, str(REPO_ROOT))
 
 # Configure logger
-log_dir = REPO_ROOT / "logs"
+# Honour AMA_KBQA_LOG_DIR so importing this module does not write into the
+# repo's real logs/ directory. The test suite sets it (tests/conftest.py);
+# without it, fixture noise ends up interleaved with production logs.
+log_dir = Path(os.environ.get("AMA_KBQA_LOG_DIR") or (REPO_ROOT / "logs"))
 log_dir.mkdir(exist_ok=True)
 logger.add(
     log_dir / "kqapro_server.log",
@@ -3589,7 +3592,38 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
     # Build SPARQL query to find entities with this attribute value
     # We need to handle both direct values and blank nodes
 
-    safe_value = value.replace('"', '\\"')
+    # Escape backslash first, then quote/newline/CR, for the SPARQL string
+    # literal branch below. Per the SPARQL grammar, STRING_LITERAL_QUOTE
+    # forbids raw '"', '\', and literal LF/CR, so all four must be escaped
+    # (order matters: backslash must be escaped before quotes are added).
+    safe_value = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+
+    # Whether to also compare ?attrValue against a URI built from the raw
+    # value (i.e. treat `value` as a possible entity ID). This decision MUST
+    # be made here, in Python, at query-construction time -- not via a
+    # runtime SPARQL FILTER. The `<{NS_ENTITY}{value}>` fragment below is
+    # spliced into the query as static text, so it is parsed before any
+    # FILTER (including a `!CONTAINS(..., " ")` guard) ever executes. If
+    # `value` contains a space or any other character an IRI can't contain,
+    # the resulting `<...>` is not valid IRI syntax and the whole query
+    # fails with QueryBadFormed at parse time -- the guard never gets a
+    # chance to suppress it. KQAPro formats ISNI codes with embedded spaces
+    # (e.g. "0000 0003 6864 0824"), which triggered this on every lookup.
+    # Fix: only emit the URI-comparison branch when `value` could possibly
+    # be a valid entity ID (non-empty, no whitespace/reserved IRI chars).
+    _IRI_UNSAFE_CHARS = set(' <>"{}|\\^`\t\n\r')
+    could_be_entity_id = bool(value) and not any(c in _IRI_UNSAFE_CHARS for c in value)
+
+    uri_branch = (
+        f"?attrValue = <{NS_ENTITY}{value}> ||\n            "
+        if could_be_entity_id
+        else ""
+    )
 
     query = f"""
     {SPARQL_PREFIXES}
@@ -3599,13 +3633,8 @@ def FindByAttribute(value: str, attribute_name: str, context: Context) -> Search
         OPTIONAL {{ ?entity rdfs:label ?entityName }}
 
         FILTER(
-            STR(?attrValue) = "{safe_value}" ||  # HIER: Anführungszeichen waren wichtig!
-            # ?attrValue = <{value}> ||  <-- DAS LÖSCHEN! Das verursacht den Syntaxfehler bei Strings mit Leerzeichen!
-            
-            # Nur checken wenn es wie eine URI aussieht (keine Leerzeichen)
-            ( !CONTAINS("{safe_value}", " ") && ?attrValue = <{NS_ENTITY}{safe_value}> ) ||
-            
-            EXISTS {{
+            STR(?attrValue) = "{safe_value}" ||
+            {uri_branch}EXISTS {{
                 ?attrValue rdf:value ?numVal .
                 FILTER(STR(?numVal) = "{safe_value}")
             }}

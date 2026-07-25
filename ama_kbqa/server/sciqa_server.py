@@ -82,7 +82,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 # Configure logger
-log_dir = REPO_ROOT / "logs"
+# Honour AMA_KBQA_LOG_DIR so importing this module does not write into the
+# repo's real logs/ directory. The test suite sets it (tests/conftest.py);
+# without it, fixture noise ends up interleaved with production logs.
+log_dir = Path(os.environ.get("AMA_KBQA_LOG_DIR") or (REPO_ROOT / "logs"))
 log_dir.mkdir(exist_ok=True)
 logger.add(
     log_dir / "sciqa_server.log",

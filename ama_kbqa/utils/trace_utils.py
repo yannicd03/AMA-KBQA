@@ -6,13 +6,97 @@ Extracted from kqapro_agent/batch_runner.py for reuse across all agents.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 # Project root for default paths
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Legacy default: kept byte-for-byte for callers (and the module-level
+# ``fewshot_generator.FEWSHOT_DIR`` constant) that don't specify an agent.
+_DEFAULT_FEWSHOT_DIR = PROJECT_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
+
+
+# ============================================================================
+# FILENAME SANITISATION
+# ============================================================================
+
+# Any run of whitespace — including embedded newlines. Some datasets (e.g.
+# SciQA) emit compound question-type labels joined by a literal "\n"
+# (observed: "Factoid\nSuperlative"), which previously produced filenames
+# containing raw newline bytes.
+_WHITESPACE_RUN_RE = re.compile(r"\s+")
+
+# Path separators, the NUL byte, other control characters (incl. the
+# newlines/tabs already collapsed above, kept here as a second net), and the
+# handful of characters that are invalid in filenames on common filesystems.
+_UNSAFE_FILENAME_CHARS_RE = re.compile(r'[\\/:*?"<>|\x00-\x1f\x7f]')
+
+
+def sanitize_qtype_for_filename(qtype: str) -> str:
+    """Turn a question-type label into a single filesystem-safe path segment.
+
+    Collapses any run of whitespace (including embedded newlines/tabs) to a
+    single "_" separator, then replaces path separators and other
+    filesystem-hostile characters with "_" as well, so the result is always
+    safe to use as a filename stem (e.g. ``f"{sanitize_qtype_for_filename(qtype)}.json"``).
+
+    Plain single-word qtypes (e.g. "Count", "Query") are returned unchanged —
+    this keeps existing KQAPro output filenames byte-for-byte identical.
+    """
+    if not qtype:
+        return "Unknown"
+    collapsed = _WHITESPACE_RUN_RE.sub("_", qtype.strip())
+    safe = _UNSAFE_FILENAME_CHARS_RE.sub("_", collapsed)
+    safe = safe.strip("._")
+    return safe or "Unknown"
+
+
+# ============================================================================
+# AGENT-AWARE OUTPUT DIRECTORY RESOLUTION
+# ============================================================================
+
+def _load_kg_adapter(agent_name: str):
+    """Best-effort adapter lookup for ``agent_name``. Returns None if unknown."""
+    if agent_name == "kqapro":
+        from ama_kbqa.framework.adapters.kqapro_adapter import KQAProAdapter
+        return KQAProAdapter()
+    if agent_name == "sciqa":
+        from ama_kbqa.framework.adapters.sciqa_adapter import SciQAAdapter
+        return SciQAAdapter()
+    return None
+
+
+def resolve_fewshot_dir(agent_name: Optional[str] = None) -> Path:
+    """Resolve the fewshot-examples output directory for ``agent_name``.
+
+    Precedence:
+    1. If ``agent_name`` is None, return the legacy KQAPro default — keeps
+       existing callers that don't pass an agent name unaffected.
+    2. If the agent's KG adapter declares ``domain_settings["fewshot_examples_dir"]``
+       (KQAPro does today, see ``KQAProAdapter._create_config``), use that —
+       the adapter is the runtime source of truth for KG-specific paths.
+    3. Otherwise derive ``db/datasets/<agent_name>/fewshot-examples`` — this
+       is the path SciQA uses today since its adapter declares no such field.
+    """
+    if agent_name is None:
+        return _DEFAULT_FEWSHOT_DIR
+
+    try:
+        adapter = _load_kg_adapter(agent_name)
+    except Exception:
+        adapter = None
+
+    if adapter is not None:
+        declared = adapter.config.domain_settings.get("fewshot_examples_dir")
+        if declared:
+            declared_path = Path(declared)
+            return declared_path if declared_path.is_absolute() else PROJECT_ROOT / declared_path
+
+    return PROJECT_ROOT / "db" / "datasets" / agent_name / "fewshot-examples"
 
 
 # ============================================================================
@@ -248,7 +332,8 @@ def export_fewshot_examples_from_traces(
     results: List[Dict[str, Any]],
     output_dir: Path = None,
     max_tool_count: int = 15,
-    max_per_type: int = 5
+    max_per_type: int = 5,
+    agent_name: Optional[str] = None,
 ) -> Dict[str, int]:
     """
     Export correct answers with tool traces as few-shot examples.
@@ -258,15 +343,21 @@ def export_fewshot_examples_from_traces(
 
     Args:
         results: List of batch processing results with tool_trace field
-        output_dir: Directory to save examples (defaults to db/datasets/kqapro/fewshot-examples)
+        output_dir: Directory to save examples. If None, resolved from
+            ``agent_name`` via :func:`resolve_fewshot_dir` (defaults to the
+            legacy KQAPro path if ``agent_name`` is also None).
         max_tool_count: Maximum tool calls to accept (reject verbose runs)
         max_per_type: Maximum examples to keep per question type
+        agent_name: Agent that produced ``results`` (e.g. "kqapro", "sciqa").
+            Only used to resolve ``output_dir`` when it isn't given
+            explicitly — pass this so each agent's traces land in its own
+            directory instead of all sharing the KQAPro default.
 
     Returns:
         Dictionary mapping question types to number of examples exported
     """
     if output_dir is None:
-        output_dir = PROJECT_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
+        output_dir = resolve_fewshot_dir(agent_name)
 
     output_dir.mkdir(exist_ok=True, parents=True)
 
@@ -307,7 +398,7 @@ def export_fewshot_examples_from_traces(
     export_counts = {}
 
     for qtype, examples in examples_by_type.items():
-        example_file = output_dir / f"{qtype}.json"
+        example_file = output_dir / f"{sanitize_qtype_for_filename(qtype)}.json"
 
         existing_examples = []
         if example_file.exists():

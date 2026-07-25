@@ -25,8 +25,12 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from ama_kbqa.postprocessing import load_judge_config
+from ama_kbqa.utils.trace_utils import resolve_fewshot_dir, sanitize_qtype_for_filename
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Legacy default (KQAPro). Kept as a mutable module attribute — scripts like
+# ``run_fewshot_generator.py`` monkeypatch it to redirect writes to a shadow
+# directory for post-hoc replay without touching live training data.
 FEWSHOT_DIR = PROJECT_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples"
 CONFIG_PATH = PROJECT_ROOT / "config.toml"
 
@@ -478,9 +482,9 @@ def _save_json_file(path: Path, data: List[Dict]):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def _save_qtype_example(example: FewshotQTypeExample) -> bool:
+def _save_qtype_example(example: FewshotQTypeExample, fewshot_dir: Path) -> bool:
     """Save a qtype example, deduplicating by question text. Returns True if saved."""
-    file_path = FEWSHOT_DIR / f"{example.qtype}.json"
+    file_path = fewshot_dir / f"{sanitize_qtype_for_filename(example.qtype)}.json"
     existing = _load_json_file(file_path)
     existing_questions = {ex.get("question", "") for ex in existing}
 
@@ -498,9 +502,9 @@ def _save_qtype_example(example: FewshotQTypeExample) -> bool:
     return True
 
 
-def _save_general_example(example: FewshotGeneralExample) -> bool:
+def _save_general_example(example: FewshotGeneralExample, fewshot_dir: Path) -> bool:
     """Save a general example, deduplicating by title. Returns True if saved."""
-    file_path = FEWSHOT_DIR / "_general.json"
+    file_path = fewshot_dir / "_general.json"
     existing = _load_json_file(file_path)
     existing_titles = {ex.get("title", "") for ex in existing}
 
@@ -518,9 +522,9 @@ def _save_general_example(example: FewshotGeneralExample) -> bool:
     return True
 
 
-def _save_tool_tip(tip: ToolTip) -> bool:
+def _save_tool_tip(tip: ToolTip, fewshot_dir: Path) -> bool:
     """Save a tool tip, deduplicating by tool_name+problem_pattern. Returns True if saved."""
-    file_path = FEWSHOT_DIR / "_tool_tips.json"
+    file_path = fewshot_dir / "_tool_tips.json"
     existing = _load_json_file(file_path)
     existing_keys = {
         (ex.get("tool_name", ""), ex.get("problem_pattern", ""))
@@ -542,6 +546,22 @@ def _save_tool_tip(tip: ToolTip) -> bool:
 # BATCH GENERATION
 # ============================================================================
 
+def _resolve_agent_fewshot_dir(agent_name: str) -> Path:
+    """Pick the fewshot output dir for ``agent_name``.
+
+    Honors ``FEWSHOT_DIR`` when it has been monkeypatched away from its
+    KQAPro default (e.g. by ``run_fewshot_generator.py``, which redirects
+    writes to a shadow directory for safe post-hoc replay) — that override
+    applies regardless of ``agent_name``. Otherwise resolves per-agent via
+    :func:`resolve_fewshot_dir`, so a SciQA run no longer defaults into the
+    KQAPro directory (and its shared ``_general.json`` / ``_tool_tips.json``
+    sinks, which the KQAPro agent injects straight into its own prompt).
+    """
+    if FEWSHOT_DIR != PROJECT_ROOT / "db" / "datasets" / "kqapro" / "fewshot-examples":
+        return FEWSHOT_DIR
+    return resolve_fewshot_dir(agent_name)
+
+
 def generate_and_save_fewshot_examples(
     results_data: List[Dict[str, Any]],
     full_results: List[Any],
@@ -553,12 +573,14 @@ def generate_and_save_fewshot_examples(
     Args:
         results_data: List of result dicts (from save_results_to_disk serialization)
         full_results: List of QuestionResult objects (for full_messages access)
-        agent_name: Agent name (e.g. "kqapro")
+        agent_name: Agent name (e.g. "kqapro", "sciqa")
         result_dir: Benchmark result directory for audit log
 
     Returns:
         Dict with counts of generated examples by type
     """
+    fewshot_dir = _resolve_agent_fewshot_dir(agent_name)
+
     # Load generator settings from config.toml ([fewshot_generator] section).
     gen_cfg = load_generator_config()
     api_key = os.getenv(gen_cfg["api_key_env"], "")
@@ -653,19 +675,19 @@ def generate_and_save_fewshot_examples(
         }
 
         if output.qtype_example:
-            saved = _save_qtype_example(output.qtype_example)
+            saved = _save_qtype_example(output.qtype_example, fewshot_dir)
             if saved:
                 counts["qtype"] += 1
             audit_entry["qtype_example"] = output.qtype_example.model_dump()
 
         if output.general_example:
-            saved = _save_general_example(output.general_example)
+            saved = _save_general_example(output.general_example, fewshot_dir)
             if saved:
                 counts["general"] += 1
             audit_entry["general_example"] = output.general_example.model_dump()
 
         if output.tool_tip:
-            saved = _save_tool_tip(output.tool_tip)
+            saved = _save_tool_tip(output.tool_tip, fewshot_dir)
             if saved:
                 counts["tool_tip"] += 1
             audit_entry["tool_tip"] = output.tool_tip.model_dump()

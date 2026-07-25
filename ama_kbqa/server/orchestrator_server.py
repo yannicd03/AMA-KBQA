@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from openai import OpenAI
 from qdrant_client import QdrantClient
@@ -23,7 +24,10 @@ from ama_kbqa import retrieval
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Configure logger
-log_dir = REPO_ROOT / "logs"
+# Honour AMA_KBQA_LOG_DIR so importing this module does not write into the
+# repo's real logs/ directory. The test suite sets it (tests/conftest.py);
+# without it, fixture noise ends up interleaved with production logs.
+log_dir = Path(os.environ.get("AMA_KBQA_LOG_DIR") or (REPO_ROOT / "logs"))
 log_dir.mkdir(exist_ok=True)
 logger.add(
     log_dir / "orchestrator_server.log",
