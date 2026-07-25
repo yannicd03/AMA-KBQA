@@ -44,7 +44,8 @@ ama-kbqa/
 │   │   ├── text_tool_calls.py  # Text-mode tool-call shim (minimax-m2.7 compat)
 │   │   ├── trace.py            # TraceEvent + TraceRecorder (OTel-shaped, ContextVar nesting)
 │   │   └── adapters/           # KG-specific adapters
-│   │       ├── base_adapter.py # BaseKGAdapter ABC: _create_config, get_operation_bindings (abstract), validate_operation_coverage ✅ UPDATED
+│   │       ├── base_adapter.py # BaseKGAdapter ABC: _create_config, get_operation_bindings (abstract), validate_operation_coverage; resolved_config cached property ✅ UPDATED
+│   │       ├── resolve.py      # resolve_graph_config / resolve_vector_config: env → [kg.<code>] toml → legacy toml (kqapro/sciqa only) → adapter default ✅ NEW
 │   │       ├── kqapro_adapter.py # KQAPro: 11 required + select_extreme; NS_*/SPARQL_PREFIXES sourced by kqapro_server.py ✅ UPDATED
 │   │       └── sciqa_adapter.py  # SciQA/ORKG: 11 required + aggregate/frequent_values; owl: prefix injected ✅ UPDATED
 │   ├── agents/                 # Agent implementations
@@ -259,7 +260,7 @@ SciQA-specific prompts for scientific domain (~890 lines). Follows a type-specif
 
 ### 2. MCP Server (`ama_kbqa/server/kqapro_server.py`)
 
-Provides 29 tool-decorated functions (28 user-visible + 1 LLM-hidden) for knowledge graph interaction, organized by tier. `NS_*` namespace constants and `SPARQL_PREFIXES` are sourced from `_ADAPTER = KQAProAdapter()` at module level (not hardcoded). The KQAPro adapter's `get_operation_bindings()` maps each of these tools to an abstract operation name; see `framework/operations.py` and `Decisions/abstract-operation-contract.md`.
+Provides 29 tool-decorated functions (28 user-visible + 1 LLM-hidden) for knowledge graph interaction, organized by tier. `NS_*` namespace constants and `SPARQL_PREFIXES` are sourced from `_ADAPTER.config.namespaces` at module level (not hardcoded); `VIRTUOSO_ENDPOINT`, `COLLECTION_ENTITIES`, and `COLLECTION_RELATIONS` are sourced from `_ADAPTER.resolved_config` (adapter defaults + `config.toml`/`AMA_KBQA_*` overrides — see [Decisions/kg-adapter-config-resolution.md](../Decisions/kg-adapter-config-resolution.md)). The KQAPro adapter's `get_operation_bindings()` maps each of these tools to an abstract operation name; see `framework/operations.py` and `Decisions/abstract-operation-contract.md`.
 
 **T1 Discovery:**
 - `FindNode` - Semantic entity search (deduplicates via `visited_nodes` cache)
@@ -323,7 +324,7 @@ Provides 29 tool-decorated functions (28 user-visible + 1 LLM-hidden) for knowle
 
 ### 2.1 SciQA MCP Server (`ama_kbqa/server/sciqa_server.py`)
 
-Provides 28 tool-decorated functions for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, 1 verification tool, and 1 LLM-hidden journal snapshot tool. `NS_*` constants and `SPARQL_PREFIXES` (including `owl:`) are sourced from `_ADAPTER = SciQAAdapter()` at module level. The SciQA adapter's `get_operation_bindings()` covers the 11 required abstract operations plus optional `aggregate` and `frequent_values`; see `Decisions/abstract-operation-contract.md`.
+Provides 28 tool-decorated functions for ORKG knowledge graph interaction: 24 user-visible KB tools, 2 state-management tools, 1 verification tool, and 1 LLM-hidden journal snapshot tool. `NS_*` constants and `SPARQL_PREFIXES` (including `owl:`) are sourced from `_ADAPTER.config.namespaces` at module level. `VIRTUOSO_ENDPOINT`, `SCIQA_GRAPH`, `COLLECTION_ENTITIES`, and `COLLECTION_RELATIONS` are sourced from `_ADAPTER.resolved_config` — see [Decisions/kg-adapter-config-resolution.md](../Decisions/kg-adapter-config-resolution.md). The SciQA adapter's `get_operation_bindings()` covers the 11 required abstract operations plus optional `aggregate` and `frequent_values`; see `Decisions/abstract-operation-contract.md`.
 
 **Tier 1 - Discovery (4 tools):**
 - `FindResource` - Semantic vector search for papers, authors, contributions, with high-confidence lexical label promotion when a query contains a resource title plus extra words; short title-like queries run strict token-coverage label lookup before broad token fallback
@@ -379,7 +380,7 @@ from ama_kbqa.config import (
     get_synthesis_enabled,     # bool — whether to run the synthesis LLM step (default True)
     get_auto_inject_journal,   # bool — whether to auto-push journal into tool loop (default True)
     get_qdrant_host,           # Database connection
-    get_virtuoso_endpoint,     # SPARQL endpoint
+    get_virtuoso_endpoint,     # SPARQL endpoint — deprecated for the two MCP servers (see below), still used by ama_kbqa/utils/artifact_golds.py and db/migrate_add_bm25.py
     get_retrieval_config,      # Returns the full [retrieval] section as a dict
     get_hybrid_enabled,        # bool — enable BM25 hybrid search (default False)
     get_fusion,                # str — "rrf" or "dbsf" (default "rrf")
@@ -414,6 +415,14 @@ Environment variable overlay: `AMA_RETRIEVAL_<KEY>` (upper-cased key, typed) ove
 - `true` (default) — `_run_tool_loop` periodically injects a journal refresh every N iterations and appends an "answer now" prompt whenever the agent calls `GetJournalSummary`
 - `false` — both automatic injections are suppressed; `GetJournalSummary` remains available as a tool the agent can call voluntarily
 - Exposed as a toggle in the Settings UI (`pages/4_Settings.py`, "Auto-inject journal into context", under Agent Configuration)
+
+**KG endpoint / named-graph / vector-collection resolution** (2026-07, `ama_kbqa/framework/adapters/resolve.py`): the two MCP servers no longer call `get_virtuoso_endpoint` / `get_collection_entities` / `get_collection_relations` / `get_sciqa_*` directly. They read `_ADAPTER.resolved_config`, which layers deployment overrides on top of the adapter's declared `GraphConfig`/`VectorConfig` defaults, highest precedence first:
+1. `AMA_KBQA_<CODE>_<FIELD>` env var (e.g. `AMA_KBQA_SCIQA_ENDPOINT`) — generic, works for any adapter code.
+2. `[kg.<code>]` section in `config.toml` — generic; **this is how a new KG should be onboarded**, not by adding a getter to `ama_kbqa/config.py`.
+3. Legacy per-KG `config.toml` keys — closed table, `kqapro`/`sciqa` only, kept for backward compat with existing `config.toml`/`config.docker.toml`.
+4. The adapter's own default (`_create_config()`).
+
+`config.toml` and `config.docker.toml` were not modified by this change — both still resolve via tier 3. The six legacy getters in `ama_kbqa/config.py` remain, with deprecation docstrings, for `ama_kbqa/utils/artifact_golds.py` and `db/migrate_add_bm25.py`. Full rationale, rejected alternatives, and two known footguns (silently-swallowed malformed env values; a new KG defaulting to localhost inside Docker if it skips the `[kg.<code>]` section): [Decisions/kg-adapter-config-resolution.md](../Decisions/kg-adapter-config-resolution.md).
 
 ### 4. Orchestrator Agent (`ama_kbqa/agents/orchestrator_agent/agent.py`)
 
