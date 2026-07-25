@@ -1,13 +1,38 @@
 # Deferred / Two-Tier Tool Loading
 
-**Status:** 📋 Planned
-**Priority:** Medium (cost + latency, not correctness)
+**Status:** 📋 Planned — **de-prioritised 2026-07-25, see note below**
+**Priority:** ~~Medium~~ Low (cost + latency, not correctness) — re-ranked below the turn-reduction work in the reasoning-error analysis
 **Identified:** 2026-07-05 (architecture & implementation audit, finding C3)
 
 ## Related Docs
 - [../../Decisions/architecture-audit-2026-07-05.md](../../Decisions/architecture-audit-2026-07-05.md) — full audit; C3 is the source finding, split into "cheap filtering" (already scheduled as an immediate FIX) and this deferred task
+- [../../Decisions/reasoning-error-analysis-2026-07-25.md](../../Decisions/reasoning-error-analysis-2026-07-25.md) — 2026-07-25 analysis that re-prioritised this task down the queue; see note below
 - [../../System/agent_system.md](../../System/agent_system.md) — agent loop, `_llm_call`, tool catalog injection
 - [../../System/project_architecture.md](../../System/project_architecture.md) — MCP server / tool catalog overview
+
+## 2026-07-25 — Re-prioritisation note
+
+The reasoning-error and capability-gap analysis
+([reasoning-error-analysis-2026-07-25.md](../../Decisions/reasoning-error-analysis-2026-07-25.md))
+moves this task **down the queue**, below `locate-term-tool.md`,
+`self-diagnosing-empty-results.md`, and `selectextreme-relation-filter.md`. Evidence:
+
+- Schema-token overhead is real (39.7% of per-call tokens, per the original C3 finding), but the
+  *dominant* cost driver measured in this pass is turns × transcript, at a **153.6:1
+  prompt-to-completion ratio**. Cutting wasted turns (the goal of the three tasks named above) pays
+  more than shrinking schemas, and does so without touching tool visibility at all.
+- The risk this task's design doc already flagged as speculative ("tool visibility changes agent
+  behavior") is now measured, not hypothetical: the tools built for the exact failure patterns this
+  analysis studied already have **near-zero adoption**, and `FindFrequentValues` appears in **0% of
+  correct traces** across the sampled runs. Hiding long-tail tool schemas behind a `load_tools` call
+  would worsen an already-measured adoption problem in exchange for a token win that the
+  turn-reduction tasks deliver anyway as a side effect of cutting round-trips.
+
+This task is **not cancelled** — schema overhead is still a real, measured cost — but it should not
+be picked up again until `locate-term-tool.md`, `self-diagnosing-empty-results.md`, and
+`selectextreme-relation-filter.md` have shipped and their turn-count impact has been measured. If
+turn counts drop substantially from that work, re-evaluate whether the ~33% token target is still
+worth the adoption risk documented here and in the original design below.
 
 ## Problem
 

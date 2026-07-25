@@ -4897,12 +4897,18 @@ async def FindFrequentValues(
             on contributions (same shape as AggregateComparisonValues).
         top_n: For mode_top, how many top values to return (default 5).
         limit_subjects: Hard cap on contributions scanned (default 5000) to
-            keep the SPARQL bounded; raise if a research field is large.
+            keep the SPARQL bounded; raise if a research field is large. If
+            the true population is bigger, the response sets `truncated: true`
+            with scanned/total counts — never a silently incomplete ranking.
         value_parser: Numeric parsing mode. Use ``embedded_number`` for values
             like ``n=54`` or ``86 %`` where the number may not be at the start.
         return_predicate: Optional companion predicate to return for min/max rows.
-        scope: Default global scope when no research_field_id or comparison_ids
-            is supplied: ``comparisons`` (backwards-compatible) or ``papers``.
+        scope: Only used when neither research_field_id nor comparison_ids is
+            set: ``comparisons`` (default) restricts to Featured-Comparison
+            contributions; ``papers`` covers every paper's contributions. If
+            ``comparisons`` would materially undercount vs. ``papers`` for
+            this predicate, the tool auto-switches to ``papers`` and reports
+            both counts via `scope_population`/`scope_warning`.
         value_source: ``contribution`` reads value_predicate from Contribution rows.
             ``subject`` reads it from the scoped Paper/Comparison resource itself.
         split_values: If true, split semicolon/pipe-delimited categorical values
@@ -4912,7 +4918,9 @@ async def FindFrequentValues(
     Returns:
         JSON with `scope`, `value_predicate`, `agg`, optional `group_by`,
         `result` (scalar / list of {value,count} / list of {group,value,n}),
-        `n_contributions`, and `status`.
+        `n_contributions`, `status`, plus `truncated`/`scanned_subjects`/
+        `total_subjects` when limit_subjects was hit, and
+        `scope_population`/`scope_warning` when the default scope check ran.
     """
     from collections import Counter, defaultdict
 
@@ -4999,6 +5007,76 @@ async def FindFrequentValues(
                     f'        FILTER( CONTAINS(LCASE(STR(?fobj)), LCASE("{safe}")) '
                     f'|| CONTAINS(LCASE(STR(?flbl)), LCASE("{safe}")) )\n'
                 )
+
+        # Scope ambiguity check: the "comparisons" scope (default) only
+        # applies when there is no research_field_id/comparison_ids anchor.
+        # In that branch it silently undercounts whenever the true
+        # population lives outside Featured Comparisons. Probe both scopes'
+        # matching-subject counts and use the broader one, surfacing both
+        # counts rather than flipping the default silently.
+        scope_population = None
+        scope_warning = None
+        no_explicit_anchor = not (research_field_id and research_field_id.strip()) and not (
+            comparison_ids and comparison_ids.strip()
+        )
+        if no_explicit_anchor and scope != "papers":
+            comparisons_clause = "?cmp orkgp:compareContribution ?contrib .\n"
+            papers_clause = "?paper orkgp:P31 ?contrib .\n"
+            comparisons_binding = (
+                "BIND(?cmp AS ?valueSubject)\n" if value_source == "subject"
+                else "BIND(?contrib AS ?valueSubject)\n"
+            )
+            papers_binding = (
+                "BIND(?paper AS ?valueSubject)\n" if value_source == "subject"
+                else "BIND(?contrib AS ?valueSubject)\n"
+            )
+
+            def _probe_count(clause: str, binding: str) -> int:
+                cbody = f"""
+SELECT (COUNT(DISTINCT ?valueSubject) AS ?total) WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {clause}
+        {binding}
+        ?valueSubject {value_pred} ?valueObj .
+        {filter_block}
+    }}
+}}
+"""
+                app.sparql.setQuery(SPARQL_PREFIXES + cbody)
+                cres = app.sparql.query().convert()
+                cb = cres.get("results", {}).get("bindings", [])
+                if not cb:
+                    return 0
+                try:
+                    return int(cb[0]["total"]["value"])
+                except (KeyError, ValueError, TypeError):
+                    return 0
+
+            # The probes are diagnostic only: never let one turn an otherwise
+            # working call into an error. On failure, skip the scope check and
+            # fall through to the caller's requested scope unchanged.
+            try:
+                comparisons_count = _probe_count(comparisons_clause, comparisons_binding)
+                papers_count = _probe_count(papers_clause, papers_binding)
+            except Exception as probe_error:
+                logger.warning(f"FindFrequentValues scope probe failed, keeping requested scope: {probe_error}")
+                comparisons_count = papers_count = None
+            if comparisons_count is not None and papers_count is not None:
+                scope_population = {"comparisons": comparisons_count, "papers": papers_count}
+
+                if papers_count > comparisons_count:
+                    scope_clause, source_binding = papers_clause, papers_binding
+                    scope_label = "all_papers" if value_source == "subject" else "all_paper_contributions"
+                    scope_warning = (
+                        f"Default scope 'comparisons' matches only {comparisons_count} subjects for "
+                        f"{value_predicate}; broader 'papers' scope matches {papers_count}. "
+                        "Auto-switched to 'papers' — pass scope explicitly to override."
+                    )
+                elif comparisons_count > papers_count:
+                    scope_warning = (
+                        f"'comparisons' scope matches {comparisons_count} subjects for {value_predicate}, "
+                        f"more than 'papers' scope ({papers_count}). Using 'comparisons'."
+                    )
 
         group_select = "?group ?groupLabel " if group_pred else ""
         return_select = "?returnObj ?returnLabel ?returnNested " if return_pred else ""
@@ -5094,6 +5172,37 @@ SELECT DISTINCT ?valueSubject {group_select}?valueObj ?valueLabel ?nestedValue {
                 "return_value": _row_return(b),
             })
 
+        # Truncation check: LIMIT {limit_subjects} in the query above means a
+        # binding count at (or past) the cap is a hard signal the population
+        # was cut off. Never let a truncated scan look like a complete ranking.
+        scanned_subjects = len({r["contrib"] for r in rows})
+        truncated = len(bindings) >= limit_subjects
+        total_subjects = None
+        truncation_note = None
+        if truncated:
+            tbody = f"""
+SELECT (COUNT(DISTINCT ?valueSubject) AS ?total) WHERE {{
+    GRAPH <{SCIQA_GRAPH}> {{
+        {scope_clause}
+        {source_binding}
+        ?valueSubject {value_pred} ?valueObj .
+        {filter_block}
+    }}
+}}
+"""
+            try:
+                app.sparql.setQuery(SPARQL_PREFIXES + tbody)
+                tres = app.sparql.query().convert()
+                tb = tres.get("results", {}).get("bindings", [])
+                total_subjects = int(tb[0]["total"]["value"]) if tb else None
+            except Exception:
+                total_subjects = None
+            total_desc = str(total_subjects) if total_subjects is not None else "an unknown number of"
+            truncation_note = (
+                f"limit_subjects={limit_subjects} was reached; only {scanned_subjects} of "
+                f"{total_desc} matching subjects were scanned. Raise limit_subjects to include the rest."
+            )
+
         if split_values and agg in {"count", "count_distinct", "mode_top", "all_values"}:
             expanded_rows: list[dict[str, Any]] = []
             for row in rows:
@@ -5124,6 +5233,8 @@ SELECT DISTINCT ?valueSubject {group_select}?valueObj ?valueLabel ?nestedValue {
                 "value_source": value_source,
                 "result": None,
                 "n_contributions": 0,
+                "scope_population": scope_population,
+                "scope_warning": scope_warning,
                 "status": "No contributions matched the scope/filter.",
             }, indent=2)
 
@@ -5225,10 +5336,17 @@ SELECT DISTINCT ?valueSubject {group_select}?valueObj ?valueLabel ?nestedValue {
             "result": result_payload,
             "n_contributions": n_rows,
             "limit_subjects": limit_subjects,
+            "truncated": truncated,
+            "scanned_subjects": scanned_subjects,
+            "total_subjects": total_subjects,
+            "truncation_note": truncation_note,
+            "scope_population": scope_population,
+            "scope_warning": scope_warning,
             "status": (
                 f"Aggregated {n_rows} {value_source} rows with {agg}"
                 + (f" grouped by {group_by_predicate}" if group_by_predicate else "")
                 + f" across {scope_label}"
+                + (" [TRUNCATED — raise limit_subjects]" if truncated else "")
             ),
         }, indent=2, default=str)
 

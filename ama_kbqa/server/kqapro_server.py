@@ -65,6 +65,12 @@ CHAT_MAX_TOKENS = get_chat_max_tokens()
 TOP_N = get_top_n()
 SCORE_THRESHHOLD = get_score_threshold()
 
+# FindNode exact-match phase: how many byte-identical-label points to pull from
+# Qdrant, and how many to actually return in `matches` when the label is
+# ambiguous (multiple entities share it). See _find_node_impl.
+EXACT_MATCH_SCROLL_LIMIT = 50
+MAX_EXACT_MATCHES_RETURNED = 20
+
 # --- 1. Define a Context Class for Type Safety ---
 
 # Namespaces, endpoint, and vector-collection bindings are owned by the KG
@@ -143,6 +149,19 @@ class SearchResponse(BaseModel):
     result_count: int = Field(
         ...,
         description="Total number of matches returned."
+    )
+    disambiguation_notice: Optional[str] = Field(
+        default=None,
+        description=(
+            "Set only when more than one entity shares the exact same label as the "
+            "query. Vector similarity cannot discriminate between byte-identical "
+            "labels, so the caller MUST NOT trust the top-ranked match — inspect "
+            "distinguishing attributes (e.g. via GetNodeDetails/GetEdgeQualifiers, "
+            "such as date of birth or official_website) across the candidates in "
+            "`matches` to pick the correct one. The message states how many exact "
+            "matches exist in the KB vs. how many are included in `matches` (capped "
+            "to avoid oversized responses)."
+        ),
     )
 
 
@@ -399,6 +418,92 @@ def _concept_clause(concept: str, transitive: bool, entity_var: str = "?entity")
         f"{entity_var} {type_path} ?conceptIRI .\n"
         f'?conceptIRI rdfs:label "{label}" .\n'
     )
+
+
+def _relation_branch_sparql(branch: dict, suffix: str) -> tuple[str, str, str, list[str]]:
+    """Build a SPARQL existence block for one relation-shaped branch on `?entity`.
+
+    Shared by CountUnion (per-branch relation filter) and CountEntities
+    (relation-shaped `or_conditions` branches — see the module ADR on
+    or_conditions silently dropping relation predicates). `suffix` uniquifies
+    the SPARQL variable names (`?relTarget_{suffix}` / `?relSource_{suffix}`)
+    so several blocks can be UNION'd in one query without variable collisions.
+
+    Branch shape: {relation_name|predicate, relation_target_id|target_id,
+    relation_target_ids|target_ids, relation_direction}.
+
+    Returns (relation_block, relation_name, relation_direction, relation_target_ids).
+    relation_block is "" when the branch has no relation_name/predicate.
+    """
+    relation_name = branch.get("relation_name") or branch.get("predicate") or ""
+    relation_direction = str(branch.get("relation_direction", "forward")).lower()
+    if relation_direction not in {"forward", "backward", "either"}:
+        relation_direction = "forward"
+    relation_target_ids: list[str] = []
+    raw_targets = branch.get("relation_target_ids") or branch.get("target_ids") or []
+    if isinstance(raw_targets, str):
+        relation_target_ids.extend(t.strip() for t in raw_targets.split(",") if t.strip())
+    else:
+        relation_target_ids.extend(str(t).strip() for t in raw_targets if str(t).strip())
+    single_target = branch.get("relation_target_id") or branch.get("target_id")
+    if single_target:
+        relation_target_ids.append(str(single_target).strip())
+
+    relation_block = ""
+    if relation_name:
+        rel_uri = format_property_uri(str(relation_name))
+        target_values = " ".join(format_entity_uri(tid) for tid in relation_target_ids)
+        rel_target = f"?relTarget_{suffix}"
+        rel_source = f"?relSource_{suffix}"
+        if relation_target_ids:
+            if relation_direction == "backward":
+                relation_block = (
+                    f"VALUES {rel_source} {{ {target_values} }}\n"
+                    f"        {rel_source} {rel_uri} ?entity ."
+                )
+            elif relation_direction == "either":
+                relation_block = (
+                    f"VALUES {rel_target} {{ {target_values} }}\n"
+                    f"        {{ {{ ?entity {rel_uri} {rel_target} . }} UNION "
+                    f"{{ {rel_target} {rel_uri} ?entity . }} }}"
+                )
+            else:
+                relation_block = (
+                    f"VALUES {rel_target} {{ {target_values} }}\n"
+                    f"        ?entity {rel_uri} {rel_target} ."
+                )
+        else:
+            if relation_direction == "backward":
+                relation_block = f"{rel_source} {rel_uri} ?entity ."
+            elif relation_direction == "either":
+                relation_block = (
+                    f"{{ {{ ?entity {rel_uri} {rel_target} . }} UNION "
+                    f"{{ {rel_source} {rel_uri} ?entity . }} }}"
+                )
+            else:
+                relation_block = f"?entity {rel_uri} {rel_target} ."
+
+    return relation_block, relation_name, relation_direction, relation_target_ids
+
+
+def _ask_predicate_exists(sparql: Any, uri: str) -> Optional[bool]:
+    """Cheap ASK existence check: does any triple in the KG use predicate `uri`?
+
+    Returns True/False when the check ran, or None if it couldn't be answered
+    (transport error, or a test double whose `.convert()` doesn't return a
+    SPARQL ASK `{"boolean": ...}` shape) — callers should treat None as
+    "unknown" and fail open rather than flag a false positive.
+    """
+    try:
+        ask_query = SPARQL_PREFIXES + f"ASK {{ ?s <{uri}> ?o . }}"
+        sparql.setQuery(ask_query)
+        sparql.setReturnFormat(JSON)
+        result = sparql.query().convert()
+        if isinstance(result, dict) and "boolean" in result:
+            return bool(result["boolean"])
+        return None
+    except Exception:
+        return None
 
 
 @asynccontextmanager
@@ -928,26 +1033,49 @@ async def GetEdgeQualifiers(
         # Build SPARQL query
         value_filter = ""
         if attribute_value:
-            value_filter = f'FILTER(?value = "{attribute_value}")'
+            # Compare on STR(): attribute values are stored typed (xsd:decimal for
+            # numbers, xsd:date for dates), so a bare `?value = "64"` string
+            # comparison never matches a typed literal and silently drops every
+            # row. GetQualifierValue already normalises this way.
+            safe_attribute_value = attribute_value.replace('"', '\\"')
+            value_filter = f'FILTER(STR(?value) = "{safe_attribute_value}")'
         
+        # KQAPro stores attribute values in two shapes: (a) a blank node carrying
+        # `rdf:value` (quantities/strings with units), or (b) a direct literal
+        # (dates, ID numbers, plain numbers). Literals can't be RDF subjects, so
+        # the reification statement's `rdf:object` is the literal itself rather
+        # than a bnode. UNION both shapes so qualifiers resolve either way.
         query = f"""
         SELECT ?value ?qkey ?qval ?qlabel WHERE {{
-            ex:{base_node_id} attr:{attr_normalized} ?bnode .
-            ?bnode rdf:value ?value .
-            {value_filter}
-            
-            # Find the statement node
-            ?stmt rdf:subject ex:{base_node_id} ;
-                  rdf:predicate attr:{attr_normalized} ;
-                  rdf:object ?bnode .
-            
+            {{
+                # Shape 1: bnode-wrapped attribute value
+                ex:{base_node_id} attr:{attr_normalized} ?bnode .
+                ?bnode rdf:value ?value .
+                {value_filter}
+
+                ?stmt rdf:subject ex:{base_node_id} ;
+                      rdf:predicate attr:{attr_normalized} ;
+                      rdf:object ?bnode .
+            }}
+            UNION
+            {{
+                # Shape 2: direct-literal attribute value
+                ex:{base_node_id} attr:{attr_normalized} ?value .
+                FILTER(isLiteral(?value))
+                {value_filter}
+
+                ?stmt rdf:subject ex:{base_node_id} ;
+                      rdf:predicate attr:{attr_normalized} ;
+                      rdf:object ?value .
+            }}
+
             # Get qualifiers
             ?stmt ?qprop ?qval .
             FILTER(STRSTARTS(STR(?qprop), "http://kqapro.org/qualifier/"))
-            
+
             # Extract qualifier key name
             BIND(REPLACE(STR(?qprop), ".*/(.*)", "$1") AS ?qkey)
-            
+
             # Try to resolve entity labels
             OPTIONAL {{
                 ?qval rdfs:label ?qlabel .
@@ -1367,13 +1495,26 @@ async def GetQualifierValue(
                 if direction == "backward":
                     return []
                 safe_target = target.replace('"', '\\"')
+                # Same two storage shapes as GetEdgeQualifiers: bnode-wrapped
+                # (rdf:value) or a direct literal object on the reified statement.
                 stmt_pattern = f"""
-                    ex:{subject_id} attr:{pred_normalized} ?bnode .
-                    ?bnode rdf:value ?targetValue .
-                    FILTER(STR(?targetValue) = "{safe_target}")
-                    ?stmt rdf:subject ex:{subject_id} ;
-                          rdf:predicate attr:{pred_normalized} ;
-                          rdf:object ?bnode .
+                    {{
+                        ex:{subject_id} attr:{pred_normalized} ?bnode .
+                        ?bnode rdf:value ?targetValue .
+                        FILTER(STR(?targetValue) = "{safe_target}")
+                        ?stmt rdf:subject ex:{subject_id} ;
+                              rdf:predicate attr:{pred_normalized} ;
+                              rdf:object ?bnode .
+                    }}
+                    UNION
+                    {{
+                        ex:{subject_id} attr:{pred_normalized} ?targetValue .
+                        FILTER(isLiteral(?targetValue))
+                        FILTER(STR(?targetValue) = "{safe_target}")
+                        ?stmt rdf:subject ex:{subject_id} ;
+                              rdf:predicate attr:{pred_normalized} ;
+                              rdf:object ?targetValue .
+                    }}
                 """
 
             query = f"""
@@ -1602,6 +1743,78 @@ def GetJournalStateJSON(context: Context) -> str:
     return json.dumps(session_journal.model_dump(), default=str, ensure_ascii=False)
 
 
+def _format_verified_fact(fact: Any) -> str:
+    """Render one `session_journal.verified_facts` entry for GetJournalSummary.
+
+    verified_facts entries are written by many tools with different shapes
+    (GetRelationDetails/GetRelationBetween: subject/relation/related_id;
+    GetAttributeDetails: subject/attribute/value; ExploreNeighborhood:
+    subject/predicate/objects; RunSPARQL: query_type/variables/results;
+    GetEdgeQualifiers/GetQualifiersByPredicate/GetQualifierValue: a "type"
+    tag; most Verify*/Count*/manual entries: a plain "fact" string). Only the
+    first shape used to be handled; everything else silently fell through to
+    "?" placeholders for the missing subject/relation/related_id keys. This
+    renders each shape from what it actually has, and falls back to the raw
+    entry (never a bare "?") for anything unrecognized.
+    """
+    if not isinstance(fact, dict):
+        return str(fact)
+
+    # Shape: subject -relation-> related_id (GetRelationDetails, GetRelationBetween)
+    if "relation" in fact and "related_id" in fact:
+        subj_id = fact.get("subject", "")
+        subj_name = session_journal.visited_nodes.get(subj_id, subj_id) if subj_id else ""
+        rel = fact.get("relation", "")
+        related_id = fact.get("related_id")
+        related_name = session_journal.visited_nodes.get(related_id) if related_id else None
+        if related_name and not related_name.startswith("("):
+            target = f"{related_name} ({related_id})"
+        else:
+            target = related_id if related_id is not None else "(unspecified)"
+        direction = fact.get("direction")
+        arrow = "<-" if direction in ("reverse", "inverse_only") else "->"
+        return f"{subj_name} ({subj_id}) {arrow}[{rel}]-> {target}"
+
+    # Shape: subject/attribute/value (GetAttributeDetails, GetAttributeWithQualifiers)
+    if "attribute" in fact and "value" in fact:
+        subj_id = fact.get("subject", "")
+        subj_name = session_journal.visited_nodes.get(subj_id, subj_id) if subj_id else ""
+        unit = f" {fact['unit']}" if fact.get("unit") else ""
+        return f"{subj_name} ({subj_id}).{fact.get('attribute')} = {fact.get('value')}{unit}"
+
+    # Shape: subject/predicate/objects (ExploreNeighborhood)
+    if "predicate" in fact and "objects" in fact:
+        subj_id = fact.get("subject", "")
+        subj_name = session_journal.visited_nodes.get(subj_id, subj_id) if subj_id else ""
+        objs = fact.get("objects") or []
+        return f"{subj_name} ({subj_id}) -[{fact.get('predicate')}]-> {len(objs)} object(s)"
+
+    # Shape: RunSPARQL's raw-query journal entry
+    if fact.get("query_type") == "SPARQL" or fact.get("source") == "RunSPARQL":
+        result_count = fact.get("result_count", len(fact.get("results", []) or []))
+        variables = fact.get("variables") or []
+        var_str = ", ".join(variables) if variables else "(unknown)"
+        return f"RunSPARQL: {result_count} result(s) for variables {var_str}"
+
+    # Shape: a free-text "fact" string (Verify*/Count*/SelectExtreme/manual entries)
+    if "fact" in fact:
+        source = f" [{fact['source']}]" if fact.get("source") else ""
+        return f"{fact['fact']}{source}"
+
+    # Shape: the "type"-tagged qualifier entries (GetEdgeQualifiers/
+    # GetQualifiersByPredicate/GetQualifierValue)
+    fact_type = fact.get("type")
+    if fact_type:
+        node = fact.get("node") or fact.get("subject", "")
+        node_name = session_journal.visited_nodes.get(node, node) if node else ""
+        quals = fact.get("qualifiers")
+        qual_str = f": {', '.join(quals)}" if isinstance(quals, list) and quals else ""
+        return f"{fact_type} on {node_name} ({node}){qual_str}".strip()
+
+    # Last resort: never emit a bare "?" — show the raw entry.
+    return json.dumps(fact, default=str, ensure_ascii=False)[:200]
+
+
 @mcp.tool
 @log_tool_duration
 def GetJournalSummary(context: Context) -> str:
@@ -1637,16 +1850,23 @@ def GetJournalSummary(context: Context) -> str:
                 if isinstance(attr_data, list) and attr_data:
                     for val_item in attr_data[:3]:
                         if isinstance(val_item, dict):
-                            related_id = val_item.get("related_id")
-                            val_str = val_item.get("value", "?")
-                            if related_id:
-                                label = session_journal.visited_nodes.get(related_id)
-                                if label and not label.startswith("("):
-                                    val_str = f"{label} ({related_id})"
-                                else:
-                                    val_str = related_id
-                            unit_str = val_item.get("unit", "")
-                            summary_lines.append(f"    ✓ {attr_name}: {val_str} {unit_str}".strip())
+                            if "value" in val_item or "related_id" in val_item:
+                                related_id = val_item.get("related_id")
+                                val_str = val_item.get("value", "")
+                                if related_id:
+                                    label = session_journal.visited_nodes.get(related_id)
+                                    if label and not label.startswith("("):
+                                        val_str = f"{label} ({related_id})"
+                                    else:
+                                        val_str = related_id
+                                unit_str = val_item.get("unit", "")
+                                summary_lines.append(f"    ✓ {attr_name}: {val_str} {unit_str}".strip())
+                            else:
+                                # Raw shape (e.g. RunSPARQL result rows are plain
+                                # {sparql_var: value} dicts with no value/related_id
+                                # key) — render the row itself, never a "?" default.
+                                row_str = ", ".join(f"{k}={v}" for k, v in val_item.items())
+                                summary_lines.append(f"    ✓ {attr_name}: {row_str}")
                         else:
                             summary_lines.append(f"    ✓ {attr_name}: {val_item}")
                 else:
@@ -1654,22 +1874,17 @@ def GetJournalSummary(context: Context) -> str:
     else:
         summary_lines.append(f"\n⚠️  NO VALUES DISCOVERED YET - You need to call GetAttributeDetails!")
 
-    # Verified facts (structured triples: subject -rel-> related_id/label)
+    # Verified facts. These come from many tools with different shapes (see
+    # the various verified_facts.append(...) call sites in this module) — not
+    # just the {subject, relation, related_id} triple shape this used to
+    # assume. _format_verified_fact renders whatever shape is actually there
+    # instead of falling back to "?" placeholders for missing keys.
     if session_journal.verified_facts:
-        summary_lines.append(f"\n🔗 VERIFIED FACTS (subject -relation-> target):")
+        summary_lines.append(f"\n🔗 VERIFIED FACTS:")
         for fact in session_journal.verified_facts[:15]:
-            subj_id = fact.get("subject", "?")
-            subj_name = session_journal.visited_nodes.get(subj_id, subj_id)
-            rel = fact.get("relation", "?")
-            related_id = fact.get("related_id", "?")
-            related_name = session_journal.visited_nodes.get(related_id)
-            if related_name and not related_name.startswith("("):
-                target = f"{related_name} ({related_id})"
-            else:
-                target = related_id
-            direction = fact.get("direction")
-            arrow = "->" if direction != "reverse" else "<-"
-            summary_lines.append(f"  • {subj_name} ({subj_id}) {arrow}[{rel}]-> {target}")
+            line = _format_verified_fact(fact)
+            if line:
+                summary_lines.append(f"  • {line}")
         if len(session_journal.verified_facts) > 15:
             summary_lines.append(f"  ... and {len(session_journal.verified_facts) - 15} more")
 
@@ -1747,12 +1962,18 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
             models.FieldCondition(key="attributes.value.value", match=models.MatchValue(value=search_term_clean))
         ]
         filter_query = models.Filter(should=should_conditions)
-        
+
         # .scroll() ist stabil
+        # limit=5 previously made byte-identical duplicate labels (e.g. 13 KG
+        # entities named "Roger Moore") structurally unreachable: vector
+        # similarity can't discriminate between them, and whichever 5 Qdrant
+        # happened to return first silently won. EXACT_MATCH_SCROLL_LIMIT
+        # pulls enough duplicates that the desired entity is actually present
+        # in `exact_matches` for the ambiguity handling below to surface.
         scroll_results, _ = app_context.qdrant.scroll(
             collection_name=COLLECTION_ENTITIES,
             scroll_filter=filter_query,
-            limit=5,
+            limit=EXACT_MATCH_SCROLL_LIMIT,
             with_payload=True
         )
         
@@ -1812,19 +2033,51 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
         ))
 
     # Merge & Sort
-    combined = {m.original_id: m for m in exact_matches}
-    for m in semantic_matches:
-        if m.original_id not in combined:
-            combined[m.original_id] = m
+    disambiguation_notice = None
+    if len(exact_matches) > 1:
+        # Ambiguous label: multiple KG entities share this exact string, and
+        # vector similarity can't tell them apart. Surface ALL exact matches
+        # (capped) instead of letting TOP_N truncation silently drop the one
+        # the caller actually needs; TOP_N still governs how many *additional*
+        # semantic-only matches get appended.
+        exact_ids = {m.original_id for m in exact_matches}
+        exact_sorted = sorted(exact_matches, key=lambda x: x.relevance_score, reverse=True)
+        shown_exact = exact_sorted[:MAX_EXACT_MATCHES_RETURNED]
 
-    matches = sorted(combined.values(), key=lambda x: x.relevance_score, reverse=True)[:TOP_N]
-    
+        seen_ids = set(exact_ids)
+        extra_semantic: list[NodeMatch] = []
+        for m in semantic_matches:
+            if m.original_id not in seen_ids:
+                seen_ids.add(m.original_id)
+                extra_semantic.append(m)
+        extra_semantic_sorted = sorted(extra_semantic, key=lambda x: x.relevance_score, reverse=True)[:TOP_N]
+
+        matches = shown_exact + extra_semantic_sorted
+        disambiguation_notice = (
+            f"{len(exact_matches)} entities in the KB share the exact label "
+            f"'{search_term_clean}' (showing {len(shown_exact)}). Do NOT assume the "
+            f"first/top match is correct — inspect distinguishing attributes (e.g. "
+            f"date of birth, official_website) via GetNodeDetails/GetEdgeQualifiers "
+            f"across the candidates below to pick the right one."
+        )
+    else:
+        combined = {m.original_id: m for m in exact_matches}
+        for m in semantic_matches:
+            if m.original_id not in combined:
+                combined[m.original_id] = m
+
+        matches = sorted(combined.values(), key=lambda x: x.relevance_score, reverse=True)[:TOP_N]
+
     if matches:
         for m in matches[:5]:
             session_journal.visited_nodes[m.original_id] = m.name
         session_journal.add_completed_step(f"Found {len(matches)} nodes for '{semantic_node_name}'")
 
-    return SearchResponse(matches=matches, result_count=len(matches))
+    return SearchResponse(
+        matches=matches,
+        result_count=len(matches),
+        disambiguation_notice=disambiguation_notice,
+    )
 
 
 @mcp.tool
@@ -4197,6 +4450,10 @@ def CountEntities(
     # the observed failure shape, so only that case is dropped; a bare
     # existence check without not_conditions remains a legitimate query.
     ignored_filters: list[str] = []
+    # Branches that are dropped entirely (not just soft-ignored) — never
+    # silently swallowed; named explicitly in the response and force
+    # trusted=False, since the count below is missing whatever they'd match.
+    invalid_or_branches: list[str] = []
     not_attr_names = {
         (cond.get("attribute_name") or "").strip().lower()
         for cond in (not_conditions or [])
@@ -4208,10 +4465,20 @@ def CountEntities(
         attribute_name = ""
     cleaned_or: list[dict] = []
     for cond in or_conditions or []:
-        if (cond.get("attribute_name") or "").strip():
+        has_attr = bool((cond.get("attribute_name") or "").strip())
+        has_relation = bool(
+            (cond.get("relation_name") or cond.get("predicate") or "").strip()
+        )
+        # Relation-shaped branches (main_subject, location, etc.) live under
+        # attribute_name's sibling fields, not attribute_name itself — keep
+        # them here instead of dropping them; they're validated below.
+        if has_attr or has_relation:
             cleaned_or.append(cond)
         else:
-            ignored_filters.append("or_condition without attribute_name")
+            # Genuinely malformed: neither shape recognized. This used to be
+            # silently dropped with trusted=True still reported — now it's
+            # named explicitly and downgrades the whole count to untrusted.
+            invalid_or_branches.append("or_condition without attribute_name or relation_name")
     or_conditions = cleaned_or or None
     cleaned_not: list[dict] = []
     for cond in not_conditions or []:
@@ -4225,7 +4492,8 @@ def CountEntities(
             count=0,
             description="(all filters incomplete)",
             status="All supplied filters were incomplete (missing attribute_name/value) — "
-                   "refusing to count the whole KB. Ignored: " + "; ".join(ignored_filters),
+                   "refusing to count the whole KB. Ignored: "
+                   + "; ".join(ignored_filters + invalid_or_branches),
         )
 
     pre_blocks: list[str] = []
@@ -4242,12 +4510,40 @@ def CountEntities(
         if attribute_name:
             branches.append(_attr_condition_sparql(attribute_name, attribute_value, operator, "0"))
         for i, cond in enumerate(or_conditions or [], start=1):
-            branches.append(_attr_condition_sparql(
-                cond.get("attribute_name", ""),
-                cond.get("attribute_value", ""),
-                cond.get("operator", "="),
-                str(i),
-            ))
+            cond_attr = (cond.get("attribute_name") or "").strip()
+            cond_relation = (cond.get("relation_name") or cond.get("predicate") or "").strip()
+            if cond_relation:
+                rel_block, _rel_name, _rel_dir, _rel_targets = _relation_branch_sparql(cond, f"orc{i}")
+                if rel_block:
+                    branches.append(rel_block)
+                else:
+                    invalid_or_branches.append(
+                        f"or_conditions[{i}]: relation-shaped branch {cond!r} produced no usable SPARQL pattern"
+                    )
+            elif cond_attr:
+                attr_uri = f"http://kqapro.org/attribute/{cond_attr.replace(' ', '_')}"
+                exists = _ask_predicate_exists(sparql, attr_uri)
+                if exists is False:
+                    prop_uri = f"http://kqapro.org/property/{cond_attr.replace(' ', '_')}"
+                    prop_exists = _ask_predicate_exists(sparql, prop_uri)
+                    hint = (
+                        f" It exists under prop: instead — pass it as relation_name "
+                        f"(not attribute_name) for a relation-shaped branch."
+                        if prop_exists else ""
+                    )
+                    invalid_or_branches.append(
+                        f"or_conditions[{i}]: attribute '{cond_attr}' does not exist "
+                        f"under the attr: namespace.{hint}"
+                    )
+                else:
+                    branches.append(_attr_condition_sparql(
+                        cond_attr,
+                        cond.get("attribute_value", ""),
+                        cond.get("operator", "="),
+                        str(i),
+                    ))
+            # else: unreachable — the cleaned_or filter above only keeps
+            # conditions with cond_attr or cond_relation truthy.
         if len(branches) == 1:
             attr_block = "{ " + branches[0] + " }"
         elif len(branches) > 1:
@@ -4279,9 +4575,21 @@ def CountEntities(
     if attribute_name:
         parts.append(f"{attribute_name}{operator}{attribute_value}")
     for cond in or_conditions or []:
-        parts.append(
-            f"OR {cond.get('attribute_name','')}{cond.get('operator','=')}{cond.get('attribute_value','')}"
-        )
+        rel_name = cond.get("relation_name") or cond.get("predicate")
+        if rel_name:
+            targets = (
+                cond.get("relation_target_id")
+                or cond.get("target_id")
+                or ",".join(cond.get("relation_target_ids") or cond.get("target_ids") or [])
+            )
+            direction = cond.get("relation_direction", "forward")
+            parts.append(
+                f"OR {direction} {rel_name}->{targets}" if targets else f"OR {direction} {rel_name} exists"
+            )
+        else:
+            parts.append(
+                f"OR {cond.get('attribute_name','')}{cond.get('operator','=')}{cond.get('attribute_value','')}"
+            )
     for cond in not_conditions or []:
         parts.append(
             f"NOT {cond.get('attribute_name','')}{cond.get('operator','=')}{cond.get('attribute_value','')}"
@@ -4295,6 +4603,25 @@ def CountEntities(
         results = sparql.query().convert()
         bindings = results.get("results", {}).get("bindings", [])
         count = int(bindings[0]["c"]["value"]) if bindings else 0
+
+        if invalid_or_branches:
+            # Never report a confident count when an or_conditions branch
+            # couldn't be applied — the count above is missing that branch's
+            # matches, so it must not be trusted as the final answer, and the
+            # verified_facts entry must not claim "TRUSTED" either.
+            status = (
+                "UNTRUSTED — the following or_conditions branch(es) could not be "
+                "applied and are NOT reflected in this count: " + "; ".join(invalid_or_branches)
+            )
+            if ignored_filters:
+                status += ". Also ignored: " + "; ".join(ignored_filters)
+            session_journal.verified_facts.append({
+                "fact": f"UNTRUSTED COUNT[{desc}] = {count} (incomplete — {status})",
+                "source": "CountEntities",
+            })
+            session_journal.add_completed_step(f"CountEntities({desc}) = {count} (untrusted)")
+            logger.warning(f"CountEntities: {status}")
+            return CountResponse(count=count, description=desc, trusted=False, status=status)
 
         session_journal.verified_facts.append({
             "fact": f"TRUSTED COUNT[{desc}] = {count} (exact COUNT(DISTINCT) result; "
@@ -4365,53 +4692,9 @@ def CountUnion(
         if concept_block:
             pre_blocks.append(concept_block.rstrip())
 
-        relation_name = branch.get("relation_name") or branch.get("predicate") or ""
-        relation_direction = str(branch.get("relation_direction", "forward")).lower()
-        if relation_direction not in {"forward", "backward", "either"}:
-            relation_direction = "forward"
-        relation_target_ids: list[str] = []
-        raw_targets = branch.get("relation_target_ids") or branch.get("target_ids") or []
-        if isinstance(raw_targets, str):
-            relation_target_ids.extend(t.strip() for t in raw_targets.split(",") if t.strip())
-        else:
-            relation_target_ids.extend(str(t).strip() for t in raw_targets if str(t).strip())
-        single_target = branch.get("relation_target_id") or branch.get("target_id")
-        if single_target:
-            relation_target_ids.append(str(single_target).strip())
-
-        relation_block = ""
-        if relation_name:
-            rel_uri = format_property_uri(str(relation_name))
-            target_values = " ".join(format_entity_uri(tid) for tid in relation_target_ids)
-            rel_target = f"?relTarget_u{i}"
-            rel_source = f"?relSource_u{i}"
-            if relation_target_ids:
-                if relation_direction == "backward":
-                    relation_block = (
-                        f"VALUES {rel_source} {{ {target_values} }}\n"
-                        f"        {rel_source} {rel_uri} ?entity ."
-                    )
-                elif relation_direction == "either":
-                    relation_block = (
-                        f"VALUES {rel_target} {{ {target_values} }}\n"
-                        f"        {{ {{ ?entity {rel_uri} {rel_target} . }} UNION "
-                        f"{{ {rel_target} {rel_uri} ?entity . }} }}"
-                    )
-                else:
-                    relation_block = (
-                        f"VALUES {rel_target} {{ {target_values} }}\n"
-                        f"        ?entity {rel_uri} {rel_target} ."
-                    )
-            else:
-                if relation_direction == "backward":
-                    relation_block = f"{rel_source} {rel_uri} ?entity ."
-                elif relation_direction == "either":
-                    relation_block = (
-                        f"{{ {{ ?entity {rel_uri} {rel_target} . }} UNION "
-                        f"{{ {rel_source} {rel_uri} ?entity . }} }}"
-                    )
-                else:
-                    relation_block = f"?entity {rel_uri} {rel_target} ."
+        relation_block, relation_name, relation_direction, relation_target_ids = (
+            _relation_branch_sparql(branch, f"u{i}")
+        )
 
         attr_blocks: list[str] = []
         attribute_name = branch.get("attribute_name", "")
