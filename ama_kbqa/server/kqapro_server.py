@@ -28,7 +28,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from openai import OpenAI
 from loguru import logger
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices, model_validator
 from typing import Literal, Any, Optional, Dict
 from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
@@ -265,6 +265,61 @@ class StringComparisonResponse(BaseModel):
     value1: str = Field(..., description="First value (as provided).")
     value2: str = Field(..., description="Second value (as provided).")
     mode: str = Field(..., description="Comparison mode used.")
+
+
+# Accepted spellings for the relation-name key of a `RelationPathStep`. Kept
+# as a module-level constant so both the validator and its error messages
+# stay in sync with the alias list below.
+_RELATION_STEP_KEY_ALIASES = ("relation", "predicate", "relation_name", "property")
+
+
+class RelationPathStep(BaseModel):
+    """One hop in a `FindEntitiesByRelationPath` `relation_path` list.
+
+    Callers occasionally guess a different (but reasonable) key name for the
+    relation, e.g. "predicate" instead of "relation" — those spellings are
+    accepted as aliases instead of erroring. A step that isn't an object at
+    all (e.g. a bare string), or one missing the relation-name key entirely,
+    raises a ValueError that names the accepted keys, rather than a raw
+    KeyError once the step reaches query construction.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    relation: str = Field(
+        ...,
+        validation_alias=AliasChoices(*_RELATION_STEP_KEY_ALIASES),
+        description=(
+            "Name of the relation/predicate for this hop, e.g. 'location of "
+            "formation'. Also accepted under the keys 'predicate', "
+            "'relation_name', or 'property'."
+        ),
+    )
+    direction: Literal["forward", "backward"] = Field(
+        default="forward",
+        description=(
+            "Traversal direction for this hop: 'forward' (subject -> object) "
+            "or 'backward' (object -> subject). Defaults to 'forward'."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_object_with_relation_key(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            raise ValueError(
+                "Each relation_path step must be an object (dict), not a "
+                f"bare {type(value).__name__}: {value!r}. Expected shape: "
+                '{"relation": "<relation name>", "direction": "forward"|"backward"} '
+                f"(the relation-name key may also be spelled: {', '.join(_RELATION_STEP_KEY_ALIASES[1:])})."
+            )
+        if not any(key in value for key in _RELATION_STEP_KEY_ALIASES):
+            raise ValueError(
+                "Each relation_path step needs a relation-name key. Accepted "
+                f"keys: {', '.join(_RELATION_STEP_KEY_ALIASES)} (optionally "
+                f"also 'direction': 'forward'|'backward'). Got keys: {sorted(value.keys())!r}"
+            )
+        return value
 
 
 from ama_kbqa.framework.state import JournalState
@@ -3199,7 +3254,7 @@ def ExploreNeighborhood(base_node_id: str, semantic_relation_name: str, context:
 @log_tool_duration
 def FindEntitiesByRelationPath(
     start_node_id: str,
-    relation_path: list[Dict[str, str]],
+    relation_path: list[RelationPathStep],
     context: Context
 ) -> Dict[str, Any]:
     """
@@ -3250,9 +3305,10 @@ def FindEntitiesByRelationPath(
 
     Args:
         start_node_id (str): Starting entity ID (e.g., "Q678410")
-        relation_path (list[Dict]): List of relation steps, each with:
-          - relation (str): Relation name (e.g., "location of formation")
-          - direction (str): "forward" (A→B) or "backward" (B→A)
+        relation_path (list[RelationPathStep]): List of relation steps, each with:
+          - relation (str): Relation name (e.g., "location of formation").
+            Also accepted under the keys "predicate", "relation_name", or "property".
+          - direction (str): "forward" (A→B) or "backward" (B→A). Defaults to "forward".
 
     Returns:
         Dict with:
@@ -3279,6 +3335,13 @@ def FindEntitiesByRelationPath(
     app_context: AppContext = context.request_context.lifespan_context
     sparql: SPARQLWrapper = app_context.sparql
 
+    # Plain-dict view of the (already-validated) path, used for the response
+    # payload and journal entries so callers keep seeing the same
+    # {"relation": ..., "direction": ...} shape as before this fix.
+    relation_path_dicts = [
+        {"relation": step.relation, "direction": step.direction} for step in relation_path
+    ]
+
     logger.info(f"FindEntitiesByRelationPath: Starting from {start_node_id}, {len(relation_path)} hops")
 
     # Build SPARQL query dynamically based on path
@@ -3297,8 +3360,8 @@ def FindEntitiesByRelationPath(
     where_clauses.append(f"BIND({start_uri} AS ?hop0)")
 
     for i, step in enumerate(relation_path):
-        relation_name = step["relation"]
-        direction = step.get("direction", "forward")
+        relation_name = step.relation
+        direction = step.direction
 
         # Sanitize relation name and create URI
         sanitized_relation = relation_name.replace(" ", "_")
@@ -3328,7 +3391,7 @@ def FindEntitiesByRelationPath(
             logger.info("FindEntitiesByRelationPath: No entities found")
             return {
                 "start_node_id": start_node_id,
-                "relation_path": relation_path,
+                "relation_path": relation_path_dicts,
                 "entities_found": [],
                 "path_length": len(relation_path),
                 "intermediate_nodes": {},
@@ -3361,7 +3424,7 @@ def FindEntitiesByRelationPath(
         # Auto-update journal
         session_journal.verified_facts.append({
             "fact": f"Multi-hop path from {start_node_id}: {len(final_entities)} entities found",
-            "path": relation_path,
+            "path": relation_path_dicts,
             "results": final_entities[:10],  # First 10
             "source": "FindEntitiesByRelationPath"
         })
@@ -3372,7 +3435,7 @@ def FindEntitiesByRelationPath(
 
         return {
             "start_node_id": start_node_id,
-            "relation_path": relation_path,
+            "relation_path": relation_path_dicts,
             "entities_found": final_entities,
             "path_length": len(relation_path),
             "intermediate_nodes": intermediate_nodes,
@@ -3386,7 +3449,7 @@ def FindEntitiesByRelationPath(
         )
         return {
             "start_node_id": start_node_id,
-            "relation_path": relation_path,
+            "relation_path": relation_path_dicts,
             "entities_found": [],
             "path_length": len(relation_path),
             "intermediate_nodes": {},

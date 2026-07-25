@@ -65,7 +65,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from openai import OpenAI
 from loguru import logger
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices, model_validator
 from typing import Literal
 from SPARQLWrapper import SPARQLWrapper, JSON
 from dotenv import load_dotenv, find_dotenv
@@ -284,6 +284,60 @@ class CompareResourcesResponse(BaseModel):
     results: list[ComparisonResult]
     sorted_by: str
     status: str
+
+
+# Accepted spellings for the predicate-name key of a `RelationPathStep`. Kept
+# as a module-level constant so both the validator and its error messages
+# stay in sync with the alias list below.
+_RELATION_STEP_KEY_ALIASES = ("predicate", "relation", "relation_name", "property")
+
+
+class RelationPathStep(BaseModel):
+    """One hop in a `FollowRelationPath` `relation_path` list.
+
+    Callers occasionally guess a different (but reasonable) key name for the
+    predicate, e.g. "relation" instead of "predicate" — those spellings are
+    accepted as aliases instead of erroring. A step that isn't an object at
+    all (e.g. a bare string), or one missing the predicate-name key
+    entirely, raises a ValueError that names the accepted keys, rather than
+    a raw KeyError once the step reaches query construction.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    predicate: str = Field(
+        ...,
+        validation_alias=AliasChoices(*_RELATION_STEP_KEY_ALIASES),
+        description=(
+            "Predicate ID for this hop, e.g. 'P31'. Also accepted under the "
+            "keys 'relation', 'relation_name', or 'property'."
+        ),
+    )
+    direction: Literal["forward", "backward"] = Field(
+        default="forward",
+        description=(
+            "Traversal direction for this hop: 'forward' (subject -> object) "
+            "or 'backward' (object -> subject). Defaults to 'forward'."
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _require_object_with_predicate_key(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            raise ValueError(
+                "Each relation_path step must be an object (dict), not a "
+                f"bare {type(value).__name__}: {value!r}. Expected shape: "
+                '{"predicate": "<predicate id>", "direction": "forward"|"backward"} '
+                f"(the predicate key may also be spelled: {', '.join(_RELATION_STEP_KEY_ALIASES[1:])})."
+            )
+        if not any(key in value for key in _RELATION_STEP_KEY_ALIASES):
+            raise ValueError(
+                "Each relation_path step needs a predicate-name key. Accepted "
+                f"keys: {', '.join(_RELATION_STEP_KEY_ALIASES)} (optionally "
+                f"also 'direction': 'forward'|'backward'). Got keys: {sorted(value.keys())!r}"
+            )
+        return value
 
 
 # Global state container
@@ -2531,7 +2585,7 @@ async def CompareResources(
 async def FollowRelationPath(
     app_context: Context,
     start_resource_id: str,
-    relation_path: List[Dict[str, str]]
+    relation_path: List[RelationPathStep]
 ) -> str:
     """
     Navigate multi-hop relation paths to find connected resources in one SPARQL call.
@@ -2544,8 +2598,10 @@ async def FollowRelationPath(
     Args:
         start_resource_id: Starting resource ID (e.g., "R12345")
         relation_path: List of steps, each with:
-          - "predicate": Predicate ID (e.g., "P31")
-          - "direction": "forward" (subject→object) or "backward" (object→subject)
+          - "predicate": Predicate ID (e.g., "P31"). Also accepted under the
+            keys "relation", "relation_name", or "property".
+          - "direction": "forward" (subject→object) or "backward" (object→subject).
+            Defaults to "forward".
 
     Returns:
         JSON with entities found at the end of the path and intermediate nodes
@@ -2556,6 +2612,13 @@ async def FollowRelationPath(
         if not relation_path:
             return json.dumps({"error": "relation_path cannot be empty"}, indent=2)
 
+        # Plain-dict view of the (already-validated) path, used for the
+        # response payload and journal entries so callers keep seeing the
+        # same {"predicate": ..., "direction": ...} shape as before this fix.
+        relation_path_dicts = [
+            {"predicate": step.predicate, "direction": step.direction} for step in relation_path
+        ]
+
         # Build SPARQL query dynamically
         hop_vars = [f"?hop{i}" for i in range(len(relation_path) + 1)]
         label_vars = [f"?hop{i}Label" for i in range(len(relation_path) + 1)]
@@ -2564,8 +2627,8 @@ async def FollowRelationPath(
         where_clauses = [f"BIND(orkgr:{start_resource_id} AS ?hop0)"]
 
         for i, step in enumerate(relation_path):
-            predicate = step["predicate"]
-            direction = step.get("direction", "forward")
+            predicate = step.predicate
+            direction = step.direction
 
             pred_uri = f"orkgp:{predicate}"
             current_var = f"?hop{i}"
@@ -2598,7 +2661,7 @@ async def FollowRelationPath(
             )
             return json.dumps({
                 "start_resource_id": start_resource_id,
-                "relation_path": relation_path,
+                "relation_path": relation_path_dicts,
                 "entities_found": [],
                 "path_length": len(relation_path),
                 "intermediate_nodes": {},
@@ -2638,7 +2701,7 @@ async def FollowRelationPath(
 
         session_journal.verified_facts.append({
             "fact": f"Multi-hop path from {start_resource_id}: {len(final_entities)} entities found",
-            "path": relation_path,
+            "path": relation_path_dicts,
             "results": [e["id"] for e in final_entities[:10]],
             "source": "FollowRelationPath"
         })
@@ -2648,7 +2711,7 @@ async def FollowRelationPath(
 
         return json.dumps({
             "start_resource_id": start_resource_id,
-            "relation_path": relation_path,
+            "relation_path": relation_path_dicts,
             "entities_found": final_entities,
             "path_length": len(relation_path),
             "intermediate_nodes": intermediate_summary,
