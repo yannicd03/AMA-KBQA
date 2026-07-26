@@ -126,6 +126,92 @@ exists is that a default was previously justified by numbers belonging to a diff
 The rule is also deliberately weaker than the earlier draft, because n≈100 cannot support
 the accuracy-based conclusions that draft assumed.
 
+## Queue status (2026-07-26)
+
+Arms B and C are **queued and armed**, not yet running: `~/fusion-ab-queue.sh` on
+Hetzner, tmux session `fusionab`, launched 16:23 UTC. It blocks on the `SWEEP COMPLETE`
+marker in `~/densererank-sweep.log`, then fast-forwards the checkout to `origin/dev`,
+then runs B (rrf) followed by C (dbsf). Expected start ~01:30 UTC, ~5.5 h for both arms.
+
+Two deliberate choices in that script:
+
+- **B runs before C.** If the shared KIT endpoint degrades overnight, the later slot is
+  the worse one, and C is the arm we hypothesise in favour of. Ordering it second means
+  the schedule works against our own hypothesis rather than for it.
+- **Arms are set by `AMA_RETRIEVAL_*` env only**, so the deployed `config.toml` value is
+  irrelevant to arm assignment. All four override combinations were verified against
+  `get_retrieval_config()` before arming.
+
+**Confound to watch:** orca is stopped. Restarting it *between* arms rather than before
+or after both invalidates B vs C (~0.92 s/q of tool time). Each arm logs `free -g` at
+start so this is detectable after the fact.
+
+## What the literature says, and how it changes the reading (2026-07-26)
+
+A web-research pass ran while these arms were being sized. It does not stop the
+experiment, but it should temper what a win for C would mean.
+
+- **The choice of normaliser is a smaller lever than whether you normalise at all.**
+  Bruch, Gai & Ingber, *An Analysis of Fusion Functions for Hybrid Retrieval* (ACM TOIS
+  2023, arXiv 2210.11934) find convex combination beats RRF in- and out-of-domain, and
+  that "there always exist convex combinations of scores normalized by min-max, standard
+  score, or any other linear transformation that are rank-equivalent." So DBSF is one
+  arbitrary point in a family, not the principled answer. Qdrant simply does not offer
+  the peer-reviewed one (convex combination with tuned α).
+- **DBSF is the least-validated method in the field**: no peer review, and Qdrant's own
+  docs warn its per-query mean±3σ statistics come from the prefetch top-k, where a single
+  dominant outlier skews the normalisation for that query.
+- **RRF's documented worst case is exactly our configuration**: it is at its best fusing
+  retrievers of comparable strength (its 2009 TREC setting) and at its worst when one
+  branch is clearly better. *Balancing the Blend* (PVLDB, arXiv 2508.01405) measured a
+  strong lexical path at 0.650 nDCG@10 fused with a weak dense path at 0.390 producing
+  0.604, i.e. **below the strong path alone**.
+- **The most on-point study for our corpus shape argues the sparse branch is the
+  problem, not the fusion.** Hebert et al., *Robust Candidate Generation for Entity
+  Linking on Short Social Media Texts* (W-NUT @ EMNLP 2022) measured, on short
+  mention→entity matching, BM25 recall@16 of **0.221** (academic) / 0.556 (OOD) against
+  dense at 0.78. Their winning "hybrid" was dense ∪ **alias lookup**, not dense ∪ BM25.
+  Mechanically this is unsurprising: on 1-4 token labels, tf saturation is inert and
+  length normalisation is near-degenerate, so BM25 reduces to IDF-weighted token overlap.
+- **There is no consensus to appeal to on the specific question.** No controlled
+  dense-vs-hybrid comparison on a KG entity-label corpus appears to exist, nor any study
+  of cross-encoder rerankers where the document is a bare entity label. Our null result
+  is not anomalous against that backdrop; it is what the nearest study predicts.
+
+**Consequence for the decision rule:** a C-beats-B result should be read as "DBSF is a
+better way to fuse this particular weak branch", never as "distribution-preserving fusion
+is validated". A C≈B result is the outcome the literature predicts and should move weight
+onto arm A rather than onto tuning fusion further.
+
+## Correction to a premise this document was built on
+
+`search.py`'s BM25 prefetch carries the comment `# No score_threshold: BM25 scores are
+not cosine similarities.` That is true about the *scale*, but it has been read here as
+implying the API cannot gate that branch. It can: Qdrant's `Prefetch` object accepts
+`score_threshold` (confirmed in the query-points API reference; the narrative
+hybrid-queries doc page omits the field, which is likely why it looked unavailable).
+Gating the sparse branch is therefore a config-level change, not a code change. The open
+question is only what threshold value means anything on an unbounded BM25 scale.
+
+Note also that under RRF, gating the sparse branch and shrinking its `limit` are nearly
+the same intervention, because RRF consumes only ranks.
+
+## Cheaper and more decisive than any of these arms
+
+**Per-query union-recall diagnostic.** For each query, is the gold entity retrieved by
+the BM25 branch but *not* by the dense branch within k? This needs no benchmark run and
+no LLM calls, just a sweep over the evaluation questions against Qdrant. It answers the
+actual question the A/B only approaches indirectly:
+
+- BM25-only slice under ~2% → the sparse branch contributes nothing; drop it, and no
+  fusion method can change that.
+- Above ~5% → a lexical branch is earning its place and fusion is worth tuning.
+- Composition matters as much as size: if that slice is dominated by identifier-like
+  labels (`CINIC-10`, metric names), the indicated fix is exact/prefix/alias lookup
+  rather than BM25 ranking, which is what actually won in the W-NUT hybrid.
+
+This should probably run before or alongside the arms. It is minutes of compute.
+
 ## Related
 
 - `.agent/Tasks/active/prompt-cache-utilization.md` — same host, overlapping latency work.
