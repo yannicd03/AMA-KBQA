@@ -1,7 +1,7 @@
 # AMA KBQA — Documentation Index
 
 **Project:** Multi-agent Knowledge Base Question Answering system over heterogeneous RDF/SPARQL knowledge graphs.  
-**Research venue:** SEMANTiCS 2026 Posters & Demos track (`paper/main.tex`).  
+**Research venue:** SEMANTiCS 2026 Posters & Demos track (paper 184; source lives on Overleaf, not in this repo).  
 **Quick orientation:** See [System/project_architecture.md](System/project_architecture.md) first.
 
 ---
@@ -16,7 +16,7 @@
 | [System/orchestrator_routing.md](System/orchestrator_routing.md) | Evidence-based two-step routing: `analyze_query_recommend_db` contract, `route_reason` span, design invariants |
 | [System/kqapro_agent.md](System/kqapro_agent.md) | KQAProAgent lifecycle, 10-type classification, 7-layer loop detection, journal data model, message history format |
 | [System/sciqa_agent.md](System/sciqa_agent.md) | SciQAAgent lifecycle, 8-type classification, multi-label classifier tolerance, raw-SPARQL denylist gate + A/B evidence, ORKG predicate reference |
-| [System/research_corpus.md](System/research_corpus.md) | Paper (`paper/`), dataset docs (`docs/`), and how research artifacts relate to code |
+| [System/research_corpus.md](System/research_corpus.md) | Paper (Overleaf-hosted), dataset docs (`docs/`), and how research artifacts relate to code |
 
 > `System/database_schema.md` — referenced in older READMEs but file is absent; Qdrant/Virtuoso schema is documented inline in `System/project_architecture.md` and the per-agent docs above.
 
@@ -30,6 +30,7 @@
 | [SOP/adding_new_kqapro_tools.md](SOP/adding_new_kqapro_tools.md) | Checklist for adding KQAPro MCP tools that produce answer values (journal write invariants) |
 | [SOP/hetzner_deployment.md](SOP/hetzner_deployment.md) | Hetzner VPS deployment runbook: 3-service compose stack, Qdrant port, frontend container, RDF bootstrap, SSH tunnel |
 | [SOP/migrate_add_bm25.md](SOP/migrate_add_bm25.md) | Runbook for `db/migrate_add_bm25.py`: adds BM25 sparse index to existing Qdrant collections (dry-run, then --yes); enable hybrid in config afterward |
+| [SOP/refreshing_paper_numbers.md](SOP/refreshing_paper_numbers.md) | Runbook for pulling fresh benchmark numbers into the paper: Overleaf access (project id, `write_section` vs. direct-checkout push for pre-`\section` content), `summary.json` field → Table 1 column mapping, run-trustworthiness pre-flight checks, SciQA 100-question full-split trap, page-budget delta-compile workaround |
 
 > `SOP/database_setup.md` and `SOP/changing_llm_provider.md` — referenced in earlier docs but files are absent; Virtuoso/Qdrant setup is in the root `README.md`; LLM provider config is in `docs/guides/dataset_integration.md` and `config.toml`.
 
@@ -68,6 +69,7 @@
 | [Decisions/transient-retry-and-chatkit-extraction.md](Decisions/transient-retry-and-chatkit-extraction.md) | `chatkit.retry.TransientRetry` wired into every agent LLM call path (BaseKBQAAgent, SciQAAgent classify override, Orchestrator); vendored `ama_kbqa/llm/` replaced by the published `chatkit` package (pinned tag `v1.0.0`), shared with sibling repo `wikikgqa-2026` and ORCA via a `[langchain]` extra; `orchestrator_server.py`'s `extract_semantics` deliberately left unwrapped |
 | [Decisions/kg-adapter-config-resolution.md](Decisions/kg-adapter-config-resolution.md) | KG adapter (`resolved_config`) is now the runtime source of truth for SPARQL endpoint / named graph / vector collections, via new `framework/adapters/resolve.py` (env → `[kg.<code>]` toml → legacy toml closed-table → adapter default); replaces the six per-KG getters both MCP servers used to call; `supports_reification`/`has_temporal_data` removed rather than wired (no runtime readers) |
 | [Decisions/reasoning-error-analysis-2026-07-25.md](Decisions/reasoning-error-analysis-2026-07-25.md) | Reasoning-error and capability-gap analysis (600 KQAPro + 300 SciQA traces, gold-verified): schema-role confusion (attribute/relation/qualifier) is the dominant KQAPro failure mode; constraint-dropped-under-pressure is secondary; genuine capability gaps (qualifier bnode assumption, `FindNode` limit=5, SciQA grouped aggregation, comparison-anchoring bias, `FindFrequentValues` scope) and adoption-gap root causes (classifier single point of failure, contradicting fewshots) documented; 10 ranked recommendations triaged into 5 small fixes (concurrent this session) + 5 deferred design tasks; re-prioritises `Tasks/active/deferred-tool-loading.md` |
+| [Decisions/relation-path-step-schema-hardening.md](Decisions/relation-path-step-schema-hardening.md) | New `RelationPathStep` pydantic model (required relation-name key via `AliasChoices`, `Literal["forward","backward"]` direction) replaces untyped `list[Dict[str,str]]` for `FindEntitiesByRelationPath` (KQAPro) and `FollowRelationPath` (SciQA); fixes raw `KeyError` on malformed steps found live in the seed-42 benchmark (~16% of questions with minimax-m2.7); JSON returned to the agent is unchanged. Pushed as `195ce31`, deploy to Hetzner deliberately pending (host mid-benchmark at `921a04d`) |
 
 ---
 
@@ -95,7 +97,7 @@
 | [docs/datasets/kqapro.md](../docs/datasets/kqapro.md) | KQAPro dataset structure (~94K Q&A, 1.6M RDF triples) |
 | [docs/datasets/sciqa.md](../docs/datasets/sciqa.md) | SciQA/ORKG dataset structure (468 Q&A, 1.1M triples) |
 | [docs/guides/dataset_integration.md](../docs/guides/dataset_integration.md) | How to integrate a new KG into the system |
-| [paper/main.tex](../paper/main.tex) | SEMANTiCS 2026 submission — AMA-KBQA system paper |
+| _(Overleaf, not in this repo)_ | SEMANTiCS 2026 paper — see [SOP/refreshing_paper_numbers.md](SOP/refreshing_paper_numbers.md) for access and the number-refresh procedure |
 
 > ⚠️ **Drift flagged 2026-07-18:** `AGENT_ARCHITECTURE.md`, `TOOLS_REFERENCE.md`, and `CLAUDE.md` were listed here but do not exist at the repo root on any branch. The first two were deleted from root in commit `d197a31` (2026-02-10, "remove unneeded files") when this content moved into `.agent/System/project_architecture.md` and the per-agent docs — the README rows were simply never removed. `CLAUDE.md` has no history in this repo at all (never existed). Rows removed rather than left as dead links; `.agent/System/project_architecture.md`'s own Related Documentation section had the same two stale links and was fixed in the same pass.
 

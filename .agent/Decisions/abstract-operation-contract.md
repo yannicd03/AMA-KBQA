@@ -7,6 +7,7 @@
 ## Related Docs
 - [Project Architecture](../System/project_architecture.md) — overall system overview; framework and server sections
 - [Agent System](../System/agent_system.md) — agent lifecycle and tool loop context
+- [RelationPathStep Schema Hardening](./relation-path-step-schema-hardening.md) — 2026-07-25 parameter-level companion: named-key validation for the `follow_path` op's `relation_path` argument in both servers, closing a raw-`KeyError` gap this ADR's Decision 4 didn't cover
 
 ---
 
