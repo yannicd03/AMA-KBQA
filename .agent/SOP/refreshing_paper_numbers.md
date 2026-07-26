@@ -34,6 +34,18 @@ Table 1 (`\label{tab:eval}`) columns map to `summary.json` under `statistics`:
 
 Do **not** use `statistics.estimated_cost_usd` for the cost claim — it reads `0.0` because the KIT endpoint is free, which is not the number the paper claims.
 
+## 1a. Why the cost claim is a repricing, not a measured spend (verified 2026-07-26)
+
+**Provider that actually served the runs.** The benchmark does not run on OpenRouter. `config.toml` sets `[llm] chat_provider = "kit"`, and `config.toml:35-37` points `[kit]` at `base_url = "https://ki-toolbox.scc.kit.edu/api/v1"` / `chat_model = "kit.gemma4-31b-it"`. Sweeping `resolved_models[].model_id` across every `benchmark_results/*/run_manifest.json`: the KIT endpoint switch happened mid-day on 2026-04-29 (`2026-04-29-1` is still `openrouter`; `2026-04-29-2` onward is `kit`), and every Gemma run from that switch through the 2026-07-25 n=500 run resolves to provider `kit`. Earlier runs (`2026-04-20-1` through `-7`, `2026-04-29-1`) predate the switch and used `openrouter` directly — several under the *same* model id (`google/gemma-4-31b-it`) the paper cites, so don't assume a manifest is safe just because the model id matches; check `resolved_models[].provider` too.
+
+Consequences:
+
+1. The KIT endpoint is free, which is why `statistics.estimated_cost_usd` reads `0.0` on every run past the switch. The paper's cost figure is a **hypothetical repricing** of the measured token volumes at commercial OpenRouter rates, not a measured spend. Caption wording must keep saying "At \<rates\>, a question costs under \$X" — never "we spent."
+2. **OpenRouter IS used elsewhere in this pipeline** — the LLM judge (`[postprocessing] judge_provider = "openrouter"`, `deepseek/deepseek-v4-pro`, `config.toml:86-87`), synthesis (`[synthesis] synthesis_provider = "openrouter"`), and the demo's embeddings (`config.docker.toml:3`). Seeing "openrouter" anywhere in `config.toml` is not evidence the *benchmark* ran there. This exact confusion produced a wrong hypothesis on 2026-07-26 that a latency regression was caused by a hosting switch that never happened — check `resolved_models[].provider` on the actual run manifest before reaching for a provider-change explanation.
+3. **Latency is not a stable point estimate.** The KIT endpoint is a shared community deployment whose throughput varies with load — the same model at the same commit has produced 30.8, 46.3, and 47.8 s/q on KQAPro across different runs. Hedge latency claims in the paper (a range, "roughly", or a specific run + date) rather than presenting a single figure as exact.
+
+**Demo vs. benchmark are different configs, not different providers.** The demo also runs on the KIT endpoint (`config.docker.toml:1-2`, `chat_provider = "kit"`), but `config.docker.toml:27-29` points it at `kit.qwen3.5-397b-A17b` — a different, larger KIT model than the benchmark's `kit.gemma4-31b-it`. Any demo-vs-benchmark latency gap the paper's Demonstration section discusses is model size + Orchestrator routing overhead + a small shared VM, not a provider difference — don't attribute it to hosting.
+
 ## 2. Pre-flight checks before trusting a run
 
 Run these against every leg (`run_manifest.json` / `summary.json` / `results.json`) before citing a number:
@@ -76,6 +88,8 @@ Runs `full-kqapro-n500-seed42-2026-07-25` and `full-sciqa-n500-seed42-2026-07-25
 | SciQA | gemma-4-31b-kit | 73/100 = 73.0% | 51.24 s/q | 114,461 tok/q | 1 timeout |
 
 Also captured but not used in the paper: `minimax-m2.7-kit` at 86.2% KQAPro / 66.0% SciQA.
+
+**Cost repricing (checked 2026-07-26):** current OpenRouter price for `google/gemma-4-31b-it` is $0.10 / $0.34 per 1M input/output tokens. The n=500 Gemma workload (KQAPro + SciQA combined) used 46,343,899 prompt + 267,830 completion tokens → $4.73 total, ~$4.99 after OpenRouter's ~5.5% credit fee — $0.0071/question on KQAPro, $0.0116/question on SciQA (input tokens are ~98% of spend). The paper caption still cites the older $0.12 / $0.35 rate (checked 2026-06) — that's more conservative than the current $0.10 / $0.34, so its "under $0.02" claim still holds; re-check both if the caption is ever updated to the current rate.
 
 Table 1 and the abstract were updated; Overleaf commits `a3cf560` and `61ca779`.
 
