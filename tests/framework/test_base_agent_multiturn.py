@@ -148,6 +148,8 @@ class _HookAgent(BaseKBQAAgent):
         self.classify_calls = 0
         self.filter_calls = 0
         self.tool_loop_calls = []
+        self.static_context_calls = 0
+        self.question_context_calls = 0
 
     # --- abstract / external surface, stubbed -------------------------------
     def get_config(self):
@@ -175,8 +177,13 @@ class _HookAgent(BaseKBQAAgent):
             "fewshot_examples": "",
         }
 
-    def _build_analysis_context(self, *a, **k):
-        return "ANALYSIS_CONTEXT"
+    def _build_static_qtype_context(self, qtype, fewshot_examples=""):
+        self.static_context_calls += 1
+        return "STATIC_QTYPE_CONTEXT"
+
+    def _build_question_context(self, qtype, entities, relations, query=""):
+        self.question_context_calls += 1
+        return "QUESTION_CONTEXT"
 
     def _get_allowed_tools_for_qtype(self, qtype):
         self.filter_calls += 1
@@ -196,8 +203,29 @@ def test_first_turn_runs_classification():
     # Fresh turn: full pre-agent hook runs.
     assert agent.classify_calls == 1
     assert agent.filter_calls == 1
-    # Analysis context was injected.
-    assert any(m.get("content") == "ANALYSIS_CONTEXT" for m in agent._messages)
+    # Both the static qtype context and the per-question context were built
+    # and injected exactly once.
+    assert agent.static_context_calls == 1
+    assert agent.question_context_calls == 1
+    assert any(m.get("content") == "STATIC_QTYPE_CONTEXT" for m in agent._messages)
+    assert any(m.get("content") == "QUESTION_CONTEXT" for m in agent._messages)
+
+
+def test_static_context_precedes_query_and_question_context():
+    """Prompt-cache ordering: the static, qtype-only context must sit BEFORE
+    both the raw query and the per-question context in the message stack, so
+    it forms a stable, shareable prefix across same-qtype questions (see
+    .agent/Tasks/active/prompt-cache-utilization.md, item 2)."""
+    agent = _HookAgent()
+
+    _run(agent.ask("Who directed Inception?"))
+
+    contents = [m.get("content") for m in agent._messages]
+    static_idx = contents.index("STATIC_QTYPE_CONTEXT")
+    query_idx = contents.index("Who directed Inception?")
+    question_idx = contents.index("QUESTION_CONTEXT")
+
+    assert static_idx < query_idx < question_idx
 
 
 def test_followup_skips_classification_and_filtering():
@@ -205,7 +233,8 @@ def test_followup_skips_classification_and_filtering():
     # Simulate a preserved stack from a completed prior turn.
     agent._messages += [
         {"role": "user", "content": "Who directed Inception?"},
-        {"role": "user", "content": "ANALYSIS_CONTEXT"},
+        {"role": "user", "content": "STATIC_QTYPE_CONTEXT"},
+        {"role": "user", "content": "QUESTION_CONTEXT"},
         {"role": "assistant", "content": "Christopher Nolan."},
     ]
 
@@ -215,7 +244,11 @@ def test_followup_skips_classification_and_filtering():
     # Follow-up: classification, fast path, and tool filtering are all skipped.
     assert agent.classify_calls == 0
     assert agent.filter_calls == 0
-    # No NEW analysis context injected for the follow-up (only the prior one).
-    assert sum(1 for m in agent._messages if m.get("content") == "ANALYSIS_CONTEXT") == 1
+    # No NEW static/per-question context built or injected for the follow-up
+    # (only the prior turn's, already in the preserved stack).
+    assert agent.static_context_calls == 0
+    assert agent.question_context_calls == 0
+    assert sum(1 for m in agent._messages if m.get("content") == "STATIC_QTYPE_CONTEXT") == 1
+    assert sum(1 for m in agent._messages if m.get("content") == "QUESTION_CONTEXT") == 1
     # Full loop ran with the generic default qtype.
     assert agent.tool_loop_calls == [{"query": "Where was he born?", "qtype": "Query"}]

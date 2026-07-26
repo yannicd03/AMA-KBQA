@@ -869,6 +869,24 @@ Extracted Relations:
 {qtype_strategy}
 """
 
+# Per-question header only (type + extracted entities/relations). The
+# reasoning strategy for a qtype lives in QTYPE_STRATEGIES and is rendered
+# by _build_static_qtype_context as its own, qtype-only message so it can
+# be shared as a stable prefix across consecutive same-qtype questions
+# (see .agent/Tasks/active/prompt-cache-utilization.md). Kept in sync with
+# ANALYSIS_CONTEXT_TEMPLATE above minus the {qtype_strategy} line.
+QUESTION_CONTEXT_TEMPLATE = """
+PRE-ANALYSIS (Automatically Computed)
+
+Question Type: {qtype}
+
+Extracted Entities:
+{formatted_entities}
+
+Extracted Relations:
+{formatted_relations}
+"""
+
 FEWSHOT_EXAMPLES_TEMPLATE = """
 Relevant Examples for {qtype} Questions:
 {fewshot_examples}

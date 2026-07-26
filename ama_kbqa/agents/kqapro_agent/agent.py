@@ -389,51 +389,39 @@ class KQAProAgent(BaseKBQAAgent):
 
         return result
 
-    def _build_analysis_context(
+    def _build_static_qtype_context(
         self,
         qtype: str,
-        entities: List[str],
-        relations: List[str],
         fewshot_examples: str = "",
-        query: str = "",
     ) -> str:
         """
-        Build the analysis context message with KQAPro templates.
+        Build the STATIC, qtype-only portion of the analysis context:
+        reasoning strategy + few-shot examples + general guidance + tool
+        tips. Everything here depends only on `qtype` (and global config
+        files under db/datasets/kqapro/fewshot-examples/), never on the
+        specific question's text/entities/relations, so it is
+        byte-identical (~2,900-3,000 tok) across every question of the
+        same qtype in a run.
+
+        `_ask_impl` appends this as its own message BEFORE the
+        per-question context (`_build_question_context`) so this block
+        stays a shared, cacheable prefix across consecutive same-qtype
+        questions instead of sitting behind per-question text where it can
+        never hit the KIT endpoint's position-anchored prefix cache. See
+        `.agent/Tasks/active/prompt-cache-utilization.md`. Do NOT fold any
+        per-question data (query, entities, relations, exact constraints)
+        into this method.
 
         Args:
             qtype: Question type
-            entities: Extracted entities
-            relations: Extracted relations
-            fewshot_examples: Optional few-shot examples
+            fewshot_examples: Optional few-shot examples for this qtype
 
         Returns:
-            Analysis context string
+            Static analysis context string
         """
-        formatted_entities = "\n".join([f"  - {e}" for e in entities]) if entities else "  (none identified)"
-        formatted_relations = "\n".join([f"  - {r}" for r in relations]) if relations else "  (none identified)"
-
         qtype_strategy = QTYPE_STRATEGIES.get(qtype, QTYPE_STRATEGIES.get("Query", ""))
 
-        context = ANALYSIS_CONTEXT_TEMPLATE.format(
-            qtype=qtype,
-            formatted_entities=formatted_entities,
-            formatted_relations=formatted_relations,
-            qtype_strategy=qtype_strategy
-        )
-
-        exact_constraints = self._extract_exact_attribute_constraints(query)
-        if exact_constraints:
-            formatted_constraints = "\n".join(
-                f"  - {c['attribute_name']} = {c['value']}"
-                for c in exact_constraints
-            )
-            context += (
-                "\n\nEXACT ATTRIBUTE CONSTRAINTS DETECTED:\n"
-                f"{formatted_constraints}\n"
-                "Use exact reverse lookup (`FindByAttribute`) or explicit verification "
-                "for these constraints before semantic entity search or final synthesis. "
-                "If several entities share a name, prefer the one satisfying all exact constraints."
-            )
+        context = f"STRATEGY GUIDANCE FOR QUESTION TYPE: {qtype}\n{qtype_strategy}"
 
         if fewshot_examples and fewshot_examples.strip():
             context += FEWSHOT_EXAMPLES_TEMPLATE.format(
@@ -455,9 +443,95 @@ class KQAProAgent(BaseKBQAAgent):
                     tool_tips=tool_tips
                 )
 
+        return context
+
+    def _build_question_context(
+        self,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+        query: str = "",
+    ) -> str:
+        """
+        Build the PER-QUESTION portion of the analysis context: the
+        entities/relations header plus any exact attribute constraints
+        pulled from this specific query's text.
+
+        Must be appended to the message stack AFTER the static qtype
+        context (`_build_static_qtype_context`) so that block stays a
+        stable, cacheable prefix.
+
+        Args:
+            qtype: Question type
+            entities: Extracted entities
+            relations: Extracted relations
+            query: The raw question text (used to extract exact constraints)
+
+        Returns:
+            Per-question analysis context string
+        """
+        formatted_entities = "\n".join([f"  - {e}" for e in entities]) if entities else "  (none identified)"
+        formatted_relations = "\n".join([f"  - {r}" for r in relations]) if relations else "  (none identified)"
+
+        context = (
+            f"PRE-ANALYSIS: Type={qtype} | Entities: {formatted_entities} | "
+            f"Relations: {formatted_relations}\nProceed with investigation."
+        )
+
+        exact_constraints = self._extract_exact_attribute_constraints(query)
+        if exact_constraints:
+            formatted_constraints = "\n".join(
+                f"  - {c['attribute_name']} = {c['value']}"
+                for c in exact_constraints
+            )
+            context += (
+                "\n\nEXACT ATTRIBUTE CONSTRAINTS DETECTED:\n"
+                f"{formatted_constraints}\n"
+                "Use exact reverse lookup (`FindByAttribute`) or explicit verification "
+                "for these constraints before semantic entity search or final synthesis. "
+                "If several entities share a name, prefer the one satisfying all exact constraints."
+            )
+
+        # ANALYSIS_CONTEXT_SUFFIX is a "now proceed" trailer that reads
+        # naturally after this question's specific entities/constraints, so
+        # it stays here (at the tail of the per-question block) rather than
+        # in the static block. Currently empty (measured 0 chars) -- inert,
+        # but kept for semantic parity with the pre-split single-context
+        # design and with SciQAAgent's equivalent split.
         context += ANALYSIS_CONTEXT_SUFFIX
 
         return context
+
+    def _build_analysis_context(
+        self,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+        fewshot_examples: str = "",
+        query: str = "",
+    ) -> str:
+        """
+        Backward-compatible combined builder (static context followed by
+        per-question context). `_ask_impl` calls the two builders above
+        directly, as separate messages, so the static block can be placed
+        ahead of per-question content for prefix-cache reuse; this wrapper
+        is kept for any other caller (e.g. tests) that still wants one
+        combined string.
+
+        Args:
+            qtype: Question type
+            entities: Extracted entities
+            relations: Extracted relations
+            fewshot_examples: Optional few-shot examples
+
+        Returns:
+            Analysis context string
+        """
+        static = self._build_static_qtype_context(qtype, fewshot_examples)
+        question = self._build_question_context(qtype, entities, relations, query)
+        if static and question:
+            return f"{static}\n\n{question}"
+        return static or question
 
 
 # =============================================================================

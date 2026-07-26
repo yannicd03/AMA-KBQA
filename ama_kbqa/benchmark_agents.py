@@ -669,7 +669,21 @@ def stratified_sample(
         result.extend(sampled)
         remaining -= len(sampled)
 
-    random.shuffle(result)
+    # Do NOT shuffle across qtypes here. The benchmark's LLM calls share a
+    # leading system-prompt + qtype-tool-schema byte sequence for every
+    # question of the same qtype; running same-qtype questions back-to-back
+    # lets the KIT endpoint's position-anchored prefix cache reuse that
+    # shared prefix across consecutive questions instead of invalidating it
+    # on every question (see .agent/Tasks/active/prompt-cache-utilization.md,
+    # item 1). This does NOT change which questions are sampled -- only
+    # their execution order -- and stays deterministic/seed-reproducible:
+    # groups are ordered by qtype name (`sorted_types`, computed above), and
+    # within a group `random.sample`'s selection order already came from the
+    # RNG seeded at the top of this function, so no fresh randomness is
+    # introduced. The explicit stable sort below (rather than relying on the
+    # accumulation loop's incidental ordering) makes this grouping invariant
+    # robust to future refactors of that loop.
+    result.sort(key=lambda item: get_question_type(item, agent_name))
 
     # Print distribution
     type_counts: Dict[str, int] = {}

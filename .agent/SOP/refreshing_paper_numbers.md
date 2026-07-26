@@ -44,7 +44,40 @@ Consequences:
 2. **OpenRouter IS used elsewhere in this pipeline** — the LLM judge (`[postprocessing] judge_provider = "openrouter"`, `deepseek/deepseek-v4-pro`, `config.toml:86-87`), synthesis (`[synthesis] synthesis_provider = "openrouter"`), and the demo's embeddings (`config.docker.toml:3`). Seeing "openrouter" anywhere in `config.toml` is not evidence the *benchmark* ran there. This exact confusion produced a wrong hypothesis on 2026-07-26 that a latency regression was caused by a hosting switch that never happened — check `resolved_models[].provider` on the actual run manifest before reaching for a provider-change explanation.
 3. **Latency is not a stable point estimate.** The KIT endpoint is a shared community deployment whose throughput varies with load — the same model at the same commit has produced 30.8, 46.3, and 47.8 s/q on KQAPro across different runs. Hedge latency claims in the paper (a range, "roughly", or a specific run + date) rather than presenting a single figure as exact.
 
-**Demo vs. benchmark are different configs, not different providers.** The demo also runs on the KIT endpoint (`config.docker.toml:1-2`, `chat_provider = "kit"`), but `config.docker.toml:27-29` points it at `kit.qwen3.5-397b-A17b` — a different, larger KIT model than the benchmark's `kit.gemma4-31b-it`. Any demo-vs-benchmark latency gap the paper's Demonstration section discusses is model size + Orchestrator routing overhead + a small shared VM, not a provider difference — don't attribute it to hosting.
+**Demo vs. benchmark are different configs, not different providers.** The demo also runs on the KIT endpoint (`config.docker.toml:1-2`, `chat_provider = "kit"`), but `config.docker.toml:27-29` points it at `kit.qwen3.5-397b-A17b` — a different, larger KIT model than the benchmark's `kit.gemma4-31b-it`. Any demo-vs-benchmark latency gap the paper's Demonstration section discusses is model size + Orchestrator routing overhead + the demo's smaller VM (see §1c), not a provider difference — both hit the same KIT endpoint.
+
+## 1b. Decompose wall-clock before attributing it (added 2026-07-26)
+
+Item 3 above says latency isn't a stable point estimate — this is the technique that makes a latency-regression claim checkable instead of just hedged. `summary.json` carries `total_tool_duration_seconds` alongside `avg_time_seconds` and `total_questions`. Subtracting gives the split between local tool execution and everything else (LLM round trips). **Always compute this split before attributing a timing change to any single cause** — provider, code change, or otherwise.
+
+Worked example, both runs KQAPro/gemma on the same Hetzner host:
+
+| | June (`rag-rerank-100q-2026-06-07/hybrid_rerank/kqapro/default`, commit `ba780af`) | July (`full-kqapro-n500-seed42-2026-07-25` gemma leg, commit `921a04d`) |
+|---|---|---|
+| avg_tokens | 71,666.9 | 70,331 |
+| avg_tool_calls_per_question | 8.75 | 9.35 |
+| tool time per question | 4.72 s | 11.35 s |
+| LLM (non-tool) time per question | 25.85 s | 34.96 s |
+| avg_time_seconds | 30.57 s | 46.31 s |
+
+Token volume flat (down 2%), tool calls up only 7%, yet wall clock up 51%. The decomposition shows tool time rose 141% (0.54 s → 1.21 s per tool call) while LLM time rose 35%. Since tool execution is local Virtuoso/Qdrant querying that never contacts the inference endpoint, at least 42% of that regression cannot be the LLM provider. Three separate investigations had attributed the whole slowdown to the shared inference endpoint before this one-minute subtraction falsified it.
+
+## 1c. The benchmark host is not dedicated (corrected 2026-07-26)
+
+State plainly, because the paper asserted the opposite until it was corrected today: the Hetzner benchmark host is **4 cores / 7.7 GB RAM** and concurrently runs roughly a dozen Docker containers, including an unrelated MAS production stack (mas-api, mas-mongodb, mas-mongo-express, mas-qdrant, mas-frontend-react, five mas-in-production MCP servers) alongside an AMA-KBQA stack of its own (`qdrant_ama_kbqa`, `virtuoso_ama_kbqa`, `frontend_ama_kbqa`).
+
+**The public demo is NOT on this host.** Both machines run a container set with identical names, which is exactly how that error was made and re-made on 2026-07-26. Resolve it from the tunnel config, not from `docker ps`:
+
+| | host | spec | role |
+|---|---|---|---|
+| benchmark | `hetzner` | 4 cores / 7.7 GB | runs `benchmark_agents.py` out of `~/AMAKBQA-main`; also hosts an unrelated MAS production stack |
+| public demo | `bwcloud` (hostname `seminar`) | 2 cores / 3 GB | serves `amakbqa.yanlab.de`, the target of the paper's `purl.archive.org/ama-kbqa-demo` |
+
+Proof, since DNS is Cloudflare-proxied (`amakbqa.yanlab.de` → 104.21.32.5) and cannot identify the origin: `bwcloud`'s `/etc/cloudflared/config.yml` maps `hostname: amakbqa.yanlab.de` → `service: http://localhost:8502`. Hetzner's `cloudflared` runs a different tunnel (`scoresheet.yml`). Both bind their frontend to `127.0.0.1:8502`, so the port tells you nothing.
+
+So the paper's "dedicated host" wording was wrong about the benchmark (it is shared and co-tenanted), but its benchmark-vs-demo distinction was right: those genuinely are two different machines, and the demo's is the smaller of the two.
+
+Consequence for anyone refreshing paper numbers: tool-time figures are sensitive to co-tenancy on this box and are not reproducible across months as new services are deployed to it. Check `docker ps` start dates and `/proc/loadavg` when a timing regression appears, and record what else was running. Caveat: retroactive contention cannot be proven without historical metrics, so co-tenancy is a motivated hypothesis for such regressions, not a demonstrated cause — what the §1b decomposition proves is only which side of the split the regression sits on.
 
 ## 2. Pre-flight checks before trusting a run
 

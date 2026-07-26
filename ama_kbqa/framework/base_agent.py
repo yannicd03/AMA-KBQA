@@ -708,37 +708,77 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         result = self._classify_and_extract(question)
         return {"entities": result["entities"], "relations": result["relations"]}
 
-    def _build_analysis_context(
+    def _build_static_qtype_context(
+        self,
+        qtype: str,
+        fewshot_examples: str = "",
+    ) -> str:
+        """
+        Build the STATIC, qtype-only portion of the analysis context: the
+        reasoning strategy for this question type plus its few-shot
+        examples. This depends only on `qtype` (and global config), never
+        on a specific question's text/entities/relations, so it is
+        byte-identical across every question sharing the same qtype.
+
+        `_ask_impl` appends this as its own message BEFORE the per-question
+        context (see `_build_question_context`) so the KIT endpoint's
+        position-anchored prefix cache can reuse this block across
+        consecutive same-qtype questions instead of it sitting behind
+        per-question text where it can never be cached (see
+        `.agent/Tasks/active/prompt-cache-utilization.md`). Do NOT fold any
+        per-question data (query, entities, relations, exact constraints)
+        into this method.
+
+        Args:
+            qtype: Question type
+            fewshot_examples: Optional few-shot examples for this qtype
+
+        Returns:
+            Static analysis context string
+        """
+        strategies = self._get_qtype_strategies()
+        qtype_strategy = strategies.get(qtype, strategies.get("Query", ""))
+
+        context = qtype_strategy
+        if fewshot_examples:
+            context += f"\n\nFew-shot Examples for {qtype}:\n{fewshot_examples}"
+
+        return context
+
+    def _build_question_context(
         self,
         qtype: str,
         entities: List[str],
         relations: List[str],
-        fewshot_examples: str = "",
         query: str = "",
     ) -> str:
         """
-        Build the analysis context message.
+        Build the PER-QUESTION portion of the analysis context: the
+        qtype/entities/relations header plus any exact attribute
+        constraints extracted from this specific query's text.
+
+        Must be appended to the message stack AFTER the static qtype
+        context (`_build_static_qtype_context`) so that static block
+        remains a stable, cacheable prefix (see
+        `.agent/Tasks/active/prompt-cache-utilization.md`).
 
         Args:
             qtype: Question type
             entities: Extracted entities
             relations: Extracted relations
-            fewshot_examples: Optional few-shot examples
+            query: The raw question text (used to extract exact constraints)
 
         Returns:
-            Analysis context string
+            Per-question analysis context string
         """
         formatted_entities = "\n".join([f"  - {e}" for e in entities]) if entities else "  (none)"
         formatted_relations = "\n".join([f"  - {r}" for r in relations]) if relations else "  (none)"
-
-        strategies = self._get_qtype_strategies()
-        qtype_strategy = strategies.get(qtype, strategies.get("Query", ""))
 
         context = self._get_analysis_context_template().format(
             qtype=qtype,
             formatted_entities=formatted_entities,
             formatted_relations=formatted_relations,
-            qtype_strategy=qtype_strategy
+            qtype_strategy="",
         )
 
         exact_constraints = self._extract_exact_attribute_constraints(query)
@@ -755,10 +795,37 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 "If several entities share a name, prefer the one satisfying all exact constraints."
             )
 
-        if fewshot_examples:
-            context += f"\n\nFew-shot Examples for {qtype}:\n{fewshot_examples}"
-
         return context
+
+    def _build_analysis_context(
+        self,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+        fewshot_examples: str = "",
+        query: str = "",
+    ) -> str:
+        """
+        Backward-compatible combined builder (static context followed by
+        per-question context). `_ask_impl` calls the two builders above
+        directly, as separate messages, so the static block can be placed
+        ahead of per-question content for prefix-cache reuse; this wrapper
+        is kept for any other caller that still wants one combined string.
+
+        Args:
+            qtype: Question type
+            entities: Extracted entities
+            relations: Extracted relations
+            fewshot_examples: Optional few-shot examples
+
+        Returns:
+            Analysis context string
+        """
+        static = self._build_static_qtype_context(qtype, fewshot_examples)
+        question = self._build_question_context(qtype, entities, relations, query)
+        if static and question:
+            return f"{static}\n\n{question}"
+        return static or question
 
     # =========================================================================
     # LOOP DETECTION
@@ -937,14 +1004,12 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             self._context_limit = config.domain_settings.get("context_limit", 100000)
             self._max_tool_calls = config.domain_settings.get("max_tool_calls", 0)
 
-            # Detect a follow-up turn BEFORE appending the new query. In a
-            # multiturn continuation the prior turn's messages were preserved
+            # Detect a follow-up turn BEFORE appending anything new for this
+            # turn (query, static qtype context, or per-question context). In
+            # a multiturn continuation the prior turn's messages were preserved
             # (reset(keep_history=True)), so the stack already holds earlier
             # user turns. A fresh turn's stack has only system/catalog messages.
             is_followup = any(m.get("role") == "user" for m in self._messages)
-
-            # Add query to messages
-            self._messages.append({"role": "user", "content": query})
 
             if is_followup:
                 # Skip the pre-agent hook on follow-ups. Classifying a bare
@@ -960,8 +1025,19 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     COLOR_CYAN,
                 )
                 qtype = "Query"
+                self._messages.append({"role": "user", "content": query})
             else:
-                # Run pre-agent hooks (combined classification + extraction = 1 LLM call)
+                # Run pre-agent hooks (combined classification + extraction = 1 LLM call).
+                # _classify_question(query) only needs the raw query text, not
+                # self._messages, so it can run BEFORE anything is appended to
+                # the stack for this turn. That lets the STATIC, qtype-only
+                # context (strategy/fewshot/guidance/tips) be appended as its
+                # own message ahead of the per-question context (query +
+                # entities + relations + exact constraints), so the static
+                # block is a byte-identical shared prefix across every
+                # question of the same qtype and stays warm in the KIT
+                # endpoint's position-anchored prefix cache. See
+                # .agent/Tasks/active/prompt-cache-utilization.md.
                 self._trace("Starting pre-agent classification hook", COLOR_CYAN)
 
                 # Call _classify_question (overrideable by subclasses for fewshot loading etc.)
@@ -977,10 +1053,19 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     COLOR_GREEN
                 )
 
-                analysis_context = self._build_analysis_context(
-                    qtype, entities, relations, fewshot_examples, query=query
+                # STATIC message first: identical for every question of this
+                # qtype, so it becomes a stable, cacheable prefix.
+                static_context = self._build_static_qtype_context(qtype, fewshot_examples)
+                if static_context:
+                    self._messages.append({"role": "user", "content": static_context})
+
+                # PER-QUESTION messages last: the raw query, then the
+                # entities/relations/exact-constraints enrichment built from it.
+                self._messages.append({"role": "user", "content": query})
+                question_context = self._build_question_context(
+                    qtype, entities, relations, query=query
                 )
-                self._messages.append({"role": "user", "content": analysis_context})
+                self._messages.append({"role": "user", "content": question_context})
 
                 self._trace(f"Pre-agent hook complete - Type: {qtype}", COLOR_GREEN)
 

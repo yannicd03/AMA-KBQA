@@ -76,6 +76,100 @@ def test_agent_analysis_context_overrides_accept_query_argument():
     assert "Question Type" in context
 
 
+# =============================================================================
+# Prompt-cache ordering: static (qtype-only) context vs. per-question context
+#
+# _build_analysis_context was split into _build_static_qtype_context (depends
+# only on qtype/fewshot, identical across every question of the same qtype)
+# and _build_question_context (depends on the specific question's
+# entities/relations/exact-constraints). _ask_impl appends the static piece
+# to the message stack BEFORE the per-question piece so the KIT endpoint's
+# position-anchored prefix cache can reuse it across consecutive same-qtype
+# questions (see .agent/Tasks/active/prompt-cache-utilization.md).
+# =============================================================================
+
+def test_kqapro_static_context_has_no_per_question_content():
+    kqapro = _agent()
+    kqapro.use_fewshot = False
+
+    static = kqapro._build_static_qtype_context("Query")
+
+    # Carries the qtype strategy...
+    assert "STRATEGY: General Query" in static
+    # ...but nothing that varies per question (entities/relations header or
+    # exact-constraint findings, which live in _build_question_context).
+    assert "PRE-ANALYSIS" not in static
+    assert "EXACT ATTRIBUTE CONSTRAINTS" not in static
+
+
+def test_kqapro_static_context_identical_regardless_of_question():
+    """The static context must not vary with entities/relations/query -- it
+    is keyed ONLY on qtype (+ fewshot), so two different questions of the
+    same qtype must produce byte-identical static context."""
+    kqapro = _agent()
+    kqapro.use_fewshot = False
+
+    a = kqapro._build_static_qtype_context("Query")
+    b = kqapro._build_static_qtype_context("Query")
+
+    assert a == b
+
+
+def test_kqapro_question_context_has_no_static_strategy_text():
+    kqapro = _agent()
+    kqapro.use_fewshot = False
+
+    question = kqapro._build_question_context(
+        "Query", ["Inception"], ["director"],
+        query="Which type of sport has IAB code 543?",
+    )
+
+    assert "PRE-ANALYSIS" in question
+    assert "Inception" in question
+    assert "EXACT ATTRIBUTE CONSTRAINTS DETECTED" in question
+    assert "IAB code = 543" in question
+    # The qtype's strategy prose belongs in the static block, not here.
+    assert "STRATEGY: General Query" not in question
+
+
+def test_kqapro_build_analysis_context_places_static_before_question():
+    kqapro = _agent()
+    kqapro.use_fewshot = False
+
+    combined = kqapro._build_analysis_context(
+        "Query", ["Inception"], ["director"],
+        query="Which type of sport has IAB code 543?",
+    )
+
+    strategy_idx = combined.index("STRATEGY: General Query")
+    pre_analysis_idx = combined.index("PRE-ANALYSIS")
+    assert strategy_idx < pre_analysis_idx
+
+
+def test_sciqa_static_context_has_no_per_question_content():
+    sciqa = object.__new__(SciQAAgent)
+
+    static = sciqa._build_static_qtype_context("Factoid")
+    question = sciqa._build_question_context("Factoid", ["some entity"], [])
+
+    assert "Question Type" not in static
+    assert "Extracted Entities" not in static
+    assert "Question Type" in question
+    assert "some entity" in question
+
+
+def test_sciqa_build_analysis_context_places_static_before_question():
+    sciqa = object.__new__(SciQAAgent)
+
+    combined = sciqa._build_analysis_context("Factoid", ["some entity"], [], query="Any query")
+
+    # The qtype strategy (static) must precede the per-question header.
+    question_type_idx = combined.index("Question Type")
+    assert question_type_idx > 0  # sanity: header exists and isn't at position 0
+    static_only = sciqa._build_static_qtype_context("Factoid")
+    assert combined.index(static_only.strip().splitlines()[0]) < question_type_idx
+
+
 def test_final_answer_cleanup_strips_think_blocks():
     answer = _agent()._finalize_answer_text(
         "<think>internal reasoning</think>\nLand Force Command",

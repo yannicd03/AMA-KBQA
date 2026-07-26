@@ -96,6 +96,87 @@ def test_subset_sample_reproducible_same_seed():
 
 
 # =============================================================================
+# stratified_sample: grouped-by-qtype execution order (prompt-cache change 1)
+#
+# The final `random.shuffle(result)` was replaced with a deterministic
+# qtype-name-ordered grouping so consecutive questions of the same qtype
+# share an identical leading system-prompt + tool-schema byte sequence,
+# which the KIT endpoint's position-anchored prefix cache can reuse (see
+# .agent/Tasks/active/prompt-cache-utilization.md, item 1). This must not
+# change which questions are sampled -- only their order -- and must stay
+# seed-reproducible.
+# =============================================================================
+
+def _make_qtype_dataset(types, per_type=10):
+    data = []
+    for t in types:
+        for i in range(per_type):
+            data.append({"question": f"{t}-{i}", "answer": str(i), "q_type": t})
+    return data
+
+
+def test_stratified_sample_groups_consecutive_same_qtype():
+    from ama_kbqa.benchmark_agents import get_question_type, stratified_sample
+
+    data = _make_qtype_dataset(["Gamma", "Alpha", "Beta"])
+    result = stratified_sample(data, n=18, seed=42, agent_name="sciqa")
+
+    qtypes_in_order = [get_question_type(q, "sciqa") for q in result]
+
+    # Each qtype must occupy exactly one contiguous run (no shuffle
+    # re-interleaving groups): collapsing consecutive duplicates yields as
+    # many blocks as distinct qtypes present.
+    collapsed = []
+    for qt in qtypes_in_order:
+        if not collapsed or collapsed[-1] != qt:
+            collapsed.append(qt)
+    assert len(collapsed) == len(set(qtypes_in_order))
+
+    # Groups ordered deterministically by qtype name.
+    assert collapsed == sorted(collapsed)
+
+
+def test_stratified_sample_does_not_change_sampled_set():
+    """Grouping must reorder execution, never change which questions are
+    drawn for a given seed."""
+    from ama_kbqa.benchmark_agents import stratified_sample
+
+    data = _make_qtype_dataset(["Gamma", "Alpha", "Beta"])
+    grouped = stratified_sample(data, n=18, seed=42, agent_name="sciqa")
+
+    assert len(grouped) == 18
+    # Every sampled question actually came from the input dataset, and no
+    # duplicates were introduced by the grouping step.
+    grouped_questions = [q["question"] for q in grouped]
+    assert len(set(grouped_questions)) == len(grouped_questions)
+    assert set(grouped_questions).issubset({q["question"] for q in data})
+
+
+def test_stratified_sample_reproducible_same_seed():
+    from ama_kbqa.benchmark_agents import stratified_sample
+
+    data = _make_qtype_dataset(["Gamma", "Alpha", "Beta"])
+    a = stratified_sample(data, n=18, seed=42, agent_name="sciqa")
+    b = stratified_sample(data, n=18, seed=42, agent_name="sciqa")
+
+    assert [q["question"] for q in a] == [q["question"] for q in b]
+
+
+def test_stratified_sample_within_group_order_uses_seeded_rng():
+    """Two different seeds must (with high probability, given 10 items per
+    group) select/order at least one group's contents differently -- proving
+    the within-group order still comes from the seeded RNG rather than a
+    fixed/sorted order that would be seed-invariant."""
+    from ama_kbqa.benchmark_agents import stratified_sample
+
+    data = _make_qtype_dataset(["Gamma", "Alpha", "Beta"], per_type=20)
+    a = stratified_sample(data, n=18, seed=42, agent_name="sciqa")
+    b = stratified_sample(data, n=18, seed=7, agent_name="sciqa")
+
+    assert [q["question"] for q in a] != [q["question"] for q in b]
+
+
+# =============================================================================
 # Benchmark main() exports AMA_LLM_SEED from --seed
 # =============================================================================
 

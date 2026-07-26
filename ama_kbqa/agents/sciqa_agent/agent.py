@@ -24,6 +24,7 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
     CLASSIFICATION_PROMPT_TEMPLATE,
     ENTITY_EXTRACTION_PROMPT,
     ANALYSIS_CONTEXT_TEMPLATE,
+    QUESTION_CONTEXT_TEMPLATE,
     FEWSHOT_EXAMPLES_TEMPLATE,
     ANALYSIS_CONTEXT_SUFFIX,
     JOURNAL_REFRESH_TEMPLATE,
@@ -293,6 +294,82 @@ class SciQAAgent(BaseKBQAAgent):
     # SCIQA-SPECIFIC METHODS
     # =========================================================================
 
+    def _build_static_qtype_context(
+        self,
+        qtype: str,
+        fewshot_examples: str = "",
+    ) -> str:
+        """
+        Build the STATIC, qtype-only portion of the analysis context:
+        reasoning strategy + few-shot examples. This depends only on
+        `qtype`, never on the specific question's text/entities/relations,
+        so it is byte-identical across every question of the same qtype.
+
+        `_ask_impl` appends this as its own message BEFORE the
+        per-question context (`_build_question_context`) so this block
+        stays a shared, cacheable prefix across consecutive same-qtype
+        questions instead of sitting behind per-question text. See
+        `.agent/Tasks/active/prompt-cache-utilization.md`.
+
+        Args:
+            qtype: Question type
+            fewshot_examples: Optional few-shot examples for this qtype
+
+        Returns:
+            Static analysis context string
+        """
+        qtype_strategy = QTYPE_STRATEGIES.get(qtype, QTYPE_STRATEGIES.get("General", ""))
+
+        context = qtype_strategy
+
+        if fewshot_examples and fewshot_examples.strip():
+            context += FEWSHOT_EXAMPLES_TEMPLATE.format(
+                qtype=qtype,
+                fewshot_examples=fewshot_examples
+            )
+
+        return context
+
+    def _build_question_context(
+        self,
+        qtype: str,
+        entities: List[str],
+        relations: List[str],
+        query: str = "",
+    ) -> str:
+        """
+        Build the PER-QUESTION portion of the analysis context: the
+        type/entities/relations header. Must be appended to the message
+        stack AFTER the static qtype context (`_build_static_qtype_context`)
+        so that block stays a stable, cacheable prefix.
+
+        Args:
+            qtype: Question type
+            entities: Extracted entities
+            relations: Extracted relations
+            query: The raw question text (unused here; SciQA has no
+                per-query exact-constraint extraction, unlike KQAPro)
+
+        Returns:
+            Per-question analysis context string
+        """
+        formatted_entities = "\n".join([f"  - {e}" for e in entities]) if entities else "  (none identified)"
+        formatted_relations = "\n".join([f"  - {r}" for r in relations]) if relations else "  (none identified)"
+
+        context = QUESTION_CONTEXT_TEMPLATE.format(
+            qtype=qtype,
+            formatted_entities=formatted_entities,
+            formatted_relations=formatted_relations,
+        )
+
+        # ANALYSIS_CONTEXT_SUFFIX ("Use this pre-analysis to guide...") reads
+        # naturally right after this question's specific entities/relations,
+        # so it stays at the tail of the per-question block rather than in
+        # the static block.
+        context += ANALYSIS_CONTEXT_SUFFIX
+
+        return context
+
     def _build_analysis_context(
         self,
         qtype: str,
@@ -302,7 +379,12 @@ class SciQAAgent(BaseKBQAAgent):
         query: str = "",
     ) -> str:
         """
-        Build the analysis context message with SciQA templates.
+        Backward-compatible combined builder (static context followed by
+        per-question context). `_ask_impl` calls the two builders above
+        directly, as separate messages, so the static block can be placed
+        ahead of per-question content for prefix-cache reuse; this wrapper
+        is kept for any other caller (e.g. tests) that still wants one
+        combined string.
 
         Args:
             qtype: Question type
@@ -313,27 +395,11 @@ class SciQAAgent(BaseKBQAAgent):
         Returns:
             Analysis context string
         """
-        formatted_entities = "\n".join([f"  - {e}" for e in entities]) if entities else "  (none identified)"
-        formatted_relations = "\n".join([f"  - {r}" for r in relations]) if relations else "  (none identified)"
-
-        qtype_strategy = QTYPE_STRATEGIES.get(qtype, QTYPE_STRATEGIES.get("General", ""))
-
-        context = ANALYSIS_CONTEXT_TEMPLATE.format(
-            qtype=qtype,
-            formatted_entities=formatted_entities,
-            formatted_relations=formatted_relations,
-            qtype_strategy=qtype_strategy
-        )
-
-        if fewshot_examples and fewshot_examples.strip():
-            context += FEWSHOT_EXAMPLES_TEMPLATE.format(
-                qtype=qtype,
-                fewshot_examples=fewshot_examples
-            )
-
-        context += ANALYSIS_CONTEXT_SUFFIX
-
-        return context
+        static = self._build_static_qtype_context(qtype, fewshot_examples)
+        question = self._build_question_context(qtype, entities, relations, query)
+        if static and question:
+            return f"{static}\n\n{question}"
+        return static or question
 
 
 # =============================================================================
