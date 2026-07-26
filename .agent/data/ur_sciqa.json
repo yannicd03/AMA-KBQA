@@ -1,0 +1,940 @@
+[
+ {
+  "cond": "question",
+  "gold": "R8364",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8364",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R8364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8350",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8350",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8364",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6386",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R6386",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6898",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R6898",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6946",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R6946",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6948",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R6948",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R135371",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R135371",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R111045",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R111045",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R110361",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R110361",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8342",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8342",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8342",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8342",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6006",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R6006",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6187",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R6187",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R6751",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R6751",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R78023",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R78023",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R75729",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R75729",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R78492",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R78492",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R110393",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R110393",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R69027",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R69027",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R75638",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R75638",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R110932",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R110932",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R110597",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R110597",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R113171",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R113171",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R8342",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R8342",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R68871",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R68871",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R58002",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R58002",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R44980",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R44980",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R44979",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R44979",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R44930",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R44930",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R44978",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R44978",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R112387",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R112387",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R112387",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R112387",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R75363",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R75363",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R70642",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R70642",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R34493",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R34493",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R33008",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R33008",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R34845",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R34845",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R25900",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R25900",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R150337",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R150337",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R153801",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R150337",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R150337",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155584",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155584",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155445",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155445",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155621",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155621",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155561",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155561",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155272",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155272",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155266",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155266",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R155154",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R155154",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R151435",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R151435",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R149849",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R149849",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R154290",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R154290",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R153500",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R153500",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R150596",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R150596",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R144364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R144364",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R138374",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "R138374",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "R137086",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "R137086",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ }
+]

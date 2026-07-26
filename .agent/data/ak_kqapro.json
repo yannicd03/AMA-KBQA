@@ -1,0 +1,1266 @@
+[
+ {
+  "gold": "Babylon 5: The Gathering",
+  "qtype": "Count",
+  "extracted": [
+   "historic counties of England",
+   "screenwriter of Babylon 5: The Gathering"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Sonny Rollins",
+  "qtype": "Count",
+  "extracted": [
+   "woodwind instruments",
+   "Hornbostel-Sachs classification 421.221.12",
+   "Sonny Rollins"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Earth",
+  "qtype": "Count",
+  "extracted": [
+   "science",
+   "Earth",
+   "sepsis"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "sepsis",
+  "qtype": "Count",
+  "extracted": [
+   "science",
+   "Earth",
+   "sepsis"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Xbox 360",
+  "qtype": "Count",
+  "extracted": [
+   "Xbox 360",
+   "video game console models"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Netherlands",
+  "qtype": "Count",
+  "extracted": [
+   "Netherlands provinces",
+   "Netherlands"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "EuropaCorp",
+  "qtype": "Count",
+  "extracted": [
+   "video game developers",
+   "EuropaCorp",
+   "JP3164630000"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "politician",
+  "qtype": "Count",
+  "extracted": [
+   "Donald Trump",
+   "politician",
+   "ROME Occupation Code (v3)",
+   "E1205"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Donald Trump",
+  "qtype": "Count",
+  "extracted": [
+   "Donald Trump",
+   "politician",
+   "ROME Occupation Code (v3)",
+   "E1205"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Richard Curtis",
+  "qtype": "Count",
+  "extracted": [
+   "manifestations",
+   "Richard Curtis",
+   "New-York Daily Times"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "rock music",
+  "qtype": "Count",
+  "extracted": [
+   "types of music",
+   "rock music",
+   "New Wave British Heavy Metal"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "New Wave of British Heavy Metal",
+  "qtype": "Count",
+  "extracted": [
+   "types of music",
+   "rock music",
+   "New Wave British Heavy Metal"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "The Rolling Stones",
+  "qtype": "Count",
+  "extracted": [
+   "MTV Video Music Awards",
+   "Rolling Stones",
+   "http://www.mtv.com/ontv/vma/"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "63rd Primetime Emmy Awards",
+  "qtype": "Count",
+  "extracted": [
+   "learned societies",
+   "63rd Primetime Emmy Awards"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "video game",
+  "qtype": "Count",
+  "extracted": [
+   "film festivals",
+   "September",
+   "video game"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "September",
+  "qtype": "Count",
+  "extracted": [
+   "film festivals",
+   "September",
+   "video game"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Central Time Zone",
+  "qtype": "Count",
+  "extracted": [
+   "American cities",
+   "Central Time Zone"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "United States of America",
+  "qtype": "Count",
+  "extracted": [
+   "American cities",
+   "Central Time Zone"
+  ],
+  "exact_mention": false,
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "gold": "Taj Mahal",
+  "qtype": "Count",
+  "extracted": [
+   "contemporary folk music groups",
+   "Taj Mahal",
+   "KT Tunstall"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "KT Tunstall",
+  "qtype": "Count",
+  "extracted": [
+   "contemporary folk music groups",
+   "Taj Mahal",
+   "KT Tunstall"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "United States of America",
+  "qtype": "Count",
+  "extracted": [
+   "London",
+   "Jackie Brown",
+   "United States of America"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Jackie Brown",
+  "qtype": "Count",
+  "extracted": [
+   "London",
+   "Jackie Brown",
+   "United States of America"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "astronaut",
+  "qtype": "Count",
+  "extracted": [
+   "museums",
+   "Wonder Woman",
+   "astronaut",
+   "Body of Lies"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Wonder Woman",
+  "qtype": "Count",
+  "extracted": [
+   "museums",
+   "Wonder Woman",
+   "astronaut",
+   "Body of Lies"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Body of Lies",
+  "qtype": "Count",
+  "extracted": [
+   "museums",
+   "Wonder Woman",
+   "astronaut",
+   "Body of Lies"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "prescription drug",
+  "qtype": "Count",
+  "extracted": [
+   "medications",
+   "medicine",
+   "prescription drug"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "John Cale",
+  "qtype": "Count",
+  "extracted": [
+   "guitar models",
+   "John Cale",
+   "Hornbostel-Sachs code 321.322-5"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "New York City",
+  "qtype": "Count",
+  "extracted": [
+   "New Jersey counties",
+   "population",
+   "72000000",
+   "New York City"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Kundun",
+  "qtype": "Count",
+  "extracted": [
+   "language families",
+   "Glottolog code aust1309",
+   "Kundun"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Frank Gehry",
+  "qtype": "Count",
+  "extracted": [
+   "fictional universes",
+   "Frank Gehry",
+   "1992"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "United States of America",
+  "qtype": "Count",
+  "extracted": [
+   "French departments",
+   "Moscow",
+   "US",
+   "INSEE department code"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "gold": "Moscow",
+  "qtype": "Count",
+  "extracted": [
+   "French departments",
+   "Moscow",
+   "US",
+   "INSEE department code"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "People's Republic of China",
+  "qtype": "Count",
+  "extracted": [
+   "historical countries",
+   "dissolution date",
+   "1974",
+   "Bahamas",
+   "People's Republic of China",
+   "territory"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Bahamas",
+  "qtype": "Count",
+  "extracted": [
+   "historical countries",
+   "dissolution date",
+   "1974",
+   "Bahamas",
+   "People's Republic of China",
+   "territory"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "2005 NFL Draft",
+  "qtype": "Count",
+  "extracted": [
+   "National Football League Drafts",
+   "2005 NFL Draft"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Adolf Hitler",
+  "qtype": "Count",
+  "extracted": [
+   "military branches",
+   "Royal Canadian Air Force",
+   "Adolf Hitler"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Sony BMG Music Entertainment",
+  "qtype": "Count",
+  "extracted": [
+   "record labels",
+   "http://www.roughtraderecords.com/",
+   "Sony BMG Music Entertainment"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Julius Caesar",
+  "qtype": "Count",
+  "extracted": [
+   "port cities",
+   "place of death",
+   "human partner",
+   "Julius Caesar",
+   "ISNI 0000 0001 2283 4514"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Skopje",
+  "qtype": "Count",
+  "extracted": [
+   "University of Cambridge",
+   "colleges",
+   "Skopje"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Australia",
+  "qtype": "Count",
+  "extracted": [
+   "first-level administrative country subdivisions",
+   "Australia"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Rakhee Gulzar",
+  "qtype": "Count",
+  "extracted": [
+   "occupations",
+   "13H2",
+   "Iconclass notation",
+   "Rakee Gulzar",
+   "Rakee Gulzar's spouse"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Jessica Walter",
+  "qtype": "Count",
+  "extracted": [
+   "islands",
+   "area",
+   "hectares",
+   "Brooklyn",
+   "Jessica Walter"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Brooklyn",
+  "qtype": "Count",
+  "extracted": [
+   "islands",
+   "area",
+   "hectares",
+   "Brooklyn",
+   "Jessica Walter"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Brazoria County",
+  "qtype": null,
+  "extracted": [],
+  "exact_mention": false,
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "gold": "W.",
+  "qtype": null,
+  "extracted": [],
+  "exact_mention": false,
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "gold": "Texas",
+  "qtype": null,
+  "extracted": [],
+  "exact_mention": false,
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "gold": "pedophilia",
+  "qtype": "Count",
+  "extracted": [
+   "social sciences",
+   "pedophilia"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "South Cambridgeshire",
+  "qtype": "Count",
+  "extracted": [
+   "non-metropolitan county",
+   "TOID 7000000000019687",
+   "South Cambridgeshire"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "France",
+  "qtype": "Count",
+  "extracted": [
+   "French departments",
+   "France",
+   "Haut-Rhin"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Haut-Rhin",
+  "qtype": "Count",
+  "extracted": [
+   "French departments",
+   "France",
+   "Haut-Rhin"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "United States of America",
+  "qtype": null,
+  "extracted": [
+   "groups of organisms",
+   "Nv-b\u00e9\u00e9gashii.ogg",
+   "United States of America"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Baltimore County",
+  "qtype": "Count",
+  "extracted": [
+   "U.S. state",
+   "Baltimore County",
+   "Maryland",
+   "counties"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Fanny and Alexander",
+  "qtype": "Count",
+  "extracted": [
+   "Fanny and Alexander",
+   "awards"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "British Raj",
+  "qtype": -1,
+  "extracted": [
+   "city",
+   "capital",
+   "British Raj",
+   "1947"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "drone music",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "rock band",
+   "drone music"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Filmfare Award for Best Actress",
+  "qtype": "QueryAttrQualifier",
+  "extracted": [
+   "Filmfare Award Best Actress",
+   "Beta"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Tom Hanks",
+  "qtype": "QueryName",
+  "extracted": [
+   "Tom Hanks",
+   "animated film"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Pashto",
+  "qtype": null,
+  "extracted": [
+   "Kabul",
+   "area",
+   "official language",
+   "Pashto"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Kabul",
+  "qtype": null,
+  "extracted": [
+   "Kabul",
+   "area",
+   "official language",
+   "Pashto"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Kerry Washington",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Snapchat username",
+   "Kerry Washington"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Eugene Levy",
+  "qtype": -1,
+  "extracted": [
+   "Eugene Levy",
+   "Independent Spirit Award for Best Director nominee"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Independent Spirit Award for Best Director",
+  "qtype": -1,
+  "extracted": [
+   "Eugene Levy",
+   "Independent Spirit Award for Best Director nominee"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Port-au-Prince",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Port-au-Prince",
+   "Dewey Decimal Classification"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "political philosophy",
+  "qtype": "QueryName",
+  "extracted": [
+   "political philosophy",
+   "Amazon author page B000APSVNS"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Touchstone Pictures",
+  "qtype": "QueryName",
+  "extracted": [
+   "Touchstone Pictures",
+   "The Count of Monte Cristo"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Watford F.C.",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Watford F.C.",
+   "person"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Mickey Rooney",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Vienna",
+   "Mickey Rooney"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Vienna",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Vienna",
+   "Mickey Rooney"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "AT&T",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Texas metropolitan area",
+   "AT&T"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "gold": "Texas",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Texas metropolitan area",
+   "AT&T"
+  ],
+  "exact_mention": false,
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "gold": "Damon Albarn",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Damon Albarn",
+   "vocal academic discipline"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Adrian",
+  "qtype": "QueryName",
+  "extracted": [
+   "Adrian (ISNI: 0000 0000 4474 6809)",
+   "1935"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Aaliyah",
+  "qtype": "QueryRelationQualifier",
+  "extracted": [
+   "Aaliyah"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Scottish American",
+  "qtype": "QueryName",
+  "extracted": [
+   "Scottish Americans",
+   "The Flintstones",
+   "Golden Raspberry Award for Worst Supporting Actress"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Golden Raspberry Award for Worst Supporting Actress",
+  "qtype": "QueryName",
+  "extracted": [
+   "Scottish Americans",
+   "The Flintstones",
+   "Golden Raspberry Award for Worst Supporting Actress"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "The Flintstones",
+  "qtype": "QueryName",
+  "extracted": [
+   "Scottish Americans",
+   "The Flintstones",
+   "Golden Raspberry Award for Worst Supporting Actress"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Montreal",
+  "qtype": "QueryName",
+  "extracted": [
+   "Montreal",
+   "Aurora"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "television director",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "television director",
+   "ROME Occupation Code (v3)"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Lon Chaney Jr.",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Lon Chaney Jr."
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Kagoshima Prefecture",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "FIPS 10-4 (countries and regions) code",
+   "Kagoshima Prefecture"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Houston",
+  "qtype": "QueryName",
+  "extracted": [
+   "Houston",
+   "0000 0001 0653 9048"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Terror in the Aisles",
+  "qtype": "QueryName",
+  "extracted": [
+   "Universal Pictures",
+   "Terror in the Aisles"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Universal Pictures",
+  "qtype": "QueryName",
+  "extracted": [
+   "Universal Pictures",
+   "Terror in the Aisles"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "The 40-Year-Old Virgin",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "The 40-Year-Old Virgin"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Fiorello H. LaGuardia High School",
+  "qtype": "QueryName",
+  "extracted": [
+   "Fiorello H. LaGuardia High School",
+   "Zoolander"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Zoolander",
+  "qtype": "QueryName",
+  "extracted": [
+   "Fiorello H. LaGuardia High School",
+   "Zoolander"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "William Cameron Menzies",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Abraham Lincoln (film)",
+   "William Cameron Menzies"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Abraham Lincoln",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Abraham Lincoln (film)",
+   "William Cameron Menzies"
+  ],
+  "exact_mention": false,
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "gold": "In America",
+  "qtype": "QueryRelation",
+  "extracted": [
+   "In America"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Maurice LaMarche",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Maurice LaMarche"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "track and field",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "track and field",
+   "IAB code"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "United States of America",
+  "qtype": "QueryRelation",
+  "extracted": [
+   "genre of music",
+   "USA",
+   "Ralph Stanley"
+  ],
+  "exact_mention": false,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "gold": "Ralph Stanley",
+  "qtype": "QueryRelation",
+  "extracted": [
+   "genre of music",
+   "USA",
+   "Ralph Stanley"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Munich",
+  "qtype": "QueryName",
+  "extracted": [
+   "University",
+   "Munich",
+   "81929"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Legends of the Fall",
+  "qtype": "QueryName",
+  "extracted": [
+   "Montana",
+   "Legends of the Fall"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Montana",
+  "qtype": "QueryName",
+  "extracted": [
+   "Montana",
+   "Legends of the Fall"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Carlisle United F.C.",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Carlisle United F.C."
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Kingdom of Sardinia",
+  "qtype": "QueryName",
+  "extracted": [
+   "Kingdom of Italy",
+   "Kingdom of Sardinia",
+   "BMLO r1588"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Kingdom of Italy",
+  "qtype": "QueryName",
+  "extracted": [
+   "Kingdom of Italy",
+   "Kingdom of Sardinia",
+   "BMLO r1588"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "gold": "Waco",
+  "qtype": "QueryAttr",
+  "extracted": [
+   "Texas county",
+   "Waco",
+   "local area code 254",
+   "official website"
+  ],
+  "exact_mention": true,
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ }
+]

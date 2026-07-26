@@ -1,0 +1,5168 @@
+[
+ {
+  "cond": "question",
+  "gold": "Babylon 5: The Gathering",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Babylon 5: The Gathering",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Sonny Rollins",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Sonny Rollins",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Earth",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Earth",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "sepsis",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "sepsis",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Xbox 360",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Xbox 360",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Netherlands",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Netherlands",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "EuropaCorp",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "EuropaCorp",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "politician",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "politician",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Donald Trump",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Donald Trump",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Richard Curtis",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Richard Curtis",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "rock music",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "rock music",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "New Wave of British Heavy Metal",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "New Wave of British Heavy Metal",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Rolling Stones",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Rolling Stones",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "63rd Primetime Emmy Awards",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "63rd Primetime Emmy Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "video game",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "video game",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "September",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "September",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Central Time Zone",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Central Time Zone",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Taj Mahal",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Taj Mahal",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "KT Tunstall",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "KT Tunstall",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Jackie Brown",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Jackie Brown",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "astronaut",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "astronaut",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Wonder Woman",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Wonder Woman",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Body of Lies",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Body of Lies",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "prescription drug",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "prescription drug",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "John Cale",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "John Cale",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "New York City",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "New York City",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kundun",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kundun",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Frank Gehry",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Frank Gehry",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Moscow",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Moscow",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "People's Republic of China",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "People's Republic of China",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Bahamas",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Bahamas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "2005 NFL Draft",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "2005 NFL Draft",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Adolf Hitler",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Adolf Hitler",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Sony BMG Music Entertainment",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Sony BMG Music Entertainment",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Julius Caesar",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Julius Caesar",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Skopje",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Skopje",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Australia",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Australia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Rakhee Gulzar",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Rakhee Gulzar",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Jessica Walter",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Jessica Walter",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Brooklyn",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Brooklyn",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Brazoria County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Brazoria County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "W.",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "W.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Texas",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Texas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "pedophilia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "pedophilia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "South Cambridgeshire",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "South Cambridgeshire",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "France",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "France",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Haut-Rhin",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Haut-Rhin",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Baltimore County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Baltimore County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Fanny and Alexander",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Fanny and Alexander",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "British Raj",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "British Raj",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "drone music",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "drone music",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Filmfare Award for Best Actress",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Filmfare Award for Best Actress",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tom Hanks",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tom Hanks",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Pashto",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Pashto",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kabul",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kabul",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kerry Washington",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kerry Washington",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Eugene Levy",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Eugene Levy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Independent Spirit Award for Best Director",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Independent Spirit Award for Best Director",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Port-au-Prince",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Port-au-Prince",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "political philosophy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "political philosophy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Touchstone Pictures",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Touchstone Pictures",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Watford F.C.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Watford F.C.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Mickey Rooney",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Mickey Rooney",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Vienna",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Vienna",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "AT&T",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "AT&T",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "question",
+  "gold": "Texas",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Texas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Damon Albarn",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Damon Albarn",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Adrian",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Adrian",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Aaliyah",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Aaliyah",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Scottish American",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Scottish American",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Golden Raspberry Award for Worst Supporting Actress",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Golden Raspberry Award for Worst Supporting Actress",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Flintstones",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "The Flintstones",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Montreal",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Montreal",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "television director",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "television director",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Lon Chaney Jr.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Lon Chaney Jr.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kagoshima Prefecture",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kagoshima Prefecture",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Houston",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Houston",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Terror in the Aisles",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Terror in the Aisles",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Universal Pictures",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Universal Pictures",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The 40-Year-Old Virgin",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The 40-Year-Old Virgin",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Fiorello H. LaGuardia High School",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Fiorello H. LaGuardia High School",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Zoolander",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Zoolander",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "William Cameron Menzies",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "William Cameron Menzies",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Abraham Lincoln",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Abraham Lincoln",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "In America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "In America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Maurice LaMarche",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Maurice LaMarche",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "track and field",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "track and field",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Ralph Stanley",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Ralph Stanley",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Munich",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Munich",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Legends of the Fall",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Legends of the Fall",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Montana",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Montana",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Carlisle United F.C.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Carlisle United F.C.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kingdom of Sardinia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kingdom of Sardinia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kingdom of Italy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kingdom of Italy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Waco",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Waco",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Arnold Schwarzenegger",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Arnold Schwarzenegger",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Around the World in 80 Days",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Around the World in 80 Days",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Seychelles",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Seychelles",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "India",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "India",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "film director",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "film director",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "John Abraham",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "John Abraham",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Lester Holt",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Lester Holt",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Ray Winstone",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Ray Winstone",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Dogma",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Dogma",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Centre College",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Centre College",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "English",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "English",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Airport",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Airport",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Hillsborough County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Hillsborough County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "ice hockey",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "ice hockey",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Ben Johnson",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Ben Johnson",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Academy Award for Best Actor",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Academy Award for Best Actor",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Flight",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Flight",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Chapel Hill",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Chapel Hill",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Cheltenham",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Cheltenham",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Bangalore",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Bangalore",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Mark Strong",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Mark Strong",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "John Woo",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "John Woo",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "NSYNC",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "NSYNC",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Boyz II Men",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Boyz II Men",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tom and Jerry",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tom and Jerry",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Indonesia",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Indonesia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Nine Lives",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Nine Lives",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Martin McDonagh",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Martin McDonagh",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "SV Ried",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "SV Ried",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Modena",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Modena",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Lena Olin",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Lena Olin",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Niagara County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Niagara County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Genesee County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Genesee County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tony Award for Best Actor in a Musical",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tony Award for Best Actor in a Musical",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Steven Van Zandt",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Steven Van Zandt",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kuwait City",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kuwait City",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Florence",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Florence",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Sal Buscema",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Sal Buscema",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Academy Award for Best Supporting Actor",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Academy Award for Best Supporting Actor",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "14th Screen Actors Guild Awards",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "14th Screen Actors Guild Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Chris Claremont",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Chris Claremont",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "F. Scott Fitzgerald",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "F. Scott Fitzgerald",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Texas Tech University",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Texas Tech University",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "I'm Not There",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "I'm Not There",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "question",
+  "gold": "Academy Award for Best Director",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Academy Award for Best Director",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Nebraska",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Nebraska",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Yakima",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Yakima",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Liv Tyler",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Liv Tyler",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Incredible Hulk",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Incredible Hulk",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Columbia County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Columbia County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Christine Vachon",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Christine Vachon",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Dennis Hopper",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Dennis Hopper",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Columbia Pictures",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Columbia Pictures",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Buenos Aires Province",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Buenos Aires Province",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Steven Zaillian",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Steven Zaillian",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "musculoskeletal disorder",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "musculoskeletal disorder",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Finland",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Finland",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Perks of Being a Wallflower",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Perks of Being a Wallflower",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Leipzig",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Leipzig",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Beck",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Beck",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Stockton-on-Tees",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Stockton-on-Tees",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Letters from Iwo Jima",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Letters from Iwo Jima",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "New Castle County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "New Castle County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Simon Pegg",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Simon Pegg",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "North Korea national football team",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "North Korea national football team",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Museo del Prado",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Museo del Prado",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Caravaggio",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Caravaggio",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Angola national football team",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Angola national football team",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "New Jersey Devils",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "New Jersey Devils",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Sean Connery",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Sean Connery",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Untouchables",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Untouchables",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Charles B. Rangel",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Charles B. Rangel",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Milton Friedman",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Milton Friedman",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Los Angeles Dodgers",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Los Angeles Dodgers",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Augusta County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Augusta County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Rambo III",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Rambo III",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Me and Orson Welles",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Me and Orson Welles",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tompkins County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tompkins County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Poland",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Poland",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Dolly Parton",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Dolly Parton",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Nashville",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Nashville",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Ukrainian",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Ukrainian",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Nicolas Cage",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Nicolas Cage",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Beetlejuice",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Beetlejuice",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Bob Marley",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Bob Marley",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Andrea Romano",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Andrea Romano",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Armstrong County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Armstrong County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Saturn Award for Best Actor",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Saturn Award for Best Actor",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "FC Groningen",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "FC Groningen",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Groningen",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Groningen",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Crispin Glover",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Crispin Glover",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Alice in Wonderland",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Alice in Wonderland",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "AFI",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "AFI",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "gothic rock",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "gothic rock",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "V2 Records Benelux",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "V2 Records Benelux",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Richard Branson",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Richard Branson",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "David Foster",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "David Foster",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "physician",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "physician",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Grifters",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "The Grifters",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "National Society of Film Critics Award for Best Film",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "National Society of Film Critics Award for Best Film",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Psycho",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Psycho",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Flea",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Flea",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Burbank",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Burbank",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tony Thomas",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tony Thomas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Saturn Award for Best Costume",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Saturn Award for Best Costume",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Demolition Man",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Demolition Man",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Rob Schneider",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Rob Schneider",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "detective fiction",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "detective fiction",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Sherlock Holmes",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Sherlock Holmes",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "buddy film",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "buddy film",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Volver",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Volver",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Goya Award for Best Actress",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Goya Award for Best Actress",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Solomon Islands",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Solomon Islands",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Oceania",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Oceania",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Brad Bird",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Brad Bird",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "77th Academy Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "77th Academy Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "NBC",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "NBC",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Monkees",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Monkees",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "television",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "television",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Puerto Rico",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Puerto Rico",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Anguilla",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Anguilla",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Fort Bend County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Fort Bend County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Powers Boothe",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Powers Boothe",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Texas",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Texas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Japan",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Japan",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Shining",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Shining",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "supernatural",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "supernatural",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United Kingdom",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "United Kingdom",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Jason Lee",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Jason Lee",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Northampton Town F.C.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Northampton Town F.C.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Diane Keaton",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Diane Keaton",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Godfather",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Godfather",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Godfather Part II",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Godfather Part II",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Godfather",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Godfather",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Peter Bogdanovich",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Peter Bogdanovich",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "journalist",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "journalist",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Warner Bros.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Warner Bros.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "UPN",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "UPN",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Waheeda Rehman",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Waheeda Rehman",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Water",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Water",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "A. R. Rahman",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "A. R. Rahman",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Emilie de Ravin",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Emilie de Ravin",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Carrie",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Carrie",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Patricia Clarkson",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Patricia Clarkson",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Peter Ustinov",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Peter Ustinov",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Around the World in 80 Days",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Around the World in 80 Days",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Robert Morley",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Robert Morley",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Andover",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Andover",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Spain",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Spain",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Apartment",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Apartment",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "French",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "French",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Life as We Know It",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Life as We Know It",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Song of Bernadette",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Song of Bernadette",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Australia",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Australia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Hove",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Hove",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United Kingdom",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United Kingdom",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "defender",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "defender",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Colin Wilson",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Colin Wilson",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Raith Rovers F.C.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Raith Rovers F.C.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Genesis",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Genesis",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "StudioCanal",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "StudioCanal",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "composer",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "composer",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "David Mills",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "David Mills",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "poet",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "poet",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tom Stoppard",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tom Stoppard",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "71st Academy Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "71st Academy Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "literature",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "literature",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "literary criticism",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "literary criticism",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Anguilla",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Anguilla",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Caribbean",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Caribbean",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Hellboy",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Hellboy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Australia",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Australia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "stop-motion",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "stop-motion",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Alice in Wonderland",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Alice in Wonderland",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United Kingdom",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United Kingdom",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "single-player video game",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "single-player video game",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "A Bug's Life",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "A Bug's Life",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "single-player video game",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "single-player video game",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Latin pop",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Latin pop",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Nelly Furtado",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Nelly Furtado",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Thirtysomething",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Thirtysomething",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Peter Horton",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Peter Horton",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "English",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "English",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Augustine of Hippo",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Augustine of Hippo",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "St. Augustine",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "St. Augustine",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "modern architecture",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "modern architecture",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Angel",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Angel",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "sexploitation film",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "sexploitation film",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Southend United F.C.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Southend United F.C.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Paul Williams",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Paul Williams",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Torquay United F.C.",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Torquay United F.C.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Paranormal Activity",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Paranormal Activity",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Expendables 2",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Expendables 2",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Hong Kong",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Hong Kong",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Earth",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Earth",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Discovery Channel",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Discovery Channel",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Joseph M. Schenck",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Joseph M. Schenck",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Republican Party",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Republican Party",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Danny McBride",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Danny McBride",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Somerville",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Somerville",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "American International Group",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "American International Group",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "financial services",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "financial services",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Even Cowgirls Get the Blues",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Even Cowgirls Get the Blues",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Pat Morita",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Pat Morita",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Suhasini Maniratnam",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Suhasini Maniratnam",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "actor",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "actor",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Leipzig",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Leipzig",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Weimar Republic",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Weimar Republic",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Primetime Emmy Award for Outstanding Lead Actor in a Miniseries or a Movie",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Primetime Emmy Award for Outstanding Lead Actor in a Miniseries or a Movie",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Melvyn Douglas",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Melvyn Douglas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "J. K. Rowling",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "J. K. Rowling",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "tragicomedy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "tragicomedy",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Hewlett-Packard",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Hewlett-Packard",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "software",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "software",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "From the Earth to the Moon",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "From the Earth to the Moon",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Tom Hanks",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Tom Hanks",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Pennsylvania",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Pennsylvania",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Butler County",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Butler County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Mercer County",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Mercer County",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Martin Heidegger",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Martin Heidegger",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Hannah Arendt",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Hannah Arendt",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "University of Freiburg",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "University of Freiburg",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "John Gielgud",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "John Gielgud",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Claude Rains",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Claude Rains",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "English",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "English",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Cosmopolis",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Cosmopolis",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Don DeLillo",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Don DeLillo",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Air Force One",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Air Force One",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Lehigh University",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Lehigh University",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Paul Guilfoyle",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Paul Guilfoyle",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "journalist",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "journalist",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "John Williams",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "John Williams",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Robert Silverberg",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Robert Silverberg",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Brooklyn",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": false
+ },
+ {
+  "cond": "name",
+  "gold": "Brooklyn",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "72nd Academy Awards",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "72nd Academy Awards",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "John Irving",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "John Irving",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United States of America",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United States of America",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "drum kit",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "drum kit",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Paul Simon",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Paul Simon",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "United Kingdom",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "United Kingdom",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Halifax",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Halifax",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Last Picture Show",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Last Picture Show",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Larry McMurtry",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Larry McMurtry",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Fast Food Nation",
+  "dense_gated": false,
+  "dense_ungated": false,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Fast Food Nation",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Greg Kinnear",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Greg Kinnear",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "South Carolina",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "South Carolina",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Appalachian Mountains",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Appalachian Mountains",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Keenen Ivory Wayans",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Keenen Ivory Wayans",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "screenwriter",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "screenwriter",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Vanuatu",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Vanuatu",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Taiwan",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Taiwan",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The Flintstones in Viva Rock Vegas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The Flintstones in Viva Rock Vegas",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Warner Bros.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Warner Bros.",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Sri Lanka",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Sri Lanka",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Mandatory Palestine",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Mandatory Palestine",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Asia",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Asia",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Nijmegen",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Nijmegen",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Gelderland",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Gelderland",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "IF Elfsborg",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "IF Elfsborg",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "association football",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "association football",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "The New School",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "The New School",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Kevin Smith",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Kevin Smith",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "television producer",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "television producer",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "Marie Antoinette",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "Marie Antoinette",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "question",
+  "gold": "France",
+  "dense_gated": false,
+  "dense_ungated": true,
+  "bm25": true
+ },
+ {
+  "cond": "name",
+  "gold": "France",
+  "dense_gated": true,
+  "dense_ungated": true,
+  "bm25": true
+ }
+]
