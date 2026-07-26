@@ -60,13 +60,38 @@ Set arms via env, not by editing `config.toml`: `AMA_RETRIEVAL_HYBRID_ENABLED`,
 `/proc/<pid>/environ` — env overrides do NOT appear in `run_manifest.json`'s `config_toml`
 snapshot, which is why past arm configs are unrecoverable from manifests.
 
-## Sizing, and an honest limit
+## Sizing: run these at n=50–100, and what that costs you
 
-KQAPro at n=500 gives roughly ±3 pp, tight enough to resolve this. **SciQA cannot be
-powered further**: the handcrafted split is exactly 100 questions
-(`db/datasets/SciQA/Handcrafted/full dataset.csv`), so its accuracy comparison stays at
-about ±8 pp and will not reach significance no matter what. Judge SciQA on turns and
-latency, which are far more sensitive, and treat its accuracy as directional only.
+**Decision (2026-07-26): the fusion arms run at n=50–100, not n=500.** A full KQAPro sweep
+is ~7 h per arm; three arms of that is not worth spending to test a hypothesis. Accept the
+smaller set and adjust what you claim from it.
+
+What n≈100 can and cannot do:
+
+- **Turns/question: yes.** This is the primary metric and it is far more sensitive than
+  accuracy. The June sweep separated arms at 8.48 / 8.50 / 8.68 / 8.75 turns at n=100, and
+  the hypothesis makes a *directional* prediction here, so this is the metric the
+  experiment actually turns on.
+- **`FindNode` avg duration: yes.** Rests on ~3 calls/question, so ~300 samples at n=100.
+- **Accuracy: no.** At n≈100 the interval is roughly ±8–10 pp. Every accuracy difference
+  in the June four-arm sweep was inside it and McNemar found nothing. Do not expect this
+  run to resolve accuracy, and do not report an accuracy delta from it as a finding.
+
+**Pin the same questions across arms.** `--question-indices` (`benchmark_agents.py:2068`,
+comma-separated 0-based indices applied after sampling) makes every arm answer the
+*identical* question set. This matters for two reasons: stratified sampling at n=100 draws
+a different sample than at n=500, so unpinned arms of different sizes are not comparable at
+all; and McNemar requires **paired** observations, which only pinned indices provide. Use
+one fixed index list for all fusion arms and record it in the run notes.
+
+Caveat this creates: **arm A is already running at n=500 and is therefore NOT paired with
+the fusion arms.** Compare A against them on per-tool durations and turns as a rough
+reference only, or re-run A at the pinned n≈100 if a clean three-way is wanted.
+
+**SciQA cannot be powered further regardless**: the handcrafted split is exactly 100
+questions (`db/datasets/SciQA/Handcrafted/full dataset.csv`), so its accuracy stays at
+about ±8 pp no matter what. Judge SciQA on turns and latency; treat its accuracy as
+directional only.
 
 ## Metrics, in priority order
 
@@ -81,16 +106,25 @@ latency, which are far more sensitive, and treat its accuracy as directional onl
 
 ## Decision rule, fixed in advance
 
-- **C ≥ B on accuracy and C < B on turns** → keep `dbsf`, mark validated, update the
-  config comment.
-- **C ≈ B on both** → the fusion method is not the lever; revert to `rrf` and treat the
-  BM25 branch itself as the suspect, i.e. promote arm A.
-- **A ≥ C** → BM25 earns nothing even when fused well; set `hybrid_enabled = false` and
-  consider removing the branch.
-- **C < B** → revert immediately; the provisional default was wrong.
+At n≈100 accuracy is **not** a gate (see sizing above); it is a guardrail. Turns is the
+deciding metric, with accuracy used only to veto an obvious regression.
+
+- **C < B on turns, and accuracy not visibly worse (no drop beyond ~8 pp)** → keep `dbsf`.
+  Mark it *provisionally supported*, not validated — a turns win at n=100 justifies keeping
+  the default, not claiming an accuracy result.
+- **C ≈ B on turns** → the fusion method is not the lever. Revert to `rrf`, and treat the
+  BM25 branch itself as the suspect (promote arm A).
+- **C > B on turns** → revert to `rrf` immediately; the provisional default was wrong.
+- **A ≤ C on turns and A not worse on accuracy** → BM25 earns nothing even when fused
+  well; set `hybrid_enabled = false` and consider removing the branch. Note A is currently
+  unpaired (n=500), so confirm at the pinned n≈100 before acting on this one.
+- **Any accuracy drop larger than ~8 pp** → treat as real despite the small n and revert,
+  since an effect that large would be visible even underpowered.
 
 Writing the rule down before running the arms is deliberate: the whole reason this file
 exists is that a default was previously justified by numbers belonging to a different arm.
+The rule is also deliberately weaker than the earlier draft, because n≈100 cannot support
+the accuracy-based conclusions that draft assumed.
 
 ## Related
 
