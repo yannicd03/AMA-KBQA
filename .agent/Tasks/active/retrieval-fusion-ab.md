@@ -196,6 +196,55 @@ question is only what threshold value means anything on an unbounded BM25 scale.
 Note also that under RRF, gating the sparse branch and shrinking its `limit` are nearly
 the same intervention, because RRF consumes only ranks.
 
+## RESULT (2026-07-26): the diagnostic below has been RUN, and it undercuts these arms
+
+Commit `e766631`. Scripts: `scripts/union_recall_diagnostic.py`,
+`scripts/agent_keyword_recall.py`. Raw data: `.agent/data/`.
+
+**KQAPro, at the agent's real operating point: BM25 contributes 2.0% unique recall**
+(n=100 gold entities), which is *below* dense-only's 3.0%. The operating point turned out
+to dominate the answer:
+
+| query condition | dense gated | dense ungated | bm25 | BM25-only | neither |
+|---|---|---|---|---|---|
+| gold label (n=369) | 100% | 100% | 99.5% | 0.0% | 0% |
+| **agent keywords (n=100)** | **94%** | **94%** | **93%** | **2.0%** | 4% |
+| raw question (n=369) | 15.2% | 75.9% | 91.3% | 17.9% | 6.2% |
+
+The middle row uses the agent's own `CLASSIFICATION_AND_EXTRACTION_PROMPT` and
+`gemma-4-31b-it` to produce the search strings, so it reproduces what the agent does.
+
+Two intermediate readings that are ARTIFACTS, recorded so nobody re-derives them:
+
+- The 17.9% BM25-only figure is from the raw-question condition and collapses to 2.0%
+  once extraction is in the loop.
+- "The 0.6 gate destroys dense recall (75.9% → 15.2%)" is also raw-question-only. At the
+  agent's real query shape, gated and ungated dense are identical at 94%. The gate is
+  calibrated for short mentions, which is what it actually receives.
+
+**The disagreement cases invert the theoretical justification for BM25:**
+
+- Its 2 wins were token-overlap rescues of *over-specified* mentions ("Texas metropolitan
+  area" → `Texas`), not rare identifiers.
+- It **missed** the one identifier-like string, `AT&T`, extracted verbatim, on punctuation
+  tokenization. Exact/alias lookup would have caught it; BM25 ranking did not.
+- Dense's wins were abbreviation expansion (`US`/`USA` → `United States of America`).
+- **3 of the 4 total failures were empty extraction**, i.e. upstream of retrieval entirely.
+
+**SciQA disagrees and is unresolved.** At the gold-label condition (n=67) dense recalls
+70.1% against BM25's 100%, so BM25-only is 29.9% in the 171,588-point collection. Condition
+3 has **not** been run for SciQA; its raw-question row is not a retrieval verdict, because
+the gold R-ids are Comparison resources the question never names (hence 71.6% "neither").
+So "drop BM25 globally" is not supported: KQAPro says drop, SciQA says look harder.
+
+**Caveat:** 2/100 carries roughly a 0.6-7% interval. This rules out a large sparse
+contribution on KQAPro; it cannot separate 2% from 5%.
+
+**Consequence for arms B and C:** if BM25 contributes 2% unique recall, arm C's ceiling is
+reordering candidates within that 2%. The queued 5.5 h is a poor trade on KQAPro, and the
+higher-value use of that window is condition 3 for SciQA (minutes, and it targets the one
+place BM25 still looks strong). Not yet decided; the queue is still armed.
+
 ## Cheaper and more decisive than any of these arms
 
 **Per-query union-recall diagnostic.** For each query, is the gold entity retrieved by
@@ -210,7 +259,8 @@ actual question the A/B only approaches indirectly:
   labels (`CINIC-10`, metric names), the indicated fix is exact/prefix/alias lookup
   rather than BM25 ranking, which is what actually won in the W-NUT hybrid.
 
-This should probably run before or alongside the arms. It is minutes of compute.
+**RUN 2026-07-26 for KQAPro (all three conditions) and partially for SciQA (conditions 1-2).
+See the RESULT section above.**
 
 ## Related
 
