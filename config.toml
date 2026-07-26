@@ -60,13 +60,29 @@ sciqa_virtuoso_graph = "http://sciqa.org/kg"
 [retrieval]
 # Hybrid retrieval pipeline: dense + BM25 prefetch branches fused server-side
 # (Qdrant Query API), optionally followed by a cross-encoder reranker.
-# Full hybrid + rerank is the default since 2026-06-12. The reranker gain was
-# validated by rag-rerank-100q-2026-06-07 (SciQA 77% vs 73% dense-only, KQAPro
-# 81% vs 79%, equal token cost); the BM25 branch is additive recall and falls
-# back to dense-only (with a warning) on collections lacking the bm25 sparse
-# index (run db/migrate_add_bm25.py to upgrade).
+# The BM25 branch is additive recall and falls back to dense-only (with a
+# warning) on collections lacking the bm25 sparse index (run
+# db/migrate_add_bm25.py to upgrade).
+#
+# EVIDENCE STATUS, corrected 2026-07-26. The numbers previously quoted here
+# (SciQA 77 vs 73, KQAPro 81 vs 79) are the *dense_rerank* arm of
+# rag-rerank-100q-2026-06-07; they do NOT describe this hybrid_rerank default,
+# which scored SciQA 0.76 / KQAPro 0.79 in that same sweep. Across all four arms
+# at n=100 no accuracy difference was significant (McNemar), while the
+# reranker's latency cost was (Wilcoxon). Measured 2026-07-26: hybrid+rerank
+# costs ~2.0 s/question of tool time against retrieval off, and turns went UP in
+# every hybrid/reranked arm. See .agent/Tasks/active/retrieval-fusion-ab.md.
 hybrid_enabled = true         # false = pure dense vector search (legacy behavior)
-fusion = "rrf"                # "rrf" | "dbsf"
+# PROVISIONAL, NOT YET VALIDATED (2026-07-26). Switched rrf -> dbsf on the
+# hypothesis that rank-based fusion is the actual problem: search.py gates only
+# the dense branch on the cosine score_threshold, so BM25 contributes
+# prefetch_limit ungated candidates and RRF then fuses by RANK, discarding
+# magnitude, letting a lexically top-ranked but semantically weak hit outrank a
+# confident dense hit. DBSF normalises per-branch score distributions before
+# combining, preserving confidence and acting as a soft gate. This has NEVER
+# been A/B tested. Do not cite it as validated until the A/B in
+# .agent/Tasks/active/retrieval-fusion-ab.md has been run.
+fusion = "dbsf"               # "rrf" | "dbsf"
 prefetch_limit = 20           # per-branch candidates before fusion
 reranker_enabled = true       # independent of hybrid; also reranks dense-only results
 reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
