@@ -42,6 +42,7 @@ CORE_TOOLS = {
     "FindNode", "GetNodeSummary", "GetAttributeDetails", "GetRelationDetails",
     "ManageJournal", "GetJournalSummary", "RunSPARQL", "GetNodeLabel",
     "BatchGetNodeLabels", "FilterEntities", "FindByAttribute",
+    "LookupEntityByName",
 }
 
 # Extra tools per question type (on top of CORE_TOOLS)

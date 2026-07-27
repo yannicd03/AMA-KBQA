@@ -391,6 +391,10 @@ You MUST change your approach NOW."""
         """
         Get generic loop recovery guidance.
 
+        Override in subclass for KG-specific guidance (tool names, etc.).
+        This default is deliberately tool-name-agnostic so it stays correct
+        for any future KG agent that doesn't override it.
+
         Returns:
             Generic loop guidance string
         """
@@ -398,6 +402,9 @@ You MUST change your approach NOW."""
 - Try a different tool
 - Review your journal
 - Answer with available data
+- If a previous semantic/vector search returned confident-looking but wrong
+  results, switch to a deterministic lexical lookup tool (exact/substring
+  name match) instead of retrying the same search with rephrased terms
 - The data might not exist"""
 
     def _get_loop_intervention_template(self) -> str:

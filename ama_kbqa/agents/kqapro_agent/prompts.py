@@ -273,7 +273,7 @@ KG PREFIXES (auto-injected in SPARQL, don't redefine):
 ex:=Entities, prop:=Properties, attr:=Attributes, qual:=Qualifiers, unit:=Units
 
 TOOL TIERS:
-T1 Discovery: FindNode (semantic search) | FindByAttribute (exact ID/code/URL lookup - prefer this for unique IDs)
+T1 Discovery: FindNode (semantic search) | FindByAttribute (exact ID/code/URL lookup - prefer this for unique IDs) | LookupEntityByName (deterministic, non-vector name lookup - use when FindNode's results look plausible but wrong, or when you hold an over-specified mention like "Texas metropolitan area" for a KB entity actually named "Texas")
 T1.5 Filtering: FilterEntities (by concept type and/or attribute value, supports or_conditions and transitive_concept) | QualifierFilter (by qualifier on statements)
 T2 Retrieval: GetAttributeDetails | GetRelationDetails | GetNodeSummary (all data in ONE call)
 T3 Qualifiers: GetQualifierValue (preferred single qualifier projection) | GetEdgeQualifiers/GetQualifiersByPredicate (qualifier discovery)
@@ -388,8 +388,9 @@ TOOL_LOOP_GUIDANCE = {
     "RunSPARQL": "SPARQL failing. Use GetAttributeDetails/GetRelationDetails/FindNode instead. Check prefixes.",
     "GetAttributeDetails": "Attribute not found. Check available_attributes from FindNode or use GetNodeSummary.",
     "GetRelationDetails": "Relation not found. Check available_predicates from FindNode or use GetNodeSummary.",
-    "FindNode": "Entity not found. Try related entity, synonyms, or FindByAttribute with ID/code.",
-    "FindByAttribute": "Value not found. Try FindNode semantic search or RunSPARQL with broader filter.",
+    "FindNode": "Entity not found, or the results you got back don't actually match what you're looking for (confident-looking but wrong). Try LookupEntityByName (deterministic, no vectors) — especially if your search term was an over-specified mention (e.g. 'Texas metropolitan area' when the KB entity is just 'Texas'). Otherwise try a related entity, synonyms, or FindByAttribute with ID/code.",
+    "FindByAttribute": "Value not found. Try FindNode semantic search, LookupEntityByName for a literal name, or RunSPARQL with broader filter.",
+    "LookupEntityByName": "No lexical match either. Try the other `mode` ('exact'/'prefix'/'contains'), fall back to FindNode's semantic search, or the entity may not exist in this KB.",
     "ExploreNeighborhood": "DEPRECATED. Use GetNodeSummary instead.",
     "GetAttributeWithQualifiers": "No qualifiers. Try GetAttributeDetails or TemporalAttributeQuery.",
     "TemporalAttributeQuery": "Date not found. Increase tolerance_days or use GetAttributeWithQualifiers.",
