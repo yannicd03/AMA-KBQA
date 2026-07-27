@@ -56,8 +56,13 @@ sciqa_virtuoso_graph = "http://sciqa.org/kg"
 # 81% vs 79%, equal token cost); the BM25 branch is additive recall and falls
 # back to dense-only (with a warning) on collections lacking the bm25 sparse
 # index (run db/migrate_add_bm25.py to upgrade).
-hybrid_enabled = true         # false = pure dense vector search (legacy behavior)
-fusion = "rrf"                # "rrf" | "dbsf"
+# RESOLVED 2026-07-27 by the three-arm A/B; see config.toml for the numbers and
+# .agent/Tasks/active/retrieval-fusion-ab.md for the full record. This file was
+# on hybrid+rrf, which measured as the WORST of the three arms on turns
+# (9.16 vs dense_rerank 9.03 vs hybrid+dbsf 8.99). Brought in line with the
+# shipped default.
+hybrid_enabled = false        # false = pure dense vector search + reranker ("dense_rerank")
+fusion = "rrf"                # "rrf" | "dbsf" — inert while hybrid_enabled = false
 prefetch_limit = 20           # per-branch candidates before fusion
 reranker_enabled = true       # independent of hybrid; also reranks dense-only results
 reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
