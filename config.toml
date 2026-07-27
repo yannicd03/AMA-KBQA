@@ -72,17 +72,25 @@ sciqa_virtuoso_graph = "http://sciqa.org/kg"
 # reranker's latency cost was (Wilcoxon). Measured 2026-07-26: hybrid+rerank
 # costs ~2.0 s/question of tool time against retrieval off, and turns went UP in
 # every hybrid/reranked arm. See .agent/Tasks/active/retrieval-fusion-ab.md.
-hybrid_enabled = true         # false = pure dense vector search (legacy behavior)
-# PROVISIONAL, NOT YET VALIDATED (2026-07-26). Switched rrf -> dbsf on the
-# hypothesis that rank-based fusion is the actual problem: search.py gates only
-# the dense branch on the cosine score_threshold, so BM25 contributes
-# prefetch_limit ungated candidates and RRF then fuses by RANK, discarding
-# magnitude, letting a lexically top-ranked but semantically weak hit outrank a
-# confident dense hit. DBSF normalises per-branch score distributions before
-# combining, preserving confidence and acting as a soft gate. This has NEVER
-# been A/B tested. Do not cite it as validated until the A/B in
-# .agent/Tasks/active/retrieval-fusion-ab.md has been run.
-fusion = "dbsf"               # "rrf" | "dbsf"
+hybrid_enabled = false        # false = pure dense vector search + reranker ("dense_rerank")
+# RESOLVED 2026-07-27 by the three-arm A/B (.agent/Tasks/active/retrieval-fusion-ab.md).
+# Arms, gemma-4-31b-kit / seed 42, accuracy / avg turns:
+#   A dense_rerank  KQAPro 0.850 / 9.03 (n=500)   SciQA 0.740 / 7.09
+#   B hybrid+rrf    KQAPro 0.840 / 9.16 (n=100)   SciQA 0.750 / 7.09
+#   C hybrid+dbsf   KQAPro 0.860 / 8.99 (n=100)   SciQA 0.760 / 7.10
+# Nothing is significant: on SciQA all three arms are paired over the full
+# 100-question split and every Wilcoxon (turns) / McNemar (accuracy) p >= 0.72.
+# A and C are statistically indistinguishable, so A ships on SIMPLICITY: no BM25
+# sparse index to maintain, no fusion step, no sparse vectors in the collections.
+#
+# Read the ordering B 9.16 > A 9.03 > C 8.99 carefully: DBSF was not adding
+# value, it was removing damage RRF was doing. A branch contributing 2.0% unique
+# recall (union-recall diagnostic, scripts/agent_keyword_recall.py) cannot
+# produce a real gain, but fusing it badly can produce a real loss.
+#
+# `fusion` is INERT while hybrid_enabled = false. It is kept at dbsf because
+# that is the better setting IF hybrid is ever re-enabled.
+fusion = "dbsf"               # "rrf" | "dbsf" — unused unless hybrid_enabled
 prefetch_limit = 20           # per-branch candidates before fusion
 reranker_enabled = true       # independent of hybrid; also reranks dense-only results
 reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
