@@ -21,7 +21,12 @@ top-k of:
                   it" from "our threshold discards it")
   bm25          - sparse branch, which production never gates
 """
-import argparse, json, os, re, sys, threading
+import argparse
+import json
+import os
+import re
+import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 
@@ -185,12 +190,13 @@ def main():
         only_u = sum(r["bm25"] and not r["dense_ungated"] for r in rs)
         dense_only = sum(r["dense_ungated"] and not r["bm25"] for r in rs)
         neither = sum(not r["dense_ungated"] and not r["bm25"] for r in rs)
-        pct = lambda x: f"{x/n*100:5.1f}%"
+        def pct(x, _n=n):
+            return f"{x/_n*100:5.1f}%"
         print(f"=== condition: {cond}   (gold entities measured: {n}, top-k={PREFETCH_K})")
         print(f"  dense recall, gated @{THRESHOLD} : {pct(dg)} ({dg})")
         print(f"  dense recall, ungated          : {pct(du)} ({du})")
         print(f"  bm25 recall                    : {pct(bm)} ({bm})")
-        print(f"  ---")
+        print("  ---")
         print(f"  BM25-only vs GATED dense       : {pct(only_g)} ({only_g})   <- recall the gate discards")
         print(f"  BM25-only vs UNGATED dense     : {pct(only_u)} ({only_u})   <- true unique contribution")
         print(f"  dense-only (ungated)           : {pct(dense_only)} ({dense_only})")

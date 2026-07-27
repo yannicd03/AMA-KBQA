@@ -14,7 +14,11 @@ endpoint so the running Hetzner benchmark is not perturbed.
 A gold entity counts as retrieved if it appears in the top-k of ANY of the
 agent's extracted-mention queries, which is how the agent actually behaves.
 """
-import argparse, json, os, sys, threading
+import argparse
+import json
+import os
+import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 
@@ -152,16 +156,17 @@ def main():
     dense_only = sum(r["dense_ungated"] and not r["bm25"] for r in results)
     neither = sum(not r["dense_ungated"] and not r["bm25"] for r in results)
     exact = sum(r["exact_mention"] for r in results)
-    pct = lambda x: f"{x/n*100:5.1f}%"
+    def pct(x):
+        return f"{x/n*100:5.1f}%"
 
     print()
     print(f"=== condition: agent-keywords  (gold entities: {n}, top-k={PREFETCH_K}, model={CHAT_MODEL})")
     print(f"  agent extracted the gold label verbatim : {pct(exact)} ({exact})")
-    print(f"  ---")
+    print("  ---")
     print(f"  dense recall, gated @{THRESHOLD} : {pct(dg)} ({dg})")
     print(f"  dense recall, ungated          : {pct(du)} ({du})")
     print(f"  bm25 recall                    : {pct(bm)} ({bm})")
-    print(f"  ---")
+    print("  ---")
     print(f"  BM25-only vs GATED dense       : {pct(only_g)} ({only_g})")
     print(f"  BM25-only vs UNGATED dense     : {pct(only_u)} ({only_u})   <- unique contribution")
     print(f"  dense-only (ungated)           : {pct(dense_only)} ({dense_only})")
