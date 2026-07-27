@@ -1,10 +1,20 @@
 # Retrieval fusion A/B: RRF vs DBSF (and whether BM25 earns its place)
 
-**Status:** 📋 Planned — blocking validation for a default that has already been changed
-**Raised:** 2026-07-26
-**Why it exists:** `config.toml` now ships `fusion = "dbsf"`, switched on a hypothesis
-that has never been tested. This document is what makes that provisional rather than
-silent. Until this A/B runs, nothing may cite DBSF as validated.
+**Status:** ✅ COMPLETE — ran 2026-07-27; `hybrid_enabled = false` shipped in `c45ddcb`
+**Raised:** 2026-07-26 · **Closed:** 2026-07-27
+
+> **OUTCOME (read this before the design below).** All three arms ran. Nothing was
+> significant anywhere. Arm A `dense_rerank` and arm C `hybrid+dbsf` are statistically
+> indistinguishable, so **A shipped on simplicity**: no BM25 sparse index, no fusion step,
+> no sparse vectors. `fusion` stays at `dbsf` but is now **inert**.
+>
+> The turns ordering is the real finding: **B `rrf` 9.16 > A `dense_rerank` 9.03 > C
+> `dbsf` 8.99.** DBSF was not adding value, it was removing damage RRF was doing. A branch
+> contributing 2.0% unique recall cannot produce a gain, but fusing it badly can produce a
+> loss. See "A/B RESULTS" near the end of this file.
+>
+> Everything below this box is the design as written *before* the run. It is kept
+> unedited so the pre-registered hypothesis and decision rule stay auditable.
 
 ## The hypothesis
 
@@ -261,6 +271,75 @@ actual question the A/B only approaches indirectly:
 
 **RUN 2026-07-26 for KQAPro (all three conditions) and partially for SciQA (conditions 1-2).
 See the RESULT section above.**
+
+## A/B RESULTS (2026-07-27)
+
+Arm A ran 2026-07-26 16:05 → 2026-07-27 01:49 UTC; B and C ran 01:51 → 08:03 UTC from
+`scripts/fusion-ab-queue.sh`. Results under `~/AMAKBQA-main/benchmark_results/` on Hetzner:
+`densererank-{kqapro-n500,sciqa-n100}-2026-07-26`,
+`fusion-{rrf,dbsf}-{kqapro,sciqa}-n100pinned-2026-07-26`.
+
+| | A `dense_rerank` | B `hybrid+rrf` | C `hybrid+dbsf` |
+|---|---|---|---|
+| KQAPro acc / turns | 0.850 / 9.03 (n=500) | 0.840 / 9.16 | 0.860 / **8.99** |
+| SciQA acc / turns | 0.740 / 7.09 | 0.750 / 7.09 | 0.760 / 7.10 |
+
+Paired tests. B and C answered byte-identical pinned sets; on SciQA all three arms cover
+the entire 100-question split, so **A is paired there too** (it is not on KQAPro, n=500 vs
+n=100):
+
+| comparison | turns | Wilcoxon p | accuracy | McNemar p |
+|---|---|---|---|---|
+| KQAPro B vs C | −0.17 favouring C | 0.124 | +2.0 pp | 0.727 |
+| SciQA B vs C | +0.01 | 0.612 | +1.0 pp | 1.000 |
+| SciQA A vs C | +0.01 | 0.847 | +2.0 pp | 0.727 |
+| SciQA A vs B | 0.00 | 0.803 | +1.0 pp | 1.000 |
+
+**Nothing is significant.** At n=100 that means "nothing large is happening", NOT "no
+effect" — the contested effects are ~0.2 turns and we are underpowered for exactly that.
+
+C wins the *outcome* metrics (accuracy on both, turns on KQAPro, time on both, tokens on
+KQAPro) but loses the *retrieval-cost* metrics (tool s/question SciQA A 5.66 < B 6.15 <
+C 6.59; `FindNode` avg KQAPro B 2.265 s vs C 2.497 s) — DBSF normalises per-branch
+distributions, which is more work per query. Those outcome metrics are strongly dependent
+(fewer turns causes less time and fewer tokens), so C leading on four is closer to one
+finding measured four ways than four confirmations. Wall clock cannot compare A against
+B/C at all: different time windows, and this endpoint swung 24.6–38.9 s/question *within*
+a single arm.
+
+**Decision-rule note.** The pre-registered rule's "C ≈ B → revert to `rrf`" branch was
+applied and then **withdrawn as too mechanical**. That branch assumed C≈B meant fusion was
+irrelevant; the data instead shows B worse than *both* alternatives. If hybrid were kept,
+`dbsf` would be correct. Recording the withdrawal rather than quietly dropping it, since
+the point of a pre-registered rule is that departures are visible.
+
+## Why the "internal BM25 fallback" idea is dead (2026-07-27)
+
+Proposed: inside the dense-only path, fall back to BM25 when nothing clears the 0.6 cosine
+gate. **Measured: that trigger fires zero times against every BM25-win case we have.**
+
+- KQAPro, both cases where BM25 uniquely rescued the gold: `"Texas metropolitan area"`
+  (gold `Texas`) → 5 gated hits at 0.893/0.859/0.859 (Greater Houston, Dallas, Dallas).
+  `"Abraham Lincoln (film)"` (gold `Abraham Lincoln`) → 5 gated hits at 0.942 (Lincoln ×3).
+- SciQA, all 20 name-condition BM25-only cases: gated dense returned a **full 20 results in
+  20 of 20**, several at cosine **1.000**, gold still absent from the top-20.
+
+The failure mode is not "dense finds nothing", it is **"dense finds k confident but wrong
+things"**. No score or result-count trigger can separate those. Consequences:
+
+1. A useful lexical fallback needs a **lexical** trigger (no token overlap between query and
+   any returned label), not a score trigger.
+2. **The mechanism must be agent-facing**, i.e. a separate tool. Neither the agent *nor the
+   retrieval layer* can detect this from scores; the only actor holding the signal is the
+   agent, which knows what it was looking for. Build it as a **payload-filter exact/alias
+   match, not BM25** — that needs no vectors and no sparse index, and it fixes `AT&T`,
+   which BM25's tokenizer dropped. Acceptance metric is **turns**, since an extra tool
+   costs a turn when invoked.
+3. **SciQA is probably a different problem.** Cosine 1.000 with gold outside top-20 means
+   20+ entities share near-identical label text. Exact match returns all of them too, and
+   BM25's apparent 29.9% edge there may be tie-breaking luck (identical text → identical
+   BM25 scores). That points at **label deduplication in `sciqa-entities`**, which no
+   retrieval mechanism fixes.
 
 ## Related
 
