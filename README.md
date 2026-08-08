@@ -61,6 +61,58 @@ ama-kbqa-frontend
 ama-kbqa ask "Who directed Inception?"
 ```
 
+## Usage Observations (Informal)
+
+AMA-KBQA has not been evaluated in a formal user study. The notes below are
+informal observations from real, unscripted usage of the public demo, primarily
+by the SEMANTiCS 2026 reviewers during the review period and by the authors
+during development. They are anecdotes rather than measurements, and are shared
+to set honest expectations; the quantitative evaluation is the KQAPro/SciQA
+benchmark reported in the paper.
+
+**What holds up in practice**
+
+- Multi-hop counting and comparison questions resolve correctly end-to-end,
+  e.g. "How many heavy metal groups are in the genre of Queen?" (KQAPro)
+  returns the correct count of 41 with a complete reasoning trace.
+- The "How I found this" trace is the feature unassisted users lean on: every
+  claim in an answer links back to the exact tool calls and triples that
+  produced it, so answers can be checked instead of trusted. Because synthesis
+  draws only on the scratchpad's verified facts, a wrong answer is visible as a
+  wrong trace, not a silent hallucination.
+
+**Known failure modes** (also documented in the demo's About dialog under
+"What can go wrong")
+
+- *Entity mislinks.* Vector-based entity linking occasionally resolves a name
+  to a similar but wrong entity; one reviewer's question about the designer
+  Franco Moschino was answered about Travis Banton.
+- *Definitional questions.* Questions whose answer is not explicit in the graph
+  fail; two reviewers independently asked "What is Artificial Intelligence?"
+  against SciQA and got no answer, because ORKG stores research contributions,
+  not textbook definitions.
+- *Honest refusals.* When the graph lacks the fact, the agent answers "I do not
+  know" rather than guessing. This is by design, but it surprises users who
+  expect chatbot-style improvisation.
+- *Slow superlatives.* Aggregation and superlative questions ("the most",
+  "how many ... in total") trigger many tool-calling turns and are the slowest
+  question class.
+- *Latency.* The public demo is noticeably slower than the paper's benchmark
+  averages: it defaults to Orchestrator mode (adding a routing probe and
+  per-question agent start-up), runs a larger backbone model, and sits on a
+  small shared VM behind a shared inference endpoint. One to two minutes per
+  question under load is normal.
+- *Follow-ups.* Stateful multi-turn follow-ups are supported only in specialist
+  mode; the default Orchestrator treats each question independently.
+
+**Changes made in response to observed usage**
+
+- The failure modes above were added to the demo's About dialog so first-time
+  users see them before asking.
+- A configuration crash that reviewers hit on the live demo (missing API key
+  after a provider switch) was fixed and redeployed, and the entity-linking and
+  definitional-question failures are tracked as open issues.
+
 ## Project Structure
 
 | Path | Purpose |
