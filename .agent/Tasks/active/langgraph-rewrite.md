@@ -184,3 +184,11 @@ Evidence in `langgraph-rewrite-phase0/` (`request_diff.md`, `cache_gate.md`); sc
 - Resolved: langgraph 1.2.11, langchain-core 1.6.0, langchain-openai 1.6.0, langchain-mcp-adapters 0.3.2, chatkit 1.1.0. Side effect: `openai` 2.8 → 3.3.1, which vendors `httpx2`; any transport mocking must target `httpx2`.
 - Phase 1 requirements learned: never let `langchain-mcp-adapters` auto-schemas reach the model (use `convert_tools_to_openai_format`); `tool_choice="required"` passes through verbatim; read "messages as sent" from the request, not from a live list.
 - `tests/llm/test_kit_library.py::test_langchain_only_names_raise_helpful_error` now fails by design; removed in Phase 1 with the ADR.
+
+## 11. Phase 1 result (2026-08-23): landed, `21c855d`
+
+- `ama_kbqa/graph/` holds the explicit `StateGraph` loop (`call_model` ↔ `execute_tools`), the OpenAI⇄LangChain message conversion, and a chat-model factory mirroring `config._create_client` (KIT via `chatkit.get_kit_model(streaming=False, retry=agent._retry)`, others via `ChatOpenAI(max_retries=0)` wrapped in the agent's `TransientRetry`).
+- Engine switch `[agent].engine` / `AMA_AGENT_ENGINE` (default `legacy`). `BaseKBQAAgent._run_tool_loop` dispatches; everything around the loop (classify, fast path, synthesis, finalize) is unchanged, so the harness and frontend work on both engines.
+- `execute_tools` reuses `agent._execute_single_tool`, so tool spans, timing, and journal snapshots are identical by construction. Legacy/graph parity test passes on a scripted 2-round transcript. 560 tests green.
+- Live smoke (OpenRouter `openai/gpt-4.1-mini`; KIT was unresponsive and the configured `openrouter/elephant-alpha` model has been retired, config still points at it): both engines answer "Christopher Nolan", 6 tool calls, 22.8k vs 22.9k prompt tokens, same span kinds.
+- Dropped `langchain-mcp-adapters` again (spike-only); declared `tqdm` (was transitive). Deleted the langchain-free guard tests.
