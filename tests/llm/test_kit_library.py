@@ -4,17 +4,23 @@
 The retry-core and KIT-client implementation tests now live in the ChatKIT
 package itself (its own ``tests/test_retry.py`` etc.) — no need to duplicate
 them here. This module only guards the contract this repo actually relies on:
+every name AMA's code imports from ``chatkit`` is importable from the core
+install (no langchain-openai / langchain-core required beyond what the repo
+already depends on).
 
-* every name AMA's code imports from ``chatkit`` is importable from the core
-  install (no langchain-openai / langchain-core required);
-* the LangChain-only surface (``ChatKIT``, ``get_kit_model``, ...) is NOT
-  silently usable in this environment — i.e. the ``chatkit[langchain]`` extra
-  hasn't snuck in as a transitive dependency of something else.
+Formerly this module also asserted the repo was langchain-free and that
+``chatkit``'s LangChain-only surface (``ChatKIT``, ``get_kit_model``, ...)
+raised a helpful ``ImportError`` without the ``chatkit[langchain]`` extra.
+That invariant is superseded as of the LangGraph rewrite
+(``.agent/Tasks/active/langgraph-rewrite.md``): the repo now depends on
+``langchain-core``/``langchain-openai``/``langgraph`` directly, and
+``ama_kbqa/graph/model.py`` uses ``chatkit.client.get_kit_model`` for the
+"kit" provider. See that PRD's Phase 1 dependency/test-removal notes and the
+ADR superseding ``Decisions/transient-retry-and-chatkit-extraction.md``'s
+"langchain-free repo" clause.
 """
 
 from __future__ import annotations
-
-import pytest
 
 
 def test_core_surface_is_importable():
@@ -36,26 +42,3 @@ def test_core_surface_is_importable():
         kit_chat_create,
         kit_client,
     )
-
-
-def test_langchain_is_not_installed():
-    """Guard against the `chatkit[langchain]` extra (or bare langchain) sneaking in
-    as a transitive dependency: this repo is deliberately langchain-free."""
-    with pytest.raises(ImportError):
-        import langchain  # noqa: F401
-
-
-def test_langchain_only_names_raise_helpful_error():
-    """Without the `chatkit[langchain]` extra, LangChain-only names raise a helpful
-    ImportError rather than importing successfully or failing obscurely."""
-    import chatkit
-
-    for name in (
-        "ChatKIT",
-        "get_kit_model",
-        "make_chat_kit_class",
-        "normalize_kit_messages",
-        "salvage_tool_calls",
-    ):
-        with pytest.raises(ImportError, match="langchain"):
-            getattr(chatkit, name)

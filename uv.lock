@@ -33,7 +33,6 @@ dependencies = [
     { name = "fastmcp" },
     { name = "htbuilder" },
     { name = "langchain-core" },
-    { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "loguru" },
@@ -46,6 +45,7 @@ dependencies = [
     { name = "sparqlwrapper" },
     { name = "streamlit" },
     { name = "tenacity" },
+    { name = "tqdm" },
     { name = "uvicorn" },
 ]
 
@@ -69,7 +69,6 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.13.1" },
     { name = "htbuilder", specifier = ">=0.9.0" },
     { name = "langchain-core", specifier = ">=1.6.0" },
-    { name = "langchain-mcp-adapters", specifier = ">=0.3.2" },
     { name = "langchain-openai", specifier = ">=1.6.0" },
     { name = "langgraph", specifier = ">=1.2.11" },
     { name = "loguru", specifier = ">=0.7.3" },
@@ -83,6 +82,7 @@ requires-dist = [
     { name = "sparqlwrapper", specifier = ">=2.0.0" },
     { name = "streamlit", specifier = ">=1.51.0" },
     { name = "tenacity", specifier = ">=9.0.0" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'rerank'", specifier = ">=4.48" },
     { name = "uvicorn", specifier = "==0.38.0" },
 ]
@@ -1265,20 +1265,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/97/88/ebc98df187c525d729725ab39759337c56d5d2803423632376aa35bde899/langchain_core-1.6.0.tar.gz", hash = "sha256:dc72e36678ed26683ec0ad8829b44011fba461d10f9b31dbd9110215e5ec2333", size = 992493, upload-time = "2026-08-19T15:55:40.642Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/84/4c/508a90b9d2e3bd7738fd93cb2ac2178ce734662c75e69b3b81c445f1b360/langchain_core-1.6.0-py3-none-any.whl", hash = "sha256:d8bb924cd413955d9d3192ccced140407427c3ff51e50ffb941222648da92cb2", size = 570006, upload-time = "2026-08-19T15:55:38.935Z" },
-]
-
-[[package]]
-name = "langchain-mcp-adapters"
-version = "0.3.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "langchain-core" },
-    { name = "mcp" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/05/49/f3b8497b64024ab50d10011f27e94d149668fef754da74c1c2ce6ebe4a30/langchain_mcp_adapters-0.3.2.tar.gz", hash = "sha256:61cd1a09597adb619a9bafb0642938ffc2a9463d699a753f7af0420ea46c381a", size = 47129, upload-time = "2026-08-06T06:15:04.094Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/5e/4f117d2500a661079a1895a6eb18954a906e458b1e45fa04a301fcdabd61/langchain_mcp_adapters-0.3.2-py3-none-any.whl", hash = "sha256:094e6b3096dbcc408417d5722f6915f164772e50c502ae3d8989405bf12c3c84", size = 28879, upload-time = "2026-08-06T06:15:02.832Z" },
 ]
 
 [[package]]

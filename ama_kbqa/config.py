@@ -569,6 +569,29 @@ def get_zero_tool_call_retry_max() -> int:
     return int(config.get("agent", {}).get("zero_tool_call_retry_max", 1))
 
 
+AGENT_ENGINE_ENV = "AMA_AGENT_ENGINE"
+
+
+def get_agent_engine() -> str:
+    """Return the agent execution engine: ``"legacy"`` (default) or ``"graph"``.
+
+    Read from the ``AMA_AGENT_ENGINE`` environment variable first (so a shell
+    or CI job can flip engines without editing config.toml), falling back to
+    ``[agent].engine`` in config.toml, defaulting to ``"legacy"`` when neither
+    is set or the value is unrecognized. See
+    ``.agent/Tasks/active/langgraph-rewrite.md``.
+
+    Returns:
+        str: ``"legacy"`` or ``"graph"``.
+    """
+    raw = os.environ.get(AGENT_ENGINE_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("agent", {}).get("engine", "legacy")
+    raw = str(raw).strip().lower()
+    return raw if raw in ("legacy", "graph") else "legacy"
+
+
 def get_synthesis_enabled() -> bool:
     """Whether to run the dedicated synthesis LLM step after the tool loop.
 

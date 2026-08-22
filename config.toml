@@ -8,6 +8,10 @@ embedding_temperature = 0.0
 [agent]
 auto_inject_journal = true
 zero_tool_call_retry_max = 3
+# Tool-loop engine: "legacy" (the in-class loop in framework/base_agent.py) or
+# "graph" (the LangGraph StateGraph in ama_kbqa/graph/). Env override:
+# AMA_AGENT_ENGINE. Default stays "legacy" until the rewrite reaches parity.
+engine = "legacy"
 
 [benchmark]
 # Number of questions processed concurrently by the benchmark runner.

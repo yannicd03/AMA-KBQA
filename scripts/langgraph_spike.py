@@ -197,9 +197,22 @@ async def capture_new_request(
     tool_choice: str,
 ) -> Dict[str, Any]:
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-    from langchain_mcp_adapters.sessions import StdioConnection
-    from langchain_mcp_adapters.client import MultiServerMCPClient
-    from langchain_mcp_adapters.tools import load_mcp_tools
+    try:
+        from langchain_mcp_adapters.sessions import StdioConnection
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+        from langchain_mcp_adapters.tools import load_mcp_tools
+    except ImportError as exc:
+        # Phase 0 evidence (langgraph-rewrite-phase0/) is already captured and
+        # archived; langchain-mcp-adapters was only ever this spike's
+        # dependency and was removed from pyproject.toml in Phase 1 (Phase 1
+        # execution uses MCPClient directly, not the adapters — see
+        # .agent/Tasks/active/langgraph-rewrite.md). Re-running this spike
+        # needs `uv add langchain-mcp-adapters` back temporarily.
+        raise RuntimeError(
+            "langchain-mcp-adapters is no longer a project dependency "
+            "(removed in Phase 1). Re-add it temporarily to re-run this "
+            "Phase 0 spike: `uv add langchain-mcp-adapters`."
+        ) from exc
     from langchain_openai import ChatOpenAI
     from langgraph.graph import StateGraph, START, END
     from langgraph.prebuilt import ToolNode
