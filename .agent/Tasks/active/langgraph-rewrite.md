@@ -205,3 +205,14 @@ Evidence in `langgraph-rewrite-phase0/` (`request_diff.md`, `cache_gate.md`); sc
 - `graph/pipeline.py`: `prepare → classify → assemble_prompt → fast_path → tool_loop → finalize` (+ `no_mcp_fallback`), every node delegating to the existing `BaseKBQAAgent` hook; the message list entering the loop is asserted byte-equal to legacy. Follow-ups bypass classify and tool filtering. Exceptions propagate after `_finalize_question`, exactly as `_ask_impl` does (the PRD §7 wording "never an exception to the harness" was imprecise; the harness catches per question).
 - `graph/orchestrator.py`: `probe → select_agent` inside the `classify` span, then a conditional edge to `delegate_kqapro` / `delegate_sciqa` / `fallback_kqapro` (which nests `_fallback_llm` as legacy does). `probe`/`select_agent` duplicate `_route_autonomously`'s body (kept in sync note); Phase 6 should make legacy call the graph helpers instead.
 - 602 tests; live KQAPro and CLI-orchestrator runs correct on both engines. Note: both engines show a pre-existing `anyio` MCP stdio-shutdown `RuntimeError` on CLI cleanup.
+
+## 14. Phase 4 result (2026-08-23): landed, `80ffca9`
+
+- No harness/frontend code change needed: with `AMA_AGENT_ENGINE=graph` the benchmark writes `results.json`, `summary.json`, `tool_traces/`, `judgments.json`, `run_manifest.json` with key sets identical to legacy; `--resume` skips completed runs; `--concurrency 2` works; the frontend lifecycle runner streams the same span kinds in the same order (verified through `lifecycle_runner.start_run`, no Streamlit).
+- Opt-in checkpointer: `[agent].checkpointer = none|memory|sqlite`, `checkpointer_path`, env `AMA_AGENT_CHECKPOINTER[_PATH]`; per-question `thread_id = session_id::counter`. `none` is byte-identical to before. Mid-question `--resume` on top of the sqlite checkpointer is a follow-up (needs a `(output_dir, question_index)` thread id and an `aget_state` probe in `is_run_completed`).
+- 618 tests.
+- Environment findings (not engine defects): KIT chat *and* embedding endpoints have been hanging since 2026-08-22 evening; `openrouter/elephant-alpha` in `config.toml` is retired (404); the local Virtuoso has no `http://sciqa.org/kg` graph (ORKG dump lives on the Hetzner host only), so SciQA parity must run there; the worktree venv needed `uv sync --extra rerank` for `reranker_enabled = true`.
+
+## 15. Phase 5 plan as executed (2026-08-23)
+
+KIT unavailable, so the parity run is engine-vs-engine at a fixed substitute model: KQAPro, 100 questions, seed 42, `openai/gpt-4.1-mini` via OpenRouter (chat + embeddings), judge `deepseek/deepseek-v4-pro`, concurrency 4, both engines from commit `80ffca9`. SciQA parity deferred to the Hetzner host. A KIT re-run at the reference model is still required before flipping the default engine.
