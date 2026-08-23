@@ -192,3 +192,10 @@ Evidence in `langgraph-rewrite-phase0/` (`request_diff.md`, `cache_gate.md`); sc
 - `execute_tools` reuses `agent._execute_single_tool`, so tool spans, timing, and journal snapshots are identical by construction. Legacy/graph parity test passes on a scripted 2-round transcript. 560 tests green.
 - Live smoke (OpenRouter `openai/gpt-4.1-mini`; KIT was unresponsive and the configured `openrouter/elephant-alpha` model has been retired, config still points at it): both engines answer "Christopher Nolan", 6 tool calls, 22.8k vs 22.9k prompt tokens, same span kinds.
 - Dropped `langchain-mcp-adapters` again (spike-only); declared `tqdm` (was transitive). Deleted the langchain-free guard tests.
+
+## 12. Phase 2 result (2026-08-23): landed, `3147263`
+
+- All nine loop interventions run on the graph engine: loop detection (reuses `_detect_loops`/`_handle_loop_detected` unchanged), zero-tool-call retry + hard stop (`call_model` self-loop), `max_tool_calls` cap, wrap-up nudge (`graph/guards.py`); context compaction, periodic journal refresh, `GetJournalSummary` answer prompt, raw-SPARQL distress (`graph/context.py`).
+- `context.py` uses a transitional "swap-and-diff" pattern: it points `agent._messages` at a dict mirror of graph state, calls the legacy method verbatim, and diffs the result back into `add_messages` updates (in-place edits keep the message id). **Phase 6 must move that logic into graph-owned code before `base_agent.py`'s loop is deleted.**
+- One legacy-vs-graph parity test per behaviour (`tests/graph/test_parity_phase2.py`) plus unit tests; 587 tests green. Remaining gap: text-mode tool calls still use the legacy loop.
+- Live check (OpenRouter `gpt-4.1-mini`): correct answer, 6 tool calls, 23.0k prompt tokens; no intervention fired on the simple question, as expected.
