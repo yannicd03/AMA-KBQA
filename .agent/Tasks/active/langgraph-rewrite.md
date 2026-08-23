@@ -216,3 +216,13 @@ Evidence in `langgraph-rewrite-phase0/` (`request_diff.md`, `cache_gate.md`); sc
 ## 15. Phase 5 plan as executed (2026-08-23)
 
 KIT unavailable, so the parity run is engine-vs-engine at a fixed substitute model: KQAPro, 100 questions, seed 42, `openai/gpt-4.1-mini` via OpenRouter (chat + embeddings), judge `deepseek/deepseek-v4-pro`, concurrency 4, both engines from commit `80ffca9`. SciQA parity deferred to the Hetzner host. A KIT re-run at the reference model is still required before flipping the default engine.
+
+## 16. Phase 5 result (2026-08-23): KQAPro parity PASSED at the substitute model
+
+Evidence: `langgraph-rewrite-phase5/parity_kqapro_100.md` (+ manifests, questionnaire). 100 questions, seed 42, `openai/gpt-4.1-mini`: accuracy 0.58 vs 0.58 (9/9 discordant, McNemar p = 1.0), prompt tokens +2.4% on graph (bound: 10%), tool calls 7.07 vs 6.90, graph faster per question. Intervention injection counts match within model-path variance.
+
+Still open before flipping `[agent].engine` default to `graph` and deleting the legacy loop (Phase 6):
+- [ ] Re-run the same parity at the reference model `kit.gemma4-31b-it` once KIT is responsive (PRD §5 acceptance as written).
+- [ ] SciQA parity on the Hetzner host (ORKG graph), 100 questions.
+- [ ] Cosmetic: emit the two missing `_trace` lines on the graph path.
+- [ ] Phase 6 proper: move the swap-and-diff helpers' logic into graph-owned code, make legacy `_route_autonomously` reuse the graph helpers (or delete legacy), remove dead deps (`openai-agents`, `fastapi`, `uvicorn`), replace the retired `openrouter/elephant-alpha` in `config.toml`, rewrite `System/agent_framework.md`.
