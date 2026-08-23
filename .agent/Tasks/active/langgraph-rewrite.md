@@ -199,3 +199,9 @@ Evidence in `langgraph-rewrite-phase0/` (`request_diff.md`, `cache_gate.md`); sc
 - `context.py` uses a transitional "swap-and-diff" pattern: it points `agent._messages` at a dict mirror of graph state, calls the legacy method verbatim, and diffs the result back into `add_messages` updates (in-place edits keep the message id). **Phase 6 must move that logic into graph-owned code before `base_agent.py`'s loop is deleted.**
 - One legacy-vs-graph parity test per behaviour (`tests/graph/test_parity_phase2.py`) plus unit tests; 587 tests green. Remaining gap: text-mode tool calls still use the legacy loop.
 - Live check (OpenRouter `gpt-4.1-mini`): correct answer, 6 tool calls, 23.0k prompt tokens; no intervention fired on the simple question, as expected.
+
+## 13. Phase 3 result (2026-08-23): landed, `4cc1600`
+
+- `graph/pipeline.py`: `prepare → classify → assemble_prompt → fast_path → tool_loop → finalize` (+ `no_mcp_fallback`), every node delegating to the existing `BaseKBQAAgent` hook; the message list entering the loop is asserted byte-equal to legacy. Follow-ups bypass classify and tool filtering. Exceptions propagate after `_finalize_question`, exactly as `_ask_impl` does (the PRD §7 wording "never an exception to the harness" was imprecise; the harness catches per question).
+- `graph/orchestrator.py`: `probe → select_agent` inside the `classify` span, then a conditional edge to `delegate_kqapro` / `delegate_sciqa` / `fallback_kqapro` (which nests `_fallback_llm` as legacy does). `probe`/`select_agent` duplicate `_route_autonomously`'s body (kept in sync note); Phase 6 should make legacy call the graph helpers instead.
+- 602 tests; live KQAPro and CLI-orchestrator runs correct on both engines. Note: both engines show a pre-existing `anyio` MCP stdio-shutdown `RuntimeError` on CLI cleanup.
