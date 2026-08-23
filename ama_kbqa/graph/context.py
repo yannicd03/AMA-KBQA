@@ -53,6 +53,8 @@ from langchain_core.messages import AnyMessage
 from ama_kbqa.config import get_auto_inject_journal
 from ama_kbqa.graph.messages import from_lc_messages, to_lc_messages
 
+COLOR_CYAN = "\033[96m"
+
 
 def _diff_to_lc_updates(
     original_lc: List[AnyMessage], mirror_dicts: List[Dict[str, Any]]
@@ -122,6 +124,7 @@ def run_after_tools_mutations(
     agent._messages = mirror
     try:
         if called_get_journal_summary and get_auto_inject_journal():
+            agent._trace("GetJournalSummary called - injecting answer prompt", COLOR_CYAN)
             agent._messages.append(
                 {"role": "user", "content": agent._get_journal_summary_answer_prompt()}
             )

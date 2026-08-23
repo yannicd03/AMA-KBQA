@@ -15,15 +15,12 @@ authors = [
     {name = "Yuyang Li"}
 ]
 dependencies = [
-    "openai-agents>=0.5.1",
     "qdrant-client>=1.17.0",
     "rdflib>=7.4.0",
     "streamlit>=1.51.0",
     "openai>=1.53.0",
     "python-dotenv>=1.0.1",
     "tenacity>=9.0.0",
-    "fastapi>=0.115.0",
-    "uvicorn==0.38.0",
     "requests>=2.32.5",
     "loguru>=0.7.3",
     "fastmcp>=2.13.1",

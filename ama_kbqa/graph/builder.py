@@ -392,6 +392,8 @@ def build_graph(
 
         # Wrap-up nudge (base_agent.py ~:1672-1679).
         nudge = guards.wrap_up_nudge_message(iteration)
+        if nudge:
+            agent._trace(f"Iteration {iteration} - injecting wrap-up nudge", COLOR_YELLOW)
         nudge_updates = to_lc_messages([nudge]) if nudge else []
 
         return {

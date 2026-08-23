@@ -30,6 +30,9 @@ class _FakeContextAgent:
         self._distress = distress or (lambda msgs, iteration: None)
         self._journal_prompt = journal_prompt
 
+    def _trace(self, message, color=""):
+        pass
+
     def _manage_context_window(self):
         self._mutate_compaction(self._messages)
 
