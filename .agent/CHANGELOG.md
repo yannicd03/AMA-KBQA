@@ -6,6 +6,7 @@ Newest first. One line per doc-affecting change.
 
 | Date | Change |
 |------|--------|
+| 2026-08-23 | Created `System/graph_engine.md` — LangGraph `StateGraph` engine as implemented (Phases 1-5): engine switch/dispatch points, the tool-loop/pipeline/orchestrator graphs, Phase 2 behaviour inventory, the transitional `context.py` swap-and-diff pattern, message conversion, chat-model factory, token accounting, trace spans, opt-in checkpointer, text-mode fallback, `tests/graph/` layout. Added a dated pointer section to `System/agent_framework.md` (body unchanged) and a README row. |
 | 2026-08-22 | Created `Decisions/langgraph-adoption.md` — ADR for rewriting the agent loop on plain LangGraph `StateGraph` (no `deepagents`/`create_agent`/prebuilt middleware); Phase 0 prefix-cache gate passed (GO); supersedes part of `Decisions/transient-retry-and-chatkit-extraction.md`. |
 | 2026-08-22 | Added "Superseded in part" note to the top of `Decisions/transient-retry-and-chatkit-extraction.md`, pointing at `Decisions/langgraph-adoption.md`; body left unchanged. |
 | 2026-08-22 | Archived `Tasks/active/prompt-cache-utilization.md` and `Tasks/active/retrieval-fusion-ab.md` to `Tasks/archive/` (folder created); both shipped/closed. |

@@ -13,6 +13,7 @@
 | [System/project_architecture.md](System/project_architecture.md) | Start here. Full structure, tech stack, MCP tool reference (29 KQAPro / 28 SciQA), CLI, frontend, batch pipeline, config system, CI/linting |
 | [System/agent_system.md](System/agent_system.md) | Pure index/orientation map for the 4 agent-system docs below (split out 2026-07-18; was a 1275-line monolith) |
 | [System/agent_framework.md](System/agent_framework.md) | `BaseKBQAAgent` shared mechanics: tool gating (qtype filter + denylist), synthesis funnel hard-stops, trace instrumentation, text-tool-call mode, MCP client pattern, token/duration tracking, reset patterns, LLM sampling seed |
+| [System/graph_engine.md](System/graph_engine.md) | LangGraph `StateGraph` engine (`ama_kbqa/graph/`): engine switch + dispatch points, tool-loop/pipeline/orchestrator graphs, Phase 2 behaviour inventory, swap-and-diff pattern, message conversion, chat-model factory, checkpointer, test layout |
 | [System/orchestrator_routing.md](System/orchestrator_routing.md) | Evidence-based two-step routing: `analyze_query_recommend_db` contract, `route_reason` span, design invariants |
 | [System/kqapro_agent.md](System/kqapro_agent.md) | KQAProAgent lifecycle, 10-type classification, 7-layer loop detection, journal data model, message history format |
 | [System/sciqa_agent.md](System/sciqa_agent.md) | SciQAAgent lifecycle, 8-type classification, multi-label classifier tolerance, raw-SPARQL denylist gate + A/B evidence, ORKG predicate reference |
