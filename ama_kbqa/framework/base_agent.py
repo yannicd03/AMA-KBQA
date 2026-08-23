@@ -972,6 +972,19 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 _current_span_id.reset(_parent_token)
 
     async def _ask_impl(self, query: str, _root_span) -> str:
+        # Engine switch (`[agent].engine` / `AMA_AGENT_ENGINE`, see config.py).
+        # Phase 3: the whole per-question pipeline around the tool loop
+        # (MCP init, tool listing, follow-up detection, classification,
+        # prompt assembly, fast path, tool filtering) is ported to
+        # ama_kbqa/graph/pipeline.py — see that module's docstring. Text-mode
+        # tool-call agents (framework/text_tool_calls.py) always use the
+        # legacy body below, regardless of the configured engine (same rule
+        # ``_run_tool_loop`` already applies for the Phase 1/2 tool loop).
+        from ama_kbqa.config import get_agent_engine
+        if get_agent_engine() == "graph" and not getattr(self, "_text_tool_call_mode", False):
+            from ama_kbqa.graph.pipeline import run_pipeline_graph
+            return await run_pipeline_graph(self, query, _root_span)
+
         try:
             # Initialize MCP connection
             await self._init_mcp()
