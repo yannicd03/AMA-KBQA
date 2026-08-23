@@ -46,7 +46,14 @@ GET_RELATION_ARGS = {"base_node_id": "Q1", "relation_name": "director"}
 TOOL_RESULTS = {
     "FindNode": json.dumps({"matches": [{"original_id": "Q1", "name": "Inception"}]}),
     "GetRelationDetails": json.dumps({"triples": [{"related_id": "Q2"}]}),
+    "GetJournalSummary": "Discovered: Q1=Inception, director=Christopher Nolan.",
+    "RunSPARQL": "SELECT ?x WHERE { ?x ?p ?o }",
 }
+
+# Extra synthetic tool names used by tests/graph/test_parity_wrap_up_nudge.py
+# (many distinct single-use tools, so no loop-detection layer fires while
+# still crossing the iteration-15 wrap-up threshold).
+_NUDGE_TOOL_NAMES = {f"Tool{i}" for i in range(1, 21)}
 
 FINAL_CONTENT = "Christopher Nolan directed Inception."
 
@@ -59,12 +66,38 @@ ROUND_USAGE = [
 ]
 
 
+def round_usage(n: int) -> list[dict]:
+    """Generate ``n`` distinct per-round usage dicts (see ``ROUND_USAGE``'s
+    docstring comment above) for scenarios with more rounds than
+    ``ROUND_USAGE`` covers."""
+    return [
+        {"prompt_tokens": 50 + i, "completion_tokens": 10 + i, "total_tokens": 60 + 2 * i}
+        for i in range(n)
+    ]
+
+
+class _FakeMcp:
+    """Deterministic stand-in for the real MCP client, used by
+    ``_handle_loop_detected``/``_inject_journal_refresh``/``_snapshot_journal``
+    (all called for real by both engines via ``BaseKBQAAgent`` methods —
+    ``_ParityAgent`` never overrides them). Tool EXECUTION itself never goes
+    through this — ``_ParityAgent._execute_single_tool`` is overridden below
+    and answers straight from ``TOOL_RESULTS``."""
+
+    async def call_tool(self, name: str, args: dict | None = None) -> str:
+        if name == "GetJournalSummary":
+            return TOOL_RESULTS["GetJournalSummary"]
+        if name == "GetJournalStateJSON":
+            return json.dumps({"discovered": True})
+        return ""
+
+
 class _ParityAgent(BaseKBQAAgent):
     """Shared test double for both engines. Overrides only what's needed to
     avoid a real OpenAI/MCP client; loop detection, context management, and
     synthesis-bypass logic all run for real (from BaseKBQAAgent)."""
 
-    def __init__(self):
+    def __init__(self, tool_results: dict | None = None):
         self.name = "parity_agent"
         self.model = "test-model"
         self.request_timeout = 60.0
@@ -77,14 +110,18 @@ class _ParityAgent(BaseKBQAAgent):
         self.tool_call_history: list = []
         self.tool_sequence: list = []
         self.journal_snapshots: list = []
-        self._known_tool_names = set(TOOL_RESULTS)
+        self.last_journal_state = None
+        self._tool_results = dict(TOOL_RESULTS)
+        if tool_results:
+            self._tool_results.update(tool_results)
+        self._known_tool_names = set(TOOL_RESULTS) | _NUDGE_TOOL_NAMES
         self._context_limit = 100000
         self._next_trim_trigger = 0.5
         self._find_resource_cap = 8
         self._sparql_cap = 10
         self._raw_sparql_intervention_done = False
         self._text_tool_call_mode = False
-        self.mcp = None
+        self.mcp = _FakeMcp()
         self._messages = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "Who directed Inception?"},
@@ -107,7 +144,7 @@ class _ParityAgent(BaseKBQAAgent):
             "success": True,
             "timestamp": "t",
         })
-        return TOOL_RESULTS[func_name]
+        return self._tool_results.get(func_name, f"result:{func_name}")
 
 
 def _run_legacy() -> _ParityAgent:

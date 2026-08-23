@@ -17,6 +17,7 @@ tool calls as ``<tool_call>...</tool_call>`` text inside ``role=user``/
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, List
 
 from langchain_core.messages import AnyMessage, convert_to_messages
@@ -24,8 +25,25 @@ from langchain_core.messages.utils import convert_to_openai_messages
 
 
 def to_lc_messages(messages: List[Dict[str, Any]]) -> List[AnyMessage]:
-    """Convert OpenAI-format message dicts into LangChain ``BaseMessage``s."""
-    return convert_to_messages(messages)
+    """Convert OpenAI-format message dicts into LangChain ``BaseMessage``s.
+
+    Every returned message is given a stable (for the lifetime of the graph
+    run) ``id`` if it doesn't already have one. This matters starting Phase 2:
+    ``graph.state``'s ``messages`` channel uses LangGraph's ``add_messages``
+    reducer, which treats a re-added message with the SAME ``id`` as an
+    in-place replacement rather than an append. The context-management hooks
+    (``ama_kbqa.graph.context``) rely on that to rewrite an earlier message
+    (compaction, superseded-journal-refresh stubbing) without duplicating it.
+    IDs are random UUIDs, not positional/deterministic — they only need to be
+    unique within one run, never reproducible across runs, and they never
+    leak into ``self._messages`` (``from_lc_messages`` only reads OpenAI-dict
+    fields, never ``.id``).
+    """
+    lc_messages = convert_to_messages(messages)
+    for msg in lc_messages:
+        if not getattr(msg, "id", None):
+            msg.id = str(uuid.uuid4())
+    return lc_messages
 
 
 def from_lc_messages(messages: List[AnyMessage]) -> List[Dict[str, Any]]:

@@ -9,47 +9,29 @@ from __future__ import annotations
 
 import asyncio
 
-from chatkit import TransientRetry
 from langchain_core.messages import AIMessage
 
 import ama_kbqa.graph.runner as runner_module
-from ama_kbqa.framework.base_agent import BaseKBQAAgent
-from ama_kbqa.framework.trace import TraceRecorder
 
-from ._fakes import ScriptedChatModel
+from ._fakes import GraphAgentDouble, ScriptedChatModel
 
 
 def _run(coro):
     return asyncio.run(coro)
 
 
-class _RunnerTestAgent(BaseKBQAAgent):
+class _RunnerTestAgent(GraphAgentDouble):
     """Bypasses BaseKBQAAgent.__init__'s real client/MCP setup; carries only
     the attributes run_tool_loop_graph and its downstream calls touch."""
 
     def __init__(self):
+        super().__init__(known_tools=("FindNode",))
         self.name = "runner_test_agent"
-        self.model = "test-model"
-        self.recorder = TraceRecorder()
-        self._retry = TransientRetry()
-        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        self.tool_call_counts: dict[str, int] = {}
-        self.tool_call_durations: list[dict] = []
-        self._known_tool_names = {"FindNode"}
         self._messages = [
             {"role": "system", "content": "sys"},
             {"role": "user", "content": "Who directed Inception?"},
         ]
         self.synthesis_calls: list[dict] = []
-
-    def get_config(self):  # pragma: no cover - unused
-        raise NotImplementedError
-
-    def get_mcp_server_path(self) -> str:  # pragma: no cover - unused
-        raise NotImplementedError
-
-    def _trace(self, message: str, color: str = "") -> None:
-        pass
 
     async def _execute_single_tool(self, func_name: str, func_args: dict) -> str:
         self.tool_call_counts[func_name] = self.tool_call_counts.get(func_name, 0) + 1
@@ -95,6 +77,10 @@ def test_final_answer_reaches_synthesis_when_synthesis_enabled(monkeypatch):
     monkeypatch.setattr(runner_module, "build_chat_model", lambda *a, **k: model)
 
     agent = _RunnerTestAgent()
+    # Seed fast-path evidence so a zero-tool-call final turn is accepted
+    # directly rather than triggering the Phase 2 zero-tool-call retry (see
+    # tests/graph/test_parity_zero_tool_call.py for that behaviour).
+    agent.tool_call_counts["FindNode"] = 1
 
     result = _run(
         runner_module.run_tool_loop_graph(
@@ -114,6 +100,7 @@ def test_final_answer_bypasses_synthesis_when_disabled(monkeypatch):
     monkeypatch.setattr(runner_module, "build_chat_model", lambda *a, **k: model)
 
     agent = _RunnerTestAgent()
+    agent.tool_call_counts["FindNode"] = 1
 
     result = _run(
         runner_module.run_tool_loop_graph(

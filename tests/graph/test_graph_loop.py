@@ -12,32 +12,21 @@ from __future__ import annotations
 
 import asyncio
 
-from chatkit import TransientRetry
 from langchain_core.messages import AIMessage, ToolMessage
 
-from ama_kbqa.framework.trace import TraceRecorder
 from ama_kbqa.graph.builder import build_graph
 
-from ._fakes import ScriptedChatModel
+from ._fakes import GraphAgentDouble, ScriptedChatModel
 
 
-class FakeAgent:
+class FakeAgent(GraphAgentDouble):
     """Minimal stand-in for the pieces of ``BaseKBQAAgent`` the graph nodes
     call back into: tracing, retry, token accounting, and tool execution."""
 
     def __init__(self, known_tools=("FindNode", "GetRelationDetails", "ToolA", "ToolB", "ToolC")):
-        self.recorder = TraceRecorder()
-        self.model = "test-model"
-        self._retry = TransientRetry()
-        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        self.tool_call_counts: dict[str, int] = {}
-        self.tool_call_durations: list[dict] = []
-        self._known_tool_names = set(known_tools)
+        super().__init__(known_tools=known_tools)
         self.executed: list[tuple[str, dict]] = []
         self.tool_result_fn = lambda name, args: f"result:{name}"
-
-    def _trace(self, message: str, color: str = "") -> None:
-        pass
 
     async def _execute_single_tool(self, func_name: str, func_args: dict) -> str:
         self.tool_call_counts[func_name] = self.tool_call_counts.get(func_name, 0) + 1
@@ -59,6 +48,8 @@ def _initial_state():
         "total_tool_calls": 0,
         "exit_reason": None,
         "tool_call_history": [],
+        "zero_tool_call_retries": 0,
+        "final_content": None,
     }
 
 
