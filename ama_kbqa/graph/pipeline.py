@@ -102,9 +102,16 @@ identical.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+
+from ama_kbqa.config import (
+    REPO_ROOT,
+    get_agent_checkpointer,
+    get_agent_checkpointer_path,
+)
 
 COLOR_GREEN = "\033[92m"
 COLOR_RED = "\033[91m"
@@ -159,7 +166,73 @@ def _filter_tools_for_qtype(agent: Any, qtype: str, openai_tools: List[Dict[str,
     return openai_tools
 
 
-def build_pipeline_graph(agent: Any):
+_NO_CHECKPOINTER = object()
+
+
+async def _resolve_checkpointer(agent: Any) -> Any:
+    """Lazily resolve and cache ``agent``'s graph-engine checkpointer.
+
+    Cached on the agent instance (``agent._graph_checkpointer``) across
+    questions in the same process, so a ``"memory"``/``"sqlite"``
+    checkpointer actually accumulates checkpoints across a benchmark run's
+    questions instead of being thrown away on every ``ask()`` call — only
+    the ``thread_id`` (see :func:`_next_thread_id`) changes per question.
+
+    ``checkpointer = "none"`` (the default, per
+    :func:`ama_kbqa.config.get_agent_checkpointer`) always resolves to
+    ``None``: passing ``checkpointer=None`` to ``StateGraph.compile`` is
+    exactly what happened before this option existed, so that path is
+    byte-identical to today's behaviour.
+    """
+    cached = getattr(agent, "_graph_checkpointer", _NO_CHECKPOINTER)
+    if cached is not _NO_CHECKPOINTER:
+        return cached
+
+    kind = get_agent_checkpointer()
+    if kind == "memory":
+        from langgraph.checkpoint.memory import MemorySaver
+
+        checkpointer: Any = MemorySaver()
+    elif kind == "sqlite":
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        path = Path(get_agent_checkpointer_path())
+        if not path.is_absolute():
+            path = REPO_ROOT / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # `AsyncSqliteSaver.from_conn_string` is an async context manager;
+        # entered once here and kept open for the agent's lifetime (never
+        # `__aexit__`'d) so the same connection backs every question this
+        # agent instance answers — mirrors the "memory" branch's
+        # process-lifetime persistence, just durable across restarts too.
+        ctx = AsyncSqliteSaver.from_conn_string(str(path))
+        checkpointer = await ctx.__aenter__()
+        agent._graph_checkpointer_ctx = ctx
+    else:
+        checkpointer = None
+
+    agent._graph_checkpointer = checkpointer
+    return checkpointer
+
+
+def _next_thread_id(agent: Any) -> str:
+    """Return a fresh ``thread_id`` for this question's pipeline graph run.
+
+    ``session_id`` (default ``"default"``) segments different agent
+    instances/conversations; a per-agent counter (incremented on every call,
+    never reset by ``soft_reset()``/``reset()``) segments consecutive
+    questions answered by the SAME agent instance — so each question a
+    benchmark run or Streamlit turn hands to ``ask()`` gets its own thread
+    even though the checkpointer instance itself (when
+    ``"memory"``/``"sqlite"``) persists across questions.
+    """
+    counter = getattr(agent, "_graph_thread_counter", 0) + 1
+    agent._graph_thread_counter = counter
+    session_id = getattr(agent, "session_id", None) or "default"
+    return f"{session_id}::{counter}"
+
+
+def build_pipeline_graph(agent: Any, checkpointer: Any = None):
     """Compile the Phase 3 outer pipeline graph, bound to ``agent``.
 
     Same closure-over-``agent`` convention as
@@ -169,6 +242,13 @@ def build_pipeline_graph(agent: Any):
     ``agent._run_tool_loop`` (which itself dispatches to
     ``ama_kbqa.graph.runner.run_tool_loop_graph`` under the graph engine) —
     the tool loop itself).
+
+    ``checkpointer``: ``None`` (the default) compiles the graph exactly as
+    Phase 3 left it. Passing a ``BaseCheckpointSaver`` (see
+    :func:`_resolve_checkpointer`) makes graph state after every node
+    retrievable via ``graph.aget_state({"configurable": {"thread_id": ...}})``
+    — opt-in via ``[agent].checkpointer`` / ``AMA_AGENT_CHECKPOINTER``, see
+    ``ama_kbqa.config``.
     """
 
     async def prepare(state: PipelineState) -> Dict[str, Any]:
@@ -372,7 +452,7 @@ def build_pipeline_graph(agent: Any):
     )
     builder.add_edge("tool_loop", "finalize")
     builder.add_edge("finalize", END)
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)
 
 
 async def run_pipeline_graph(agent: Any, query: str, _root_span: Any) -> str:
@@ -392,8 +472,12 @@ async def run_pipeline_graph(agent: Any, query: str, _root_span: Any) -> str:
     ``ask()``) and is otherwise unused.
     """
     try:
-        graph = build_pipeline_graph(agent)
-        final_state = await graph.ainvoke({"query": query}, {"recursion_limit": 25})
+        checkpointer = await _resolve_checkpointer(agent)
+        graph = build_pipeline_graph(agent, checkpointer=checkpointer)
+        invoke_config: Dict[str, Any] = {"recursion_limit": 25}
+        if checkpointer is not None:
+            invoke_config["configurable"] = {"thread_id": _next_thread_id(agent)}
+        final_state = await graph.ainvoke({"query": query}, invoke_config)
         return final_state["answer"]
     except Exception as e:
         agent._trace(f"{COLOR_RED}Error in agent loop: {e}{COLOR_END}", COLOR_RED)

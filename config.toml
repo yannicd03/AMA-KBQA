@@ -12,6 +12,17 @@ zero_tool_call_retry_max = 3
 # "graph" (the LangGraph StateGraph in ama_kbqa/graph/). Env override:
 # AMA_AGENT_ENGINE. Default stays "legacy" until the rewrite reaches parity.
 engine = "legacy"
+# Graph-engine checkpointer (opt-in, only consulted when engine = "graph"):
+# "none" (default, byte-identical to no checkpointer at all), "memory"
+# (langgraph.checkpoint.memory.MemorySaver, process-lifetime only), or
+# "sqlite" (langgraph.checkpoint.sqlite.aio.AsyncSqliteSaver, durable across
+# process restarts). Env override: AMA_AGENT_CHECKPOINTER. Each per-question
+# pipeline run gets its own thread_id (session_id + a per-question counter),
+# so soft_reset() between benchmark questions always starts a fresh thread.
+checkpointer = "none"
+# Sqlite file for checkpointer = "sqlite" (relative to repo root unless
+# absolute). Env override: AMA_AGENT_CHECKPOINTER_PATH.
+checkpointer_path = "benchmark_results/checkpoints.sqlite"
 
 [benchmark]
 # Number of questions processed concurrently by the benchmark runner.

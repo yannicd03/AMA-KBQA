@@ -592,6 +592,53 @@ def get_agent_engine() -> str:
     return raw if raw in ("legacy", "graph") else "legacy"
 
 
+AGENT_CHECKPOINTER_ENV = "AMA_AGENT_CHECKPOINTER"
+AGENT_CHECKPOINTER_PATH_ENV = "AMA_AGENT_CHECKPOINTER_PATH"
+DEFAULT_AGENT_CHECKPOINTER_PATH = "benchmark_results/checkpoints.sqlite"
+
+
+def get_agent_checkpointer() -> str:
+    """Return the graph engine's checkpointer backend: ``"none"`` (default),
+    ``"memory"``, or ``"sqlite"``.
+
+    Only consulted by ``ama_kbqa.graph.pipeline`` when
+    ``get_agent_engine() == "graph"``; the legacy engine never attaches a
+    checkpointer. Read from the ``AMA_AGENT_CHECKPOINTER`` environment
+    variable first, falling back to ``[agent].checkpointer`` in config.toml,
+    defaulting to ``"none"`` when neither is set or the value is
+    unrecognized — ``"none"`` compiles the pipeline graph exactly as before
+    this option existed (byte-identical behaviour).
+
+    Returns:
+        str: ``"none"``, ``"memory"``, or ``"sqlite"``.
+    """
+    raw = os.environ.get(AGENT_CHECKPOINTER_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("agent", {}).get("checkpointer", "none")
+    raw = str(raw).strip().lower()
+    return raw if raw in ("none", "memory", "sqlite") else "none"
+
+
+def get_agent_checkpointer_path() -> str:
+    """Return the filesystem path for the ``"sqlite"`` checkpointer backend.
+
+    Read from the ``AMA_AGENT_CHECKPOINTER_PATH`` environment variable first,
+    falling back to ``[agent].checkpointer_path`` in config.toml, defaulting
+    to ``"benchmark_results/checkpoints.sqlite"`` (relative to the repo root)
+    when neither is set. Unused when :func:`get_agent_checkpointer` returns
+    anything other than ``"sqlite"``.
+
+    Returns:
+        str: the configured sqlite checkpoint database path.
+    """
+    raw = os.environ.get(AGENT_CHECKPOINTER_PATH_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("agent", {}).get("checkpointer_path", DEFAULT_AGENT_CHECKPOINTER_PATH)
+    return str(raw).strip() or DEFAULT_AGENT_CHECKPOINTER_PATH
+
+
 def get_synthesis_enabled() -> bool:
     """Whether to run the dedicated synthesis LLM step after the tool loop.
 
