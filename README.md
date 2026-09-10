@@ -1,4 +1,10 @@
-[demo-video.webm](https://github.com/user-attachments/assets/54464342-4ba0-4b2f-96e8-46569adae5ac)
+
+
+https://github.com/user-attachments/assets/23a0ac99-bf88-4e25-a87f-b517e3daef5f
+
+
+
+
 
 # AMA KBQA
 
