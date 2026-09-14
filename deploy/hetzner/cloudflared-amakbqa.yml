@@ -2,13 +2,15 @@
 #
 # Installed to ~/.cloudflared/amakbqa.yml and run by cloudflared-amakbqa.service.
 # The tunnel credentials JSON is secret and lives only on the server.
-# amakbqa-next.yanlab.de is the staging hostname used to smoke-test a deploy
-# before amakbqa.yanlab.de is routed to this tunnel.
+# Staging state for demo v2: amakbqa.yanlab.de stays on v1's frontend (8503,
+# compose project amakbqa-demo) while amakbqa-next.yanlab.de serves v2 (8504,
+# docker-compose.hetzner-next.yml). To switch, point amakbqa.yanlab.de at 8504
+# and restart cloudflared-amakbqa; to roll back, point it at 8503 again.
 tunnel: 00000000-0000-0000-0000-000000000000
 credentials-file: /home/yannic/.cloudflared/00000000-0000-0000-0000-000000000000.json
 ingress:
   - hostname: amakbqa.yanlab.de
     service: http://localhost:8503
   - hostname: amakbqa-next.yanlab.de
-    service: http://localhost:8503
+    service: http://localhost:8504
   - service: http_status:404
