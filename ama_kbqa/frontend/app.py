@@ -10,11 +10,15 @@ It shows once per session; a small floating "?" button reopens it anytime.
 
 import streamlit as st
 
+from ama_kbqa.config import get_live_graph_enabled
 from ama_kbqa.frontend.utils.styling import inject_css
 
+# The live graph panel needs a second column next to the chat, which only fits
+# on a wide page. With the flag off the demo keeps the exact pre-feature
+# centered layout, so a deployment that opts out sees no visual change at all.
 st.set_page_config(
     page_title="AMA-KBQA Assistant",
-    layout="centered",
+    layout="wide" if get_live_graph_enabled() else "centered",
 )
 
 inject_css()

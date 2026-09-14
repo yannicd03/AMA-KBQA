@@ -21,6 +21,12 @@ Besides the single-agent lifecycle figure, the state also tracks the
 spins up a per-sub-agent :class:`SubAgentLifecycle` (driven by the sub-agent's
 own nested spans) so its detailed Pre→Main→Post figure can be shown in a pane
 underneath. Single-agent runs simply leave those structures empty.
+
+The same queue also carries the **live graph** deltas the "explored subgraph"
+panel draws. A closing ``tool_call`` span holds the tool's full result string
+in its payload, which for a SPARQL query can be megabytes; parsing that on the
+main thread would stall the UI, so the worker thread turns it into a small
+:class:`GraphData` delta and only the delta crosses the queue.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ import threading
 import time
 from collections import OrderedDict
 from contextlib import redirect_stdout
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Optional
 
 from ama_kbqa.frontend.utils.lifecycle_mapping import (
@@ -42,6 +48,14 @@ from ama_kbqa.frontend.utils.lifecycle_mapping import (
     orchestrator_span_to_node_ids,
     span_to_edge_ids,
     span_to_node_ids,
+)
+from ama_kbqa.frontend.utils.live_graph_data import (
+    GRAPH_TOOLS,
+    GraphData,
+    apply_caps,
+    graph_from_journal_state,
+    graph_from_tool_result,
+    source_for_agent,
 )
 
 
@@ -153,6 +167,56 @@ def orchestrator_visited_node_ids(
 
 
 # ---------------------------------------------------------------------------
+# Live graph state
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LiveGraphState:
+    """The subgraph accumulated from tool results, kept per owning agent.
+
+    Keyed by sub-agent id (``None`` = orchestrator level / single-agent run) so
+    a federated run can paint each specialist's nodes with its own graph's
+    colour even though both stream into the same queue.
+
+    ``version`` is bumped only when a delta actually added a node or an edge,
+    which is what lets the panel's 1 Hz fragment skip a tick without diffing
+    the whole graph.
+    """
+
+    by_owner: dict[Optional[str], GraphData] = field(default_factory=dict)
+    version: int = 0
+
+    def merged(self) -> GraphData:
+        """Union of every owner's subgraph, in first-seen owner order."""
+        out = GraphData()
+        for graph in self.by_owner.values():
+            out = out.merge(graph)
+        return out
+
+
+def _with_source(graph: GraphData, source: str) -> GraphData:
+    """Stamp `source` onto the nodes that do not have one yet.
+
+    The worker parses with an empty source because only the main thread knows
+    which specialist a span belongs to (the span→owner map lives in the
+    state). Rewriting here is a handful of `replace` calls on a delta of at
+    most a few dozen nodes, so the expensive half (JSON parsing) still happens
+    off the main thread while attribution stays correct.
+    """
+    if not source:
+        return graph
+    nodes = {
+        node_id: (node if node.source else replace(node, source=source))
+        for node_id, node in graph.nodes.items()
+    }
+    return GraphData(
+        nodes=nodes,
+        edges=dict(graph.edges),
+        truncated_nodes=graph.truncated_nodes,
+    )
+
+
+# ---------------------------------------------------------------------------
 # State container (lives in st.session_state on the main thread)
 # ---------------------------------------------------------------------------
 
@@ -179,6 +243,14 @@ class LiveLifecycleState(_FigureState):
     orch: _FigureState = field(default_factory=_FigureState)
     # Per-sub-agent detail lifecycles, keyed by agent id, in dispatch order.
     subagents: "OrderedDict[str, SubAgentLifecycle]" = field(default_factory=OrderedDict)
+
+    # Live "explored subgraph" accumulator, fed by the "__graph__" queue items.
+    graph: LiveGraphState = field(default_factory=LiveGraphState)
+    # Source ("kqapro"/"sciqa"/"") for nodes that carry no owner, i.e. every
+    # node of a directly-selected specialist run. Set by the page from
+    # `source_for_agent(agent)`; stays "" for an orchestrator pick, where the
+    # per-delegate owner attribution supplies the source instead.
+    graph_source_default: str = ""
 
     # Span attribution: delegate span_id → sub-agent id; span_id → owning
     # sub-agent id (or None for orchestrator-level spans).
@@ -210,6 +282,74 @@ class LiveLifecycleState(_FigureState):
 # Background worker
 # ---------------------------------------------------------------------------
 
+def make_listener(q: queue.Queue) -> Callable[[str, dict], None]:
+    """Build the recorder listener that feeds ``q`` from the worker thread.
+
+    Module-level rather than a closure inside :func:`start_run` so the
+    notification contract (what is stripped, when a graph delta is emitted)
+    can be tested directly against a real ``TraceRecorder``, without spinning
+    up a thread and an event loop.
+
+    Two kinds of item are enqueued:
+
+    * ``(phase, stripped_info)`` for every span notification. Payloads are
+      stripped here on purpose: a tool result can be megabytes and the main
+      thread never needs it.
+    * ``("__graph__", {...})`` right after the ``close`` of an allow-listed
+      ``tool_call``, carrying the parsed :class:`GraphData` delta. Parsing
+      (``json.loads`` of that same megabyte string) happens *here*, on the
+      worker thread, so the UI thread only ever merges a small delta. The
+      delta is parsed with an empty source; `drain_into` stamps the owning
+      specialist's source on it once it has resolved the span's owner.
+    """
+
+    def listener(phase: str, info: dict) -> None:
+        # Only the bits we need on the consumer side. Strip large payloads.
+        try:
+            q.put_nowait((
+                phase,
+                {
+                    "kind": info.get("kind"),
+                    "name": info.get("name"),
+                    "span_id": info.get("span_id"),
+                    "parent_span_id": info.get("parent_span_id"),
+                    "status": info.get("status", "ok"),
+                    "is_event": info.get("is_event", False),
+                    "attributes": info.get("attributes") or {},
+                },
+            ))
+        except Exception:
+            _LOG.exception("Failed to enqueue trace notification")
+
+        if phase != "close" or info.get("kind") != "tool_call":
+            return
+        attributes = info.get("attributes") or {}
+        name = info.get("name") or attributes.get("tool_name") or ""
+        if name not in GRAPH_TOOLS:
+            return
+        try:
+            payload = info.get("payload") or {}
+            delta = graph_from_tool_result(
+                name,
+                payload.get("arguments") or {},
+                payload.get("result") or "",
+                source="",
+            )
+            if delta.is_empty():
+                return
+            q.put_nowait(("__graph__", {
+                "span_id": info.get("span_id"),
+                "parent_span_id": info.get("parent_span_id"),
+                "tool": name,
+                "graph": delta,
+            }))
+        except Exception:
+            # A graph delta is a nice-to-have; never let it disturb the run.
+            _LOG.debug("Live graph delta for %s failed", name, exc_info=True)
+
+    return listener
+
+
 def start_run(
     *,
     agent: Any,
@@ -234,23 +374,7 @@ def start_run(
     turn's.
     """
 
-    def listener(phase: str, info: dict) -> None:
-        # Only the bits we need on the consumer side. Strip large payloads.
-        try:
-            q.put_nowait((
-                phase,
-                {
-                    "kind": info.get("kind"),
-                    "name": info.get("name"),
-                    "span_id": info.get("span_id"),
-                    "parent_span_id": info.get("parent_span_id"),
-                    "status": info.get("status", "ok"),
-                    "is_event": info.get("is_event", False),
-                    "attributes": info.get("attributes") or {},
-                },
-            ))
-        except Exception:
-            _LOG.exception("Failed to enqueue trace notification")
+    listener = make_listener(q)
 
     def worker() -> None:
         loop = asyncio.new_event_loop()
@@ -412,6 +536,116 @@ def _owner_for(
     return state._span_owner.get(parent)
 
 
+def _absorb_graph_delta(state: LiveLifecycleState, info: dict) -> None:
+    """Merge one ``__graph__`` delta into the live graph.
+
+    The owner is resolved exactly like any other ``tool_call`` close, so the
+    delta lands in the specialist's bucket in a router/federated run and in the
+    ``None`` bucket in a single-agent run. The version counter moves only when
+    the merge actually grew the graph: a repeated tool call (the agent
+    re-checking a node it already visited) must not make the panel redraw.
+    """
+    delta = info.get("graph")
+    if not isinstance(delta, GraphData) or delta.is_empty():
+        return
+    owner = _owner_for(
+        state, "tool_call", "close",
+        info.get("span_id") or "", info.get("parent_span_id"),
+    )
+    source = source_for_agent(owner) if owner else state.graph_source_default
+    delta = _with_source(delta, source)
+
+    existing = state.graph.by_owner.get(owner)
+    if existing is None:
+        state.graph.by_owner[owner] = delta
+        state.graph.version += 1
+        return
+    merged = existing.merge(delta)
+    grew = (
+        len(merged.nodes) > len(existing.nodes)
+        or len(merged.edges) > len(existing.edges)
+    )
+    state.graph.by_owner[owner] = merged
+    if grew:
+        state.graph.version += 1
+
+
+def live_graph_snapshot(state: LiveLifecycleState, agent: Any) -> tuple[GraphData, tuple]:
+    """The graph to draw right now, plus a key that changes when it changes.
+
+    Merges the tool-result deltas accumulated in ``state`` with the newest
+    journal state(s) the agent has published. Only the LAST snapshot per source
+    is read: journal snapshots are cumulative, so earlier ones add nothing.
+
+    The agent's lists are read from the Streamlit thread while the worker
+    thread appends to them. That is safe without a lock because they are
+    append-only and copied (``list(...)``) before use, the same contract
+    ``Orchestrator.live_journal_snapshots`` documents.
+
+    Returns ``(capped_graph, version_key)``. The panel keeps the last key and
+    skips the redraw when it is unchanged. Never raises: a half-built journal
+    state must degrade to an emptier graph, never to a crashed panel.
+    """
+    try:
+        graph = state.graph.merged()
+        version = state.graph.version
+    except Exception:  # noqa: BLE001 - the panel must survive any state shape
+        _LOG.debug("Live graph merge failed", exc_info=True)
+        return GraphData(), (0, ())
+
+    counts: tuple[tuple[str, int], ...] = ()
+    try:
+        tagged = getattr(agent, "live_journal_snapshots", None)
+        if callable(tagged):
+            # Orchestrator: one journal per specialist, tagged with its name.
+            per_source: dict[Any, int] = {}
+            latest: dict[Any, dict] = {}
+            for snapshot in list(tagged() or []):
+                if not isinstance(snapshot, dict):
+                    continue
+                tag = snapshot.get("source_agent")
+                per_source[tag] = per_source.get(tag, 0) + 1
+                latest[tag] = snapshot
+            for tag, snapshot in latest.items():
+                graph = graph.merge(
+                    graph_from_journal_state(
+                        snapshot.get("state") or {},
+                        source=_journal_source(state, tag, snapshot),
+                    )
+                )
+            counts = tuple(sorted((str(k), v) for k, v in per_source.items()))
+        else:
+            snapshots = list(getattr(agent, "journal_snapshots", None) or [])
+            latest_snapshot = snapshots[-1] if snapshots else None
+            if isinstance(latest_snapshot, dict):
+                graph = graph.merge(
+                    graph_from_journal_state(
+                        latest_snapshot.get("state") or {},
+                        source=_journal_source(state, None, latest_snapshot),
+                    )
+                )
+            counts = (("", len(snapshots)),)
+    except Exception:  # noqa: BLE001 - see docstring: never raise
+        _LOG.debug("Live graph journal merge failed", exc_info=True)
+
+    try:
+        graph = apply_caps(graph)
+    except Exception:  # noqa: BLE001
+        _LOG.debug("Live graph cap failed", exc_info=True)
+    return graph, (version, counts)
+
+
+def _journal_source(state: LiveLifecycleState, tag: Any, snapshot: dict) -> str:
+    """Source for one journal snapshot: its tag, else the journal's own
+    ``kg_name``, else the run-wide default set by the page."""
+    source = source_for_agent(tag) if tag else ""
+    if not source:
+        source = state.graph_source_default
+    if not source:
+        source = source_for_agent((snapshot.get("state") or {}).get("kg_name") or "")
+    return source
+
+
 def drain_into(
     q: queue.Queue,
     state: LiveLifecycleState,
@@ -447,6 +681,10 @@ def drain_into(
             tid = info.get("trace_id")
             if tid:
                 state.trace_id = tid
+            continue
+
+        if phase == "__graph__":
+            _absorb_graph_delta(state, info)
             continue
 
         if phase in ("__done__", "__error__"):

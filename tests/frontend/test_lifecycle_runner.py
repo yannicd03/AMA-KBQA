@@ -10,10 +10,14 @@ from ama_kbqa.framework.trace import TraceRecorder
 from ama_kbqa.frontend.utils.lifecycle_runner import (
     LiveLifecycleState,
     drain_into,
+    live_graph_snapshot,
+    make_listener,
     orchestrator_visited_node_ids,
     reconstruct_orchestrator,
     start_run,
 )
+from ama_kbqa.frontend.utils.live_graph_data import GraphData, GraphNode
+from ama_kbqa.server import kqapro_server as kqa
 
 
 class _StubAgent:
@@ -585,3 +589,278 @@ class TestRunner:
         assert drain_into(q, state) is True
         assert state.active_node_ids == snapshot_active
         assert state.visited_node_ids == snapshot_visited
+
+
+# ---------------------------------------------------------------------------
+# Live graph deltas
+# ---------------------------------------------------------------------------
+#
+# The graph half of the runner has two jobs the lifecycle half does not:
+# attributing a tool result to the specialist that produced it (so a federated
+# run can colour each graph's nodes), and telling the panel when NOT to
+# redraw. Both are invisible in the UI when they go wrong (wrong colour, or a
+# 1 Hz canvas remount), so they are pinned here.
+
+
+def _search_result_json(node_id: str = "Q937", name: str = "Albert Einstein") -> str:
+    """A SearchResponse payload, built from the real server model so a schema
+    change breaks this test instead of silently emptying the panel."""
+    return kqa.SearchResponse(
+        matches=[
+            kqa.NodeMatch(
+                original_id=node_id,
+                name=name,
+                node_type="entity",
+                relevance_score=0.91,
+            )
+        ],
+        result_count=1,
+    ).model_dump_json()
+
+
+class _FakeJournalAgent:
+    """Single-agent double: just the append-only list the runner reads."""
+
+    def __init__(self, snapshots: list) -> None:
+        self.journal_snapshots = snapshots
+
+
+class _FakeOrchestratorAgent:
+    """Orchestrator double exposing the tagged live accessor (agent.py:536)."""
+
+    def __init__(self, snapshots: list) -> None:
+        self._snapshots = snapshots
+
+    def live_journal_snapshots(self) -> list:
+        return list(self._snapshots)
+
+
+def _graph_delta(node_id: str, label: str) -> GraphData:
+    """A one-node delta, as the worker thread would hand it over (source "")."""
+    return GraphData(nodes={node_id: GraphNode(id=node_id, label=label)})
+
+
+class TestGraphDeltaAttribution:
+    def _put(self, q, phase, kind, name, span_id, parent=None, attrs=None):
+        q.put((phase, {
+            "kind": kind, "name": name, "span_id": span_id,
+            "parent_span_id": parent, "status": "ok",
+            "is_event": False, "attributes": attrs or {},
+        }))
+
+    def _put_graph(self, q, span_id, parent, graph, tool="FindNode"):
+        q.put(("__graph__", {
+            "span_id": span_id, "parent_span_id": parent,
+            "tool": tool, "graph": graph,
+        }))
+
+    def test_single_agent_delta_uses_the_run_wide_source(self):
+        # No delegate span: the owner is None and the source comes from the
+        # agent the user picked in the sidebar.
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState(graph_source_default="kqapro")
+        self._put(q, "open", "tool_call", "FindNode", "t1")
+        self._put(q, "close", "tool_call", "FindNode", "t1")
+        self._put_graph(q, "t1", None, _graph_delta("Q937", "Einstein"))
+        drain_into(q, state)
+
+        assert set(state.graph.by_owner) == {None}
+        node = state.graph.by_owner[None].nodes["Q937"]
+        assert node.source == "kqapro"
+        assert state.graph.version == 1
+
+    def test_router_delta_is_attributed_to_the_delegated_specialist(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()  # orchestrator pick: no default source
+        self._put(q, "open", "agent_run", "ORCHESTRATOR", "root")
+        self._put(q, "open", "delegate", "kqapro_agent", "deleg", "root",
+                  attrs={"sub_agent": "kqapro_agent"})
+        self._put(q, "open", "agent_run", "kqapro_agent", "subroot", "deleg")
+        self._put(q, "open", "tool_call", "FindNode", "t1", "subroot")
+        self._put(q, "close", "tool_call", "FindNode", "t1", "subroot")
+        self._put_graph(q, "t1", "subroot", _graph_delta("Q937", "Einstein"))
+        drain_into(q, state)
+
+        assert set(state.graph.by_owner) == {"kqapro_agent"}
+        assert state.graph.by_owner["kqapro_agent"].nodes["Q937"].source == "kqapro"
+
+    def test_federated_deltas_land_in_separate_owner_buckets(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._put(q, "open", "agent_run", "ORCHESTRATOR", "root")
+        self._put(q, "open", "delegate", "kqapro_agent", "deleg_k", "root",
+                  attrs={"sub_agent": "kqapro_agent"})
+        self._put(q, "open", "delegate", "sciqa_agent", "deleg_s", "root",
+                  attrs={"sub_agent": "sciqa_agent"})
+        self._put(q, "open", "agent_run", "kqapro_agent", "sub_k", "deleg_k")
+        self._put(q, "open", "agent_run", "sciqa_agent", "sub_s", "deleg_s")
+        # Interleaved tool calls, one per specialist.
+        self._put(q, "open", "tool_call", "FindNode", "tk", "sub_k")
+        self._put(q, "open", "tool_call", "FindResource", "ts", "sub_s")
+        self._put(q, "close", "tool_call", "FindNode", "tk", "sub_k")
+        self._put_graph(q, "tk", "sub_k", _graph_delta("Q937", "Einstein"))
+        self._put(q, "close", "tool_call", "FindResource", "ts", "sub_s")
+        self._put_graph(q, "ts", "sub_s", _graph_delta("R123", "Deep Learning"),
+                        tool="FindResource")
+        drain_into(q, state)
+
+        assert set(state.graph.by_owner) == {"kqapro_agent", "sciqa_agent"}
+        assert state.graph.by_owner["kqapro_agent"].nodes["Q937"].source == "kqapro"
+        assert state.graph.by_owner["sciqa_agent"].nodes["R123"].source == "sciqa"
+        # The merged view is what the panel draws: both specialists at once.
+        merged = state.graph.merged()
+        assert set(merged.nodes) == {"Q937", "R123"}
+
+    def test_version_bumps_only_on_new_content(self):
+        # The agent re-checking a node it already looked at must not make the
+        # panel remount its canvas.
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState(graph_source_default="kqapro")
+        self._put_graph(q, "t1", None, _graph_delta("Q937", "Einstein"))
+        drain_into(q, state)
+        assert state.graph.version == 1
+
+        self._put_graph(q, "t2", None, _graph_delta("Q937", "Einstein"))
+        drain_into(q, state)
+        assert state.graph.version == 1
+
+        self._put_graph(q, "t3", None, _graph_delta("Q42", "Douglas Adams"))
+        drain_into(q, state)
+        assert state.graph.version == 2
+
+    def test_empty_delta_is_ignored(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._put_graph(q, "t1", None, GraphData())
+        drain_into(q, state)
+        assert state.graph.by_owner == {}
+        assert state.graph.version == 0
+
+
+class TestMakeListener:
+    """The worker-side half: which span closes turn into a graph delta."""
+
+    def _drain(self, q: queue.Queue) -> list:
+        items = []
+        while True:
+            try:
+                items.append(q.get_nowait())
+            except queue.Empty:
+                return items
+
+    def test_allow_listed_tool_close_enqueues_a_graph_delta(self):
+        q: queue.Queue = queue.Queue()
+        recorder = TraceRecorder()
+        recorder.add_listener(make_listener(q))
+
+        with recorder.span_sync(
+            "tool_call", "FindNode",
+            attributes={"tool_name": "FindNode"},
+            payload={"arguments": {"semantic_node_name": "Einstein"}},
+        ) as span:
+            span.set_payload("result", _search_result_json())
+
+        items = self._drain(q)
+        phases = [phase for phase, _ in items]
+        # The regular open/close notifications are unchanged and still first.
+        assert phases == ["open", "close", "__graph__"]
+        assert "payload" not in items[1][1]  # close is still stripped
+        graph_info = items[2][1]
+        assert graph_info["tool"] == "FindNode"
+        assert graph_info["span_id"] == items[1][1]["span_id"]
+        assert "Q937" in graph_info["graph"].nodes
+        # The worker leaves the source blank; drain_into stamps it.
+        assert graph_info["graph"].nodes["Q937"].source == ""
+
+    def test_non_allow_listed_tool_enqueues_no_delta(self):
+        q: queue.Queue = queue.Queue()
+        recorder = TraceRecorder()
+        recorder.add_listener(make_listener(q))
+
+        with recorder.span_sync(
+            "tool_call", "VerifyFact",
+            attributes={"tool_name": "VerifyFact"},
+            payload={"arguments": {}},
+        ) as span:
+            span.set_payload("result", _search_result_json())
+
+        assert [phase for phase, _ in self._drain(q)] == ["open", "close"]
+
+    def test_unparseable_result_is_swallowed(self):
+        q: queue.Queue = queue.Queue()
+        recorder = TraceRecorder()
+        recorder.add_listener(make_listener(q))
+
+        with recorder.span_sync(
+            "tool_call", "FindNode",
+            attributes={"tool_name": "FindNode"},
+            payload={"arguments": {}},
+        ) as span:
+            span.set_payload("result", "Error: node not found")
+
+        assert [phase for phase, _ in self._drain(q)] == ["open", "close"]
+
+
+class TestLiveGraphSnapshot:
+    _JOURNAL = {
+        "visited_nodes": {"Q937": "Albert Einstein"},
+        "verified_facts": [
+            {"subject": "Q937", "relation": "occupation", "related_id": "Q169470"}
+        ],
+    }
+
+    def test_merges_journal_state_with_tool_deltas(self):
+        state = LiveLifecycleState(graph_source_default="kqapro")
+        state.graph.by_owner[None] = _graph_delta("Q42", "Douglas Adams")
+        agent = _FakeJournalAgent([{"trigger": "after:FindNode", "state": self._JOURNAL}])
+
+        graph, key = live_graph_snapshot(state, agent)
+
+        assert {"Q42", "Q937", "Q169470"} <= set(graph.nodes)
+        assert graph.nodes["Q937"].source == "kqapro"
+        assert key == (0, (("", 1),))
+
+    def test_version_key_tracks_both_sources_of_change(self):
+        state = LiveLifecycleState(graph_source_default="kqapro")
+        agent = _FakeJournalAgent([])
+        _graph, first = live_graph_snapshot(state, agent)
+
+        agent.journal_snapshots.append({"state": self._JOURNAL})
+        _graph, second = live_graph_snapshot(state, agent)
+        assert second != first
+
+        state.graph.by_owner[None] = _graph_delta("Q42", "Douglas Adams")
+        state.graph.version += 1
+        _graph, third = live_graph_snapshot(state, agent)
+        assert third != second
+
+    def test_orchestrator_uses_the_last_snapshot_per_specialist(self):
+        state = LiveLifecycleState()  # orchestrator: no run-wide source
+        agent = _FakeOrchestratorAgent([
+            # An earlier, smaller snapshot of the same specialist is superseded.
+            {"source_agent": "kqapro_agent", "state": {"visited_nodes": {"Q1": "old"}}},
+            {"source_agent": "kqapro_agent", "state": self._JOURNAL},
+            {"source_agent": "sciqa_agent",
+             "state": {"visited_nodes": {"R123": "Deep Learning"}}},
+        ])
+
+        graph, key = live_graph_snapshot(state, agent)
+
+        assert "Q1" not in graph.nodes           # superseded snapshot dropped
+        assert graph.nodes["Q937"].source == "kqapro"
+        assert graph.nodes["R123"].source == "sciqa"
+        assert key == (0, (("kqapro_agent", 2), ("sciqa_agent", 1)))
+
+    def test_agent_without_journal_attributes_never_raises(self):
+        state = LiveLifecycleState()
+        graph, key = live_graph_snapshot(state, object())
+        assert graph.is_empty()
+        assert key == (0, (("", 0),))
+
+    def test_broken_journal_state_degrades_instead_of_raising(self):
+        state = LiveLifecycleState(graph_source_default="kqapro")
+        state.graph.by_owner[None] = _graph_delta("Q42", "Douglas Adams")
+        agent = _FakeJournalAgent([{"state": "not a dict"}])
+
+        graph, _key = live_graph_snapshot(state, agent)
+        assert set(graph.nodes) == {"Q42"}

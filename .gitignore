@@ -232,3 +232,6 @@ claude.md
 
 # Local MCP server config — machine-specific, may reference local paths/keys.
 .mcp.json
+
+# Playwright MCP screenshot artefacts
+.playwright-mcp/
