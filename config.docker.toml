@@ -76,6 +76,14 @@ reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
 rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # rerank_threshold = 0.0      # optional gate on cross-encoder scores; unset = no gate
 
+[frontend]
+# Live "explored subgraph" side panel in the demo chat page. Frontend-only:
+# reads journal snapshots and tool results the agent already produces, so it
+# costs no extra tool calls or tokens. Rendering is client-side (vis-network
+# from CDN). Off = the page is exactly the pre-feature single-column layout.
+# Override per deployment with AMA_FRONTEND_LIVE_GRAPH=0/1.
+live_graph = true
+
 [federation]
 enabled = false
 max_specialists = 2   # the demo's agent picker overrides this per instance

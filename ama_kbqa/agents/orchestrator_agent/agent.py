@@ -533,6 +533,34 @@ class Orchestrator:
             self._trace(f"{COLOR_RED}Loading error {agent_name}: {e}{COLOR_END}", COLOR_RED)
             return None
 
+    def live_journal_snapshots(self) -> list:
+        """Snapshots from every specialist loaded so far, tagged with
+        `source_agent`, including specialists that are still running.
+
+        `self.journal_snapshots` only gains a specialist's snapshots once
+        `_run_specialist` has hoisted them, i.e. after that specialist
+        finished. The frontend's live graph needs them while the run is still
+        going, so it reads the specialists directly. Read-only and never
+        raises: this is called from the Streamlit thread while the agent
+        thread is appending, so each list is copied before use (append-only
+        lists plus the GIL make that safe without a lock) and any agent that
+        does not expose the attribute is skipped.
+        """
+        out: list = []
+        try:
+            agents = list(self._agents.items())
+        except Exception:
+            return out
+        for name, agent in agents:
+            try:
+                snapshots = list(getattr(agent, "journal_snapshots", None) or [])
+            except Exception:
+                continue
+            for snap in snapshots:
+                if isinstance(snap, dict):
+                    out.append({**snap, "source_agent": name})
+        return out
+
     async def ask(self, query: str) -> str:
         """Main method: Route the request and get the answer."""
         self._trace(f"USER: {query}", COLOR_GREEN)

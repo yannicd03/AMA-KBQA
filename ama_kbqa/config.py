@@ -965,3 +965,43 @@ def get_sciqa_relation_threshold() -> float:
     """
     config = load_config()
     return config.get("sciqa", {}).get("relation_threshold", 0.65)
+
+
+# ==============================================================================
+# Frontend (demo UI) Configuration Functions
+# ==============================================================================
+
+# Environment override for the [frontend] live-graph flag. Parsed with the
+# same truthiness rules as the AMA_RETRIEVAL_* overrides, and honoured by the
+# Streamlit entrypoint as well as the page body, so a deployment can turn the
+# panel off without editing the mounted config.toml.
+FRONTEND_LIVE_GRAPH_ENV = "AMA_FRONTEND_LIVE_GRAPH"
+
+
+def get_frontend_config() -> dict:
+    """Get the [frontend] configuration section.
+
+    Returns:
+        dict: Demo-frontend settings (empty dict when the section is absent,
+        which is the case for every config written before the live graph).
+    """
+    config = load_config()
+    return dict(config.get("frontend", {}))
+
+
+def get_live_graph_enabled() -> bool:
+    """Whether the demo chat page shows the live "explored subgraph" panel.
+
+    Reads ``[frontend].live_graph``, overridable by
+    ``AMA_FRONTEND_LIVE_GRAPH=0/1`` (same truthy parsing as the
+    ``AMA_RETRIEVAL_*`` overrides; env always wins). Default False, so an old
+    config, or a benchmark/dev deployment that never opted in, keeps the
+    pre-feature single-column page exactly as it was.
+
+    Returns:
+        bool: True to render the live graph panel (default: False).
+    """
+    raw = os.environ.get(FRONTEND_LIVE_GRAPH_ENV)
+    if raw is not None:
+        return _parse_env_bool(raw)
+    return bool(get_frontend_config().get("live_graph", False))
