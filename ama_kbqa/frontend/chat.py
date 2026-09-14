@@ -21,7 +21,9 @@ import streamlit as st
 from ama_kbqa.frontend.utils.agent_factory import (
     AGENT_INFO,
     AGENT_SUGGESTIONS,
+    ORCHESTRATOR_MODES,
     create_agent,
+    is_orchestrator,
 )
 from ama_kbqa.frontend.utils.lifecycle_runner import (
     LiveLifecycleState,
@@ -56,6 +58,24 @@ DEMO_MIN_SECONDS_BETWEEN_QUERIES = float(os.environ.get("DEMO_MIN_SECONDS_BETWEE
 
 inject_css()
 
+# Default picker entry: the paper's single-dispatch router. Federated is
+# opt-in and experimental (see AGENT_INFO taglines).
+DEFAULT_AGENT = "Orchestrator (Router)"
+
+
+def _current_agent_selection() -> str:
+    """Return the persisted agent selection, normalizing a stale value.
+
+    A session value that no longer names a live agent (e.g. the old single
+    "Orchestrator" entry from before the Router/Federated split) falls back
+    to the default Router entry instead of crashing the picker.
+    """
+    current = st.session_state.get("agent_selection", DEFAULT_AGENT)
+    if current not in AGENT_INFO:
+        current = DEFAULT_AGENT
+        st.session_state["agent_selection"] = current
+    return current
+
 
 def render_agent_picker(*, disabled: bool = False) -> str:
     """Agent selector shown as a pill next to the chat bar, like a model picker.
@@ -64,7 +84,7 @@ def render_agent_picker(*, disabled: bool = False) -> str:
     it. On change it updates the selection in session_state, drops any persisted
     multiturn conversation (a new agent handles the next turn), and reruns.
     """
-    current = st.session_state.get("agent_selection", "Orchestrator")
+    current = _current_agent_selection()
     with st.popover(current, disabled=disabled, use_container_width=False):
         st.caption("Choose an agent")
         for name, meta in AGENT_INFO.items():
@@ -80,12 +100,12 @@ def render_agent_picker(*, disabled: bool = False) -> str:
                     st.session_state.pop("persistent_agent", None)
                     st.rerun()
             st.caption(meta.get("tagline", meta.get("description", "")))
-    return st.session_state.get("agent_selection", "Orchestrator")
+    return _current_agent_selection()
 
 
 # Current agent selection. The picker itself is rendered next to the chat bar
 # (below); this just reads the persisted choice for the rest of the page logic.
-selected_agent = st.session_state.setdefault("agent_selection", "Orchestrator")
+selected_agent = _current_agent_selection()
 
 # ── Sidebar: model, temperature, view toggle ─────────────────────────────────
 with st.sidebar:
@@ -319,7 +339,7 @@ for message in st.session_state.messages:
 # remembers context: hide the input for it and point to the picker instead.
 with st.container():
     render_agent_picker(disabled=live_run is not None)
-    if selected_agent == "Orchestrator":
+    if is_orchestrator(selected_agent):
         typed = None
         if not simplified:
             st.caption(
@@ -369,7 +389,7 @@ if user_message and live_run is None:
     # follow-ups can resolve against prior turns (the agent self-resolves
     # coreference from the preserved tool results + answers). The Orchestrator
     # path stays stateless (fresh agent per turn), so the router is unaffected.
-    multiturn_enabled = selected_agent != "Orchestrator"
+    multiturn_enabled = not is_orchestrator(selected_agent)
     stored = st.session_state.get("persistent_agent")
     if (
         multiturn_enabled
@@ -491,13 +511,15 @@ if not simplified and (live_run is not None or traces_registry):
                     f'{state.span_count}</span>'
                     f"</div>"
                 )
-                if live_run["agent_name"] == "Orchestrator":
+                if is_orchestrator(live_run["agent_name"]):
                     # Multi-agent view: orchestrator figure + a live pane per
                     # dispatched specialist showing its own Fig.1 lifecycle.
                     osvg = render_orchestrator_svg(
                         state.render_orchestrator_active_node_ids(now),
                         state.render_orchestrator_visited_node_ids(),
                         current_label=state.current_label or "starting…",
+                        active_edge_ids=state.orch.render_active_edge_ids(now),
+                        mode="federated" if ORCHESTRATOR_MODES.get(live_run["agent_name"]) else "router",
                     )
                     st.markdown(
                         f'<div class="lifecycle-wrap">{osvg}{status_html}</div>',
@@ -558,12 +580,13 @@ if not simplified and (live_run is not None or traces_registry):
             # per-specialist panes; single-agent runs get the lifecycle figure.
             t = traces_registry[panel_trace_id]
             caption = f"completed in {t.get('duration_s', 0):.1f}s"
-            if t.get("agent") == "Orchestrator":
+            if is_orchestrator(t.get("agent")):
                 orch_visited, subs = reconstruct_orchestrator(t.get("events") or [])
                 osvg = render_orchestrator_svg(
                     set(),
                     orchestrator_visited_node_ids(orch_visited, subs),
                     current_label=caption,
+                    mode="federated" if ORCHESTRATOR_MODES.get(t.get("agent")) else "router",
                 )
                 st.markdown(
                     f'<div class="lifecycle-wrap">{osvg}</div>',

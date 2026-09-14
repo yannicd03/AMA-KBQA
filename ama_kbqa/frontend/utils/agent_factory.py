@@ -4,10 +4,41 @@ from __future__ import annotations
 from typing import Any
 
 
+# Picker entries that resolve to the Orchestrator, mapped to the `federation`
+# flag passed to its constructor. Router is the paper's single-dispatch
+# behaviour (exactly one specialist per question); Federated is the
+# experimental multi-specialist path (the router may pick up to
+# `max_specialists` specialists, run them concurrently, and fuse their
+# answers with one LLM call).
+ORCHESTRATOR_MODES: dict[str, bool] = {
+    "Orchestrator (Router)": False,
+    "Orchestrator (Federated)": True,
+}
+
+
+def is_orchestrator(name: str) -> bool:
+    """True when ``name`` is one of the Orchestrator picker entries."""
+    return name in ORCHESTRATOR_MODES
+
+
 AGENT_INFO = {
-    "Orchestrator": {
-        "tagline": "Auto-routes to the best specialist. Use when you're not sure which agent fits.",
+    "Orchestrator (Router)": {
+        "tagline": "Picks the single best specialist for your question, as evaluated in the paper.",
         "description": "Routes questions to the best specialist agent (KQAPro or SciQA) automatically.",
+        "databases": "KQAPro KG + ORKG (via sub-agents)",
+        "tools": "Delegates to sub-agents",
+    },
+    "Orchestrator (Federated)": {
+        "tagline": (
+            "Experimental: may ask both specialists in parallel and combine "
+            "their answers. Slower and uses about twice the tokens; the "
+            "paper's numbers are single-dispatch."
+        ),
+        "description": (
+            "Routes questions to one or more specialist agents (KQAPro and/or "
+            "SciQA); when more than one is picked they run concurrently and "
+            "their answers are fused into one response."
+        ),
         "databases": "KQAPro KG + ORKG (via sub-agents)",
         "tools": "Delegates to sub-agents",
     },
@@ -26,9 +57,29 @@ AGENT_INFO = {
 }
 
 AGENT_SUGGESTIONS = {
-    "Orchestrator": {
+    # Same suggestions as before: single-domain questions the router handles
+    # by picking exactly one specialist.
+    "Orchestrator (Router)": {
         ":blue[:material/movie:] Director of Inception": "Who is the director of Inception?",
         ":green[:material/science:] COVID-19 research": "What research contributions address COVID-19 detection?",
+        ":orange[:material/location_on:] Einstein's birthplace": "In which city was Albert Einstein born?",
+    },
+    # Federated suggestions favor visible fan-out: the first two questions
+    # plausibly touch BOTH graphs at once (a general-knowledge entity that is
+    # also the subject of scholarly work, and a comparison spanning a KQAPro
+    # fact and an ORKG research metric), so the router has a real reason to
+    # dispatch both specialists and the fusion step has something to combine.
+    # The third is a clearly single-domain question, to show the router still
+    # picks just one specialist when federation isn't warranted.
+    "Orchestrator (Federated)": {
+        ":violet[:material/hub:] Einstein, scientifically": (
+            "Where was Albert Einstein born, and what research contributions "
+            "cite his work on relativity?"
+        ),
+        ":violet[:material/hub:] Filmmaker vs. paper benchmarks": (
+            "Who directed Inception, and what benchmarks are used to evaluate "
+            "machine learning models in the research literature?"
+        ),
         ":orange[:material/location_on:] Einstein's birthplace": "In which city was Albert Einstein born?",
     },
     "KQAPro": {
@@ -48,14 +99,15 @@ def create_agent(name: str) -> Any:
     """Create an agent instance by name.
 
     Args:
-        name: One of 'Orchestrator', 'KQAPro', 'SciQA'
+        name: One of 'Orchestrator (Router)', 'Orchestrator (Federated)',
+            'KQAPro', 'SciQA'.
 
     Returns:
         An agent instance with an async ask() method.
     """
-    if name == "Orchestrator":
+    if is_orchestrator(name):
         from ama_kbqa.agents.orchestrator_agent.agent import Orchestrator
-        return Orchestrator()
+        return Orchestrator(federation=ORCHESTRATOR_MODES[name])
     elif name == "KQAPro":
         from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
         return KQAProAgent()

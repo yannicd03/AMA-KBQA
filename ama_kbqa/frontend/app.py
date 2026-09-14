@@ -41,7 +41,12 @@ Rather than answering in one shot, the agent works like a researcher:
 
 #### The agents
 
-- **Orchestrator** routes your question to the right specialist automatically.
+- **Orchestrator (Router)** routes your question to the single best specialist
+  automatically — this is the dispatch strategy evaluated in the paper.
+- **Orchestrator (Federated)** *(experimental)* may ask both specialists at
+  once and combine their answers with an extra fusion step. It can catch
+  questions that span both knowledge graphs, but is slower and uses about
+  twice the tokens; its numbers are not the paper's.
 - **KQAPro** answers factual questions (films, geography, science facts).
 - **SciQA** answers scientific-research questions over the Open Research Knowledge
   Graph (ORKG).
