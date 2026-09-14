@@ -24,6 +24,19 @@ CONFIG_PATH = REPO_ROOT / "config.toml"
 # Global config cache
 _config_cache: Optional[dict] = None
 
+# When set, these override the chat model / temperature that would otherwise
+# come from config.toml. Used by the demo's model picker
+# (frontend.utils.chat_controls.apply_chat_settings) to steer MCP tool-server
+# subprocesses: those are spawned with env=os.environ.copy() (see
+# orchestrator_agent/agent.py, framework/mcp_client.py) and load their own
+# config.toml independently, so mutating this process's in-memory
+# _config_cache alone never reaches them. Like _config_cache, these are
+# process-global (same cross-session caveat: in a server process handling
+# multiple demo sessions at once, the override applies to all of them, not
+# just the session that set it).
+CHAT_MODEL_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_MODEL"
+CHAT_TEMPERATURE_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_TEMPERATURE"
+
 
 def load_config() -> dict:
     """Load configuration from config.toml file.
@@ -100,9 +113,15 @@ def get_embedding_client() -> OpenAI:
 def get_chat_model_name() -> str:
     """Get the configured chat model name.
 
+    Honors ``AMA_KBQA_CHAT_MODEL`` (``CHAT_MODEL_OVERRIDE_ENV_VAR``) when set,
+    taking precedence over config.toml — see that constant's docstring for why.
+
     Returns:
         str: The chat model name
     """
+    override = os.getenv(CHAT_MODEL_OVERRIDE_ENV_VAR)
+    if override:
+        return override
     config = load_config()
     provider = config["llm"]["chat_provider"]
     return config[provider]["chat_model"]
@@ -133,9 +152,22 @@ def get_embedding_model_name() -> str:
 def get_chat_temperature() -> float:
     """Get the configured chat temperature.
 
+    Honors ``AMA_KBQA_CHAT_TEMPERATURE`` (``CHAT_TEMPERATURE_OVERRIDE_ENV_VAR``)
+    when set to a valid float, taking precedence over config.toml — same
+    override mechanism as ``get_chat_model_name``.
+
     Returns:
         float: The chat temperature value
     """
+    override = os.getenv(CHAT_TEMPERATURE_OVERRIDE_ENV_VAR)
+    if override:
+        try:
+            return float(override)
+        except ValueError:
+            logger.warning(
+                f"Ignoring invalid {CHAT_TEMPERATURE_OVERRIDE_ENV_VAR}="
+                f"{override!r} (not a float); falling back to config.toml"
+            )
     config = load_config()
     return config["llm"].get("chat_temperature", 1.0)
 
