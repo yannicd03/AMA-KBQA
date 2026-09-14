@@ -1,6 +1,6 @@
 # PRD: Live knowledge-graph panel for the demo frontend
 
-**Status:** 🛠 In implementation (branch `demo-v2-graph`, off `demo-v2-int` @ `1a9072d`)
+**Status:** ✅ Implemented on `demo-v2-graph` (phases 1-3), acceptance re-run pending merge into `demo-v2-int`
 **Owner:** Yannic · **Written:** 2026-09-14
 **Scope:** demo frontend only (`ama_kbqa/frontend/`), plus one config flag and one read-only accessor on the orchestrator. No MCP-server, prompt, or agent-loop behaviour changes.
 
@@ -405,3 +405,62 @@ after each; then `test-agent` (Verify), local acceptance run, docs capture.
 | 4 · capture | `docs-agent`, `wiki` | System doc update (`System/demo_bwcloud_frontend.md`), ADR for the two-source graph, CHANGELOG; wiki note | links in this file |
 
 Commit granularity: one commit per phase, message prefixed `demo v2 graph:`.
+
+## Outcome (2026-09-14)
+
+Shipped as three commits on `demo-v2-graph` (off `demo-v2-int` @ `1a9072d`):
+
+- `f97842a` (phase 1 · core): `[frontend].live_graph` config flag +
+  `AMA_FRONTEND_LIVE_GRAPH` override; the Streamlit-free
+  `live_graph_data.py` normaliser (`GraphData`/`GraphNode`/`GraphEdge`,
+  `graph_from_journal_state`, `graph_from_tool_result` over the
+  `GRAPH_TOOLS` allow-list, `graph_from_trace`, `answer_node_ids`,
+  `to_vis_payload`, `apply_caps`); the read-only
+  `Orchestrator.live_journal_snapshots()` accessor; `graph_html.py` reworked
+  for the light theme with localStorage position persistence.
+- `7615190` (phase 2 · ui): `lifecycle_runner.py`'s worker-thread listener
+  parses allow-listed tool results into `"__graph__"` deltas and
+  `drain_into`/`_absorb_graph_delta` attribute them to the owning specialist
+  via the existing span-owner walk; `live_graph_panel.py` (new) renders the
+  1 Hz live fragment and the frozen/highlighted view; `chat.py` wires
+  `panel_active` / `chat_col` / `graph_col` and the sidebar toggle; `app.py`
+  goes wide when the flag is on.
+- `a7f027c` (phase 3 · label-lookup fix found during acceptance): the local
+  acceptance run showed the KQAPro fast path resolves the answer entity via
+  `GetNodeLabel` from a single journal snapshot, so the highlighted node
+  stayed a bare id. Added `GetNodeLabel`/`GetResourceLabel` and their batch
+  variants to `GRAPH_TOOLS` (a real label now beats id-as-label on merge),
+  and extraction for `GetResourceSummary` (SciQA's `GetNodeSummary`
+  counterpart, previously missing from the allow-list).
+
+Deviations from the plan as written: none structural; phase 3 was an
+acceptance-driven addition the plan's §9 table anticipated only as "review
+diffs against this PRD" in phase 3/verify, not as a named deliverable. It
+became its own commit instead of a fixup because it changed the allow-list
+contract (§5.1) enough to need its own tests.
+
+Docs: `.agent/System/demo_bwcloud_frontend.md` (new "Live Graph Panel"
+section), `.agent/Decisions/live-graph-two-source-subgraph.md` (new ADR),
+`.agent/SOP/hetzner_demo_deployment.md` §9 (staging branch note, default-on
+flag, reranker-off local acceptance gotcha).
+
+Verification (orchestrator, 2026-09-14, at `a7f027c`): `uv run pytest -q`
+887 passed, `ruff check .` clean. §8 acceptance against the local
+`qdrant_ama_kbqa` / `virtuoso_ama_kbqa` containers and the KIT endpoint
+(`kit.mistral-small-4-119b-a8b`, `AMA_RETRIEVAL_RERANKER_ENABLED=false`),
+one agent per process, live pipeline (`make_listener` + `drain_into` +
+`live_graph_snapshot`) and frozen pipeline (`graph_from_trace`) compared:
+
+| Entry | Time | Entities / literals / edges | Sources | Answer nodes |
+|---|---|---|---|---|
+| KQAPro | 26 s | 55 / 9 / 67 | kqapro | Christopher Nolan, Inception |
+| SciQA | 68 s | 28 / 0 / 0 | sciqa | one ORKG resource (the local ORKG data returned no links or contributions for the visited resources) |
+| Orchestrator (Router) | 99 s | 64 / 54 / 119 | kqapro | Albert Einstein, Ulm |
+| Orchestrator (Federated) | 129 s | 87 / 14 / 75 | kqapro 62+14, sciqa 25 | Christopher Nolan, Heterogeneous benchmark, ... |
+
+Live and frozen graphs were identical in all four runs. Known limitation
+confirmed: neighbours from `GetNodeSummary` stay id-labelled unless the
+agent resolves them (49 to 53 of the KQAPro entities per run). Browser
+screenshots of the live and final panel are in the session scratchpad and
+the wiki note. Staging deployment remains pending until `demo-v2-graph`
+merges into `demo-v2-int`.

@@ -125,6 +125,23 @@ Notes:
 
 ## 9. Demo v2 (2026-09-14)
 
+### Branch to stage
+
+As of 2026-09-14 the branch to stage for v2 is **`demo-v2-graph`** once it
+merges into `demo-v2-int` (it adds the live "Explored subgraph" side panel,
+see [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md)
+"Live Graph Panel" and
+[Decisions/live-graph-two-source-subgraph.md](../Decisions/live-graph-two-source-subgraph.md)).
+The setup commands below still say `demo-v2-int`; update the `git fetch`/
+`worktree add` refs to whichever of `demo-v2-int` or a later integration
+branch actually carries the merged graph-panel commits at deploy time. The
+panel is **on by default**: `config.docker.toml`'s `[frontend] live_graph =
+true` ships with the image, so no extra staging step is needed to enable it.
+To disable it for a given deployment (e.g. to compare against the
+pre-feature layout), set `AMA_FRONTEND_LIVE_GRAPH=0` in the compose
+service's `environment:` block (same override mechanism as
+`AMA_RETRIEVAL_RERANKER_ENABLED` below).
+
 ### Why
 
 v1 (the `demo-hetzner` deploy documented in §1–§8 above) runs an old, pre-`dev`
@@ -251,6 +268,23 @@ comments of `config.toml` / `config.docker.toml`).
 Given the Hetzner box's RAM budget (§ Memory above) and that this is a demo,
 not the benchmark run the paper's numbers come from, leaving it off is the
 right trade for this deployment.
+
+### Local acceptance gotcha: reranker must be off without the extra installed
+
+Running the v2 acceptance checks (§8 of the PRD, or any local
+`uv run ama-kbqa-frontend` against the local containers) needs
+`AMA_RETRIEVAL_RERANKER_ENABLED=false` in the shell environment **unless**
+the `rerank` extra is installed (`uv sync --extra rerank`). Without either,
+`ama_kbqa/retrieval/search.py` re-raises the resulting `ImportError` and
+`kqapro_server.py` (~line 2076) swallows it into an empty semantic-search
+result rather than surfacing an error: `FindResource` then errors out on
+the SciQA side and the graph panel's SciQA half stays empty for the whole
+run, which looks like a live-graph bug but is a retrieval-config gap. See
+"Reranker off rationale" above for why the deployed image itself ships with
+the reranker off (belt-and-suspenders `AMA_RETRIEVAL_RERANKER_ENABLED=false`
+env plus `config.docker.toml`'s `[retrieval] reranker_enabled = false`);
+this note is about a bare local dev environment that has neither the
+container's env nor the extra installed.
 
 ### Smoke tests for v2
 
