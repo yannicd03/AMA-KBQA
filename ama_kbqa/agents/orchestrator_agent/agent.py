@@ -21,6 +21,8 @@ from ama_kbqa.config import (
     assert_provider_api_key_present,
     get_chat_client,
     get_chat_model_name,
+    get_federation_enabled,
+    get_federation_max_specialists,
 )
 
 load_dotenv(find_dotenv())
@@ -131,7 +133,12 @@ class MCPClient:
 
 class Orchestrator:
 
-    def __init__(self, session_id: str = "default"):
+    # Class-level defaults so instances built without __init__ (hermetic
+    # tests use __new__) get the safe single-dispatch behaviour.
+    _federation_enabled: bool = False
+    _federation_max_specialists: int = 2
+
+    def __init__(self, session_id: str = "default", federation: Optional[bool] = None):
         self.name = "ORCHESTRATOR"
         self.session_id = session_id
         # Fail fast with a clear message if no provider key is configured at
@@ -147,7 +154,8 @@ class Orchestrator:
 
         # Transient-error retry (shared core: chatkit.retry), mirroring
         # BaseKBQAAgent: one persistent instance so the backoff ramp carries
-        # across the routing probe's decision call and the LLM-only fallback.
+        # across the routing probe's decision call, the fusion call, and the
+        # LLM-only fallback.
         self._retry = TransientRetry()
 
         # Frontend reads these — Orchestrator mirrors the BaseKBQAAgent
@@ -184,8 +192,21 @@ class Orchestrator:
         }
 
         # Set by _route_autonomously: the router LLM's one-sentence reason
-        # for its last decision (surfaced on the classify trace span).
+        # for its last decision (surfaced on the classify trace span), and
+        # the raw probe evidence JSON (reused as a fusion prior when a
+        # federated dispatch produces conflicting answers).
         self.last_routing_reason: Optional[str] = None
+        self.last_routing_evidence: Optional[str] = None
+
+        # Federated dispatch: when enabled, the router may select multiple
+        # specialists for one question; their answers are fused afterwards.
+        # `federation` is a per-instance override (None => follow config) so
+        # the demo can offer a "Router" and a "Federated" orchestrator side
+        # by side without touching config.toml.
+        self._federation_enabled = (
+            get_federation_enabled() if federation is None else bool(federation)
+        )
+        self._federation_max_specialists = get_federation_max_specialists()
 
     def _trace(self, msg: str, color: str = COLOR_BLUE):
         trace(self.name, msg, color)
@@ -249,10 +270,14 @@ class Orchestrator:
     PROBE_TOOL_NAME = "analyze_query_recommend_db"
 
     def _routing_system_prompt(self) -> str:
+        """Router-mode text is byte-for-byte the pre-federation prompt (the
+        benchmark numbers were measured with it). Federated mode appends an
+        addendum explaining multi-agent selection; it never changes the base
+        text so Router mode is unaffected by this method existing at all."""
         agent_lines = "\n".join(
             f"- {name}: {cfg['description']}" for name, cfg in self._agent_config.items()
         )
-        return (
+        prompt = (
             "You route user questions to one of these specialist agents:\n"
             f"{agent_lines}\n\n"
             "Alongside the question you receive entity-linking evidence probed "
@@ -264,10 +289,28 @@ class Orchestrator:
             "Prefer kqapro_agent only when the question is genuinely ambiguous "
             "between the two."
         )
+        if self._federation_enabled:
+            prompt += (
+                "\n\nYou may select MULTIPLE agents (federated dispatch): they "
+                "run concurrently and their answers are fused. Federation "
+                "costs every selected agent a full run, so select multiple "
+                "agents only when (a) the evidence shows strong, on-topic "
+                "matches in MORE THAN ONE graph, or (b) the question "
+                "genuinely spans both domains (e.g. scholarly work about a "
+                "general-world entity). For a clearly single-domain question, "
+                "select exactly one agent."
+            )
+        return prompt
 
     def _select_agent_tool(self) -> Dict:
-        """Forced final tool call: an enum keeps the decision exact (no
-        substring matching on free text)."""
+        """Router-mode forced final tool call: an enum keeps the decision
+        exact (no substring matching on free text).
+
+        Kept byte-for-byte identical to the pre-federation single-dispatch
+        tool: the paper's benchmark numbers were measured against this exact
+        schema, and the LangGraph rewrite's probe/select_agent nodes mirror
+        it too.
+        """
         return {
             "type": "function",
             "function": {
@@ -294,20 +337,75 @@ class Orchestrator:
             },
         }
 
-    async def _route_autonomously(self, query: str) -> Optional[str]:
+    def _select_agents_tool(self) -> Dict:
+        """Federated-mode forced final tool call: an enum array keeps the
+        decision exact (no substring matching on free text).
+
+        Only used when federation is enabled; maxItems is capped at the
+        configured fan-out.
+        """
+        max_items = max(1, self._federation_max_specialists)
+        return {
+            "type": "function",
+            "function": {
+                "name": "select_agents",
+                "description": (
+                    "Commit to the specialist agent(s) that should answer the "
+                    "user's question."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agents": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": list(self._agent_config.keys()),
+                            },
+                            "minItems": 1,
+                            "maxItems": max_items,
+                            "description": (
+                                "The agent(s) to route the question to. "
+                                "Multiple agents run concurrently and their "
+                                "answers are fused."
+                            ),
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "One sentence explaining the routing decision."
+                        },
+                    },
+                    "required": ["agents", "reason"],
+                },
+            },
+        }
+
+    async def _route_autonomously(self, query: str) -> Optional[List[str]]:
         """One-round-trip routing: deterministic probe, one LLM decision call.
 
         The probing tool is called directly with the user's question (the
         previous first LLM call was forced to do exactly that, so it carried
         no information and cost one full round-trip per question). The raw
         entity-linking evidence for BOTH knowledge graphs is then handed to a
-        single LLM call with a forced structured `select_agent` decision, so
-        the LLM weighs the evidence against the agents' domain descriptions
-        instead of a hardcoded threshold gate. A failed probe degrades to a
-        domain-only decision; a failed decision returns None and the caller
-        falls back to KQAPro.
+        single LLM call with a forced structured decision, so the LLM weighs
+        the evidence against the agents' domain descriptions instead of a
+        hardcoded threshold gate. A failed probe degrades to a domain-only
+        decision; a failed decision returns None and the caller falls back to
+        KQAPro.
+
+        The decision tool is mode-gated: with federation disabled (the
+        default, and Router-mode instances) this sends EXACTLY the original
+        single-agent `select_agent` tool/prompt, so single-dispatch behaviour
+        (and the benchmark numbers measured against it) is unchanged. With
+        federation enabled, this sends the `select_agents` array tool and may
+        return more than one agent name.
+
+        Returns the selected agent names in router order: a single-element
+        list for normal dispatch, multiple elements for a federated dispatch
+        (only possible when federation is enabled). Any failure returns None.
         """
         self.last_routing_reason = None
+        self.last_routing_evidence = None
         if not self.mcp:
             return None
 
@@ -317,6 +415,7 @@ class Orchestrator:
             tool_result = await self.mcp.call_tool(
                 self.PROBE_TOOL_NAME, {"question": query}
             )
+            self.last_routing_evidence = tool_result
             self._log_pretty("Evidence", tool_result, COLOR_MAGENTA)
         except Exception as e:
             self._trace(
@@ -329,8 +428,12 @@ class Orchestrator:
                 "degraded": True,
                 "note": f"probe unavailable: {e}",
             })
+            self.last_routing_evidence = tool_result
 
-        # Step 2: single forced select_agent decision on the evidence.
+        # Step 2: single forced decision call on the evidence. Router mode
+        # sends dev's exact select_agent (string enum); Federated mode sends
+        # select_agents (array, capped at max_specialists) — the departure
+        # from fed lives entirely in this gate.
         messages = [
             {"role": "system", "content": self._routing_system_prompt()},
             {
@@ -343,12 +446,19 @@ class Orchestrator:
             },
         ]
 
+        if self._federation_enabled:
+            decision_tool = self._select_agents_tool()
+            tool_name = "select_agents"
+        else:
+            decision_tool = self._select_agent_tool()
+            tool_name = "select_agent"
+
         try:
             call_params = {
                 "model": self.model,
                 "messages": messages,
-                "tools": [self._select_agent_tool()],
-                "tool_choice": {"type": "function", "function": {"name": "select_agent"}},
+                "tools": [decision_tool],
+                "tool_choice": {"type": "function", "function": {"name": tool_name}},
             }
             decision = self._create_with_retry(self.client, call_params, label="routing")
 
@@ -358,16 +468,48 @@ class Orchestrator:
                 return None
 
             decision_args = json.loads(decision_msg.tool_calls[0].function.arguments)
-            agent_name = decision_args.get("agent")
             reason = decision_args.get("reason", "")
 
-            if agent_name not in self._agent_config:
-                self._trace(f"{COLOR_YELLOW}Unknown agent '{agent_name}' selected.{COLOR_END}", COLOR_YELLOW)
+            if self._federation_enabled:
+                raw_agents = decision_args.get("agents") or []
+            else:
+                # Wrap the single `agent` field the same way Router mode
+                # always has, so a missing/unknown value hits the same
+                # "Unknown agent" path (and message) as before this method
+                # started returning a list.
+                raw_agents = [decision_args.get("agent")]
+
+            # Dedupe in router order; any unknown name invalidates the whole
+            # decision (same strictness as the original single-agent enum).
+            agent_names: List[str] = []
+            for name in raw_agents:
+                if name not in self._agent_config:
+                    self._trace(f"{COLOR_YELLOW}Unknown agent '{name}' selected.{COLOR_END}", COLOR_YELLOW)
+                    return None
+                if name not in agent_names:
+                    agent_names.append(name)
+
+            if not agent_names:
+                self._trace(f"{COLOR_YELLOW}LLM selected no agents.{COLOR_END}", COLOR_YELLOW)
                 return None
 
+            # Enforce the configured fan-out cap defensively: the schema
+            # already caps maxItems, but not every provider validates it.
+            max_agents = (
+                max(1, self._federation_max_specialists)
+                if self._federation_enabled else 1
+            )
+            if len(agent_names) > max_agents:
+                self._trace(
+                    f"{COLOR_YELLOW}Capping selection {agent_names} to first "
+                    f"{max_agents} (federation limit).{COLOR_END}",
+                    COLOR_YELLOW,
+                )
+                agent_names = agent_names[:max_agents]
+
             self.last_routing_reason = reason
-            self._trace(f"Decision: {agent_name} ({reason})", COLOR_CYAN)
-            return agent_name
+            self._trace(f"Decision: {', '.join(agent_names)} ({reason})", COLOR_CYAN)
+            return agent_names
 
         except Exception as e:
             self._trace(f"{COLOR_RED}Error in routing process: {e}{COLOR_END}", COLOR_RED)
@@ -409,20 +551,33 @@ class Orchestrator:
                     "route",
                     attributes={"model": self.model},
                 ) as _route_span:
-                    selected_agent_name = await self._route_autonomously(query)
-                    _route_span.set_attribute("selected_agent", selected_agent_name or "<none>")
+                    selected_agent_names = await self._route_autonomously(query)
+                    _route_span.set_attribute(
+                        "selected_agent",
+                        ", ".join(selected_agent_names) if selected_agent_names else "<none>",
+                    )
+                    _route_span.set_attribute(
+                        "route_mode",
+                        "federated" if selected_agent_names and len(selected_agent_names) > 1 else "single",
+                    )
                     if self.last_routing_reason:
                         _route_span.set_attribute("route_reason", self.last_routing_reason)
 
                 answer = ""
                 print("-" * 50)
 
-                if selected_agent_name:
-                    self._trace(f"Routing successful -> {selected_agent_name}", COLOR_GREEN)
-                    answer = await self._delegate(selected_agent_name, query)
-                else:
+                if not selected_agent_names:
                     self._trace("Routing failed. Fallback to KQAPro agent.", COLOR_YELLOW)
                     answer = await self._fallback_kqapro(query)
+                elif len(selected_agent_names) == 1:
+                    self._trace(f"Routing successful -> {selected_agent_names[0]}", COLOR_GREEN)
+                    answer = await self._delegate(selected_agent_names[0], query)
+                else:
+                    self._trace(
+                        f"Routing successful -> federated: {', '.join(selected_agent_names)}",
+                        COLOR_GREEN,
+                    )
+                    answer = await self._federate(selected_agent_names, query)
 
                 return answer
             finally:
@@ -430,26 +585,75 @@ class Orchestrator:
                     await self.mcp.close()
                     self._trace("Orchestrator MCP server cleanly terminated")
 
-    async def _delegate(self, agent_name: str, query: str) -> str:
-        """Run a sub-agent under a `delegate` span so its trace nests cleanly.
+    def _extract_scratchpad(self, agent) -> Optional[str]:
+        """Render a sub-agent's final journal as an LLM-legible scratchpad.
+
+        Reads the last journal snapshot the sub-agent captured during its run
+        (a `JournalState` dump) and renders it via `to_summary_str()` so the
+        orchestrator receives the specialist's working notes — entities
+        visited, values found, verified facts — alongside its prose answer.
+
+        Returns None when the sub-agent captured no usable journal (e.g. its
+        MCP server lacks the GetJournalStateJSON tool, or the run never
+        mutated the journal), so callers can omit the block cleanly rather
+        than forwarding an empty placeholder.
+        """
+        try:
+            snapshots = agent.journal_snapshots
+        except AttributeError:
+            return None
+        if not snapshots:
+            return None
+        state = snapshots[-1].get("state")
+        if not isinstance(state, dict) or not state:
+            return None
+        try:
+            from ama_kbqa.framework.state import JournalState
+            rendered = JournalState.from_dict(state).to_summary_str().strip()
+        except Exception:
+            return None
+        return rendered or None
+
+    async def _run_specialist(self, agent_name: str, query: str, fallback: bool = False) -> Dict[str, Any]:
+        """Run one sub-agent under its own `delegate` span; raises on failure.
 
         We hand the sub-agent our recorder + the current span id; its
         `agent_run` root span will then parent under our delegate span
-        instead of starting a new trace.
+        instead of starting a new trace. This is the shared primitive under
+        both single dispatch (`_delegate`, which adds the fallback policy)
+        and federated dispatch (`_federate`, which captures failures per
+        specialist). It is safe to run concurrently for DIFFERENT agent
+        names: the recorder's contextvar is task-local under asyncio.gather,
+        so each delegate span nests independently.
+
+        Returns a handoff record `{"agent", "answer", "scratchpad"}`: the
+        specialist's prose answer plus a rendering of its final journal
+        (None if it captured none). Single dispatch uses only the answer;
+        federated fusion also consumes the scratchpad to ground and
+        adjudicate the combined answer.
+
+        Args:
+            agent_name: Key into self._agent_config.
+            query: The user's question, verbatim.
+            fallback: Mark this run as a fallback on the delegate span.
+
+        Raises:
+            RuntimeError: If the agent cannot be loaded.
+            Exception: Whatever the sub-agent's ask() raises.
         """
+        attributes: Dict[str, Any] = {"sub_agent": agent_name}
+        if fallback:
+            attributes["fallback"] = True
         async with self.recorder.span(
             "delegate",
             agent_name,
-            attributes={"sub_agent": agent_name},
+            attributes=attributes,
         ) as _delegate_span:
             current_span_id = self.recorder.current_span_id()
             agent = self._load_agent(agent_name)
             if not agent:
-                self._trace(
-                    "Agent could not be loaded. Fallback to KQAPro.", COLOR_YELLOW
-                )
                 _delegate_span.set_attribute("loaded", False)
-                return await self._fallback_kqapro(query)
+                raise RuntimeError(f"Agent '{agent_name}' could not be loaded.")
 
             # Re-target the sub-agent's recorder at ours for this call. Sub-
             # agent instances are cached, so we reset these on every call.
@@ -464,16 +668,47 @@ class Orchestrator:
                     answer = await agent.ask(query)
                 else:
                     answer = agent.ask(query)
-            except Exception as e:
-                self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
-                self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
-                _delegate_span.set_attribute("error", str(e))
-                return await self._fallback_kqapro(query)
+            finally:
+                # Close this specialist's MCP connection in the SAME task
+                # that opened it (agent.ask() -> BaseKBQAAgent._init_mcp()).
+                # base_agent.ask() never closes its own MCP connection
+                # (`self._trace("Question complete (MCP preserved)")`) so it
+                # can be reused across follow-up turns; the frontend's
+                # lifecycle_runner.py has to orphan a stale connection
+                # rather than close() it when a follow-up turn resumes on a
+                # NEW event loop, because anyio's stdio_client teardown
+                # raises "Attempted to exit cancel scope in a different
+                # task" if the AsyncExitStack that opened it is closed from
+                # elsewhere. Federated dispatch runs several specialists
+                # concurrently via asyncio.gather (one Task per specialist),
+                # so if we left their MCP connections open here they would
+                # eventually be closed or garbage-collected from whatever
+                # task/loop happens to run next, tripping that same bug.
+                # `_run_specialist`'s body executes start-to-finish in one
+                # task in BOTH single and federated dispatch, so closing here
+                # — still inside this specialist's own task, right after its
+                # own ask() call — is always safe, and bounds the connection
+                # to exactly one specialist run instead of leaking it.
+                close = getattr(agent, "close", None)
+                if close is not None:
+                    try:
+                        await close()
+                    except Exception as close_err:
+                        self._trace(
+                            f"{COLOR_YELLOW}Error closing {agent_name} MCP: "
+                            f"{close_err}{COLOR_END}",
+                            COLOR_YELLOW,
+                        )
 
             # Hoist the sub-agent's journal snapshots up so the Graph View on
             # the orchestrator's trace shows what the delegate discovered.
+            # Tag each snapshot with its source so a federated run's merged
+            # snapshots stay attributable.
             try:
-                self.journal_snapshots.extend(agent.journal_snapshots)
+                self.journal_snapshots.extend(
+                    {**snap, "source_agent": agent_name}
+                    for snap in agent.journal_snapshots
+                )
             except AttributeError:
                 pass
             try:
@@ -483,7 +718,160 @@ class Orchestrator:
             except AttributeError:
                 pass
 
-            return answer
+            scratchpad = self._extract_scratchpad(agent)
+            _delegate_span.set_attribute("scratchpad_captured", scratchpad is not None)
+            return {"agent": agent_name, "answer": answer, "scratchpad": scratchpad}
+
+    async def _delegate(self, agent_name: str, query: str) -> str:
+        """Single dispatch: run one specialist, falling back to KQAPro on error.
+
+        Single dispatch returns the specialist's answer verbatim; the
+        scratchpad in the handoff record is only consumed when answers are
+        fused (`_federate`), since there is nothing to combine here. The
+        fallback runs OUTSIDE the (already-closed) delegate span from
+        `_run_specialist`, in its own span via `_fallback_kqapro`.
+        """
+        try:
+            result = await self._run_specialist(agent_name, query)
+            return result["answer"]
+        except Exception as e:
+            self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
+            self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
+            return await self._fallback_kqapro(query)
+
+    async def _federate(self, agent_names: List[str], query: str) -> str:
+        """Federated dispatch: run several specialists concurrently, fuse answers.
+
+        Each specialist runs under its own `delegate` span via
+        asyncio.gather. A failing specialist does not abort the dispatch:
+        we degrade to the surviving answers and only fall back to KQAPro
+        when ALL specialists failed (mirroring `_delegate`'s policy).
+        """
+        results = await asyncio.gather(
+            *(self._run_specialist(name, query) for name in agent_names),
+            return_exceptions=True,
+        )
+
+        answers: List[Dict[str, Any]] = []
+        failures: List[str] = []
+        for name, result in zip(agent_names, results):
+            if isinstance(result, BaseException):
+                self._trace(f"{COLOR_RED}{name} failed: {result}{COLOR_END}", COLOR_RED)
+                failures.append(f"{name}: {result}")
+            else:
+                # result is the handoff record {"agent", "answer", "scratchpad"}.
+                answers.append(result)
+
+        if not answers:
+            self._trace(
+                "All federated specialists failed. Executing KQAPro agent fallback.",
+                COLOR_YELLOW,
+            )
+            return await self._fallback_kqapro(query)
+
+        if len(answers) == 1:
+            self._trace(
+                f"Federation degraded to single answer from {answers[0]['agent']}.",
+                COLOR_YELLOW,
+            )
+            return answers[0]["answer"]
+
+        return await self._fuse_answers(query, answers)
+
+    def _fusion_system_prompt(self) -> str:
+        return (
+            "You combine answers from multiple knowledge-graph specialist "
+            "agents into ONE final answer. Each specialist consulted a "
+            "different knowledge graph and answered independently.\n"
+            "Besides each specialist's prose answer you may be given its "
+            "working notes (scratchpad): the entities it visited, the values "
+            "it found, and the facts it verified against its graph. Treat the "
+            "notes as grounding evidence, not as additional answers.\n"
+            "Rules:\n"
+            "- If the answers agree, state the answer once; you may note it "
+            "is confirmed by both sources.\n"
+            "- If the answers complement each other (different facets), merge "
+            "them into one coherent answer, attributing each facet to its "
+            "source graph.\n"
+            "- If the answers CONFLICT, do not silently pick one: weigh them "
+            "by the working notes and routing evidence (an answer backed by "
+            "concrete verified facts outweighs an unsupported assertion), "
+            "then present both, name the source of each, and say which is "
+            "better supported and why.\n"
+            "- If a specialist clearly found nothing (empty / 'unknown' "
+            "answer, or empty working notes), rely on the other and briefly "
+            "say so.\n"
+            "- Never introduce facts that appear in neither the answers nor "
+            "the working notes."
+        )
+
+    async def _fuse_answers(self, query: str, answers: List[Dict[str, str]]) -> str:
+        """Fuse the answers of a federated dispatch with one LLM call.
+
+        The routing probe's raw entity-linking evidence is forwarded as a
+        fusion prior so conflicting answers can be weighed by how well each
+        graph actually grounded the question. If fusion itself fails we
+        degrade to the first answer (router order) rather than discarding
+        two successful specialist runs. The fusion call goes through the
+        same stepped-backoff retry as the routing decision call
+        (self._create_with_retry / self._retry).
+        """
+        agent_list = ", ".join(a["agent"] for a in answers)
+        async with self.recorder.span(
+            "synthesis",
+            "fuse",
+            attributes={"model": self.model, "agents": agent_list},
+            payload={"query": query, "answers": answers},
+        ) as _fuse_span:
+            blocks = []
+            for a in answers:
+                desc = self._agent_config[a["agent"]]["description"]
+                block = f"### {a['agent']} ({desc})\nAnswer: {a['answer']}"
+                scratchpad = a.get("scratchpad")
+                if scratchpad:
+                    block += (
+                        "\n\nWorking notes (this specialist's scratchpad — "
+                        "entities visited, values found, verified facts):\n"
+                        f"{scratchpad}"
+                    )
+                blocks.append(block)
+            user_content = f"Question: {query}\n\n" + "\n\n".join(blocks)
+            if self.last_routing_evidence:
+                user_content += (
+                    "\n\nRouting evidence (entity-linking probe over both "
+                    f"knowledge graphs):\n{self.last_routing_evidence}"
+                )
+
+            try:
+                call_params = {
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content": self._fusion_system_prompt()},
+                        {"role": "user", "content": user_content},
+                    ],
+                }
+                completion = self._create_with_retry(self.client, call_params, label="fusion")
+                fused = (completion.choices[0].message.content or "").strip()
+                usage = getattr(completion, "usage", None)
+                if usage is not None:
+                    for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                        v = getattr(usage, k, 0) or 0
+                        self.token_usage[k] = self.token_usage.get(k, 0) + v
+            except Exception as e:
+                self._trace(f"{COLOR_RED}Fusion error: {e}{COLOR_END}", COLOR_RED)
+                _fuse_span.set_attribute("error", str(e))
+                fused = ""
+
+            if not fused:
+                _fuse_span.set_attribute("degraded", True)
+                self._trace(
+                    f"Fusion produced no answer; degrading to {answers[0]['agent']}.",
+                    COLOR_YELLOW,
+                )
+                return answers[0]["answer"]
+
+            self._trace(f"Fused answer from [{agent_list}]", COLOR_GREEN)
+            return fused
 
     async def _fallback_kqapro(self, query: str) -> str:
         """Route to the KQAPro agent for knowledge base queries.
@@ -493,15 +881,13 @@ class Orchestrator:
         A degraded, knowledge-base-free LLM answer would silently mask internal
         issues (missing API key, unreachable MCP server, ...) behind a
         plausible-looking response, so we surface the failure instead.
+
+        Runs through `_run_specialist` so the fallback's trace nests under a
+        `delegate` span like any other dispatch.
         """
         self._trace("Loading KQAPro agent...", COLOR_CYAN)
-        agent = self._load_agent("kqapro_agent")
-        if not agent:
-            raise RuntimeError("KQAPro agent could not be loaded.")
-
-        if inspect.iscoroutinefunction(agent.ask):
-            return await agent.ask(query)
-        return agent.ask(query)
+        result = await self._run_specialist("kqapro_agent", query, fallback=True)
+        return result["answer"]
 
 
 async def main():
