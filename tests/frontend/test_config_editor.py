@@ -83,6 +83,105 @@ def test_fetch_raises_when_base_url_missing(monkeypatch):
         ce.fetch_provider_models("kit")
 
 
+# ── fetch_provider_models_meta ────────────────────────────────────────────
+# A trimmed slice of a real KIT /models response (user_id/uuid noise
+# stripped): one real chat model, one non-chat model hidden via
+# info.meta.hidden, one routing alias tagged "Alias", and one preset bundle.
+_RAW_CATALOG_SLICE = [
+    {
+        "id": "kit.deepseek-v4-flash",
+        "name": "DeepSeek V4 Flash",
+        "connection_type": "local",
+        "info": {
+            "meta": {
+                "capabilities": {"file_context": True, "vision": False},
+                "hidden": None,
+            }
+        },
+        "tags": [],
+    },
+    {
+        "id": "kit.qwen3-reranker-8b",
+        "name": "kit.qwen3-reranker-8b",
+        "connection_type": "local",
+        "info": {
+            "meta": {
+                "capabilities": {"file_context": True, "vision": True},
+                "hidden": True,
+            }
+        },
+        "tags": [],
+    },
+    {
+        "id": "alias.simple-local",
+        "name": "Alias: Simple Model (Local)",
+        "connection_type": "local",
+        "info": {"meta": {"capabilities": {"file_context": True}, "hidden": None}},
+        "tags": [{"name": "Alias"}],
+    },
+    {
+        "id": "standard-local",
+        "name": "Standard",
+        "connection_type": "local",
+        "preset": True,
+        "info": {"meta": {"capabilities": {"file_context": True}, "hidden": False}},
+        "tags": [{"name": "Standard"}],
+    },
+]
+
+
+def test_fetch_meta_normalizes_catalog_entries(kit_config, monkeypatch):
+    payload = {"data": _RAW_CATALOG_SLICE}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(payload))
+
+    entries = ce.fetch_provider_models_meta("kit")
+    by_id = {e["id"]: e for e in entries}
+
+    chat = by_id["kit.deepseek-v4-flash"]
+    assert chat["name"] == "DeepSeek V4 Flash"
+    assert chat["connection_type"] == "local"
+    assert chat["preset"] is False
+    assert chat["tags"] == []
+    assert chat["hidden"] is False
+    assert chat["capabilities"] == {"file_context": True, "vision": False}
+
+    reranker = by_id["kit.qwen3-reranker-8b"]
+    assert reranker["hidden"] is True
+
+    alias = by_id["alias.simple-local"]
+    assert alias["tags"] == ["Alias"]
+
+    preset = by_id["standard-local"]
+    assert preset["preset"] is True
+
+
+def test_fetch_meta_falls_back_to_id_when_name_missing(kit_config, monkeypatch):
+    payload = {"data": [{"id": "kit.newmodel-x", "connection_type": "local"}]}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(payload))
+    entries = ce.fetch_provider_models_meta("kit")
+    assert entries[0]["name"] == "kit.newmodel-x"
+    assert entries[0]["hidden"] is False
+    assert entries[0]["capabilities"] is None
+
+
+def test_fetch_meta_raises_on_empty_model_list(kit_config, monkeypatch):
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp({"data": []}))
+    with pytest.raises(RuntimeError, match="no models"):
+        ce.fetch_provider_models_meta("kit")
+
+
+def test_fetch_ids_still_works_alongside_meta(kit_config, monkeypatch):
+    # fetch_provider_models (bare ids) must keep working for its other callers.
+    payload = {"data": _RAW_CATALOG_SLICE}
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(payload))
+    assert ce.fetch_provider_models("kit") == [
+        "alias.simple-local",
+        "kit.deepseek-v4-flash",
+        "kit.qwen3-reranker-8b",
+        "standard-local",
+    ]
+
+
 def test_settings_retrieval_section_reaches_config_getters(monkeypatch):
     """The [retrieval] keys written by the Settings page must match the keys
     the config getters read, so 'Apply to Session' actually takes effect."""

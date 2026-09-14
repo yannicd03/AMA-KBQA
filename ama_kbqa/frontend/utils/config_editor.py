@@ -80,13 +80,13 @@ def _provider_api_key(provider: str, provider_config: dict) -> str:
     return key
 
 
-def fetch_provider_models(provider: str, *, timeout: float = 10.0) -> list[str]:
-    """Return the sorted model IDs advertised by an OpenAI-compatible provider.
+def _fetch_provider_models_raw(provider: str, *, timeout: float) -> list[dict]:
+    """Issue ``GET {base_url}/models`` and return the raw ``data`` entries.
 
-    Issues ``GET {base_url}/models`` with the provider's API key and parses the
-    standard ``{"data": [{"id": ...}]}`` shape. Raises ``RuntimeError`` (with a
-    human-readable message) on any misconfiguration or transport/HTTP error so
-    the caller can fall back to a free-text field.
+    Shared by ``fetch_provider_models`` and ``fetch_provider_models_meta``.
+    Raises ``RuntimeError`` (with a human-readable message) on any
+    misconfiguration or transport/HTTP error so the caller can fall back to a
+    free-text field / static list.
     """
     cfg = load_config_raw()
     provider_config = cfg.get(provider, {})
@@ -114,7 +114,61 @@ def fetch_provider_models(provider: str, *, timeout: float = 10.0) -> list[str]:
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, list):
         raise RuntimeError(f"Unexpected /models response from '{provider}'.")
-    ids = sorted({m["id"] for m in data if isinstance(m, dict) and m.get("id")})
+    return [m for m in data if isinstance(m, dict) and m.get("id")]
+
+
+def fetch_provider_models(provider: str, *, timeout: float = 10.0) -> list[str]:
+    """Return the sorted model IDs advertised by an OpenAI-compatible provider.
+
+    Issues ``GET {base_url}/models`` with the provider's API key and parses the
+    standard ``{"data": [{"id": ...}]}`` shape. Raises ``RuntimeError`` (with a
+    human-readable message) on any misconfiguration or transport/HTTP error so
+    the caller can fall back to a free-text field.
+    """
+    entries = _fetch_provider_models_raw(provider, timeout=timeout)
+    ids = sorted({m["id"] for m in entries})
     if not ids:
         raise RuntimeError(f"Provider '{provider}' returned no models.")
     return ids
+
+
+def fetch_provider_models_meta(provider: str, *, timeout: float = 10.0) -> list[dict]:
+    """Return the full ``/models`` catalog for ``provider``, normalized.
+
+    Like ``fetch_provider_models`` but keeps the metadata a caller needs to
+    tell a real chat model apart from an embedding/reranker/TTS/STT model, a
+    routing alias, or a preset — not just the bare id. Each entry:
+
+    - ``id``, ``name`` (display name; falls back to ``id`` if the endpoint
+      omits it)
+    - ``connection_type`` (e.g. ``"local"`` vs ``"external"``)
+    - ``preset`` (bool)
+    - ``tags`` (list of tag name strings, e.g. ``["Alias"]``)
+    - ``hidden`` (bool, from Open WebUI-style ``info.meta.hidden``)
+    - ``capabilities`` (the raw ``info.meta.capabilities`` dict, or ``None``)
+
+    Raises ``RuntimeError`` under the same conditions as
+    ``fetch_provider_models``.
+    """
+    raw = _fetch_provider_models_raw(provider, timeout=timeout)
+    entries = []
+    for m in raw:
+        info = m.get("info") if isinstance(m.get("info"), dict) else {}
+        meta = info.get("meta") if isinstance(info.get("meta"), dict) else {}
+        tags = [
+            t.get("name")
+            for t in (m.get("tags") or [])
+            if isinstance(t, dict) and t.get("name")
+        ]
+        entries.append({
+            "id": m["id"],
+            "name": m.get("name") or m["id"],
+            "connection_type": m.get("connection_type"),
+            "preset": bool(m.get("preset")),
+            "tags": tags,
+            "hidden": bool(meta.get("hidden")),
+            "capabilities": meta.get("capabilities"),
+        })
+    if not entries:
+        raise RuntimeError(f"Provider '{provider}' returned no models.")
+    return entries

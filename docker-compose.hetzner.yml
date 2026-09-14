@@ -1,0 +1,40 @@
+# Hetzner overrides for the public demo (https://amakbqa.yanlab.de).
+#
+# Usage, from the demo checkout on the Hetzner box (~/amakbqa-demo):
+#   docker compose -f docker-compose.yml -f docker-compose.hetzner.yml up -d
+#
+# The Hetzner box is shared with ORCA (the MAS production stack) and with the
+# AMA-KBQA benchmark stack (~/AMAKBQA-main, compose project "ama-kbqa"). This
+# override keeps the demo fully separate from both:
+# - own compose project, so own containers, network and volumes
+#   (amakbqa-demo_ama_qdrant_data, amakbqa-demo_ama_virtuoso_data)
+# - own frontend image tag, so a demo build never replaces the benchmark
+#   stack's ama-kbqa-frontend image
+# - Virtuoso and Qdrant are not published on the host (the frontend reaches
+#   them over the compose network), leaving 8890/1111/6335 to the benchmark
+#   stack
+# - Streamlit on 127.0.0.1:8503; the cloudflared tunnel in deploy/hetzner/ is
+#   the only public entry point
+# - memory caps so a runaway demo cannot starve ORCA
+name: amakbqa-demo
+
+services:
+  virtuoso:
+    container_name: virtuoso_amakbqa_demo
+    ports: !reset []
+    mem_limit: 768m
+
+  qdrant:
+    # Pinned to the version that wrote the seeded volume; an unpinned "latest"
+    # could migrate the storage format on first start.
+    image: qdrant/qdrant:v1.17.1
+    container_name: qdrant_amakbqa_demo
+    ports: !reset []
+    mem_limit: 1g
+
+  frontend:
+    image: amakbqa-demo-frontend
+    container_name: frontend_amakbqa_demo
+    ports: !override
+      - "127.0.0.1:8503:8502"
+    mem_limit: 1536m
