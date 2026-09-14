@@ -426,6 +426,151 @@ class TestRunner:
         assert orch_visited == set()
         assert subs == {}
 
+    # -- Federated dispatch: two interleaved sibling delegate spans ---------
+    #
+    # Mirrors `Orchestrator._federate` (feature/federated-retrieval @
+    # 98882ac): both specialists are dispatched via asyncio.gather, so their
+    # `delegate` spans open and interleave before either closes, and a
+    # `synthesis`/`fuse` span (kind="synthesis", name="fuse") runs after both
+    # return. Delegate span attributes carry `sub_agent`; the fuse span
+    # carries `agents` (comma-joined names) — see agent.py:_run_specialist /
+    # _fuse_answers on that branch.
+
+    def _drive_federated_dispatch(self, q, state):
+        """Open both delegates (interleaved), open+close both sub-agents'
+        internal spans, close both delegates, then open the fuse span."""
+        self._put(q, "open", "agent_run", "ORCHESTRATOR", "root")
+        self._put(q, "open", "classify", "route", "route1", "root")
+        self._put(q, "close", "classify", "route", "route1", "root",
+                  attrs={"selected_agent": "kqapro_agent, sciqa_agent",
+                         "route_mode": "federated"})
+        # Both delegates open before either closes (concurrent gather).
+        self._put(q, "open", "delegate", "kqapro_agent", "deleg_k", "root",
+                  attrs={"sub_agent": "kqapro_agent"})
+        self._put(q, "open", "delegate", "sciqa_agent", "deleg_s", "root",
+                  attrs={"sub_agent": "sciqa_agent"})
+        self._put(q, "open", "agent_run", "kqapro_agent", "subroot_k", "deleg_k")
+        self._put(q, "open", "agent_run", "sciqa_agent", "subroot_s", "deleg_s")
+        self._put(q, "open", "llm_call", "gpt-4o", "llm_k", "subroot_k")
+        self._put(q, "open", "llm_call", "gpt-4o", "llm_s", "subroot_s")
+        drain_into(q, state)
+
+    def test_two_interleaved_delegate_spans_create_two_active_panes(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_federated_dispatch(q, state)
+
+        assert set(state.subagents.keys()) == {"kqapro_agent", "sciqa_agent"}
+        kqapro = state.subagents["kqapro_agent"]
+        sciqa = state.subagents["sciqa_agent"]
+        assert kqapro.status == "running"
+        assert sciqa.status == "running"
+
+        # Both containers active in the orchestrator figure at once.
+        assert "sub_kqapro" in state.orch.active_node_ids
+        assert "sub_sciqa" in state.orch.active_node_ids
+
+        # Each sub-agent's own spans drove only ITS detail figure (correct
+        # attribution via parent_span_id → nearest delegate ancestor).
+        assert "main_llm_reason" in kqapro.visited_node_ids
+        assert "main_llm_reason" in sciqa.visited_node_ids
+        assert "main_llm_reason" not in state.orch.visited_node_ids
+
+        active = state.render_orchestrator_active_node_ids()
+        assert "sub_kqapro_main" in active
+        assert "sub_sciqa_main" in active
+
+    def test_fusion_span_lights_answer_combination_on_open(self):
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_federated_dispatch(q, state)
+        self._put(q, "close", "llm_call", "gpt-4o", "llm_k", "subroot_k")
+        self._put(q, "close", "llm_call", "gpt-4o", "llm_s", "subroot_s")
+        self._put(q, "close", "agent_run", "kqapro_agent", "subroot_k", "deleg_k")
+        self._put(q, "close", "agent_run", "sciqa_agent", "subroot_s", "deleg_s")
+        self._put(q, "close", "delegate", "kqapro_agent", "deleg_k", "root")
+        self._put(q, "close", "delegate", "sciqa_agent", "deleg_s", "root")
+        drain_into(q, state)
+
+        assert state.subagents["kqapro_agent"].status == "done"
+        assert state.subagents["sciqa_agent"].status == "done"
+        assert "orch_combine" not in state.orch.active_node_ids
+
+        self._put(q, "open", "synthesis", "fuse", "fuse1", "root",
+                  attrs={"model": "gpt-4o", "agents": "kqapro_agent, sciqa_agent"})
+        drain_into(q, state)
+
+        assert "orch_combine" in state.orch.render_active_node_ids()
+        assert "orch_combine" in state.render_orchestrator_visited_node_ids()
+
+    def test_redispatch_of_same_agent_resets_pane_to_running(self):
+        """A second `delegate` open for an agent that already has a pane
+        (e.g. a KQAPro fallback re-running after an earlier dispatch) must
+        reopen that pane as live instead of leaving it frozen done/error."""
+        q: queue.Queue = queue.Queue()
+        state = LiveLifecycleState()
+        self._drive_orchestrator_until_delegate_open(q, state)
+        # Close out the first KQAPro dispatch.
+        self._put(q, "close", "llm_call", "gpt-4o", "llm", "subroot")
+        self._put(q, "close", "agent_run", "kqapro_agent", "subroot", "deleg")
+        self._put(q, "close", "delegate", "kqapro_agent", "deleg", "root")
+        drain_into(q, state)
+        assert state.subagents["kqapro_agent"].status == "done"
+
+        # Re-dispatch the SAME agent (e.g. fallback retry).
+        self._put(q, "open", "delegate", "kqapro_agent", "deleg2", "root",
+                  attrs={"sub_agent": "kqapro_agent"})
+        drain_into(q, state)
+
+        # Same pane object, reopened as running (not a duplicate).
+        assert set(state.subagents.keys()) == {"kqapro_agent"}
+        assert state.subagents["kqapro_agent"].status == "running"
+
+        # New activity on the re-dispatch lights its detail figure again.
+        self._put(q, "open", "agent_run", "kqapro_agent", "subroot2", "deleg2")
+        self._put(q, "open", "llm_call", "gpt-4o", "llm2", "subroot2")
+        drain_into(q, state)
+        assert "sub_kqapro" in state.orch.active_node_ids
+        assert state.subagents["kqapro_agent"].status == "running"
+
+    def test_reconstruct_orchestrator_with_two_delegates_and_fusion(self):
+        events = [
+            {"kind": "agent_run", "name": "ORCHESTRATOR", "span_id": "root",
+             "parent_span_id": None, "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "classify", "name": "route", "span_id": "r1",
+             "parent_span_id": "root", "is_event": False,
+             "attributes": {"route_mode": "federated"}, "status": "ok"},
+            {"kind": "delegate", "name": "kqapro_agent", "span_id": "dk",
+             "parent_span_id": "root", "is_event": False,
+             "attributes": {"sub_agent": "kqapro_agent"}, "status": "ok"},
+            {"kind": "delegate", "name": "sciqa_agent", "span_id": "ds",
+             "parent_span_id": "root", "is_event": False,
+             "attributes": {"sub_agent": "sciqa_agent"}, "status": "ok"},
+            {"kind": "agent_run", "name": "kqapro_agent", "span_id": "sk",
+             "parent_span_id": "dk", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "llm_call", "name": "gpt-4o", "span_id": "lk",
+             "parent_span_id": "sk", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "agent_run", "name": "sciqa_agent", "span_id": "ss",
+             "parent_span_id": "ds", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "llm_call", "name": "gpt-4o", "span_id": "ls",
+             "parent_span_id": "ss", "is_event": False, "attributes": {}, "status": "ok"},
+            {"kind": "synthesis", "name": "fuse", "span_id": "fu",
+             "parent_span_id": "root", "is_event": False,
+             "attributes": {"agents": "kqapro_agent, sciqa_agent"}, "status": "ok"},
+        ]
+        orch_visited, subs = reconstruct_orchestrator(events)
+
+        assert {"orch_user", "orch_probe", "orch_dispatch", "orch_combine",
+                "sub_kqapro", "sub_sciqa"} <= orch_visited
+        assert set(subs.keys()) == {"kqapro_agent", "sciqa_agent"}
+        assert subs["kqapro_agent"].display == "KQAPro"
+        assert subs["sciqa_agent"].display == "SciQA"
+        assert "main_llm_reason" in subs["kqapro_agent"].visited_node_ids
+        assert "main_llm_reason" in subs["sciqa_agent"].visited_node_ids
+
+        full = orchestrator_visited_node_ids(orch_visited, subs)
+        assert "sub_kqapro_main" in full and "sub_sciqa_main" in full
+
     def test_drain_into_is_idempotent_after_terminal(self):
         agent = _StubAgent()
         q: queue.Queue = queue.Queue()

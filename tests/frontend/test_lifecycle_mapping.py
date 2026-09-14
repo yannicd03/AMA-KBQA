@@ -10,6 +10,7 @@ from ama_kbqa.frontend.utils.lifecycle_mapping import (
     TOOLS_A,
     TOOLS_B,
     lifecycle_node_phase,
+    orchestrator_span_to_edge_ids,
     orchestrator_span_to_node_ids,
     span_to_edge_ids,
     span_to_node_ids,
@@ -168,3 +169,52 @@ class TestOrchestratorMapping:
         assert lifecycle_node_phase("main_done") == "main"
         assert lifecycle_node_phase("post_synthesis") == "post"
         assert lifecycle_node_phase("nonexistent") is None
+
+    def test_fuse_span_lights_combine_on_open_not_close(self):
+        # Federated dispatch only: the orchestrator fuses specialist answers
+        # under a `synthesis`/`fuse` span (Orchestrator._fuse_answers on the
+        # feature/federated-retrieval branch, commit 98882ac). Router/single
+        # dispatch never emits this span.
+        assert orchestrator_span_to_node_ids(
+            "synthesis", "fuse", phase="open",
+            attributes={"model": "gpt-4o", "agents": "kqapro_agent, sciqa_agent"},
+        ) == ["orch_combine"]
+        assert orchestrator_span_to_node_ids("synthesis", "fuse", phase="close") == []
+
+    def test_unrelated_synthesis_span_lights_nothing_at_orchestrator_level(self):
+        # A differently-named synthesis span (or one from a sub-agent, which
+        # never reaches this mapping anyway) must not accidentally match.
+        assert orchestrator_span_to_node_ids("synthesis", "final", phase="open") == []
+
+
+class TestOrchestratorEdgeMapping:
+    def test_delegate_open_lights_dispatch_edge(self):
+        assert orchestrator_span_to_edge_ids(
+            "delegate", "kqapro_agent", phase="open",
+            attributes={"sub_agent": "kqapro_agent"},
+        ) == ["dispatch_kqapro"]
+        assert orchestrator_span_to_edge_ids(
+            "delegate", "sciqa_agent", phase="open",
+            attributes={"sub_agent": "sciqa_agent"},
+        ) == ["dispatch_sciqa"]
+
+    def test_delegate_close_lights_return_edge(self):
+        assert orchestrator_span_to_edge_ids(
+            "delegate", "kqapro_agent", phase="close",
+            attributes={"sub_agent": "kqapro_agent"},
+        ) == ["return_kqapro"]
+        assert orchestrator_span_to_edge_ids(
+            "delegate", "sciqa_agent", phase="close",
+            attributes={"sub_agent": "sciqa_agent"},
+        ) == ["return_sciqa"]
+
+    def test_unknown_delegate_target_lights_no_edge(self):
+        assert orchestrator_span_to_edge_ids(
+            "delegate", "mystery_agent", phase="open",
+            attributes={"sub_agent": "mystery_agent"},
+        ) == []
+
+    def test_non_delegate_spans_light_no_edges(self):
+        assert orchestrator_span_to_edge_ids("classify", "route", phase="open") == []
+        assert orchestrator_span_to_edge_ids("synthesis", "fuse", phase="open") == []
+        assert orchestrator_span_to_edge_ids("agent_run", "ORCHESTRATOR", phase="close") == []

@@ -38,6 +38,7 @@ from typing import Any, Callable, Iterable, Optional
 from ama_kbqa.frontend.utils.lifecycle_mapping import (
     ORCH_SUBAGENTS,
     lifecycle_node_phase,
+    orchestrator_span_to_edge_ids,
     orchestrator_span_to_node_ids,
     span_to_edge_ids,
     span_to_node_ids,
@@ -53,11 +54,6 @@ _LOG = logging.getLogger(__name__)
 # whole span lands between two ticks. Holding each activation for at least this
 # long makes the figure step cleanly through every stage.
 MIN_LIGHTUP_SECONDS = 0.5
-
-
-def _no_edge_ids(*_args: Any, **_kwargs: Any) -> list[str]:
-    """Edge mapping for figures that have no live-highlighted edges."""
-    return []
 
 
 # ---------------------------------------------------------------------------
@@ -493,11 +489,20 @@ def drain_into(
             sub_id = attrs.get("sub_agent") or ""
             state._delegate_owner[span_id] = sub_id
             state._span_owner[span_id] = None
-            if sub_id in ORCH_SUBAGENTS and sub_id not in state.subagents:
-                display, container_id = ORCH_SUBAGENTS[sub_id]
-                state.subagents[sub_id] = SubAgentLifecycle(
-                    agent_id=sub_id, display=display, container_id=container_id,
-                )
+            if sub_id in ORCH_SUBAGENTS:
+                existing = state.subagents.get(sub_id)
+                if existing is None:
+                    display, container_id = ORCH_SUBAGENTS[sub_id]
+                    state.subagents[sub_id] = SubAgentLifecycle(
+                        agent_id=sub_id, display=display, container_id=container_id,
+                    )
+                else:
+                    # Re-dispatch of an agent that already has a pane (e.g. a
+                    # federated run's second specialist call, or the KQAPro
+                    # fallback re-running after an earlier delegate). Reopen
+                    # the pane as live instead of leaving it frozen "done"/
+                    # "error" from the previous dispatch.
+                    existing.status = "running"
             owner: Optional[str] = None
         else:
             owner = _owner_for(state, kind, phase, span_id, parent)
@@ -507,7 +512,7 @@ def drain_into(
         if owner is None:
             _apply_span(
                 state.orch, kind, name, phase, attrs, span_id, is_event, now,
-                orchestrator_span_to_node_ids, _no_edge_ids,
+                orchestrator_span_to_node_ids, orchestrator_span_to_edge_ids,
             )
         else:
             sub = state.subagents.get(owner)

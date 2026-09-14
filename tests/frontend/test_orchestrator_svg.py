@@ -95,3 +95,58 @@ class TestStructure:
         out = render_orchestrator_svg()
         assert 'id="lifecycle-arrowhead"' in out
         assert 'marker-end="url(#lifecycle-arrowhead)"' in out
+
+
+class TestFederatedDispatch:
+    """Federated dispatch can light BOTH specialist containers at once (the
+    docstring previously claimed the undispatched one always stays idle —
+    only true for router/single dispatch)."""
+
+    def test_both_specialists_active_at_once(self):
+        out = render_orchestrator_svg({"sub_kqapro", "sub_sciqa"}, set())
+        assert 'data-id="sub_kqapro" data-state="active"' in out
+        assert 'data-id="sub_sciqa" data-state="active"' in out
+
+    def test_both_specialist_minis_active_at_once(self):
+        out = render_orchestrator_svg(
+            {"sub_kqapro", "sub_kqapro_main", "sub_sciqa", "sub_sciqa_main"}, set(),
+        )
+        assert 'data-id="sub_kqapro_main" data-state="active"' in out
+        assert 'data-id="sub_sciqa_main" data-state="active"' in out
+
+    def test_dispatch_and_return_edges_light_when_active(self):
+        out = render_orchestrator_svg(
+            active_edge_ids={"dispatch_kqapro", "dispatch_sciqa"},
+        )
+        assert 'data-edge-id="dispatch_kqapro" data-state="active"' in out
+        assert 'data-edge-id="dispatch_sciqa" data-state="active"' in out
+        # Not requested → not marked active.
+        assert 'data-edge-id="return_kqapro" data-state="active"' not in out
+
+    def test_default_mode_aria_label_says_nothing_about_federation(self):
+        out = render_orchestrator_svg()
+        assert "federated" not in out.lower()
+        assert 'aria-label="Orchestrator multi-agent flow"' in out
+
+    def test_federated_mode_mentions_federation_in_aria_label(self):
+        out = render_orchestrator_svg(mode="federated")
+        assert "federated" in out.lower()
+        assert out.startswith('<svg class="lifecycle-svg orchestrator-svg"')
+
+    def test_router_mode_is_equivalent_to_default(self):
+        assert render_orchestrator_svg(mode="router") == render_orchestrator_svg()
+
+    def test_renders_fine_with_both_specialists_active_and_federated_mode(self):
+        # End-to-end smoke: nothing about combining "both active" + the
+        # federated label breaks the renderer.
+        out = render_orchestrator_svg(
+            {"sub_kqapro", "sub_kqapro_main", "sub_sciqa", "sub_sciqa_main", "orch_combine"},
+            {"orch_user", "orch_probe", "orch_dispatch"},
+            current_label="fusing answers…",
+            active_edge_ids={"dispatch_kqapro", "dispatch_sciqa"},
+            mode="federated",
+        )
+        assert out.startswith("<svg") and out.endswith("</svg>")
+        for nid in ("sub_kqapro", "sub_sciqa", "orch_combine"):
+            assert f'data-id="{nid}" data-state="active"' in out
+        assert "fusing answers…" in out

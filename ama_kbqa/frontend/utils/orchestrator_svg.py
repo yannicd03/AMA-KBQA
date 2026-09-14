@@ -7,10 +7,15 @@ Each sub-agent is drawn as a container with three Pre / Main / Post mini-boxes
 echoing the single-agent lifecycle (Fig. 1). The two specialists are the real
 registered agents — **KQAPro** and **SciQA**.
 
-Lighting is driven by the live trace: the routed specialist's container lights
-while its ``delegate`` span is open, and its Pre/Main/Post minis track that
-sub-agent's internal progress. The specialist that is not dispatched stays idle
-(dimmed), reproducing the "inactive sub-agent" look of the paper figure.
+Lighting is driven by the live trace: each dispatched specialist's container
+lights while its ``delegate`` span is open, and its Pre/Main/Post minis track
+that sub-agent's internal progress. Router (single-dispatch) runs route to
+exactly one specialist, so the other stays idle (dimmed), reproducing the
+"inactive sub-agent" look of the paper figure. Federated runs can dispatch
+both specialists concurrently — in that case both containers light at once,
+each independently tracking its own Pre/Main/Post progress, and Answer
+Combination lights when the fusion step (rather than just the run's own
+close) actually runs.
 
 Like ``lifecycle_svg``, the renderer is pure-Python and Streamlit-free. The SVG
 is tagged ``lifecycle-svg orchestrator-svg`` so it reuses the lifecycle CSS in
@@ -216,6 +221,7 @@ def render_orchestrator_svg(
     current_label: Optional[str] = None,
     *,
     active_edge_ids: Iterable[str] = (),
+    mode: Optional[str] = None,
     width: int = CANVAS_W,
     height: int = CANVAS_H,
 ) -> str:
@@ -225,6 +231,11 @@ def render_orchestrator_svg(
     ``lifecycle_mapping`` plus the per-container ``*_pre/_main/_post`` minis.
     Nodes carry ``data-state`` (``idle``/``visited``/``active``); the CSS in
     ``styling.py`` colours them.
+
+    ``mode`` is a purely cosmetic hint for the figure's ``aria-label``
+    (e.g. ``"federated"``) — it does not change which nodes/edges can light;
+    that is entirely driven by the trace. Omit it (or pass ``"router"``) for
+    the default single-dispatch label.
     """
     active = set(active_node_ids)
     visited = set(visited_node_ids) | active
@@ -261,11 +272,14 @@ def render_orchestrator_svg(
             f' text-anchor="middle">{escape(current_label)}</text>'
         )
 
+    aria_label = "Orchestrator multi-agent flow"
+    if mode == "federated":
+        aria_label += " (federated: may dispatch both specialists)"
     svg_open = (
         f'<svg class="lifecycle-svg orchestrator-svg"'
         f' xmlns="http://www.w3.org/2000/svg"'
         f' viewBox="0 -4 {width} {height}" width="100%"'
-        f' role="img" aria-label="Orchestrator multi-agent flow">'
+        f' role="img" aria-label="{escape(aria_label)}">'
     )
     return (
         svg_open

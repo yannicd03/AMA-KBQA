@@ -184,6 +184,48 @@ def orchestrator_span_to_node_ids(
                 return [mapped[1]]
         return []
 
+    # Federated dispatch only: the orchestrator fuses the specialists'
+    # answers with one LLM call under a `synthesis`/`fuse` span (see
+    # `Orchestrator._fuse_answers`). Light Answer Combination the instant
+    # fusion actually starts, rather than only at the very end — this is the
+    # accurate signal for a federated run. Single/router dispatch never emits
+    # this span (there is nothing to fuse), so `agent_run` close (above)
+    # remains the only Answer Combination signal for that path.
+    if kind == "synthesis" and name == "fuse":
+        if phase == "open":
+            return ["orch_combine"]
+        return []
+
+    return []
+
+
+def orchestrator_span_to_edge_ids(
+    kind: str,
+    name: str,
+    phase: str = "close",
+    attributes: Optional[dict] = None,
+) -> list[str]:
+    """Return orchestrator-figure *edge* ids that should light for a span.
+
+    Mirrors ``orchestrator_span_to_node_ids`` but for the dispatch/return
+    arrows: a ``delegate`` span opening lights the ``dispatch_<agent>`` arrow
+    into that sub-agent's container, and closing lights the
+    ``return_<agent>`` arrow back to Answer Combination. Edge ids must match
+    the ``id=`` set on the corresponding ``OEdge`` in ``orchestrator_svg.py``.
+    """
+    attributes = attributes or {}
+    if kind != "delegate":
+        return []
+    sub = attributes.get("sub_agent") or ""
+    mapped = ORCH_SUBAGENTS.get(sub)
+    if not mapped:
+        return []
+    _, container_id = mapped
+    suffix = container_id.removeprefix("sub_")
+    if phase == "open":
+        return [f"dispatch_{suffix}"]
+    if phase == "close":
+        return [f"return_{suffix}"]
     return []
 
 
