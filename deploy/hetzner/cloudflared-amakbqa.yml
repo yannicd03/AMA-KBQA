@@ -1,0 +1,14 @@
+# cloudflared ingress for the public demo on the Hetzner box.
+#
+# Installed to ~/.cloudflared/amakbqa.yml and run by cloudflared-amakbqa.service.
+# The tunnel credentials JSON is secret and lives only on the server.
+# amakbqa-next.yanlab.de is the staging hostname used to smoke-test a deploy
+# before amakbqa.yanlab.de is routed to this tunnel.
+tunnel: 00000000-0000-0000-0000-000000000000
+credentials-file: /home/yannic/.cloudflared/00000000-0000-0000-0000-000000000000.json
+ingress:
+  - hostname: amakbqa.yanlab.de
+    service: http://localhost:8503
+  - hostname: amakbqa-next.yanlab.de
+    service: http://localhost:8503
+  - service: http_status:404
