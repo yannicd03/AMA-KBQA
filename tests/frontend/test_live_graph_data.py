@@ -772,6 +772,370 @@ class TestSciqaExplorationExtractors:
         assert ("R12345", "P26", "lit:R12345:P26:0") in _edge_triples(graph)
 
 
+class TestGetResourceSummaryExtractor:
+    # GetResourceSummary returns a hand-built dict (sciqa_server.py:2587). The
+    # two buckets are keyed by the *predicate label* (falling back to the
+    # predicate id) and their entries carry `predicate_id` alongside either
+    # `value` (literal) or `id` + optional `label` (resource link); the `label`
+    # key is present only when the object had an rdfs:label.
+    _RESULT = json.dumps({
+        "resource_id": "R12345",
+        "label": "A COVID-19 detection paper",
+        "literal_values": {
+            "publication year": [{"value": "2021", "predicate_id": "P29"}],
+            "doi": [{"value": "10.1234/abc", "predicate_id": "P26"}],
+        },
+        "resource_links": {
+            "has contribution": [
+                {"id": "R678", "predicate_id": "P31", "label": "Contribution 1"},
+                {"id": "R679", "predicate_id": "P31"},
+            ],
+            "has authors": [{"id": "R700", "predicate_id": "P27", "label": "Jane Doe"}],
+        },
+        "summary_stats": {
+            "literal_predicate_count": 2,
+            "resource_link_count": 2,
+            "total_literal_values": 2,
+            "total_resource_links": 3,
+        },
+        "status": "Found 2 literal predicates and 2 resource links",
+    }, indent=2)
+
+    def test_resource_links_become_entity_edges(self):
+        graph = graph_from_tool_result(
+            "GetResourceSummary", {"resource_id": "R12345"},
+            self._RESULT, source="sciqa",
+        )
+        assert ("R12345", "has contribution", "R678") in _edge_triples(graph)
+        assert ("R12345", "has contribution", "R679") in _edge_triples(graph)
+        assert ("R12345", "has authors", "R700") in _edge_triples(graph)
+        assert graph.nodes["R678"].label == "Contribution 1"
+        # No `label` key on that entry: the id stands in until one arrives.
+        assert graph.nodes["R679"].label == "R679"
+        assert graph.nodes["R700"].source == "sciqa"
+
+    def test_literal_values_become_literal_leaves(self):
+        graph = graph_from_tool_result(
+            "GetResourceSummary", {}, self._RESULT, source="sciqa",
+        )
+        literals = {n.label for n in graph.nodes.values() if n.kind == "literal"}
+        assert literals == {"2021", "10.1234/abc"}
+        assert ("R12345", "publication year", "lit:R12345:publication year:0") \
+            in _edge_triples(graph)
+
+    def test_base_resource_keeps_its_label(self):
+        graph = graph_from_tool_result(
+            "GetResourceSummary", {}, self._RESULT, source="sciqa",
+        )
+        assert graph.nodes["R12345"].label == "A COVID-19 detection paper"
+
+    def test_resource_id_falls_back_to_the_arguments(self):
+        payload = json.dumps({"label": "x", "resource_links": {}}, indent=2)
+        graph = graph_from_tool_result(
+            "GetResourceSummary", {"resource_id": "R99"}, payload, source="sciqa",
+        )
+        assert set(graph.nodes) == {"R99"}
+
+    def test_buckets_are_capped(self):
+        payload = json.dumps({
+            "resource_id": "R1",
+            "label": "hub",
+            "literal_values": {
+                "note": [{"value": f"v{i}", "predicate_id": "P1"} for i in range(30)],
+            },
+            "resource_links": {
+                "cites": [{"id": f"R{i}", "predicate_id": "P2"} for i in range(100, 140)],
+            },
+        }, indent=2)
+        graph = graph_from_tool_result("GetResourceSummary", {}, payload, source="sciqa")
+        literals = [n for n in graph.nodes.values() if n.kind == "literal"]
+        entities = [n for n in graph.nodes.values() if n.kind == "entity"]
+        assert len(literals) == 5           # MAX_ATTR_VALUES
+        assert len(entities) == 1 + 10      # base + MAX_RELATION_TARGETS
+
+    def test_error_payload_yields_nothing(self):
+        payload = json.dumps({"error": "Error in GetResourceSummary: boom"}, indent=2)
+        assert graph_from_tool_result(
+            "GetResourceSummary", {}, payload, source="sciqa"
+        ).is_empty()
+
+    def test_wrongly_shaped_buckets_yield_only_the_base(self):
+        payload = json.dumps({
+            "resource_id": "R1", "label": "x",
+            "literal_values": "nope", "resource_links": ["nope"],
+        }, indent=2)
+        graph = graph_from_tool_result("GetResourceSummary", {}, payload, source="sciqa")
+        assert set(graph.nodes) == {"R1"}
+        assert not graph.edges
+
+
+class TestGetNodeLabelExtractor:
+    # GetNodeLabel returns a hand-built dict (kqapro_server.py:713); every
+    # fixture here mirrors one of its three exits, with the server's own
+    # json.dumps(..., indent=2) formatting.
+    _FOUND = json.dumps({
+        "node_id": "Q25191",
+        "label": "Christopher Nolan",
+        "node_type": "entity",
+        "status": "Found label for Q25191",
+    }, indent=2)
+
+    _NO_LABEL = json.dumps({
+        "node_id": "Q9999999",
+        "label": None,
+        "node_type": "unknown",
+        "status": "No label found for Q9999999",
+    }, indent=2)
+
+    _ERROR = json.dumps({
+        "error": "Error resolving label for Q25191: connection refused",
+        "node_id": "Q25191",
+    }, indent=2)
+
+    def test_resolved_label_becomes_an_entity_node(self):
+        graph = graph_from_tool_result(
+            "GetNodeLabel", {"node_id": "Q25191"}, self._FOUND, source="kqapro",
+        )
+        assert set(graph.nodes) == {"Q25191"}
+        node = graph.nodes["Q25191"]
+        assert node.label == "Christopher Nolan"
+        assert node.kind == "entity"       # so it upgrades, never downgrades
+        assert node.source == "kqapro"
+        assert not graph.edges
+
+    def test_null_label_yields_nothing(self):
+        # An id without a label is exactly what the rest of the pipeline
+        # already draws; adding an isolated bare node would be noise.
+        assert graph_from_tool_result(
+            "GetNodeLabel", {"node_id": "Q9999999"}, self._NO_LABEL, source="kqapro",
+        ).is_empty()
+
+    def test_error_payload_yields_nothing(self):
+        assert graph_from_tool_result(
+            "GetNodeLabel", {"node_id": "Q25191"}, self._ERROR, source="kqapro",
+        ).is_empty()
+
+    def test_missing_label_key_yields_nothing(self):
+        payload = json.dumps({"node_id": "Q1", "status": "weird"}, indent=2)
+        assert graph_from_tool_result(
+            "GetNodeLabel", {}, payload, source="kqapro"
+        ).is_empty()
+
+    def test_node_id_falls_back_to_the_arguments(self):
+        payload = json.dumps({"label": "Christopher Nolan"}, indent=2)
+        graph = graph_from_tool_result(
+            "GetNodeLabel", {"node_id": "Q25191"}, payload, source="kqapro",
+        )
+        assert graph.nodes["Q25191"].label == "Christopher Nolan"
+
+    def test_non_string_id_never_raises(self):
+        payload = json.dumps({"node_id": 42, "label": "Forty-two"}, indent=2)
+        graph = graph_from_tool_result("GetNodeLabel", {}, payload, source="kqapro")
+        assert graph.nodes["42"].label == "Forty-two"
+
+    def test_non_string_label_yields_nothing(self):
+        payload = json.dumps({"node_id": "Q1", "label": 1988}, indent=2)
+        assert graph_from_tool_result(
+            "GetNodeLabel", {}, payload, source="kqapro"
+        ).is_empty()
+
+
+class TestGetResourceLabelExtractor:
+    # sciqa_server.py:2026 - the SciQA twin, keyed `resource_id`.
+    _FOUND = json.dumps({
+        "resource_id": "R12345",
+        "label": "A COVID-19 detection paper",
+        "status": "Found",
+    }, indent=2)
+
+    _NOT_FOUND = json.dumps({
+        "resource_id": "R99999",
+        "label": None,
+        "status": "Not found",
+    }, indent=2)
+
+    def test_resolved_label_becomes_an_entity_node(self):
+        graph = graph_from_tool_result(
+            "GetResourceLabel", {"resource_id": "R12345"}, self._FOUND, source="sciqa",
+        )
+        assert graph.nodes["R12345"].label == "A COVID-19 detection paper"
+        assert graph.nodes["R12345"].source == "sciqa"
+
+    def test_not_found_yields_nothing(self):
+        assert graph_from_tool_result(
+            "GetResourceLabel", {}, self._NOT_FOUND, source="sciqa"
+        ).is_empty()
+
+    def test_error_payload_yields_nothing(self):
+        payload = json.dumps({"error": "Error in GetResourceLabel: boom"}, indent=2)
+        assert graph_from_tool_result(
+            "GetResourceLabel", {}, payload, source="sciqa"
+        ).is_empty()
+
+
+class TestBatchLabelExtractors:
+    # kqapro_server.py:810 / sciqa_server.py:2080. Same response shape on both
+    # sides, down to the `not_found` list and the `status` string.
+    _KQA = json.dumps({
+        "resolved": {"Q25191": "Christopher Nolan", "Q3772": "Inception"},
+        "not_found": ["Q9999999"],
+        "status": "Resolved 2/3 entities",
+    }, indent=2)
+
+    _SCI = json.dumps({
+        "resolved": {"R12345": "A COVID-19 detection paper"},
+        "not_found": ["R99999"],
+        "status": "Resolved 1/2 resources",
+    }, indent=2)
+
+    def test_resolved_entries_become_entity_nodes(self):
+        graph = graph_from_tool_result(
+            "BatchGetNodeLabels", {"node_ids": ["Q25191", "Q3772", "Q9999999"]},
+            self._KQA, source="kqapro",
+        )
+        assert _labels(graph) == {
+            "Q25191": "Christopher Nolan", "Q3772": "Inception",
+        }
+        assert all(n.kind == "entity" for n in graph.nodes.values())
+        assert not graph.edges
+
+    def test_not_found_ids_are_not_drawn(self):
+        graph = graph_from_tool_result(
+            "BatchGetNodeLabels", {}, self._KQA, source="kqapro",
+        )
+        assert "Q9999999" not in graph.nodes
+
+    def test_sciqa_batch_uses_the_same_shape(self):
+        graph = graph_from_tool_result(
+            "BatchGetResourceLabels", {"resource_ids": ["R12345", "R99999"]},
+            self._SCI, source="sciqa",
+        )
+        assert _labels(graph) == {"R12345": "A COVID-19 detection paper"}
+        assert graph.nodes["R12345"].source == "sciqa"
+
+    def test_no_ids_early_out_yields_nothing(self):
+        # kqapro_server.py:815 and sciqa_server.py:2097 word this differently.
+        assert graph_from_tool_result(
+            "BatchGetNodeLabels", {}, json.dumps({"status": "No IDs"}, indent=2),
+            source="kqapro",
+        ).is_empty()
+        assert graph_from_tool_result(
+            "BatchGetResourceLabels", {},
+            json.dumps({"status": "No IDs provided"}, indent=2), source="sciqa",
+        ).is_empty()
+
+    def test_error_payload_yields_nothing(self):
+        payload = json.dumps({"error": "Error in batch label resolution: boom"}, indent=2)
+        assert graph_from_tool_result(
+            "BatchGetNodeLabels", {}, payload, source="kqapro"
+        ).is_empty()
+
+    def test_null_and_non_string_labels_are_skipped(self):
+        payload = json.dumps({
+            "resolved": {"Q1": None, "Q2": "", "Q3": 7, "Q4": "Real Label"},
+            "not_found": [],
+            "status": "Resolved 4/4 entities",
+        }, indent=2)
+        graph = graph_from_tool_result(
+            "BatchGetNodeLabels", {}, payload, source="kqapro",
+        )
+        assert _labels(graph) == {"Q4": "Real Label"}
+
+    def test_wrongly_shaped_resolved_yields_nothing(self):
+        payload = json.dumps({"resolved": ["Q1", "Q2"], "not_found": []}, indent=2)
+        assert graph_from_tool_result(
+            "BatchGetNodeLabels", {}, payload, source="kqapro"
+        ).is_empty()
+
+    def test_batch_is_capped(self):
+        payload = json.dumps({
+            "resolved": {f"Q{i}": f"Entity {i}" for i in range(200)},
+            "not_found": [],
+            "status": "Resolved 200/200 entities",
+        }, indent=2)
+        graph = graph_from_tool_result(
+            "BatchGetNodeLabels", {}, payload, source="kqapro",
+        )
+        assert len(graph.nodes) == 50       # MAX_BATCH_LABELS
+
+
+class TestLabelUpgradeMerge:
+    """The bug this extractor family exists for.
+
+    In the KQAPro fast path the agent calls `GetNodeSummary` on the film and
+    then resolves the answer entity with `GetNodeLabel` alone, and the run
+    takes a single journal snapshot (right after `FindNode`). Without the
+    label extractor the answer node stays "Q25191": the panel shows an opaque
+    id and `answer_node_ids` cannot match it against the answer sentence.
+    """
+
+    _SUMMARY = json.dumps({
+        "node_id": "Q25188",
+        "name": "Inception",
+        "node_type": "entity",
+        "attributes": {"publication date": ["2010"]},
+        "relations": {"director": ["Q25191"]},
+        "summary_stats": {"attribute_count": 1, "relation_count": 1},
+        "status": "Success",
+    })
+
+    _LABEL = json.dumps({
+        "node_id": "Q25191",
+        "label": "Christopher Nolan",
+        "node_type": "entity",
+        "status": "Found label for Q25191",
+    }, indent=2)
+
+    def test_get_node_label_upgrades_the_neighbour_and_highlights_it(self):
+        summary = graph_from_tool_result(
+            "GetNodeSummary", {"node_id": "Q25188"}, self._SUMMARY, source="kqapro",
+        )
+        assert summary.nodes["Q25191"].label == "Q25191"     # id stands in
+
+        label = graph_from_tool_result(
+            "GetNodeLabel", {"node_id": "Q25191"}, self._LABEL, source="kqapro",
+        )
+        merged = summary.merge(label)
+
+        node = merged.nodes["Q25191"]
+        assert node.label == "Christopher Nolan"
+        assert node.kind == "entity"
+        # The neighbour edge survives the upgrade, and the tooltip no longer
+        # claims the label is pending.
+        assert ("Q25188", "director", "Q25191") in _edge_triples(merged)
+        assert "label pending" not in node.title
+
+        highlighted = answer_node_ids(merged, "The director is Christopher Nolan.")
+        assert "Q25191" in highlighted
+        assert "Q25188" not in highlighted
+
+    def test_the_upgrade_is_order_independent(self):
+        summary = graph_from_tool_result(
+            "GetNodeSummary", {}, self._SUMMARY, source="kqapro",
+        )
+        label = graph_from_tool_result(
+            "GetNodeLabel", {}, self._LABEL, source="kqapro",
+        )
+        merged = label.merge(summary)
+        assert merged.nodes["Q25191"].label == "Christopher Nolan"
+        assert ("Q25188", "director", "Q25191") in _edge_triples(merged)
+
+    def test_batch_labels_upgrade_the_same_way(self):
+        summary = graph_from_tool_result(
+            "GetNodeSummary", {}, self._SUMMARY, source="kqapro",
+        )
+        batch = graph_from_tool_result(
+            "BatchGetNodeLabels", {},
+            json.dumps({
+                "resolved": {"Q25191": "Christopher Nolan"},
+                "not_found": [],
+                "status": "Resolved 1/1 entities",
+            }, indent=2),
+            source="kqapro",
+        )
+        assert summary.merge(batch).nodes["Q25191"].label == "Christopher Nolan"
+
+
 class TestSparqlExtractors:
     def test_uri_bindings_become_entities_with_sibling_labels(self):
         result = kqa.SPARQLResponse(

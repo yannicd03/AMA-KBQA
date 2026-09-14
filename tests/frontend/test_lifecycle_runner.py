@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import queue
 import threading
 import time
@@ -771,6 +772,32 @@ class TestMakeListener:
         assert "Q937" in graph_info["graph"].nodes
         # The worker leaves the source blank; drain_into stamps it.
         assert graph_info["graph"].nodes["Q937"].source == ""
+
+    def test_label_lookup_close_enqueues_a_graph_delta(self):
+        # GetNodeLabel is the only tool that resolves the answer entity on the
+        # KQAPro fast path, so its result has to reach the panel through the
+        # same worker-side hop as the exploration tools.
+        q: queue.Queue = queue.Queue()
+        recorder = TraceRecorder()
+        recorder.add_listener(make_listener(q))
+
+        with recorder.span_sync(
+            "tool_call", "GetNodeLabel",
+            attributes={"tool_name": "GetNodeLabel"},
+            payload={"arguments": {"node_id": "Q25191"}},
+        ) as span:
+            span.set_payload("result", json.dumps({
+                "node_id": "Q25191",
+                "label": "Christopher Nolan",
+                "node_type": "entity",
+                "status": "Found label for Q25191",
+            }, indent=2))
+
+        items = self._drain(q)
+        assert [phase for phase, _ in items] == ["open", "close", "__graph__"]
+        graph_info = items[2][1]
+        assert graph_info["tool"] == "GetNodeLabel"
+        assert graph_info["graph"].nodes["Q25191"].label == "Christopher Nolan"
 
     def test_non_allow_listed_tool_enqueues_no_delta(self):
         q: queue.Queue = queue.Queue()

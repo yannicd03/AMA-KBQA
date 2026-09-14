@@ -55,6 +55,7 @@ MAX_CANDIDATES = 10
 MAX_RELATION_TARGETS = 10
 MAX_ATTR_VALUES = 5
 MAX_SPARQL_NODES = 25
+MAX_BATCH_LABELS = 50
 
 
 NodeKind = Literal["entity", "literal", "candidate"]
@@ -94,6 +95,12 @@ GRAPH_TOOLS: frozenset[str] = frozenset({
     # SciQA exploration
     "GetRelationTargets",
     "GetResourceDetails",
+    "GetResourceSummary",
+    # Label resolution (both KGs)
+    "GetNodeLabel",
+    "BatchGetNodeLabels",
+    "GetResourceLabel",
+    "BatchGetResourceLabels",
     # Raw SPARQL (nodes only, no edges)
     "RunSPARQL",
     "RunORKGSPARQL",
@@ -103,6 +110,15 @@ _SEARCH_TOOLS = frozenset({
     "FindNode", "LookupEntityByName", "FindByAttribute",
     "FindResource", "LookupResourceByLabel",
 })
+
+# Label lookups. They add no structure, only the one thing the rest of the
+# pipeline cannot supply: the human-readable name of a node the agent already
+# holds an id for. In the KQAPro fast path the answer entity is resolved by
+# `GetNodeLabel` alone and the run takes a single journal snapshot (right
+# after `FindNode`), so without these the answer node is drawn as "Q25191"
+# and `answer_node_ids` cannot match it against the answer text.
+_LABEL_TOOLS = frozenset({"GetNodeLabel", "GetResourceLabel"})
+_BATCH_LABEL_TOOLS = frozenset({"BatchGetNodeLabels", "BatchGetResourceLabels"})
 
 
 # ---------------------------------------------------------------------------
@@ -738,6 +754,12 @@ def graph_from_tool_result(
     try:
         if tool_name in _SEARCH_TOOLS:
             _extract_search_matches(graph, payload, source=source)
+        elif tool_name in _LABEL_TOOLS:
+            _extract_resolved_label(graph, payload, arguments, source=source)
+        elif tool_name in _BATCH_LABEL_TOOLS:
+            _extract_resolved_label_batch(graph, payload, source=source)
+        elif tool_name == "GetResourceSummary":
+            _extract_resource_summary(graph, payload, arguments, source=source)
         elif tool_name == "GetNodeSummary":
             _extract_node_summary(graph, payload, source=source)
         elif tool_name == "GetRelationDetails":
@@ -777,6 +799,92 @@ def _extract_search_matches(graph: GraphData, payload: dict, *, source: str) -> 
         )
         if node is not None:
             _put_node(graph, node)
+
+
+def _extract_resolved_label(
+    graph: GraphData, payload: dict, arguments: dict, *, source: str,
+) -> None:
+    """GetNodeLabel (kqapro_server.py:713) / GetResourceLabel (sciqa_server.py:2026).
+
+    Both return ``{<id key>, label, status}`` and both write ``label: None``
+    when the KG has no rdfs:label, plus ``{"error": ..., ...}`` on a SPARQL
+    failure. A node is emitted only for a non-empty string label: an id
+    without a label is exactly what the rest of the pipeline already draws,
+    so emitting one here would add an isolated, information-free node.
+
+    The node is a plain ``entity``, which is what makes the upgrade work:
+    `GraphData.merge` prefers a real label over an id-as-label, so the
+    neighbour `GetNodeSummary` drew as "Q25191" becomes "Christopher Nolan".
+    """
+    raw_id = (
+        payload.get("node_id")
+        or payload.get("resource_id")
+        or arguments.get("node_id")
+        or arguments.get("resource_id")
+    )
+    label = payload.get("label")
+    if not raw_id or not isinstance(label, str) or not label.strip():
+        return
+    node = _entity_node(raw_id, label, source=source)
+    if node is not None:
+        _put_node(graph, node)
+
+
+def _extract_resolved_label_batch(graph: GraphData, payload: dict, *, source: str) -> None:
+    """BatchGetNodeLabels (kqapro_server.py:810) / BatchGetResourceLabels (sciqa_server.py:2080).
+
+    ``{"resolved": {id: label}, "not_found": [...], "status": ...}``. The
+    early-out (``{"status": "No IDs"}``) and the error payload carry no
+    `resolved` key and yield nothing. `not_found` ids are deliberately not
+    drawn: the tool proved there is no label for them, so they would be noise.
+    """
+    resolved = payload.get("resolved")
+    if not isinstance(resolved, dict):
+        return
+    for raw_id, label in list(resolved.items())[:MAX_BATCH_LABELS]:
+        if not isinstance(label, str) or not label.strip():
+            continue
+        node = _entity_node(raw_id, label, source=source)
+        if node is not None:
+            _put_node(graph, node)
+
+
+def _extract_resource_summary(
+    graph: GraphData, payload: dict, arguments: dict, *, source: str,
+) -> None:
+    """GetResourceSummary's plain dict (sciqa_server.py:2487, response at :2587).
+
+    The SciQA counterpart of `GetNodeSummary`, and split the same way, only
+    under two keys instead of `attributes`/`relations`:
+    ``literal_values: {predicate: [{value, predicate_id}]}`` and
+    ``resource_links: {predicate: [{id, predicate_id, label?}]}`` (the `label`
+    key is present only when the object carried an rdfs:label). Both entry
+    shapes are the ORKG ``{id, label} | {value}`` shape `_absorb_target_entry`
+    already reads. The predicate key is the human-readable predicate label
+    where the server had one, falling back to the predicate id.
+    """
+    base_raw = payload.get("resource_id") or arguments.get("resource_id")
+    if not base_raw:
+        return
+    base = _entity_node(base_raw, payload.get("label"), source=source)
+    if base is None:
+        return
+    _put_node(graph, base)
+
+    for bucket, cap in (
+        (payload.get("resource_links"), MAX_RELATION_TARGETS),
+        (payload.get("literal_values"), MAX_ATTR_VALUES),
+    ):
+        if not isinstance(bucket, dict):
+            continue
+        for predicate, entries in bucket.items():
+            if not isinstance(entries, list):
+                continue
+            for index, entry in enumerate(entries[:cap]):
+                _absorb_target_entry(
+                    graph, base.id, str(predicate), index, entry,
+                    source=source, provenance="GetResourceSummary",
+                )
 
 
 def _extract_node_summary(graph: GraphData, payload: dict, *, source: str) -> None:
