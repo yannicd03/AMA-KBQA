@@ -1,6 +1,6 @@
 # PRD: Live knowledge-graph panel for the demo frontend
 
-**Status:** ✅ Implemented on `demo-v2-graph` (phases 1-3), acceptance re-run pending merge into `demo-v2-int`
+**Status:** ✅ Implemented and merged into `demo-v2-int` @ `040b71d` (2026-09-14); staging on Hetzner per SOP §9 pending
 **Owner:** Yannic · **Written:** 2026-09-14
 **Scope:** demo frontend only (`ama_kbqa/frontend/`), plus one config flag and one read-only accessor on the orchestrator. No MCP-server, prompt, or agent-loop behaviour changes.
 
