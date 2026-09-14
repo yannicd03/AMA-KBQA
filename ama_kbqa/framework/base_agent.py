@@ -1331,7 +1331,11 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             })
             return
 
-        tool_call_id = f"fast_path_{len(self.tool_call_durations)}_{func_name}"
+        # Exactly 9 alphanumeric chars: Mistral's chat template (KIT's vLLM) keeps
+        # only the last 9 chars of a tool-call id and rejects anything but
+        # [a-zA-Z0-9], so the old "fast_path_<n>_<tool>" became "_FindNode" and
+        # failed with a 400. Other providers accept any id; random keeps it unique.
+        tool_call_id = os.urandom(5).hex()[:9]
         self._messages.append({
             "role": "assistant",
             "content": None,
