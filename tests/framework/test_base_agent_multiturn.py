@@ -103,9 +103,10 @@ def test_keep_history_false_is_legacy_full_reset():
 
     _run(agent.reset(keep_history=False))
 
-    # Stack wiped back to just the system prompt.
+    # Stack wiped back to just the (effective) system prompt, which includes
+    # any mode-specific guidance appended by _get_effective_system_prompt.
     assert agent._messages == [
-        {"role": "system", "content": agent._get_system_prompt()}
+        {"role": "system", "content": agent._get_effective_system_prompt()}
     ]
     # Catalog flag cleared so the next ask re-injects it onto the fresh stack.
     assert agent._catalog_injected is False
