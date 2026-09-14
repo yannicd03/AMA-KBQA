@@ -70,6 +70,45 @@ def test_missing_data_file_degrades_gracefully(tmp_path, monkeypatch):
     assert pricing.estimate_cost_usd("anything", 1, 1) is None
 
 
+class TestRuntimePricingRegistry:
+    """The booth picker registers real prices for OpenRouter/DeepSeek models,
+    whose ids are absent from the shipped KIT table."""
+
+    @pytest.fixture(autouse=True)
+    def _empty_registry(self, monkeypatch):
+        monkeypatch.setattr(pricing, "_RUNTIME_PRICING", {})
+
+    def test_registered_model_is_priced(self):
+        pricing.register_runtime_pricing("vendor/model", 1e-6, 2e-6)
+        assert pricing.estimate_cost_usd("vendor/model", 1000, 500) == pytest.approx(0.002)
+
+    def test_registry_beats_the_static_table(self):
+        table = pricing._load()
+        model = next(
+            m for m, e in table["models"].items()
+            if e.get("prompt_usd_per_token") is not None
+        )
+        pricing.register_runtime_pricing(model, 1e-3, 1e-3)
+        assert pricing.get_model_pricing(model)["prompt_usd_per_token"] == pytest.approx(1e-3)
+
+    def test_unregistered_model_still_returns_none(self):
+        pricing.register_runtime_pricing("vendor/model", 1e-6, 2e-6)
+        assert pricing.get_model_pricing("vendor/other") is None
+        assert pricing.estimate_cost_usd("vendor/other", 1000, 1000) is None
+
+    def test_half_known_price_is_ignored(self):
+        # A partial registration must not shadow the static table with an
+        # entry the estimator cannot use.
+        pricing.register_runtime_pricing("vendor/model", 1e-6, None)
+        assert pricing.get_model_pricing("vendor/model") is None
+
+    def test_known_models_is_unaffected(self):
+        before = pricing.known_models()
+        pricing.register_runtime_pricing("vendor/model", 1e-6, 2e-6)
+        assert pricing.known_models() == before
+        assert "vendor/model" not in pricing.known_models()
+
+
 @pytest.mark.parametrize(
     "cost,expected",
     [

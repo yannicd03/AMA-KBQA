@@ -8,7 +8,12 @@ Run inside the demo frontend container, e.g. on the Hetzner box:
 "KQAPro" or "SciQA". The model defaults to the demo's preferred KIT model and is
 applied the way the sidebar picker applies it (in-memory config plus env vars
 for the MCP subprocesses); the agent then answers one question end to end
-(KIT LLM, Qdrant, Virtuoso, MCP servers). Exit code 0 means a non-empty answer.
+(LLM, Qdrant, Virtuoso, MCP servers). Exit code 0 means a non-empty answer.
+
+The model argument may name an endpoint as "provider:model", e.g.
+"openrouter:deepseek/deepseek-v4-flash" or "deepseek:deepseek-flash", which is
+how the booth build's non-KIT endpoints are smoke-tested. A bare id means KIT,
+as before.
 
 One agent per process on purpose: several agents in one asyncio.run() trip over
 MCP stdio_client teardown across tasks. The demo itself runs each question in
@@ -34,6 +39,24 @@ QUESTIONS = {
 }
 TIMEOUT_S = 300
 
+# Endpoints the model argument may name. Anything else before a colon is part
+# of the model id itself (KIT ids carry no colon today, but a future provider
+# might), so an unknown prefix means "KIT model, taken verbatim" rather than a
+# confusing failure inside the agent.
+KNOWN_PROVIDERS = ("kit", "openrouter", "deepseek")
+
+
+def parse_model_arg(arg: str) -> tuple[str, str]:
+    """Split a "provider:model" argument into its two halves.
+
+    A bare id keeps meaning KIT, which is what every existing invocation of
+    this script passes.
+    """
+    provider, sep, model = arg.partition(":")
+    if sep and provider in KNOWN_PROVIDERS and model:
+        return provider, model
+    return "kit", arg
+
 
 async def ask(agent_name: str, question: str) -> str:
     agent = create_agent(agent_name)
@@ -54,8 +77,10 @@ def main() -> int:
         print(f"usage: demo_smoke_ask.py <agent> [model]; agent is one of {list(QUESTIONS)}")
         return 2
     agent_name = sys.argv[1]
-    model = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_MODEL_PREFERENCE[0]
-    apply_chat_settings(model, 1.0)
+    provider, model = parse_model_arg(
+        sys.argv[2] if len(sys.argv) > 2 else DEFAULT_MODEL_PREFERENCE[0]
+    )
+    apply_chat_settings(model, 1.0, provider=provider)
 
     question = QUESTIONS[agent_name]
     t0 = time.monotonic()
@@ -65,7 +90,10 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         answer, ok = f"EXCEPTION {type(exc).__name__}: {exc}", False
     flat = " ".join(str(answer).split())
-    print(f"[{'OK' if ok else 'FAIL'}] {agent_name} ({time.monotonic() - t0:.0f}s) {model}")
+    print(
+        f"[{'OK' if ok else 'FAIL'}] {agent_name} ({time.monotonic() - t0:.0f}s) "
+        f"{provider}:{model}"
+    )
     print(f"    Q: {question}")
     print(f"    A: {flat[:400]}")
     return 0 if ok else 1

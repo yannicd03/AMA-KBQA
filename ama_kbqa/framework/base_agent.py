@@ -25,6 +25,7 @@ from ama_kbqa.config import (
     get_chat_temperature,
     get_chat_max_tokens,
     get_chat_seed,
+    get_chat_extra_body,
     get_provider_preferences,
     get_auto_inject_journal,
     get_zero_tool_call_retry,
@@ -696,6 +697,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 }
                 if _classify_seed is not None:
                     call_params["seed"] = _classify_seed
+                _classify_extra = get_chat_extra_body()
+                if _classify_extra:
+                    call_params["extra_body"] = _classify_extra
                 response = self._create_with_retry(
                     self.client, call_params, label="classification"
                 )
@@ -2437,6 +2441,12 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         provider_prefs = get_provider_preferences()
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
+        # Merge, never clobber: OpenRouter routing lives under "provider" and
+        # must survive alongside anything the chat provider needs (today,
+        # DeepSeek's thinking switch).
+        _extra = get_chat_extra_body()
+        if _extra:
+            call_params.setdefault("extra_body", {}).update(_extra)
 
         self._trace(f"Calling {self.model} (timeout: {self.request_timeout}s)", COLOR_CYAN)
 
@@ -2522,6 +2532,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         provider_prefs = get_provider_preferences()
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
+        _extra = get_chat_extra_body()
+        if _extra:
+            call_params.setdefault("extra_body", {}).update(_extra)
 
         with self.recorder.span_sync(
             "llm_call",

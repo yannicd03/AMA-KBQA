@@ -29,6 +29,19 @@ base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
 chat_model = "kit.mistral-small-4-119b-a8b"
 embedding_model = "kit.qwen3-embedding-8b"
 
+[deepseek]
+# Direct DeepSeek endpoint (OpenAI-compatible). Key: DEEPSEEK_API_KEY.
+# Chat only; embeddings stay on KIT.
+base_url = "https://api.deepseek.com"
+chat_model = "deepseek-flash"
+# DeepSeek runs every model in thinking mode by default, and a request that
+# carries `tools` then requires each assistant message to be passed back with
+# its `reasoning_content`. Our tool loop synthesises assistant tool_calls
+# messages that have no reasoning to return, so the second turn of a question
+# fails with a 400. false = send thinking.type = "disabled" on chat calls.
+# Only set this to true for single-turn experiments.
+thinking_enabled = false
+
 [llamacpp]
 base_url = "http://localhost:8080/v1"
 chat_model = "local-model"
@@ -83,6 +96,51 @@ rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # from CDN). Off = the page is exactly the pre-feature single-column layout.
 # Override per deployment with AMA_FRONTEND_LIVE_GRAPH=0/1.
 live_graph = true
+
+# Booth build: chat endpoints offered next to the auto-discovered KIT models.
+# An entry is shown only when its provider's API key env var is set. Prices
+# are USD per 1M tokens and are what the booth account is actually billed
+# (OpenRouter entries fall back to the live catalog price when omitted).
+# `default = true` on one entry pre-selects it; otherwise the KIT default
+# preference applies.
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-flash"
+name = "DeepSeek V4 Flash"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "anthropic/claude-sonnet-4.5"
+name = "Claude Sonnet 4.5"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "openai/gpt-5"
+name = "GPT-5"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "google/gemini-2.5-pro"
+name = "Gemini 2.5 Pro"
+
+[[frontend.chat_models]]
+provider = "deepseek"
+id = "deepseek-flash"
+name = "DeepSeek Flash (direct)"
+prompt_usd_per_m = 0.30
+completion_usd_per_m = 1.20
+
+[[frontend.chat_models]]
+provider = "deepseek"
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro (direct)"
+prompt_usd_per_m = 1.32
+completion_usd_per_m = 3.96
 
 [federation]
 enabled = false

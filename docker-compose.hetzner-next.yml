@@ -1,7 +1,11 @@
-# Standalone staging stack for demo v2 on the shared Hetzner box, running
-# alongside the live v1 demo (compose project "amakbqa-demo", checkout
-# ~/amakbqa-demo, see .agent/SOP/hetzner_demo_deployment.md) without
-# touching it.
+# Booth demo stack (built from the `demo-booth` branch) on the shared Hetzner
+# box, running alongside the live v1 demo (compose project "amakbqa-demo",
+# checkout ~/amakbqa-demo, see .agent/SOP/hetzner_demo_deployment.md) without
+# touching it. This is the stack the team shows at SEMANTiCS 2026: the model
+# picker offers OpenRouter and DeepSeek endpoints next to KIT (add
+# OPENROUTER_API_KEY / DEEPSEEK_API_KEY to ./.env on the box; entries whose key
+# is missing are simply hidden) and the demo rate limits are relaxed for
+# presenter use.
 #
 # v2 has no data of its own here: it reuses v1's already-seeded Qdrant and
 # Virtuoso containers read-only, by joining v1's compose network
@@ -40,6 +44,11 @@ services:
       # [retrieval] reranker_enabled = false — see that file's comment for
       # why the demo image can't run the cross-encoder reranker.
       - AMA_RETRIEVAL_RERANKER_ENABLED=false
+      # Presenter usage, not public traffic: the booth operator asks many
+      # questions back to back, so the public demo's throttle would only get
+      # in the way. The public hostname is served by a different stack.
+      - DEMO_MAX_QUERIES_PER_SESSION=500
+      - DEMO_MIN_SECONDS_BETWEEN_QUERIES=1
     volumes:
       # Own config: points chat/embedding/judge/synthesis at KIT, reranker off.
       - ./config.docker.toml:/app/config.toml:ro

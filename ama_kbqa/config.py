@@ -37,13 +37,25 @@ _config_cache: Optional[dict] = None
 CHAT_MODEL_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_MODEL"
 CHAT_TEMPERATURE_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_TEMPERATURE"
 
+# Same mechanism, one level up: which *endpoint* the chat model lives on. The
+# booth build lets the presenter switch between KIT, OpenRouter and DeepSeek,
+# and the model id alone does not say which. Without this env channel the MCP
+# tool servers would keep building a KIT client and post a foreign model id to
+# it ("Model not found"), exactly the failure the model override was added to
+# fix. Embeddings, reranking and synthesis are untouched by this override.
+CHAT_PROVIDER_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_PROVIDER"
+
 # Provider API keys the system can authenticate with. No single one is
 # mandatory (a deployment may run exclusively against KIT, or exclusively
 # against OpenRouter); we only require that *at least one* is present so the
 # system can talk to some LLM provider. The per-provider check in
 # _get_api_key() still enforces that the specific configured provider's key
 # exists when a client is built.
-_PROVIDER_API_KEY_ENV_VARS = ("KIT_API_KEY", "OPENROUTER_API_KEY")
+_PROVIDER_API_KEY_ENV_VARS = ("KIT_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY")
+
+# Chat providers the demo model picker may offer. Kept next to the key map so
+# a new endpoint is added in one place; used to validate [frontend].chat_models.
+_FRONTEND_CHAT_PROVIDERS = ("kit", "openrouter", "deepseek")
 
 
 def assert_provider_api_key_present() -> None:
@@ -96,6 +108,25 @@ def load_config() -> dict:
         raise ValueError(f"Failed to parse config.toml: {e}")
 
 
+def get_chat_provider() -> str:
+    """Get the chat provider ("kit", "openrouter", "deepseek", ...).
+
+    Honors ``AMA_KBQA_CHAT_PROVIDER`` (``CHAT_PROVIDER_OVERRIDE_ENV_VAR``) when
+    set, taking precedence over config.toml. Every reader of
+    ``[llm].chat_provider`` goes through here so a provider switch made in the
+    frontend reaches the MCP tool-server subprocesses too, which inherit the
+    environment but load their own config.toml.
+
+    Returns:
+        str: The chat provider name
+    """
+    override = os.getenv(CHAT_PROVIDER_OVERRIDE_ENV_VAR)
+    if override:
+        return override
+    config = load_config()
+    return config["llm"]["chat_provider"]
+
+
 def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
     """Get an OpenAI client configured for chat/reasoning tasks.
 
@@ -115,8 +146,7 @@ def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
         ValueError: If the configured provider is not supported
         KeyError: If required environment variables are missing
     """
-    config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     return _create_client(provider, model_type="chat", max_retries=max_retries)
 
@@ -150,7 +180,7 @@ def get_chat_model_name() -> str:
     if override:
         return override
     config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
     return config[provider]["chat_model"]
 
 
@@ -246,7 +276,7 @@ def get_chat_model_provider() -> Optional[str]:
         Optional[str]: The provider preference string, or None if not configured
     """
     config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -270,8 +300,7 @@ def get_provider_preferences() -> Optional[dict]:
             "allow_fallbacks": False
         }
     """
-    config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -289,6 +318,39 @@ def get_provider_preferences() -> Optional[dict]:
         "order": [provider_pref],
         "allow_fallbacks": False
     }
+
+
+def get_chat_extra_body() -> dict:
+    """Provider-specific ``extra_body`` fields for a chat-provider request.
+
+    Returns an empty dict for every provider that needs nothing, so a call site
+    can merge unconditionally and OpenRouter/KIT requests stay byte-identical
+    to what they were before this helper existed. OpenRouter routing
+    preferences are NOT included here: they stay in
+    ``get_provider_preferences()`` under the separate ``provider`` key.
+
+    DeepSeek's direct API runs every model in thinking mode by default, and
+    once a request carries ``tools`` it requires the ``reasoning_content`` of
+    each assistant message to be passed back. Our tool loop cannot do that: the
+    fast path synthesises assistant ``tool_calls`` messages itself
+    (``base_agent._append_fast_path_tool_messages``), which have no reasoning to
+    return, so the second turn of any question fails with "The
+    `reasoning_content` in the thinking mode must be passed back to the API".
+    Disabling thinking is the booth-safe trade: reliability over a reasoning
+    trace nobody shows on stage. Set ``[deepseek] thinking_enabled = true`` to
+    opt back in for single-turn experiments. OpenRouter is unaffected because
+    it reconciles this itself.
+
+    Returns:
+        dict: Extra request-body fields, empty when the provider needs none.
+    """
+    provider = get_chat_provider()
+    if provider != "deepseek":
+        return {}
+    config = load_config()
+    if bool(config.get("deepseek", {}).get("thinking_enabled", False)):
+        return {}
+    return {"thinking": {"type": "disabled"}}
 
 
 def _create_client(
@@ -383,6 +445,7 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
     env_var_map = {
         "openrouter": "OPENROUTER_API_KEY",
         "kit": "KIT_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
     }
 
     env_var = env_var_map.get(provider)
@@ -525,7 +588,7 @@ def get_synthesis_client(max_retries: Optional[int] = None) -> OpenAI:
         logger.warning(
             "Synthesis provider not configured, falling back to chat provider"
         )
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
 
     return _create_client(provider, model_type="chat", max_retries=max_retries)
 
@@ -546,7 +609,7 @@ def get_synthesis_model_name() -> str:
         logger.warning(
             "Synthesis model not configured, falling back to chat model"
         )
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
         return config[provider]["chat_model"]
 
 
@@ -672,7 +735,7 @@ def get_synthesis_provider_preferences() -> Optional[dict]:
     if "synthesis" in config and "synthesis_provider" in config["synthesis"]:
         provider = config["synthesis"]["synthesis_provider"]
     else:
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -987,6 +1050,73 @@ def get_frontend_config() -> dict:
     """
     config = load_config()
     return dict(config.get("frontend", {}))
+
+
+def get_frontend_chat_models() -> list[dict]:
+    """Extra chat endpoints the demo model picker offers next to the KIT models.
+
+    Reads the ``[[frontend.chat_models]]`` array of tables. Each entry names a
+    provider, a provider-specific model id, an optional display name, optional
+    prices in USD per 1M tokens, and an optional ``default`` flag.
+
+    Never raises: a malformed or partially hand-edited config must degrade the
+    booth picker to "KIT only" rather than take the whole page down mid-demo,
+    so invalid entries are dropped with a warning and a missing/odd section
+    yields an empty list.
+
+    Returns:
+        list[dict]: Normalized entries with keys ``provider``, ``id``, ``name``
+        (may be ""), ``prompt_usd_per_m`` / ``completion_usd_per_m`` (float or
+        None) and ``default`` (bool), in config order.
+    """
+    raw = get_frontend_config().get("chat_models")
+    if not isinstance(raw, list):
+        if raw is not None:
+            logger.warning(
+                "[frontend].chat_models is not a list of tables; ignoring it"
+            )
+        return []
+
+    def _price(entry: dict, key: str) -> Optional[float]:
+        value = entry.get(key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"Ignoring non-numeric {key}={value!r} in [frontend].chat_models"
+            )
+            return None
+
+    models: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            logger.warning(f"Dropping non-table [frontend].chat_models entry: {entry!r}")
+            continue
+        provider = str(entry.get("provider") or "").strip()
+        model_id = str(entry.get("id") or "").strip()
+        if provider not in _FRONTEND_CHAT_PROVIDERS:
+            logger.warning(
+                f"Dropping [frontend].chat_models entry with unsupported provider "
+                f"{provider!r} (expected one of {list(_FRONTEND_CHAT_PROVIDERS)})"
+            )
+            continue
+        if not model_id:
+            logger.warning(
+                f"Dropping [frontend].chat_models entry for provider {provider!r} "
+                "with an empty id"
+            )
+            continue
+        models.append({
+            "provider": provider,
+            "id": model_id,
+            "name": str(entry.get("name") or "").strip(),
+            "prompt_usd_per_m": _price(entry, "prompt_usd_per_m"),
+            "completion_usd_per_m": _price(entry, "completion_usd_per_m"),
+            "default": bool(entry.get("default", False)),
+        })
+    return models
 
 
 def get_live_graph_enabled() -> bool:

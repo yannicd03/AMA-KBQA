@@ -61,8 +61,9 @@ drill down on an answer.
 #### What you can see
 
 Every answer shows its reasoning trace, how long it took, how many tokens it used,
-and an *illustrative* cost. The cost is for intuition only: this demo runs on a
-free KIT-hosted endpoint, so nobody is actually billed.
+and an *illustrative* cost. KIT-hosted models are free to us, so their cost is
+illustrative. OpenRouter and DeepSeek models are billed at the list price shown
+next to the picker.
 
 #### What can go wrong
 

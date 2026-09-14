@@ -47,10 +47,10 @@ from ama_kbqa.frontend.utils.styling import (
 from ama_kbqa.frontend.utils.trace_panel import render_trace_panel
 from ama_kbqa.frontend.utils.chat_controls import (
     apply_chat_settings,
-    available_models,
-    default_model,
-    display_model_name,
-    price_caption,
+    available_choices,
+    default_choice,
+    display_choice,
+    price_caption_for,
 )
 from ama_kbqa.config import get_chat_temperature, get_live_graph_enabled
 from ama_kbqa.pricing import estimate_cost_usd, format_cost_usd
@@ -112,21 +112,39 @@ selected_agent = _current_agent_selection()
 
 # ── Sidebar: model, temperature, view toggle ─────────────────────────────────
 with st.sidebar:
-    # ── Model & temperature (demo build: KIT endpoint only) ──────────────────
-    _models = available_models()
-    # Default to the pinned demo model (gemma4-31b), not the server config's
-    # chat_model — keeps the default stable regardless of config drift.
-    _default = default_model(_models)
-    _model_idx = _models.index(_default) if _default in _models else 0
-    selected_model = st.selectbox(
+    # ── Model & temperature ──────────────────────────────────────────────────
+    # Entries span endpoints (KIT plus whatever [[frontend.chat_models]] lists
+    # and has an API key), so the selectbox value is "provider:model", not a
+    # bare model id: the same id can exist on two endpoints.
+    _choices, _choice_notices = available_choices()
+    _by_key = {c.key: c for c in _choices}
+    _keys = list(_by_key)
+    # Default from config/preference rather than the server's chat_model, so
+    # the default stays stable regardless of config drift.
+    _default_key = default_choice(_choices).key
+    # A value left in session_state by an earlier run can name a model that has
+    # since left the catalog (or a provider whose key was removed); Streamlit
+    # would raise on an option it cannot find, so drop it and fall back to the
+    # default silently.
+    if st.session_state.get("chat_model_select") not in _keys:
+        st.session_state.pop("chat_model_select", None)
+    _model_idx = _keys.index(_default_key) if _default_key in _keys else 0
+    selected_key = st.selectbox(
         "Model",
-        options=_models,
+        options=_keys,
         index=_model_idx,
-        format_func=display_model_name,
+        format_func=lambda key: display_choice(_by_key[key]),
         key="chat_model_select",
-        help="KIT-hosted chat model. The demo always uses the KIT endpoint.",
+        help=(
+            "Chat model and endpoint. Embeddings, reranking and synthesis "
+            "always stay on KIT."
+        ),
     )
-    _cap = price_caption(selected_model)
+    selected_choice = _by_key[selected_key]
+    selected_model = selected_choice.model
+    for _notice in _choice_notices:
+        st.caption(_notice)
+    _cap = price_caption_for(selected_choice)
     if _cap:
         st.caption(_cap)
     temperature = st.slider(
@@ -141,10 +159,12 @@ with st.sidebar:
     # Apply to the in-memory config so the next run uses them (session only,
     # never written to disk). Switching models starts a fresh conversation,
     # since a persisted multiturn agent is bound to the model it was built with.
-    apply_chat_settings(selected_model, temperature)
-    if st.session_state.get("_active_chat_model") not in (None, selected_model):
+    # The tracked value is the provider-qualified key, so switching endpoints
+    # without changing the model id also drops the agent.
+    apply_chat_settings(selected_model, temperature, provider=selected_choice.provider)
+    if st.session_state.get("_active_chat_model") not in (None, selected_key):
         st.session_state.pop("persistent_agent", None)
-    st.session_state["_active_chat_model"] = selected_model
+    st.session_state["_active_chat_model"] = selected_key
 
     simplified = st.toggle(
         "Simplified view",
@@ -263,6 +283,7 @@ def _persist_completed_run(
     capture_io: StreamlitHTMLCapture,
     selected_agent: str,
     user_message: str,
+    provider: str,
 ) -> None:
     duration = (state.finished_at or time.time()) - (state.started_at or time.time())
     answer = state.answer or ""
@@ -293,6 +314,10 @@ def _persist_completed_run(
         "duration": duration,
         "tokens": tokens_dict,
         "model": getattr(agent, "model", None),
+        # Which endpoint answered. The model id alone is ambiguous across
+        # providers, and an old message must keep showing what it really ran on
+        # after the presenter switches the picker.
+        "provider": provider,
         "trace_events": trace_events,
         "journal_snapshots": journal_snapshots,
         "trace_id": trace_id,
@@ -680,6 +705,7 @@ with body_container:
                         capture_io=capture_io,
                         selected_agent=live_run["agent_name"],
                         user_message=live_run["question"],
+                        provider=selected_choice.provider,
                     )
                 else:
                     err = state.error or "Unknown error"

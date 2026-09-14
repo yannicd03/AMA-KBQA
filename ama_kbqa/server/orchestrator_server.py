@@ -14,6 +14,7 @@ from ama_kbqa.config import (
     get_chat_client,
     get_chat_model_name,
     get_chat_seed,
+    get_chat_extra_body,
     get_provider_preferences,
     get_qdrant_host,
     get_qdrant_port,
@@ -181,6 +182,11 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
             logger.debug(f"Using provider preferences: {provider_prefs}")
+        # Merge, never clobber the "provider" key above. Both retries below
+        # reuse this same call_params, so one merge covers them.
+        chat_extra = get_chat_extra_body()
+        if chat_extra:
+            call_params.setdefault("extra_body", {}).update(chat_extra)
 
         completion = client.chat.completions.create(**call_params)
         content = completion.choices[0].message.content

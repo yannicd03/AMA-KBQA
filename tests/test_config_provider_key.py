@@ -30,5 +30,6 @@ def test_openrouter_key_only_is_accepted(monkeypatch):
 def test_no_key_raises_runtime_error(monkeypatch):
     monkeypatch.delenv("KIT_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="at least one"):
         assert_provider_api_key_present()

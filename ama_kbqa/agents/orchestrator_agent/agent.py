@@ -20,6 +20,7 @@ from chatkit import TransientRetry
 from ama_kbqa.config import (
     assert_provider_api_key_present,
     get_chat_client,
+    get_chat_extra_body,
     get_chat_model_name,
     get_federation_enabled,
     get_federation_max_specialists,
@@ -213,7 +214,19 @@ class Orchestrator:
 
     def _create_with_retry(self, client, call_params: Dict, label: str = "LLM"):
         """chat.completions.create with the same stepped-backoff retry as
-        BaseKBQAAgent (self._retry, shared core in chatkit.retry)."""
+        BaseKBQAAgent (self._retry, shared core in chatkit.retry).
+
+        Every call through here goes to the *chat* provider (routing and
+        fusion; the orchestrator has no synthesis path of its own), so this is
+        the one place that has to apply the provider's extra request body.
+        Doing it here rather than at each call_params literal means a future
+        call site cannot forget it, which for DeepSeek is the difference
+        between a working demo and a 400 on the second turn.
+        """
+        extra = get_chat_extra_body()
+        if extra:
+            call_params.setdefault("extra_body", {}).update(extra)
+
         def _log(exc: BaseException, attempt: int, wait: float) -> None:
             self._trace(
                 f"{COLOR_YELLOW}Transient {label} error (attempt {attempt}, "
