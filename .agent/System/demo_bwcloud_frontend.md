@@ -135,6 +135,116 @@ The main interactive page. Differences from the full-build `pages/1_Chat.py`:
 
 ---
 
+## Answer Contract (Conversational Mode): "Reproduce with SPARQL"
+
+**Added 2026-09-15** (commit `5f05e1d`, `Decisions/0003-sparql-reproduction-in-answers.md`).
+In conversational mode (`synthesis_mode = "conversational"` — this demo line;
+benchmark mode is untouched) every final answer has three sections, enforced
+by `_CONVERSATIONAL_ANSWER_DIRECTIVE` (`ama_kbqa/framework/base_agent.py:75-110`),
+appended to every agent's system prompt via `_get_effective_system_prompt`:
+
+1. The direct answer, as a natural sentence.
+2. **"How I found this:"** — 1-3 bullets naming the entities/tools that produced it.
+3. **"Reproduce with SPARQL:"** — exactly one fenced ` ```sparql ` block holding a
+   single query that retrieves the answer from the graph the specialist used.
+
+### Per-KG hint
+
+`_get_sparql_reproduction_hint()` (empty hook by default on `BaseKBQAAgent`)
+supplies the graph's real URI scheme:
+
+- **KQAPro** (`kqapro_agent/prompts.py::SPARQL_REPRODUCTION_HINT`): `ex:` /
+  `prop:` / `attr:` / `qual:` prefixes, `FROM <http://kqapro.org/kb>`,
+  verified with `RunSPARQL`.
+- **SciQA** (`sciqa_agent/prompts.py::SPARQL_REPRODUCTION_HINT` /
+  `_NO_RAW_SPARQL`): `orkgr:` / `orkgp:` / `orkgc:` prefixes inside
+  `GRAPH <http://sciqa.org/kg>`, verified with `RunORKGSPARQL` — swapped for
+  the no-raw-SPARQL variant when `AMA_SCIQA_DISABLE_RAW_SPARQL` has gated that
+  tool off (`SciQAAgent._get_denied_tool_names()`).
+
+### Verification
+
+While tools are still callable the agent runs its own query once with the raw
+SPARQL tool; if the result contains the answer it prints "Verified against the
+knowledge graph." under the block. If the query errors, returns nothing, or
+tools are no longer callable (the final-answer step forbids them), it prints
+"(not executed)" instead and does not retry.
+
+### Fast path
+
+`_finish_fast_path` (`base_agent.py:1384`) assembles the same three-section
+contract deterministically for KQAPro's 1-hop fast path, which has no final
+LLM turn to write it. `_build_fast_path_reproduction_query`
+(`kqapro_agent/agent.py:244`, KQAPro-only override) rebuilds the fast-path
+lookup as a pasteable query — `ex:<node> prop:<member> ?answer` for a
+relation, or the `attr:` form COALESCE-ing over an intermediate qualifier
+node's `rdf:value` for an attribute — and verifies it with one extra
+`RunSPARQL` call. An unbuildable or empty-result query returns `None`, and the
+caller falls back to the full agent loop rather than emit a
+contract-violating answer.
+
+### Fusion (Federated mode)
+
+The orchestrator's fusion prompt (`_fusion_system_prompt`,
+`orchestrator_agent/agent.py:833`) requires every specialist's SPARQL block to
+be reproduced **character for character** in one combined "Reproduce with
+SPARQL:" section, each labelled with that specialist's
+`AGENT_CONFIG[...]["graph_label"]` ("KQAPro (Wikidata subset)" / "ORKG")
+— merging, rewriting, reformatting, or dropping a block is explicitly
+forbidden, since the two specialists query different endpoints with
+different URI schemes. Acceptance testing has nonetheless observed one case
+of a dropped `FROM` clause despite the rule (informal observation, not
+test-covered — see Known limits below).
+
+### Benchmark mode unaffected
+
+The directive and per-KG hint are appended only when
+`get_synthesis_mode() == "conversational"`; benchmark mode's system prompt is
+byte-identical to before this change, and `Verify` answer normalisation
+(`_normalize_verify_answer`, collapses to "yes"/"no") now applies in
+benchmark mode only (`_finalize_answer_text`, `base_agent.py:632`) — applying
+it in conversational mode would discard the "How I found this:"/"Reproduce
+with SPARQL:" sections a Verify-type answer still owes the user. Tests pin
+both: `tests/framework/test_sparql_block_preservation.py`,
+`tests/test_sparql_reproduction_prompt.py`.
+
+### Two loop bugs fixed (conversational mode only)
+
+1. **`tool_choice` regression.** `tool_choice="required"` was still forced for
+   iterations ≤3 even after the "give your final answer, do NOT call tools"
+   prompt was injected, so the model wrote the real answer as message content
+   plus a throwaway tool call, and the loop's *next* turn — filler content
+   like "Task completed." — silently overwrote it. Fixed: once the answer
+   prompt has been injected, `tool_choice` drops to `"auto"` in conversational
+   mode; a remembered contract-satisfying message
+   (`_satisfies_conversational_contract`, `base_agent.py:1443`, checks for
+   both "How I found this:" and "Reproduce with SPARQL:") is preferred over a
+   final message that doesn't satisfy the contract. Benchmark mode keeps the
+   old `tool_choice` schedule deliberately — it's what the paper's numbers
+   were measured with.
+2. **Verify normalisation** — see "Benchmark mode unaffected" above.
+
+### Known limits
+
+- **ASK queries cannot be verified** through either raw SPARQL tool; the
+  prompts instruct the agent to verify the graph pattern as
+  `SELECT ... LIMIT 1` instead of the printed `ASK` query. Untested end to
+  end.
+- **Query quality is model-dependent** — SciQA in particular tends to emit a
+  `VALUES`-list of the resources it already found rather than a general
+  query.
+- Fusion has been observed dropping a `FROM` clause on at least one run
+  despite the verbatim-preservation rule above.
+
+### Acceptance (2026-09-15, KIT Mistral Small 4)
+
+KQAPro director query executes and returns Christopher Nolan; Router pill
+returns Ulm; SciQA COVID-19-papers query returns the four papers against the
+live ORKG endpoint; a Federated run preserved both specialists' blocks.
+Latency deltas were within noise except SciQA (~+12s median).
+
+---
+
 ## Module: `ama_kbqa/frontend/utils/chat_controls.py`
 
 Sidebar model and temperature controls for the demo. All purely functional helpers
@@ -349,9 +459,22 @@ the popover picker:
 | KQAPro | "Facts from a general knowledge graph (films, places, people). Use for factual lookups." |
 | SciQA | "Scientific research via the ORKG. Use for research papers and contributions." |
 
-`AGENT_SUGGESTIONS` also has per-mode example questions — the Federated entry's
-suggestions deliberately include two cross-graph questions so the fan-out/fusion path
-has something visible to demonstrate.
+`AGENT_SUGGESTIONS` also has per-mode example questions. **Updated 2026-09-15**
+(commit `b8cc8e5`): the Federated entry's two cross-graph pills are now
+"Which notable people have had breast cancer, and what research contributions
+address breast cancer?" and "...epilepsy...effectiveness of antiepileptic
+drugs?", plus the single-domain Einstein pill (to show the router still picks
+one specialist when federation isn't warranted). Both diseases were chosen
+because they exist as grounded entities in **both** graphs — a KQAPro
+(Wikidata) disease entity with `notable_people_with_this_condition` links,
+and an ORKG research problem carrying real contributions/papers — so neither
+half of the fused answer is improvised. Rejected topics, recorded in
+`agent_factory.py`'s comment: malaria/diabetes-prediction (ORKG problems with
+0 contributions), COVID-19 (no KQAPro entity — pre-2020 Wikidata snapshot),
+"models"/"benchmarks" phrasing (tempts the SciQA agent into answering from
+memory), and citation-data questions (ORKG doesn't hold citation counts).
+Expect 2.5-3 minutes per Federated answer (the slower specialist gates the
+run). `scripts/demo_smoke_ask.py`'s Federated question was updated to match.
 
 ---
 
@@ -518,6 +641,7 @@ one completed trace); the landing view stays single-column.
 - [System/project_architecture.md](project_architecture.md) — canonical full-build (`dev`) architecture
 - [System/orchestrator_routing.md](orchestrator_routing.md) — Router vs. Federated dispatch mechanics the two Orchestrator picker entries drive
 - [Decisions/demo-bwcloud-frontend-divergence.md](../Decisions/demo-bwcloud-frontend-divergence.md) — why these divergences exist and what was rejected
+- [Decisions/0003-sparql-reproduction-in-answers.md](../Decisions/0003-sparql-reproduction-in-answers.md) — ADR for the "Reproduce with SPARQL" answer contract and the two loop fixes
 - [Decisions/federated-dispatch-and-fusion.md](../Decisions/federated-dispatch-and-fusion.md) — federated dispatch/fusion ADR; 2026-09-14 addendum covers the per-instance mode switch this frontend uses
 - [Decisions/live-graph-two-source-subgraph.md](../Decisions/live-graph-two-source-subgraph.md): ADR for the live graph panel's journal + tool-result merge design
 - [Decisions/live-trace-and-chat-unification.md](../Decisions/live-trace-and-chat-unification.md) — live trace pipeline (shared with full build)

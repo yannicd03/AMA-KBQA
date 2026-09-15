@@ -306,6 +306,27 @@ env plus `config.docker.toml`'s `[retrieval] reranker_enabled = false`);
 this note is about a bare local dev environment that has neither the
 container's env nor the extra installed.
 
+### Local acceptance needs the ORKG graph
+
+**2026-09-15.** The local dev Virtuoso only holds `<http://kqapro.org/kb>`
+(1.6M triples) — no `<http://sciqa.org/kg>`. The ORKG graph (1.13M triples)
+exists only on the Hetzner box. Any SciQA or Federated acceptance run
+(including the "Reproduce with SPARQL" contract's verification call against
+`RunORKGSPARQL`, see
+[Decisions/0003-sparql-reproduction-in-answers.md](../Decisions/0003-sparql-reproduction-in-answers.md))
+must therefore run either:
+- inside the Hetzner container (`docker exec -i frontend_amakbqa_next ...`,
+  same pattern as the smoke tests below), or
+- locally with `AMA_KBQA_SCIQA_ENDPOINT` pointed at an SSH tunnel to the
+  Hetzner Virtuoso container's IP on the `amakbqa-demo_default` Docker
+  network (`ssh -L <local-port>:<virtuoso-container-ip>:8890 <hetzner-host>`,
+  then set `AMA_KBQA_SCIQA_ENDPOINT=http://127.0.0.1:<local-port>/sparql`).
+
+Skipping this and pointing SciQA at the local (KQAPro-only) Virtuoso doesn't
+error loudly — it just returns empty results, which looks like a retrieval
+bug rather than a missing-graph gap (same failure shape as the reranker
+gotcha above, different root cause).
+
 ### Smoke tests for v2
 
 Use the committed `scripts/demo_smoke_ask.py`, one agent per process (the same
@@ -325,12 +346,23 @@ Pass a model id as the second argument to try another KIT model. The fixed
 questions:
 - Router: "In which city was Albert Einstein born?" (single-domain, should
   route to KQAPro).
-- Federated: a deliberately cross-graph question (Inception's director plus ML
-  evaluation benchmarks), so fan-out and fusion actually engage; the log should
+- Federated: **updated 2026-09-15** (commit `b8cc8e5`) to "Which notable
+  people have had breast cancer, and what research contributions address
+  breast cancer?" — a deliberately cross-graph question grounded in both
+  KQAPro and ORKG data (see `System/demo_bwcloud_frontend.md`'s Federated
+  pills note for why breast cancer/epilepsy replaced the old Inception+ML-
+  benchmarks pair), so fan-out and fusion actually engage; the log should
   show `Routing successful -> federated: kqapro_agent, sciqa_agent` and
-  `Fused answer from [...]`.
+  `Fused answer from [...]`. Budget ~3 minutes (the slower specialist gates
+  the run).
 - KQAPro: "Who is the director of Inception?"
 - SciQA: "What research contributions address COVID-19 detection?"
+
+In conversational mode every answer above also carries the three-section
+"Reproduce with SPARQL" contract (see
+[Decisions/0003-sparql-reproduction-in-answers.md](../Decisions/0003-sparql-reproduction-in-answers.md));
+`demo_smoke_ask.py` prints the full unflattened answer specifically so that
+block is visible in the smoke output, not just the 400-char preview.
 
 Plus a browser check on `amakbqa-next.yanlab.de`:
 - All 4 picker entries present ("Orchestrator (Router)", "Orchestrator
@@ -380,8 +412,14 @@ constraint for whoever ports federation onto that engine next.
 ### Related docs
 - [Decisions/0001-three-branch-demo-split.md](../Decisions/0001-three-branch-demo-split.md) — why a third branch instead of a feature flag on `demo-v2-int`
 - [Decisions/0002-deepseek-thinking-mode-disabled.md](../Decisions/0002-deepseek-thinking-mode-disabled.md) — the `reasoning_content` gotcha below
+- [Decisions/0003-sparql-reproduction-in-answers.md](../Decisions/0003-sparql-reproduction-in-answers.md) — the "Reproduce with SPARQL" answer contract every provider's conversational answers now carry
 - [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) "Model picker (booth build)" — picker mechanics, hiding rules, pricing flow
 - `Tasks/active/booth-demo-providers.md` — the PRD this deploy implements
+
+`demo-booth` carries `demo-v2-int`'s Federated smoke question unchanged (the
+breast-cancer/epilepsy pair, §9 above) — the per-provider smoke test here
+only substitutes KQAPro/Router, since Federated dispatch cost (~3 min) is
+independent of which chat provider answers.
 
 ### What's different from the `demo-v2-int` base
 
@@ -494,5 +532,24 @@ lines confirmed for the agent process and the MCP subprocess):
 HTTP 200 for `http://127.0.0.1:8504/` on the box and for both
 `https://amakbqa-next.yanlab.de/` and `https://amakbqa.yanlab.de/` from
 outside. No errors in the container log; ~6.3 GiB RAM available after the
-deploy. Not yet done on staging: the browser check and an
-`Orchestrator (Federated)` run (the heaviest path); do both before the booth.
+deploy. Later the same morning: `Orchestrator (Federated)` smoke OK (dispatched
+to both specialists and fused, 157 s), and the browser check passed (picker
+lists 3 KIT + 5 OpenRouter + 2 DeepSeek entries, no "hidden" notices, the
+DeepSeek Flash entry shows "$0.300 per 1M in and $1.20 per 1M out (billed)").
+
+### Staging verification, second deploy (2026-09-15 ~14:30 CEST, `c333c1d`)
+
+Redeployed the merge of `demo-v2-int` (federated example questions + the
+"Reproduce with SPARQL" answer contract) via `git checkout --detach
+origin/demo-booth` in `~/amakbqa-next`, image rebuilt, only
+`frontend_amakbqa_next` recreated; `.env` and tunnel untouched, v1 untouched.
+
+| Agent | Model arg | Result | Time | SPARQL block |
+|---|---|---|---|---|
+| KQAPro | (KIT default) | Christopher Nolan | 40 s | yes, verified; executed on the box's Virtuoso → "Christopher Nolan" |
+| KQAPro | `deepseek:deepseek-flash` | Christopher Nolan | 11 s | yes |
+| SciQA | (KIT default) | 4 grounded ORKG contributions | 46–75 s | **missing**: the run hit the tool-call cap and went through synthesis, whose conversational template lacked the section (fix in progress on `demo-v2-sparql`) |
+| Orchestrator (Federated) | (KIT default) | breast-cancer question, fused from both specialists | 170 s | both blocks, labelled KQAPro / ORKG |
+
+HTTP 200 on 8504, `amakbqa-next.yanlab.de` and `amakbqa.yanlab.de`; ~6.5 GiB
+RAM available; no crash loop after 60 s.
