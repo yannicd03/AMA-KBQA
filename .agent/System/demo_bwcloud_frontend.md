@@ -116,8 +116,11 @@ The main interactive page. Differences from the full-build `pages/1_Chat.py`:
   `ORCHESTRATOR_MODES` in `agent_factory.py`. See
   [System/orchestrator_routing.md](orchestrator_routing.md) for the Router vs.
   Federated dispatch mechanics.
-- **Model/temperature controls** are in the sidebar via `render_chat_sidebar()` from
-  `chat_controls.py`. These are KIT-only and session-only.
+- **Model/temperature/provider controls** are inline in `chat.py`'s sidebar block
+  (there is no separate `render_chat_sidebar()` function), backed by the pure
+  helpers in `chat_controls.py`. Session-only (never written to `config.toml`).
+  On `demo-v2-int`/`demo-public` the picker is KIT-only; on `demo-booth` it also
+  offers OpenRouter and DeepSeek — see "Model picker (booth build)" below.
 - **Cost footer** renders `~$X est.` after each answer using `estimate_cost_usd` /
   `format_cost_usd` from `ama_kbqa/pricing.py`.
 - **No Trace Inspector button** (standalone page removed).
@@ -151,21 +154,120 @@ this).
 | `_fetch_kit_models_meta` | `() -> list[dict]` | Cached (`st.cache_data`, 5-min TTL) wrapper around `config_editor.fetch_provider_models_meta("kit")` |
 | `available_models` | `() -> list[str]` | Live KIT models via `_fetch_kit_models_meta` + `filter_selectable_models`; falls back to a small static `_OFFLINE_FALLBACK_MODELS` list on any fetch error |
 | `display_model_name` | `(model: str) -> str` | Endpoint-provided display name if known, else the id with the `kit.` prefix stripped |
-| `price_caption` | `(model: str \| None) -> str \| None` | One-line `$/1M input · $/1M output` string for the sidebar |
-| `apply_chat_settings` | `(model: str, temperature: float) -> None` | Mutates `cfg_module._config_cache` **and** sets `AMA_KBQA_CHAT_MODEL`/`AMA_KBQA_CHAT_TEMPERATURE` in `os.environ` (session-only; never writes to disk) |
+| `price_caption` | `(model: str \| None) -> str \| None` | One-line `$/1M input · $/1M output` string for the sidebar; KIT-only view |
+| `apply_chat_settings` | `(model: str, temperature: float, provider: str = "kit") -> None` | Mutates `cfg_module._config_cache` **and** sets `AMA_KBQA_CHAT_PROVIDER`/`AMA_KBQA_CHAT_MODEL`/`AMA_KBQA_CHAT_TEMPERATURE` in `os.environ` (session-only; never writes to disk). `provider` defaults to `"kit"` so old two-argument call sites are unaffected |
 
-`apply_chat_settings` always sets `chat_provider = "kit"`, enforcing the KIT-only
-constraint at the config level. The env-var half matters because the Orchestrator and
+The env-var half of `apply_chat_settings` matters because the Orchestrator and
 specialist MCP servers run as **subprocesses** that load their own `config.toml`
 independently — mutating this process's in-memory config alone never reaches them
 (see `SOP/hetzner_demo_deployment.md` §4 for the "Model not found" incident this
-fixed).
+fixed for the model id, and §10 for the same failure mode against the provider).
 
-**Why KIT-only:** The public demo is KIT-funded; routing traffic through OpenRouter
-or other providers must not be possible.
+**On `demo-v2-int`/`demo-public`:** every caller passes `provider="kit"` (or omits
+it), so the picker is KIT-only in practice — the public demo is KIT-funded and
+routing traffic through OpenRouter or other providers must not be possible there.
+**On `demo-booth`:** the picker also offers OpenRouter and DeepSeek; see "Model
+picker (booth build)" below.
 
-**Why session-only settings:** The demo runs as a shared public service. Writing
-`config.toml` would persist one visitor's choices for all subsequent visitors.
+**Why session-only settings:** The demo runs as a shared service. Writing
+`config.toml` would persist one visitor's (or, on `demo-booth`, one presenter's)
+choices for all subsequent sessions in the same process.
+
+---
+
+## Model picker (booth build)
+
+**Exists only on `demo-booth`** (commit `f35b2a7`, PRD
+`Tasks/active/booth-demo-providers.md`; rationale in
+[Decisions/0001-three-branch-demo-split.md](../Decisions/0001-three-branch-demo-split.md)).
+`demo-v2-int` and `demo-public` keep the KIT-only picker described above.
+
+### Choice model
+
+`chat_controls.ChatModelChoice` is a frozen dataclass: `provider` (`"kit"` |
+`"openrouter"` | `"deepseek"`), `model` (provider-specific id), `name`
+(display label), `prompt_usd_per_token` / `completion_usd_per_token`
+(`float | None`), `default` (`bool`). Its `key` property is
+`f"{provider}:{model}"` — the model id alone is not unique across providers
+(`deepseek-v4-pro` exists both on OpenRouter and DeepSeek direct), so the
+sidebar `st.selectbox` is keyed by this string, not by the bare id.
+
+`chat_controls.available_choices() -> tuple[list[ChatModelChoice], list[str]]`
+builds the full list:
+1. KIT entries first, exactly what `available_models()` returns today
+   (live `/models` auto-discovery, offline fallback).
+2. Then each `[[frontend.chat_models]]` entry from `config.get_frontend_chat_models()`
+   (`ama_kbqa/config.py`), in config order, filtered by the hiding rules below.
+
+`default_choice(choices)` picks the pre-selected entry: an explicit
+`default = true` in config wins; otherwise the existing KIT
+`DEFAULT_MODEL_PREFERENCE` order applies — the booth build still opens on a
+free, fast KIT model and only spends money when the presenter picks one.
+`display_choice(choice)` renders e.g. `"Claude Sonnet 4.5 · OpenRouter"`.
+
+### Hiding rules
+
+An entry is dropped, with a `st.caption` notice under the picker, when:
+- its provider's API key env var (`OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY`,
+  `chat_controls._PROVIDER_KEY_ENV`) is unset — one notice per provider, not
+  one per model, so a laptop with no DeepSeek key says so once;
+- it's an OpenRouter entry the live catalog
+  (`config_editor.fetch_provider_models_pricing("openrouter")`, cached 5 min
+  via `st.cache_data`, same TTL as the KIT fetch) does not list, or lists
+  without `"tools"` in `supported_parameters` — every agent in this demo
+  answers by calling tools, so a non-tool-capable model would fail on the
+  first question rather than at picker-render time.
+
+If the OpenRouter catalog fetch raises for any reason (no key, HTTP error,
+malformed payload), the configured entries are kept unvalidated and unpriced
+rather than dropped — a flaky network must not empty the picker mid-demo.
+DeepSeek-direct entries are never catalog-checked (DeepSeek has no public
+model-listing endpoint used here); their prices come straight from
+`[[frontend.chat_models]]`.
+
+### Pricing flow
+
+OpenRouter prices: catalog `pricing.prompt`/`pricing.completion` (USD per
+token) fill in whatever `prompt_usd_per_m`/`completion_usd_per_m` the config
+entry left unset. DeepSeek-direct prices: config only
+(`[[frontend.chat_models]]` `prompt_usd_per_m`/`completion_usd_per_m`,
+converted per-token via `chat_controls._per_token`). Every resolved price is
+registered with `pricing.register_runtime_pricing(model, prompt_per_token,
+completion_per_token)` (`ama_kbqa/pricing.py`), which `get_model_pricing`
+consults **before** the static `model_pricing.json` table — this is what
+makes the per-answer `~$x est.` footer work for billed models, including for
+messages answered earlier in the session. `price_caption_for(choice)` labels
+non-KIT captions `"(billed)"`; KIT keeps the existing illustrative caption.
+The About dialog (`app.py`) states this distinction explicitly on
+`demo-booth` ("KIT-hosted models are free to us... OpenRouter and DeepSeek
+models are billed at the list price shown next to the picker").
+
+### Env overrides (reach the MCP subprocesses)
+
+`chat_controls.apply_chat_settings(model, temperature, provider=choice.provider)`
+sets, in addition to the existing model/temperature env vars,
+`os.environ["AMA_KBQA_CHAT_PROVIDER"]`. `config.get_chat_provider()`
+(`CHAT_PROVIDER_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_PROVIDER"`) is the single
+choke point every one of the seven `[llm].chat_provider` readers in
+`config.py` now goes through, so the Orchestrator and specialist MCP
+tool-server subprocesses — spawned with `env=os.environ.copy()` — follow the
+sidebar pick instead of silently posting a foreign model id to the KIT
+endpoint ("Model not found"). Selecting a message's provider is also
+persisted on the message dict (`"provider": choice.provider` in `chat.py`)
+so an old transcript entry keeps showing what it actually ran on after the
+presenter switches the picker.
+
+Config-side: `[deepseek]` section (`base_url`, `chat_model`,
+`thinking_enabled`) in both `config.toml`/`config.docker.toml`;
+`DEEPSEEK_API_KEY` in `_get_api_key`'s env map and `.env_example`;
+`config_editor._PROVIDER_API_KEY_ENV` gained `deepseek`. See
+[Decisions/0002-deepseek-thinking-mode-disabled.md](../Decisions/0002-deepseek-thinking-mode-disabled.md)
+for why chat calls to the deepseek provider also carry
+`config.get_chat_extra_body()`'s `{"thinking": {"type": "disabled"}}`.
+
+Embeddings, reranking, and synthesis are unaffected by any of this — they
+stay on KIT regardless of the chat-endpoint pick, on `demo-booth` as on every
+other branch.
 
 ---
 
@@ -177,13 +279,17 @@ design.
 
 | Function | Signature | Purpose |
 |----------|-----------|---------|
-| `known_models` | `() -> list[str]` | Sorted KIT model IDs in the pricing table |
-| `get_model_pricing` | `(model: str | None) -> dict | None` | Pricing entry or `None` if unknown |
-| `estimate_cost_usd` | `(model, prompt_tokens, completion_tokens) -> float | None` | Illustrative USD estimate |
+| `known_models` | `() -> list[str]` | Sorted KIT model IDs in the pricing table (unaffected by the runtime registry below) |
+| `get_model_pricing` | `(model: str | None) -> dict | None` | Runtime-registered entry if present, else the static table entry, else `None` |
+| `estimate_cost_usd` | `(model, prompt_tokens, completion_tokens) -> float | None` | Illustrative (KIT) or real (booth-build billed models) USD estimate |
 | `format_cost_usd` | `(cost: float | None) -> str | None` | Magnitude-aware USD string |
+| `register_runtime_pricing` | `(model: str, prompt_usd_per_token: float \| None, completion_usd_per_token: float \| None) -> None` | Booth build only: teaches the estimator a live per-token price for a non-KIT model id not in `model_pricing.json`. A call with either rate `None` is ignored. Process-global `_RUNTIME_PRICING` dict, keyed by model id, consulted by `get_model_pricing` before the static table |
 
-Prices are OpenRouter list prices for the equivalent model. KIT does not bill.
-The UI labels this "illustrative" explicitly.
+Prices for KIT models are OpenRouter list prices for the equivalent model; KIT
+does not bill and the UI labels this "illustrative" explicitly. On
+`demo-booth`, OpenRouter/DeepSeek entries are registered via
+`register_runtime_pricing` from the model picker (see "Model picker (booth
+build)" above) and are real billed prices, not illustrative ones.
 
 **Known gap (as of 2026-09-14):** `model_pricing.json` has no rows yet for the current
 KIT chat models (`kit.mistral-small-4-119b-a8b`, `kit.deepseek-v4-flash`,

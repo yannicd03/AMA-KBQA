@@ -199,4 +199,4 @@ Model argument accepts `provider:model` (e.g. `openrouter:deepseek/deepseek-v4-f
 |---|---|---|---|
 | 1 | Opus "booth-providers" | §3, §4, §4.2, §4.3, §5 compose change, tests §7 | full suite green, ruff clean, local OpenRouter smoke passes |
 | 2 | orchestrator | review, acceptance §8 (OpenRouter), commit, push `demo-booth` | acceptance recorded here |
-| 3 | `docs-agent` / `wiki` | SOP §9 booth section, System doc picker section, ADR "three-branch demo split"; wiki active-branches + TODO | links here |
+| 3 | `docs-agent` / `wiki` | SOP §9 booth section, System doc picker section, ADR "three-branch demo split"; wiki active-branches + TODO | [SOP/hetzner_demo_deployment.md](../../SOP/hetzner_demo_deployment.md) §10 · [System/demo_bwcloud_frontend.md](../../System/demo_bwcloud_frontend.md) "Model picker (booth build)" · [Decisions/0001-three-branch-demo-split.md](../../Decisions/0001-three-branch-demo-split.md) · [Decisions/0002-deepseek-thinking-mode-disabled.md](../../Decisions/0002-deepseek-thinking-mode-disabled.md) |

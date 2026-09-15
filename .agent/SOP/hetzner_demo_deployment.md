@@ -5,6 +5,8 @@
 - [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) — frontend architecture this SOP deploys (file/branch naming still says "bwcloud"; the code has since moved to the `dev`-based `demo-v2` line, see §9)
 - [Decisions/demo-bwcloud-frontend-divergence.md](../Decisions/demo-bwcloud-frontend-divergence.md) — why the demo build diverges from the full app
 - [Decisions/federated-dispatch-and-fusion.md](../Decisions/federated-dispatch-and-fusion.md) — federated dispatch backend behind demo v2's second Orchestrator picker entry (§9)
+- [Decisions/0001-three-branch-demo-split.md](../Decisions/0001-three-branch-demo-split.md) — why `demo-v2-int`/`demo-public`/`demo-booth` are three branches, not a feature flag (§9–§10)
+- [Decisions/0002-deepseek-thinking-mode-disabled.md](../Decisions/0002-deepseek-thinking-mode-disabled.md) — DeepSeek-direct thinking-mode gotcha (§10)
 - [Project Architecture](../System/project_architecture.md) — overall system overview
 
 ---
@@ -127,20 +129,38 @@ Notes:
 
 ### Branch to stage
 
-As of 2026-09-14 the branch to stage for v2 is **`demo-v2-graph`** once it
-merges into `demo-v2-int` (it adds the live "Explored subgraph" side panel,
-see [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md)
-"Live Graph Panel" and
+As of 2026-09-14 the graph-panel work described above has landed: the merged
+integration base is **`demo-v2-int` at `ca90fe4`** (`dev` line + demo UI +
+federated orchestrator + the live "Explored subgraph" panel, see
+[System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) "Live
+Graph Panel" and
 [Decisions/live-graph-two-source-subgraph.md](../Decisions/live-graph-two-source-subgraph.md)).
-The setup commands below still say `demo-v2-int`; update the `git fetch`/
-`worktree add` refs to whichever of `demo-v2-int` or a later integration
-branch actually carries the merged graph-panel commits at deploy time. The
-panel is **on by default**: `config.docker.toml`'s `[frontend] live_graph =
-true` ships with the image, so no extra staging step is needed to enable it.
-To disable it for a given deployment (e.g. to compare against the
-pre-feature layout), set `AMA_FRONTEND_LIVE_GRAPH=0` in the compose
-service's `environment:` block (same override mechanism as
-`AMA_RETRIEVAL_RERANKER_ENABLED` below).
+Two deliverable branches now fork from that base (decision recorded in
+[Decisions/0001-three-branch-demo-split.md](../Decisions/0001-three-branch-demo-split.md)
+and `Tasks/active/booth-demo-providers.md` §1):
+
+- `demo-public` — identical to `demo-v2-int`@`ca90fe4`, no extra changes.
+  Intended for the public hostname, but **not deployed on Hetzner for the
+  near future** (the v1 stack in §1–§8 above keeps serving
+  `amakbqa.yanlab.de`).
+- `demo-booth` — adds billed OpenRouter/DeepSeek chat endpoints to the model
+  picker for presenter use at SEMANTiCS 2026; see §10 below.
+
+The `amakbqa-next` stack documented in this section (compose project,
+`docker-compose.hetzner-next.yml`, hostname `amakbqa-next.yanlab.de`) now
+builds from **`demo-booth`**, not from `demo-v2-int` directly — update the
+`git fetch`/`worktree add` refs below to `demo-booth` (or `demo-public` if
+staging the public-only variant) rather than `demo-v2-int` at deploy time.
+Bug fixes still land on `demo-v2-int` first and are merged forward into both
+`demo-public` and `demo-booth`; never commit booth-only or public-only
+changes directly to `demo-v2-int`.
+
+The live graph panel is **on by default** on all three branches:
+`config.docker.toml`'s `[frontend] live_graph = true` ships with the image,
+so no extra staging step is needed to enable it. To disable it for a given
+deployment (e.g. to compare against the pre-feature layout), set
+`AMA_FRONTEND_LIVE_GRAPH=0` in the compose service's `environment:` block
+(same override mechanism as `AMA_RETRIEVAL_RERANKER_ENABLED` below).
 
 ### Why
 
@@ -349,4 +369,130 @@ constraint for whoever ports federation onto that engine next.
   Router (53 s): both OK, exit 0, and no teardown traceback at `asyncio.run()`
   shutdown (the ad-hoc harness, which never closed the specialist, printed one
   there).
-- Staging verification: <pending>
+- Staging verification: the v2 line went to staging as the booth build
+  (`demo-booth`, which contains all of demo-v2-int); see §10 "Staging
+  verification" below for the recorded results.
+
+---
+
+## 10. Booth demo (`demo-booth`, 2026-09-14)
+
+### Related docs
+- [Decisions/0001-three-branch-demo-split.md](../Decisions/0001-three-branch-demo-split.md) — why a third branch instead of a feature flag on `demo-v2-int`
+- [Decisions/0002-deepseek-thinking-mode-disabled.md](../Decisions/0002-deepseek-thinking-mode-disabled.md) — the `reasoning_content` gotcha below
+- [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) "Model picker (booth build)" — picker mechanics, hiding rules, pricing flow
+- `Tasks/active/booth-demo-providers.md` — the PRD this deploy implements
+
+### What's different from the `demo-v2-int` base
+
+`demo-booth` adds two billed chat endpoints to the model picker next to KIT
+(commit `f35b2a7`): **OpenRouter** (5 curated tool-capable models) and
+**DeepSeek direct** (2 models). Embeddings, reranking, and synthesis are
+untouched and stay on KIT. Switching the picker sets
+`AMA_KBQA_CHAT_PROVIDER` (env override, read by `config.get_chat_provider()`)
+so the MCP tool-server subprocesses — spawned with `env=os.environ.copy()`
+— follow the pick, not just this process's in-memory config.
+
+### Box env (`~/amakbqa-next/.env`, mode 600)
+
+In addition to what §9 already requires, the box's `.env` for the booth
+stack must carry (names only — the user supplies the values):
+
+- `KIT_API_KEY` — unchanged from v1/v2.
+- `OPENROUTER_API_KEY` — enables the 5 OpenRouter picker entries; absent, the
+  picker just hides them with a one-line notice.
+- `DEEPSEEK_API_KEY` — enables the 2 DeepSeek-direct picker entries; same
+  hide-on-missing behavior.
+- `DEMO_MODE=1` — unchanged.
+
+Budgets recorded at booth-setup time (2026-09-14, for planning the demo
+window, not enforced by code): OpenRouter account credit limit $10 (pricier
+entries like Claude Sonnet 4.5 / GPT-5 run roughly $0.10–$1 per question);
+DeepSeek balance $7.30 (DeepSeek Flash direct is roughly 10x cheaper per
+question than the pricier OpenRouter entries). Re-check both balances before
+the show if the booth ran long rehearsal sessions.
+
+### Smoke test (per provider, inside the container)
+
+Same `scripts/demo_smoke_ask.py` as §9, now taking `provider:model` as its
+second argument (a bare id still means KIT):
+
+```bash
+cd ~/amakbqa-next
+docker exec -i frontend_amakbqa_next python -u - KQAPro \
+  openrouter:deepseek/deepseek-v4-flash < scripts/demo_smoke_ask.py
+docker exec -i frontend_amakbqa_next python -u - KQAPro \
+  deepseek:deepseek-flash < scripts/demo_smoke_ask.py
+docker exec -i frontend_amakbqa_next python -u - "Orchestrator (Router)" \
+  deepseek:deepseek-flash < scripts/demo_smoke_ask.py
+```
+
+Look for `Created chat client for provider '<provider>' at <base_url>` in
+both the agent process log and the MCP server subprocess log — seeing it
+only in the former means the env var didn't reach the subprocess (the
+"Model not found" failure mode §4 already documents for the model-only
+override applies identically to the provider override).
+
+### DeepSeek thinking-mode gotcha (must ship enabled)
+
+DeepSeek's direct API runs every model in thinking mode by default and, once
+a request carries `tools`, requires each assistant message's
+`reasoning_content` to be echoed back on the next turn. This agent's fast
+path synthesizes assistant `tool_calls` messages with no reasoning attached,
+so an unmodified DeepSeek-direct call fails on the **second** turn of any
+question with `400 ... The 'reasoning_content' in the thinking mode must be
+passed back to the API` (OpenRouter is unaffected — it reconciles this
+itself, which is why the OpenRouter regression passed before this was
+found). Both shipped tomls ship `[deepseek] thinking_enabled = false`, which
+makes `config.get_chat_extra_body()` send `{"thinking": {"type":
+"disabled"}}` on every chat call routed to the deepseek provider. If a
+future edit to `config.toml`/`config.docker.toml` on this branch flips
+`thinking_enabled = true`, DeepSeek-direct questions will break on the
+second turn again — see
+[Decisions/0002-deepseek-thinking-mode-disabled.md](../Decisions/0002-deepseek-thinking-mode-disabled.md).
+
+### Rate-limit relaxation
+
+`docker-compose.hetzner-next.yml`'s `environment:` sets
+`DEMO_MAX_QUERIES_PER_SESSION=500` and `DEMO_MIN_SECONDS_BETWEEN_QUERIES=1`
+for the booth stack — presenter usage (many questions back to back at one
+booth laptop), not public traffic, so the public demo's default throttle
+would only get in the way. This does not affect the `amakbqa-demo` (v1) or
+future `demo-public` stacks, which keep the stricter public-facing limits.
+
+### Local acceptance (2026-09-14, recorded in the PRD)
+
+KQAPro via `openrouter:deepseek/deepseek-v4-flash`: OK, 17–20s. KQAPro and
+Orchestrator (Router) via `deepseek:deepseek-flash`: OK, 8–15s. Full local
+suite: 945 tests passed, ruff clean. See `Tasks/active/booth-demo-providers.md`
+§8 for the full acceptance log, including the thinking-mode blocker found
+and fixed along the way.
+
+### Staging verification (2026-09-14 evening, re-checked 2026-09-15 08:43 CEST)
+
+Deployed `f35b2a7` as worktree `~/amakbqa-next` (added from `~/amakbqa-demo`
+via `git worktree add`), image built with `DOCKER_BUILDKIT=0`, container
+`frontend_amakbqa_next` healthy on `127.0.0.1:8504`. `~/amakbqa-next/.env` is
+v1's `.env` plus `OPENROUTER_API_KEY` and `DEEPSEEK_API_KEY` (each present
+exactly once; `DEMO_MODE=1` inherited). Tunnel: the installed
+`~/.cloudflared/amakbqa.yml` already listed `amakbqa-next.yanlab.de` (pointing
+at 8503), so installing the repo file only re-pointed it to 8504; backup at
+`~/.cloudflared/amakbqa.yml.bak-20260914`; `amakbqa.yanlab.de` stayed on 8503
+and v1's three containers kept their uptime across the tunnel restart.
+
+Smoke inside the container (`scripts/demo_smoke_ask.py`, all exit 0, provider
+lines confirmed for the agent process and the MCP subprocess):
+
+| Agent | Model arg | Result | Time |
+|---|---|---|---|
+| KQAPro | (KIT default, Mistral Small 4) | Christopher Nolan | 38–40 s |
+| KQAPro | `openrouter:deepseek/deepseek-v4-flash` | Christopher Nolan | 20–22 s |
+| KQAPro | `deepseek:deepseek-flash` | Christopher Nolan | 18–25 s |
+| Orchestrator (Router) | `deepseek:deepseek-flash` | Ulm, routed to `kqapro_agent` | 41 s |
+| SciQA | (KIT default) | grounded "I don't know" (weaker than the local run) | 45 s |
+
+HTTP 200 for `http://127.0.0.1:8504/` on the box and for both
+`https://amakbqa-next.yanlab.de/` and `https://amakbqa.yanlab.de/` from
+outside. No errors in the container log; ~6.3 GiB RAM available after the
+deploy. Not yet done on staging: the browser check and an
+`Orchestrator (Federated)` run (the heaviest path); do both before the booth.
