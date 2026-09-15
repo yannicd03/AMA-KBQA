@@ -623,6 +623,7 @@ with body_container:
                                 capture_io=capture_io,
                                 selected_agent=live_run["agent_name"],
                                 user_message=live_run["question"],
+                                provider=selected_choice.provider,
                             )
                         else:
                             log_status.update(
