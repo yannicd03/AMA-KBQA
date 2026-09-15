@@ -64,21 +64,32 @@ AGENT_SUGGESTIONS = {
         ":green[:material/science:] COVID-19 research": "What research contributions address COVID-19 detection?",
         ":orange[:material/location_on:] Einstein's birthplace": "In which city was Albert Einstein born?",
     },
-    # Federated suggestions favor visible fan-out: the first two questions
-    # plausibly touch BOTH graphs at once (a general-knowledge entity that is
-    # also the subject of scholarly work, and a comparison spanning a KQAPro
-    # fact and an ORKG research metric), so the router has a real reason to
-    # dispatch both specialists and the fusion step has something to combine.
-    # The third is a clearly single-domain question, to show the router still
-    # picks just one specialist when federation isn't warranted.
+    # Federated suggestions are anchored on topics that genuinely exist in
+    # BOTH graphs, so each half of the fused answer is grounded rather than
+    # improvised. Breast cancer and epilepsy are diseases KQAPro knows as
+    # Wikidata entities (with `notable_people_with_this_condition` links) and
+    # that ORKG covers as research problems carrying real contributions and
+    # papers. Both were verified end to end against the demo's own data: the
+    # router fans out to kqapro_agent + sciqa_agent and the fusion step has
+    # two grounded answers to combine. Expect roughly 2.5 to 3 minutes per
+    # federated answer, since the slower specialist gates the whole run.
+    #
+    # Do not swap in a topic without checking both graphs first. Questions
+    # phrased around ORKG *models* or *benchmarks* tempt the specialist into
+    # answering from the LLM's own knowledge, and topics that postdate the
+    # KQAPro Wikidata snapshot (COVID-19, for one) have no general-knowledge
+    # half at all.
+    #
+    # The third entry is a clearly single-domain question, to show the router
+    # still picks just one specialist when federation isn't warranted.
     "Orchestrator (Federated)": {
-        ":violet[:material/hub:] Einstein, scientifically": (
-            "Where was Albert Einstein born, and what research contributions "
-            "cite his work on relativity?"
+        ":violet[:material/hub:] Breast cancer, people and papers": (
+            "Which notable people have had breast cancer, and what research "
+            "contributions address breast cancer?"
         ),
-        ":violet[:material/hub:] Filmmaker vs. paper benchmarks": (
-            "Who directed Inception, and what benchmarks are used to evaluate "
-            "machine learning models in the research literature?"
+        ":violet[:material/hub:] Epilepsy and antiepileptic drugs": (
+            "Which notable people have had epilepsy, and what research "
+            "contributions address the effectiveness of antiepileptic drugs?"
         ),
         ":orange[:material/location_on:] Einstein's birthplace": "In which city was Albert Einstein born?",
     },

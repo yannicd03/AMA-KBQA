@@ -24,10 +24,14 @@ from ama_kbqa.frontend.utils.chat_controls import DEFAULT_MODEL_PREFERENCE, appl
 
 QUESTIONS = {
     "Orchestrator (Router)": "In which city was Albert Einstein born?",
-    # Cross-graph on purpose, so federated dispatch fans out to both specialists.
+    # Cross-graph on purpose, so federated dispatch fans out to both
+    # specialists: breast cancer is a KQAPro (Wikidata) disease entity with
+    # `notable_people_with_this_condition` links AND an ORKG research problem
+    # with real contributions behind it, so both halves of the fused answer
+    # are grounded. Budget ~3 minutes: the slower specialist gates the run.
     "Orchestrator (Federated)": (
-        "Who directed Inception, and what benchmarks are used to evaluate "
-        "machine learning models in the research literature?"
+        "Which notable people have had breast cancer, and what research "
+        "contributions address breast cancer?"
     ),
     "KQAPro": "Who is the director of Inception?",
     "SciQA": "What research contributions address COVID-19 detection?",
