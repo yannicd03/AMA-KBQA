@@ -45,7 +45,7 @@ class TestParseSuggestionLabel:
 
 
 @pytest.fixture
-def client(monkeypatch, patch_models):
+def client(monkeypatch, patch_models, kit_path):
     monkeypatch.setattr(meta, "get_live_graph_enabled", lambda: True)
     for var in ("DEMO_MODE", "DEMO_MAX_QUERIES_PER_SESSION", "DEMO_MIN_SECONDS_BETWEEN_QUERIES"):
         monkeypatch.delenv(var, raising=False)
@@ -66,8 +66,10 @@ def test_meta_shape(client):
 
     assert set(body) == {
         "title", "agents", "default_agent", "suggestions", "models",
-        "default_model", "default_temperature", "live_graph", "demo",
+        "default_model", "model_notices", "default_temperature", "live_graph", "demo",
     }
+    # The KIT-only picker has nothing to explain, but the key is always there.
+    assert body["model_notices"] == []
     assert body["title"] == "AMA-KBQA Assistant"
     assert body["default_agent"] == "Orchestrator (Router)"
     assert isinstance(body["default_temperature"], float)
@@ -103,6 +105,7 @@ def test_meta_models_come_from_the_filtered_kit_catalog(client):
     body = client.get("/api/meta").json()
     # Embedding and external models are filtered out; ids sorted.
     assert [m["id"] for m in body["models"]] == [MODEL, OTHER_MODEL]
+    assert all(m["provider"] == "kit" for m in body["models"])
     by_id = {m["id"]: m for m in body["models"]}
     assert by_id[MODEL]["name"] == "GPT-OSS 120B"
     assert by_id[OTHER_MODEL]["name"] == "Mistral Small 4"
@@ -115,7 +118,7 @@ def test_meta_models_come_from_the_filtered_kit_catalog(client):
     assert body["default_model"] == OTHER_MODEL
 
 
-def test_meta_falls_back_to_offline_models(monkeypatch):
+def test_meta_falls_back_to_offline_models(monkeypatch, kit_path):
     def boom(provider, **_kwargs):
         raise RuntimeError("no key")
 
@@ -130,7 +133,7 @@ def test_meta_falls_back_to_offline_models(monkeypatch):
     assert all(m["name"] == m["id"][len("kit."):] for m in models)
 
 
-def test_model_list_is_cached_for_the_ttl(monkeypatch, patch_models):
+def test_model_list_is_cached_for_the_ttl(monkeypatch, patch_models, kit_path):
     now = {"t": 1000.0}
     monkeypatch.setattr(meta, "_clock", lambda: now["t"])
     meta.get_models()
@@ -140,6 +143,35 @@ def test_model_list_is_cached_for_the_ttl(monkeypatch, patch_models):
     now["t"] += meta.MODELS_TTL_SECONDS + 1
     meta.get_models()
     assert patch_models == ["kit", "kit"]
+
+
+def test_streamlit_no_runtime_warning_is_filtered():
+    # chat_controls' st.cache_data fetchers log "No runtime found" outside a
+    # Streamlit runtime; importing ama_kbqa.api filters exactly that line.
+    import logging
+
+    import streamlit as st
+
+    import ama_kbqa.api  # noqa: F401 - installs the filter
+
+    seen: list[str] = []
+
+    class _Collect(logging.Handler):
+        def emit(self, record):
+            seen.append(record.getMessage())
+
+    logger = logging.getLogger("streamlit.runtime.caching.cache_data_api")
+    handler = _Collect()
+    logger.addHandler(handler)
+    try:
+        @st.cache_data(show_spinner=False, ttl=5)
+        def cached(x):
+            return x * 2
+
+        assert cached(2) == 4 and cached(2) == 4
+    finally:
+        logger.removeHandler(handler)
+    assert not [m for m in seen if "No runtime found" in m]
 
 
 def test_demo_settings_follow_env(client, monkeypatch):

@@ -86,13 +86,21 @@ services:
     # for debugging (SSH-tunnel-only, like 8502).
     ports:
       - "127.0.0.1:8506:8506"
+    # Lets the agents reach services on the Docker host by name, as the local
+    # build (branch demo-llamacpp) does for its llama-server instances
+    # (config.docker.toml: http://host.docker.internal:8080/v1). Linux Docker
+    # does not define that name by itself; host-gateway maps it to the host.
+    # Harmless on builds that never use it.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - ./.env
     volumes:
-      # Same mounts as the Streamlit frontend: the agents read the same
-      # config (service-name hostnames), datasets and questionnaires.
+      # The Streamlit frontend's mounts minus .streamlit_cache: the API never
+      # runs Streamlit, and a missing host dir would be created root-owned.
+      # The agents read the same config (service-name hostnames), datasets
+      # and questionnaires.
       - ./config.docker.toml:/app/config.toml
-      - ./.streamlit_cache:/app/.streamlit
       - ./db/datasets:/app/db/datasets
       - ./db/kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
       - ./db/sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro

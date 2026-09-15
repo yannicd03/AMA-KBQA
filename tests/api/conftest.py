@@ -1,10 +1,17 @@
 """Shared fixtures for the API tests.
 
 No real agent, MCP server, LLM or network call is ever made: ``create_agent``
-and ``apply_chat_settings`` are replaced in ``ama_kbqa.api.runs`` and the KIT
-``/models`` fetch in ``ama_kbqa.api.meta``. The fake agent records into the
-real ``TraceRecorder``, so the lifecycle runner, the drain, the SVG renderers
-and the graph normalisers all run for real.
+is replaced in ``ama_kbqa.api.runs``, ``apply_chat_settings`` on the
+``chat_controls`` module, and the KIT ``/models`` fetch in
+``ama_kbqa.api.meta``. The fake agent records into the real
+``TraceRecorder``, so the lifecycle runner, the drain, the SVG renderers and
+the graph normalisers all run for real.
+
+The model picker has two shapes (see ``ama_kbqa/api/meta.py``). The
+``harness`` fixture forces the KIT-only one (it removes
+``available_choices`` from ``chat_controls`` for the test, so it also runs on
+the provider-aware branches); ``provider_harness`` installs a fake
+provider-aware API instead.
 """
 
 from __future__ import annotations
@@ -12,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from dataclasses import dataclass
 from typing import Any, Optional
 
 import pytest
@@ -20,6 +28,7 @@ from fastapi.testclient import TestClient
 from ama_kbqa.api import app as app_module
 from ama_kbqa.api import meta, runs
 from ama_kbqa.framework.trace import TraceRecorder
+from ama_kbqa.frontend.utils import chat_controls
 
 MODEL = "kit.gpt-oss-120b"          # in data/model_pricing.json, so it has a price
 OTHER_MODEL = "kit.mistral-small-4-119b-a8b"  # no price entry
@@ -53,6 +62,91 @@ LABEL_RESULT = json.dumps({
 })
 
 
+# ---------------------------------------------------------------------------
+# Fake provider-aware picker (the demo-booth / demo-llamacpp chat_controls API)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class FakeChoice:
+    """Same fields and ``key`` as chat_controls.ChatModelChoice."""
+
+    provider: str
+    model: str
+    name: str
+    default: bool = False
+
+    @property
+    def key(self) -> str:
+        return f"{self.provider}:{self.model}"
+
+
+# The same bare model id behind two providers, like deepseek-v4-pro on
+# OpenRouter and DeepSeek direct in the booth config.
+CHOICES = [
+    FakeChoice("kit", MODEL, "GPT-OSS 120B"),
+    FakeChoice("openrouter", "deepseek-v4-pro", "DeepSeek V4 Pro"),
+    FakeChoice("deepseek", "deepseek-v4-pro", "DeepSeek V4 Pro", default=True),
+    FakeChoice("llamacpp", "local-model", "local-model"),
+]
+NOTICES = ["OpenRouter model acme/retired is not in the live catalog and was hidden"]
+PLACEHOLDER = FakeChoice("kit", "kit.placeholder", "Placeholder")
+
+
+class FakeChoices:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.error: Optional[Exception] = None
+
+    def available_choices(self):
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return list(CHOICES), list(NOTICES)
+
+    @staticmethod
+    def default_choice(choices):
+        for choice in choices:
+            if choice.default:
+                return choice
+        return choices[0] if choices else PLACEHOLDER
+
+    @staticmethod
+    def display_choice(choice) -> str:
+        return f"{choice.name} · {choice.provider}"
+
+    @staticmethod
+    def price_caption_for(choice) -> Optional[str]:
+        # Escaped like the real helper (Streamlit markdown), or plain text.
+        return {
+            "kit": r"\$0.10 per 1M in and \$0.30 per 1M out",
+            "openrouter": r"\$1.00 per 1M in and \$2.00 per 1M out (billed)",
+            "llamacpp": "Runs locally: no API cost",
+        }.get(choice.provider)
+
+
+@pytest.fixture
+def fake_choices(monkeypatch):
+    fake = FakeChoices()
+    for name in ("available_choices", "default_choice", "display_choice", "price_caption_for"):
+        monkeypatch.setattr(chat_controls, name, getattr(fake, name), raising=False)
+    meta.reset_caches()
+    yield fake
+    meta.reset_caches()
+
+
+@pytest.fixture
+def kit_path(monkeypatch):
+    """Force the KIT-only picker, even where chat_controls is provider-aware."""
+    monkeypatch.delattr(chat_controls, "available_choices", raising=False)
+    meta.reset_caches()
+    yield
+    meta.reset_caches()
+
+
+# ---------------------------------------------------------------------------
+# Fake agent + HTTP harness
+# ---------------------------------------------------------------------------
+
 class FakeAgent:
     """Stands in for KQAProAgent / SciQAAgent / Orchestrator.
 
@@ -61,7 +155,7 @@ class FakeAgent:
     ``GetNodeLabel`` tool call found (so the frozen graph has a highlight).
     """
 
-    def __init__(self, name: str, *, marker: str, fail: bool = False,
+    def __init__(self, name: str, *, marker: str, model: str = MODEL, fail: bool = False,
                  gate: Optional[threading.Event] = None, big_payload: bool = False,
                  prints: int = 3, delay: float = 0.0) -> None:
         self.name = name
@@ -71,7 +165,7 @@ class FakeAgent:
         self.big_payload = big_payload
         self.prints = prints
         self.delay = delay
-        self.model = MODEL
+        self.model = model
         self.recorder = TraceRecorder()
         self.journal_snapshots: list = []
         self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -120,7 +214,8 @@ class Harness:
     def __init__(self, client: TestClient) -> None:
         self.client = client
         self.created: list[FakeAgent] = []
-        self.applied: list[tuple[str, float]] = []
+        self.applied: list[tuple] = []
+        self.current_model: Optional[str] = None
         self.options: dict[str, Any] = {}
         self.create_error: Optional[Exception] = None
         self._gates: list[threading.Event] = []
@@ -138,7 +233,11 @@ class Harness:
     def create_agent(self, name: str) -> FakeAgent:
         if self.create_error is not None:
             raise self.create_error
-        agent = FakeAgent(name, marker=f"agent{len(self.created)}", **self.options)
+        # Like the real agents, it takes the model apply_chat_settings set.
+        agent = FakeAgent(
+            name, marker=f"agent{len(self.created)}",
+            model=self.current_model or MODEL, **self.options,
+        )
         self.created.append(agent)
         return agent
 
@@ -201,8 +300,7 @@ def patch_models(monkeypatch):
     meta.reset_caches()
 
 
-@pytest.fixture
-def harness(monkeypatch, patch_models):
+def _run_harness(monkeypatch, *, provider_path: bool):
     for var in ("DEMO_MODE", "DEMO_MAX_QUERIES_PER_SESSION", "DEMO_MIN_SECONDS_BETWEEN_QUERIES"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(runs, "TICK_SECONDS", 0.02)
@@ -213,9 +311,27 @@ def harness(monkeypatch, patch_models):
     with TestClient(app) as client:
         h = Harness(client)
         monkeypatch.setattr(runs, "create_agent", h.create_agent)
-        monkeypatch.setattr(runs, "apply_chat_settings", lambda m, t: h.applied.append((m, t)))
+        if provider_path:
+            def apply(model, temperature, provider="kit"):
+                h.applied.append((model, temperature, provider))
+                h.current_model = model
+        else:
+            def apply(model, temperature):
+                h.applied.append((model, temperature))
+                h.current_model = model
+        monkeypatch.setattr(chat_controls, "apply_chat_settings", apply)
         try:
             yield h
         finally:
             # Never leave a gated worker thread spinning past the test.
             h.release_all()
+
+
+@pytest.fixture
+def harness(monkeypatch, patch_models, kit_path):
+    yield from _run_harness(monkeypatch, provider_path=False)
+
+
+@pytest.fixture
+def provider_harness(monkeypatch, patch_models, fake_choices):
+    yield from _run_harness(monkeypatch, provider_path=True)

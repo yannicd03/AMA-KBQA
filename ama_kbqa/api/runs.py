@@ -15,6 +15,7 @@ Everything lives in process memory, hence the single-worker requirement.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import queue
@@ -35,7 +36,9 @@ from ama_kbqa.frontend.utils.agent_factory import (
     create_agent,
     is_orchestrator,
 )
-from ama_kbqa.frontend.utils.chat_controls import apply_chat_settings
+# Module, not names: apply_chat_settings is looked up per call, because its
+# signature differs by branch (see apply_model_settings).
+from ama_kbqa.frontend.utils import chat_controls
 from ama_kbqa.frontend.utils.lifecycle_runner import (
     LiveLifecycleState,
     drain_into,
@@ -96,6 +99,31 @@ class ApiError(Exception):
 # ---------------------------------------------------------------------------
 # Pure helpers (render / payload shaping)
 # ---------------------------------------------------------------------------
+
+def _accepts_provider(fn: Any) -> bool:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "provider" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+
+
+def apply_model_settings(option: "meta.ModelOption", temperature: float) -> None:
+    """Point the process at ``option``'s model via chat_controls.
+
+    The provider-aware ``apply_chat_settings(model, temperature, provider=...)``
+    (demo-booth, demo-llamacpp) gets the provider; the KIT-only two-argument
+    version (demo-v2-int) is called exactly as the Streamlit page calls it.
+    Either way it receives the bare model id, never the picker key.
+    """
+    apply = chat_controls.apply_chat_settings
+    if _accepts_provider(apply):
+        apply(option.model, temperature, provider=option.provider)
+    else:
+        apply(option.model, temperature)
+
 
 def orchestrator_mode(agent_name: str) -> str:
     return "federated" if ORCHESTRATOR_MODES.get(agent_name) else "router"
@@ -272,7 +300,9 @@ class StoredAgent:
     """A session's persisted multiturn agent (specialists only)."""
 
     agent_name: str
-    model: str
+    # The full picker key ("provider:model" on provider-aware branches): the
+    # same model id behind another provider is a different agent.
+    model_key: str
     agent: Any
 
 
@@ -339,7 +369,7 @@ class Run:
         session_id: str,
         agent_name: str,
         question: str,
-        model: str,
+        model: "meta.ModelOption",
         temperature: float,
         live_graph: bool,
     ) -> None:
@@ -347,7 +377,10 @@ class Run:
         self.session_id = session_id
         self.agent_name = agent_name
         self.question = question
-        self.model = model
+        self.option = model
+        self.model = model.model          # bare id (endpoint, pricing)
+        self.model_key = model.key        # /meta id the client picked
+        self.provider = model.provider
         self.temperature = temperature
         self.live_graph = live_graph
         self.continuation = False
@@ -420,6 +453,8 @@ class Run:
             "agent": self.agent_name,
             "question": self.question,
             "model": self.model,
+            "model_key": self.model_key,
+            "provider": self.provider,
             "continuation": self.continuation,
             "status": self.status,
             "started_at": self.started_at_iso,
@@ -532,8 +567,11 @@ class RunManager:
             raise ApiError(400, "Temperature must be between 0 and 2.")
         if not question.strip():
             raise ApiError(400, "The question must not be empty.")
-        model_ids = await asyncio.to_thread(meta.get_model_ids)
-        if model not in model_ids:
+        # `model` is a /meta id: "provider:model" on provider-aware branches,
+        # the bare KIT id otherwise. Only ids of the current catalog pass.
+        catalog = await asyncio.to_thread(meta.get_catalog)
+        option = catalog.resolve(model)
+        if option is None:
             raise ApiError(400, f"Unknown model: {model}")
 
         self.evict_idle_sessions()
@@ -549,7 +587,7 @@ class RunManager:
             session_id=session_id,
             agent_name=agent_name,
             question=question,
-            model=model,
+            model=option,
             temperature=temperature,
             live_graph=bool(get_live_graph_enabled()),
         )
@@ -561,7 +599,7 @@ class RunManager:
 
         try:
             agent, continuation = await asyncio.to_thread(
-                self._build_agent, session, agent_name, model, temperature
+                self._build_agent, session, agent_name, option, temperature
             )
         except Exception as exc:  # noqa: BLE001 - surfaces as the run's error event
             _LOG.exception("Agent creation failed for %s", agent_name)
@@ -603,27 +641,29 @@ class RunManager:
         return run
 
     def _build_agent(
-        self, session: Session, agent_name: str, model: str, temperature: float
+        self, session: Session, agent_name: str, option: "meta.ModelOption",
+        temperature: float,
     ) -> tuple[Any, bool]:
         """Mirror chat.py's multiturn rules. Runs in a worker thread.
 
-        Specialists keep ONE agent per session, keyed by (agent, model): the
-        same pair again is a follow-up turn on that instance. The Orchestrator
-        is stateless, so it is always fresh and drops any stored agent.
+        Specialists keep ONE agent per session, keyed by (agent, model key):
+        the same pair again is a follow-up turn on that instance. The
+        Orchestrator is stateless, so it is always fresh and drops any stored
+        agent.
         """
         with self._build_lock:
-            apply_chat_settings(model, temperature)
+            apply_model_settings(option, temperature)
             multiturn = not is_orchestrator(agent_name)
             stored = session.stored
             if (
                 multiturn
                 and stored is not None
                 and stored.agent_name == agent_name
-                and stored.model == model
+                and stored.model_key == option.key
             ):
                 return stored.agent, True
             agent = create_agent(agent_name)
-            session.stored = StoredAgent(agent_name, model, agent) if multiturn else None
+            session.stored = StoredAgent(agent_name, option.key, agent) if multiturn else None
             return agent, False
 
     def _render(self, run: Run) -> tuple[dict, Optional[GraphData], Any, int, str]:
@@ -757,6 +797,8 @@ class RunManager:
             "tokens": tokens,
             "cost": cost,
             "model": model,
+            "model_key": run.model_key,
+            "provider": run.provider,
             "trace_id": trace_id,
             "log_html": log_html,
             "figure": figure,
