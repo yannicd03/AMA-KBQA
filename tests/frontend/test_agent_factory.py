@@ -79,17 +79,32 @@ class TestAgentInfoAndSuggestions:
         suggestions = AGENT_SUGGESTIONS["Orchestrator (Federated)"]
         assert len(suggestions) >= 2
         questions = list(suggestions.values())
-        # At least one question plausibly needs both the KQAPro general
-        # knowledge graph AND the SciQA/ORKG research graph...
+        # At least one question needs both the KQAPro general knowledge graph
+        # AND the SciQA/ORKG research graph. The cross-graph questions are
+        # anchored on a topic present in both (a disease KQAPro knows as a
+        # Wikidata entity and ORKG covers as a research problem), so they pair
+        # a general-knowledge clause with a research clause.
         dual_domain = [
             q for q in questions
-            if ("research" in q.lower() or "benchmark" in q.lower() or "cite" in q.lower())
-            and any(term in q for term in ("Einstein", "Inception", "director", "born"))
+            if "research contributions" in q.lower()
+            and any(term in q.lower() for term in ("notable people", "born", "directed"))
         ]
         assert dual_domain, questions
         # ...plus at least one clearly single-domain question, to show the
         # router can still pick just one specialist under federation.
         assert "In which city was Albert Einstein born?" in questions
+
+    def test_federated_cross_graph_suggestions_use_the_violet_hub_pill(self):
+        # The cross-graph pills are styled apart from the single-domain one so
+        # a booth visitor can see which questions fan out to both specialists.
+        suggestions = AGENT_SUGGESTIONS["Orchestrator (Federated)"]
+        hub_labels = [
+            label for label, q in suggestions.items()
+            if "research contributions" in q.lower()
+        ]
+        assert len(hub_labels) >= 2, suggestions
+        for label in hub_labels:
+            assert label.startswith(":violet[:material/hub:]"), label
 
     def test_kqapro_and_sciqa_suggestions_unchanged(self):
         assert AGENT_SUGGESTIONS["KQAPro"] == {

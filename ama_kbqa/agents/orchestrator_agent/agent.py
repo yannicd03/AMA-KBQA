@@ -47,6 +47,40 @@ COLOR_MAGENTA = '\033[95m'   # Tool Inputs/Outputs
 COLOR_END = '\033[0m'
 
 
+# The specialists the orchestrator can dispatch to. `description` is injected
+# into the routing system prompt so the router LLM can judge a question's domain
+# even when the probing tool's entity-linking evidence is weak or missing.
+# `graph_label` is the short, user-facing name of the graph that specialist
+# queried; fusion prints it above the specialist's preserved "Reproduce with
+# SPARQL" block, where two queries against two different endpoints coexist and
+# must stay distinguishable.
+# Module-level so tests can assert against the same values production uses,
+# without constructing an Orchestrator (which opens LLM clients).
+AGENT_CONFIG = {
+    "kqapro_agent": {
+        "module": "ama_kbqa.agents.kqapro_agent.agent",
+        "class": "KQAProAgent",
+        "graph_label": "KQAPro (Wikidata subset)",
+        "description": (
+            "General world knowledge over a Wikidata-style knowledge "
+            "graph (KQA Pro): people, places, films, organizations, "
+            "dates, quantities, comparisons."
+        ),
+    },
+    "sciqa_agent": {
+        "module": "ama_kbqa.agents.sciqa_agent.agent",
+        "class": "SciQAAgent",
+        "graph_label": "ORKG",
+        "description": (
+            "Scholarly knowledge over the Open Research Knowledge "
+            "Graph (SciQA/ORKG): research papers, contributions, "
+            "benchmarks, datasets, evaluation metrics, models and "
+            "methods from the scientific literature."
+        ),
+    },
+}
+
+
 def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
     """Standardized tracing with timestamp and agent prefix."""
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -167,30 +201,7 @@ class Orchestrator:
         self.journal_snapshots: list = []
         self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-        # The descriptions are injected into the routing system prompt so the
-        # router LLM can judge a question's domain even when the probing
-        # tool's entity-linking evidence is weak or missing.
-        self._agent_config = {
-            "kqapro_agent": {
-                "module": "ama_kbqa.agents.kqapro_agent.agent",
-                "class": "KQAProAgent",
-                "description": (
-                    "General world knowledge over a Wikidata-style knowledge "
-                    "graph (KQA Pro): people, places, films, organizations, "
-                    "dates, quantities, comparisons."
-                )
-            },
-            "sciqa_agent": {
-                "module": "ama_kbqa.agents.sciqa_agent.agent",
-                "class": "SciQAAgent",
-                "description": (
-                    "Scholarly knowledge over the Open Research Knowledge "
-                    "Graph (SciQA/ORKG): research papers, contributions, "
-                    "benchmarks, datasets, evaluation metrics, models and "
-                    "methods from the scientific literature."
-                )
-            },
-        }
+        self._agent_config = {k: dict(v) for k, v in AGENT_CONFIG.items()}
 
         # Set by _route_autonomously: the router LLM's one-sentence reason
         # for its last decision (surfaced on the classify trace span), and
@@ -843,7 +854,27 @@ class Orchestrator:
             "answer, or empty working notes), rely on the other and briefly "
             "say so.\n"
             "- Never introduce facts that appear in neither the answers nor "
-            "the working notes."
+            "the working notes.\n"
+            "\n"
+            "SPARQL BLOCKS (hard requirement): a specialist answer may end with "
+            "a \"Reproduce with SPARQL:\" section holding a fenced sparql code "
+            "block. Each such block was written against that specialist's own "
+            "graph and endpoint, and a booth visitor must be able to run it "
+            "unchanged.\n"
+            "- Reproduce EVERY block you are given, character for character, in "
+            "one \"Reproduce with SPARQL:\" section at the very end of your "
+            "fused answer.\n"
+            "- Label each block with the graph it belongs to, on its own line "
+            "immediately above the fence, using the graph name given in that "
+            "specialist's section header.\n"
+            "- Keep any \"Verified against the knowledge graph.\" or "
+            "\"(not executed)\" line that follows a block, attached to that "
+            "block.\n"
+            "- NEVER merge two blocks into one query, rewrite, reformat, "
+            "shorten, translate between the two URI schemes, or drop a block "
+            "because the answers agreed. Two specialists means two blocks.\n"
+            "- Write no SPARQL of your own: if a specialist supplied no block, "
+            "say so in one line instead of inventing one."
         )
 
     async def _fuse_answers(self, query: str, answers: List[Dict[str, str]]) -> str:
@@ -866,8 +897,17 @@ class Orchestrator:
         ) as _fuse_span:
             blocks = []
             for a in answers:
-                desc = self._agent_config[a["agent"]]["description"]
-                block = f"### {a['agent']} ({desc})\nAnswer: {a['answer']}"
+                cfg = self._agent_config[a["agent"]]
+                desc = cfg["description"]
+                # The graph label is what the fusion prompt tells the model to
+                # print above this specialist's preserved SPARQL block, so it
+                # has to travel with the answer.
+                graph_label = cfg.get("graph_label", a["agent"])
+                block = (
+                    f"### {a['agent']} ({desc})\n"
+                    f"Graph name for this specialist's SPARQL block: {graph_label}\n"
+                    f"Answer: {a['answer']}"
+                )
                 scratchpad = a.get("scratchpad")
                 if scratchpad:
                     block += (

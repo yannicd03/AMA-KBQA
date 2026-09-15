@@ -1,3 +1,4 @@
+import ama_kbqa.config as config
 from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 from ama_kbqa.framework.base_agent import BaseKBQAAgent
@@ -179,7 +180,10 @@ def test_final_answer_cleanup_strips_think_blocks():
     assert answer == "Land Force Command"
 
 
-def test_verify_answer_cleanup_normalizes_affirmative_statement():
+def test_verify_answer_cleanup_normalizes_affirmative_statement(monkeypatch):
+    # Verify normalization is the benchmark contract; conversational mode keeps
+    # the prose answer (see tests/framework/test_sparql_block_preservation.py).
+    monkeypatch.setattr(config, "get_synthesis_mode", lambda: "benchmark")
     answer = _agent()._finalize_answer_text(
         "Reno's population is greater than 100.",
         "Verify",
@@ -188,7 +192,8 @@ def test_verify_answer_cleanup_normalizes_affirmative_statement():
     assert answer == "yes"
 
 
-def test_verify_answer_cleanup_normalizes_negative_statement():
+def test_verify_answer_cleanup_normalizes_negative_statement(monkeypatch):
+    monkeypatch.setattr(config, "get_synthesis_mode", lambda: "benchmark")
     answer = _agent()._finalize_answer_text(
         "The condition is not satisfied.",
         "Verify",
