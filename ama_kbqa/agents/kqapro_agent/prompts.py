@@ -407,8 +407,51 @@ JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
     "points summarising the key steps you took to reach the answer — which entities "
     "you looked up and which tools/queries produced it. Keep it brief and base it "
     "only on what you actually did. If you could not find the answer, say so and "
-    "briefly note what you searched for."
+    "briefly note what you searched for.\n\n"
+    "Finally add a section titled \"Reproduce with SPARQL:\" holding exactly one "
+    "fenced ```sparql code block with the query that retrieves this answer from "
+    "the KQAPro graph, built only from the entity ids and predicate names in your "
+    "journal, with the PREFIX lines and FROM <http://kqapro.org/kb> included. You "
+    "cannot call tools now: if you already ran that query and it returned the "
+    "answer, write \"Verified against the knowledge graph.\" under the block; "
+    "otherwise write \"(not executed)\" under it. Never omit this section — if you "
+    "have no answer, show the query you tried or write \"no query could be formed\"."
 )
+
+# KG-specific detail for the conversational "Reproduce with SPARQL" block,
+# appended to the system prompt by KQAProAgent._get_sparql_reproduction_hint.
+# The URI scheme mirrors RunSPARQL's docstring (the single source of truth for
+# how KQAPro ids map to URIs); FROM names the graph the demo's Virtuoso serves,
+# so a booth visitor can paste the block into the raw endpoint unchanged.
+SPARQL_REPRODUCTION_HINT = """
+
+REPRODUCE-WITH-SPARQL DETAILS (KQAPro, a Wikidata subset):
+- Raw SPARQL tool for the single verification run: RunSPARQL. Pass the query
+  exactly as it appears in your code block.
+- The code block must carry these PREFIX lines and name the graph with FROM:
+
+  PREFIX ex:   <http://kqapro.org/entity/>
+  PREFIX prop: <http://kqapro.org/property/>
+  PREFIX attr: <http://kqapro.org/attribute/>
+  PREFIX qual: <http://kqapro.org/qualifier/>
+  PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+  SELECT ?answer ?answerLabel
+  FROM <http://kqapro.org/kb>
+  WHERE {
+    ex:<the Q-id you looked up> prop:<the relation you followed> ?answer .
+    ?answer rdfs:label ?answerLabel .
+  }
+
+- URI scheme: entities are ex:Q<number>, entity-to-entity relations are
+  prop:<relation_name>, literal attributes are attr:<attribute_name>, qualifiers
+  are qual:P<number>. A qualified attribute value hangs off an intermediate
+  node: ?node rdf:value ?value ; qual:P585 ?date .
+- When the answer is an entity, bind its rdfs:label too so the visitor sees a
+  name rather than a bare Q-id.
+- RunSPARQL cannot execute ASK queries. If your answer is yes/no, still print the
+  ASK query in the block, but verify it by running the same graph pattern once as
+  SELECT ?x WHERE { ... } LIMIT 1 and checking the expected row comes back."""
 
 # Tool-specific loop recovery guidance - COMPACT
 TOOL_LOOP_GUIDANCE = {

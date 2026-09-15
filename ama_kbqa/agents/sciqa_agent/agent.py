@@ -33,6 +33,8 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
     SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL,
     JOURNAL_SUMMARY_ANSWER_PROMPT,
     JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL,
+    SPARQL_REPRODUCTION_HINT,
+    SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL,
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
@@ -201,6 +203,17 @@ class SciQAAgent(BaseKBQAAgent):
         if get_synthesis_mode() == "conversational":
             return JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL
         return JOURNAL_SUMMARY_ANSWER_PROMPT
+
+    def _get_sparql_reproduction_hint(self) -> str:
+        """ORKG URI scheme + named-graph wrapper for the conversational block.
+
+        When RunORKGSPARQL is gated off the URI scheme still has to reach the
+        model (the block is required either way); only the verification
+        instruction swaps to "(not executed)".
+        """
+        if "RunORKGSPARQL" in self._get_denied_tool_names():
+            return SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL
+        return SPARQL_REPRODUCTION_HINT
 
     def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
         """Return set of tool names allowed for this question type, or None for all."""

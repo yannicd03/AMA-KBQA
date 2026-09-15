@@ -72,6 +72,12 @@ def main() -> int:
     print(f"[{'OK' if ok else 'FAIL'}] {agent_name} ({time.monotonic() - t0:.0f}s) {model}")
     print(f"    Q: {question}")
     print(f"    A: {flat[:400]}")
+    # Full, unflattened answer: the conversational answer contract spans several
+    # sections (including a fenced ```sparql block) that the 400-char preview
+    # above truncates away.
+    print("--- FULL ANSWER BEGIN ---")
+    print(answer)
+    print("--- FULL ANSWER END ---")
     return 0 if ok else 1
 
 
