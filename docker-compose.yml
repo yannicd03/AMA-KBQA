@@ -69,6 +69,68 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  api:
+    # FastAPI backend of the React demo (web/). Same image recipe as the
+    # Streamlit frontend (Dockerfile.frontend), different entrypoint. Runs
+    # uvicorn with exactly ONE worker: runs, sessions and multiturn agents
+    # live in process memory, so a second worker would split them.
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: ama-kbqa-api
+    container_name: api_ama_kbqa
+    restart: unless-stopped
+    command: ["ama-kbqa-api", "--host", "0.0.0.0", "--port", "8506"]
+    # Reached by the web service as http://api:8506; the host port is only
+    # for debugging (SSH-tunnel-only, like 8502).
+    ports:
+      - "127.0.0.1:8506:8506"
+    env_file:
+      - ./.env
+    volumes:
+      # Same mounts as the Streamlit frontend: the agents read the same
+      # config (service-name hostnames), datasets and questionnaires.
+      - ./config.docker.toml:/app/config.toml
+      - ./.streamlit_cache:/app/.streamlit
+      - ./db/datasets:/app/db/datasets
+      - ./db/kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
+      - ./db/sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro
+      - ./benchmark_results:/app/benchmark_results
+      - ./batch_results:/app/batch_results
+    depends_on:
+      qdrant:
+        condition: service_started
+      virtuoso:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8506/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    # React demo frontend: the static Vite build served by nginx, which also
+    # proxies /api/ to the api service (SSE-safe, buffering off). Runs next
+    # to the Streamlit frontend, which stays the default demo on 8502.
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: ama-kbqa-web
+    container_name: web_ama_kbqa
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8505:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 volumes:
   ama_qdrant_data:
   ama_virtuoso_data:

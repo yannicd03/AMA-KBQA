@@ -357,6 +357,7 @@ def start_run(
     q: queue.Queue,
     capture_io=None,
     is_continuation: bool = False,
+    on_thread_start: Optional[Callable[[], None]] = None,
 ) -> threading.Thread:
     """Spawn a daemon thread that runs the agent and streams notifications.
 
@@ -364,6 +365,15 @@ def start_run(
     from ``styling.py``). When provided, the worker wraps ``ask()`` in
     ``redirect_stdout(capture_io)`` so the existing live-log strip keeps
     working.
+
+    ``on_thread_start`` is an optional hook called first thing inside the
+    worker thread, before the event loop exists. The FastAPI backend
+    (``ama_kbqa/api``) uses it to register the thread with its stdout router:
+    ``redirect_stdout`` swaps the process-global ``sys.stdout``, so two
+    concurrent runs would otherwise write into each other's live log. If the
+    hook raises, the run ends with an ``__error__`` item and ``ask()`` is never
+    called. Omitting it (the Streamlit page does) leaves the worker exactly as
+    it was.
 
     ``is_continuation`` marks a follow-up turn on a reused agent instance
     (multiturn). When set, the worker first runs ``reset(keep_history=True)``
@@ -377,6 +387,17 @@ def start_run(
     listener = make_listener(q)
 
     def worker() -> None:
+        if on_thread_start is not None:
+            try:
+                on_thread_start()
+            except BaseException as exc:  # noqa: BLE001
+                _LOG.exception("Lifecycle on_thread_start hook failed")
+                try:
+                    q.put(("__error__", {"message": f"{type(exc).__name__}: {exc}"}))
+                except Exception:
+                    pass
+                return
+
         loop = asyncio.new_event_loop()
         recorder = None
         try:
