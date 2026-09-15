@@ -1321,7 +1321,71 @@ JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
     "points summarising the key steps you took to reach the answer — which "
     "resources/entities you looked up and which tools/queries produced it. Keep it "
     "brief and base it only on what you actually did. If you could not find the "
-    "answer, say so and briefly note what you searched for."
+    "answer, say so and briefly note what you searched for.\n\n"
+    "Finally add a section titled \"Reproduce with SPARQL:\" holding exactly one "
+    "fenced ```sparql code block with the query that retrieves this answer from "
+    "the ORKG graph, built only from the resource ids and predicates in your "
+    "journal, with the PREFIX lines and the GRAPH <http://sciqa.org/kg> wrapper "
+    "included. You cannot call tools now: if you already ran that query and it "
+    "returned the answer, write \"Verified against the knowledge graph.\" under "
+    "the block; otherwise write \"(not executed)\" under it. Never omit this "
+    "section — if you have no answer, show the query you tried or write \"no "
+    "query could be formed\"."
+)
+
+# KG-specific detail for the conversational "Reproduce with SPARQL" block,
+# appended to the system prompt by SciQAAgent._get_sparql_reproduction_hint.
+# The prefixes and the named graph mirror RunORKGSPARQL's docstring. The block
+# is printed self-contained (prefixes + explicit GRAPH) so a booth visitor can
+# paste it into the raw ORKG endpoint; RunORKGSPARQL still accepts it verbatim,
+# because its own prefix injection is a harmless duplicate and the explicit
+# GRAPH clause suppresses its auto-wrapping.
+SPARQL_REPRODUCTION_HINT_TEMPLATE = """
+
+REPRODUCE-WITH-SPARQL DETAILS (ORKG, the Open Research Knowledge Graph):
+{verification}
+- The code block must carry these PREFIX lines and wrap the pattern in the named
+  graph:
+
+  PREFIX orkgr: <http://orkg.org/orkg/resource/>
+  PREFIX orkgp: <http://orkg.org/orkg/predicate/>
+  PREFIX orkgc: <http://orkg.org/orkg/class/>
+  PREFIX rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+  SELECT ?answer ?answerLabel
+  WHERE {
+    GRAPH <http://sciqa.org/kg> {
+      orkgr:<the R-id you looked up> orkgp:<the predicate you followed> ?answer .
+      ?answer rdfs:label ?answerLabel .
+    }
+  }
+
+- URI scheme: resources are orkgr:R<number>, predicates are orkgp:P<number> or
+  orkgp:<name>, classes are orkgc:<Name>. Keep LIMIT / ORDER BY / GROUP BY
+  outside the GRAPH block, after the closing brace of WHERE.
+- Always bind rdfs:label for resource answers so the visitor sees titles rather
+  than bare R-ids.
+- RunORKGSPARQL does not return usable rows for an ASK query. If your answer is
+  yes/no, still print the ASK query in the block, but verify it by running the
+  same graph pattern once as SELECT ?x WHERE { GRAPH <http://sciqa.org/kg> { ... } }
+  LIMIT 1 and checking the expected row comes back."""
+
+_SPARQL_VERIFICATION_AVAILABLE = """\
+- Raw SPARQL tool for the single verification run: RunORKGSPARQL. Pass the query
+  exactly as it appears in your code block; the prefixes it injects on top are a
+  harmless duplicate and your explicit GRAPH clause stops it re-wrapping."""
+
+_SPARQL_VERIFICATION_UNAVAILABLE = """\
+- Raw SPARQL execution is disabled in this run, so you cannot verify the query.
+  Still print it, and put "(not executed)" under the code block."""
+
+# str.replace, not str.format: the template body is full of literal SPARQL
+# braces that format() would try to interpret as fields.
+SPARQL_REPRODUCTION_HINT = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
+    "{verification}", _SPARQL_VERIFICATION_AVAILABLE
+)
+SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
+    "{verification}", _SPARQL_VERIFICATION_UNAVAILABLE
 )
 
 # ==============================================================================
