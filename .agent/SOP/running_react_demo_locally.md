@@ -1,5 +1,5 @@
 ---
-summary: How to run the React demo frontend + FastAPI backend locally — full Docker stack (api + web services) or a fast dev loop (uv run backend, Vite hot reload frontend).
+summary: How to run the React demo frontend + FastAPI backend locally — full Docker stack (api + web services) or a fast dev loop (uv run backend, Vite hot reload frontend); checklist for adding a branch's settings-panel rows; two testing gotchas (.env load_dotenv, root-level test file skipped by scoped pytest runs).
 ---
 
 # SOP: Running the React Demo Frontend Locally
@@ -88,3 +88,42 @@ started the run gets a 404).
   failed (see `System/demo_react_frontend.md` "Branch-portable model
   picker") — check `AMA_API_KEY`/endpoint reachability, same as the
   Streamlit page.
+- **`env -u OPENROUTER_API_KEY pytest ...` still behaves as if the key is
+  set**: `ama_kbqa/config.py` calls `load_dotenv()` at import time, and this
+  repo has a `.env` — `load_dotenv()` re-populates the var from the file
+  regardless of what you unset on the command line. Use `OPENROUTER_API_KEY=
+  pytest ...` (empty value) instead of `env -u`, or the "no key configured"
+  path in a settings-panel test will silently not exercise what you think it
+  does.
+- **`pytest tests/api tests/frontend` silently skips the frontend-settings
+  config tests**: `tests/test_config_frontend_settings.py` sits at the
+  `tests/` root, not under `tests/api/` or `tests/frontend/` — a
+  directory-scoped pytest invocation collects nothing from it. Run it
+  explicitly (`pytest tests/test_config_frontend_settings.py`) or run the
+  whole `tests/` tree when touching `get_frontend_settings_level()`.
+
+## Adding a settings-panel row on a new branch
+
+The settings panel (`/api/meta`'s `settings` block) is data-driven — no
+React changes needed. See `System/demo_react_frontend.md` § "Data-driven
+settings panel" for the full contract; the checklist for a new branch:
+
+1. Set `[frontend] settings_level = "full"` in `config.toml` /
+   `config.docker.toml` (or leave it `"minimal"` if the branch needs no
+   endpoint detail — that's the whole `demo-public` diff).
+2. Override `endpoint_rows()` and/or `diagnostic_rows()` in
+   `ama_kbqa/api/meta.py` for this branch's endpoints. Compose from
+   `provider_endpoint_row()` for anything `config.toml`-configured, or write
+   a probed row by hand (see `demo-llamacpp`'s `_local_chat_row()`/
+   `_local_embedding_row()` for the pattern: cache successes *and*
+   failures — `st.cache_data` does not cache exceptions).
+3. Only override `endpoint_notices()` if the default (one line per
+   non-`ok` row) isn't right for the branch — e.g. `demo-booth` needed
+   per-provider rather than per-model wording, deduped against the model
+   picker's own `model_notices`.
+4. Never put key material in a row — `api_key_state()` reports only
+   `{"configured": bool, "hint": "<ENV_VAR_NAME>"}`.
+5. If the new tests would collide with the shared `tests/api/test_meta_settings.py`
+   file, split branch-specific assertions into their own file (booth's
+   `tests/api/test_meta_settings_booth.py`), matching the pattern set
+   2026-09-16.

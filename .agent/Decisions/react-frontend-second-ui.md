@@ -68,3 +68,17 @@ Because both frontends run the same helper functions against the same agent clas
 ## Threshold to revisit (updated)
 
 Decision 1's original threshold (multi-user auth, real-time collaboration, URL-routable deep-linking) is unchanged for the *internal* trace/graph inspector — it still doesn't need a migration. For the React demo frontend specifically, the trigger to reconsider its architecture is: (a) load that a single uvicorn worker cannot serve, or (b) a requirement that concurrent sessions never see each other's model/temperature setting — either would force moving past the process-global override and in-memory run state described above.
+
+## Addendum 2026-09-16: settings panel made data-driven, not forked
+
+**Problem.** This ADR's premise ("one API, thin reuse layer, no per-branch React fork") had an unaddressed gap: the user asked that the React frontend ship on *every* demo branch, and the booth/local branches need settings the public branch must never show (which chat/embedding endpoint, whether its key is configured, local-server reachability), while `demo-public` needs none of that. The naive fix — branch-specific React components — would have reopened exactly the "two UIs to keep in sync" cost this ADR already accepted as a trade-off, this time *inside* the one UI, per branch.
+
+**Decision.** Keep the React code identical across branches; make the settings panel **data-driven** from `/api/meta` instead. A new `settings` block (`level`, `controls`, `endpoints`, `diagnostics` — full contract in `System/demo_react_frontend.md`) is rendered generically by React; branches differ by a config flag (`[frontend] settings_level`) plus data returned from three `ama_kbqa/api/meta.py` seams (`endpoint_rows()`, `diagnostic_rows()`, `endpoint_notices()`), never by React code. `api_key` state is reported as a boolean + env-var-name hint, **never key material**.
+
+**Why this over a per-branch React fork:** the whole point of this ADR was to avoid a maintenance fork; extending that principle to settings-panel content keeps forward merges to demo-public/booth/llamacpp a one-line-per-config-file conflict (`demo-public`'s `39f9666` is exactly that: 2 lines changed, no Python) instead of a UI merge conflict every time a branch's endpoint list changes.
+
+**Why not push endpoint detail into the existing `chat_controls` picker/model-notices path instead:** that path already answers "which models can I pick," at model granularity; this needed a build-level answer ("is this endpoint reachable, is its key set") at endpoint/provider granularity, read once for the settings panel rather than re-derived per model. Keeping them separate meant `demo-booth`'s notice dedupe (§ below) is the only place the two have to be reconciled, not every row.
+
+**Trade-off accepted:** the three seams are still branch-specific *Python*, so `PROVIDER_LABELS`/`PROVIDER_KEY_ENV` (shared dicts) and `endpoint_notices()` (substantially rewritten by `demo-booth`) are recurring forward-merge friction points — smaller and more mechanical than a React fork, but not zero. See `System/demo_react_frontend.md`'s "Follow-ups not yet done" for the specific known friction.
+
+**Status:** shipped on `demo-v2-int` (`2f0d406`), `demo-public` (`39f9666`), `demo-booth` (`2b97e4e`), `demo-llamacpp` (`3854c7b`). Not yet ported to the v1-line branches (`demo-hetzner`, `demo-kit-models`, `demo-bwcloud*`), which don't have the React frontend at all.

@@ -1,5 +1,5 @@
 ---
-summary: Architecture of the second demo frontend — React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/), 7 endpoints, SSE shapes, ports 8505/8506, single-uvicorn-worker rule, branch-portable model picker.
+summary: Architecture of the second demo frontend — React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/), 7 endpoints, SSE shapes, ports 8505/8506, single-uvicorn-worker rule, branch-portable model picker, data-driven per-branch settings panel.
 ---
 
 # React Demo Frontend + API
@@ -259,3 +259,130 @@ KIT green `#009682` is the accent (`--brand`). White text on `#009682` is only
   29-event trace all rendering correctly.
 - Browser check (Playwright) confirmed: the About dialog, a live run in
   progress, the finished answer, and the Trace span tree.
+
+---
+
+## Data-driven settings panel (2026-09-16, commit `2f0d406` + per-branch)
+
+Every demo branch needs the React frontend, but not the same sidebar: the
+booth and local (llamacpp) builds need endpoint/key visibility the public
+build must never show. Rather than fork the React code per branch (which
+turns every forward merge into a UI conflict), `GET /api/meta` grew a
+declarative `settings` block and the React panel renders whatever it is
+given. **No React code needs to change for a new branch** — see
+`react-frontend-second-ui.md` for why this was chosen over forking the UI.
+
+### The `settings` block
+
+`build_meta()` (`ama_kbqa/api/meta.py`) adds `settings: settings_meta()`:
+
+```
+{
+  level: "minimal" | "full",
+  controls: {model, temperature, simplified_view, live_graph: bool},
+  endpoints: {label, rows: [...], notices: [str, ...]} | null,
+  diagnostics: {label, rows: [...]} | null
+}
+```
+
+`endpoints` and `diagnostics` are always `null` at `level: "minimal"`.
+`controls` says which always-known controls to offer — a branch can drop one
+(e.g. hide `live_graph` when `get_live_graph_enabled()` is false) without
+touching React.
+
+Each endpoint row (`endpoint_row()`) always carries all ten keys so the
+client can render uniformly: `id, label, role, provider, base_url, model,
+model_source, api_key, status, detail`. `api_key` is `{"configured": bool,
+"hint": "<ENV_VAR_NAME>"}` (via `api_key_state()`) or `null` meaning the
+endpoint needs no key — **it never carries key material, not even masked,
+not even a partial hint beyond the env var's name.** `status` is one of
+`STATUS_OK` / `STATUS_UNREACHABLE` / `STATUS_UNKNOWN` / `STATUS_NO_KEY`; the
+React panel styles unknown providers/roles/statuses neutrally rather than
+breaking, so a branch is free to invent a new value.
+
+`diagnostic_row(label, value, detail)` is a plain read-only fact — never a
+secret, never a host path (`diagnostic_rows()` reports `CONFIG_PATH.name`,
+not `CONFIG_PATH`).
+
+### `settings_level` config flag
+
+`[frontend] settings_level = "minimal" | "full"` in `config.toml` /
+`config.docker.toml`, env override `AMA_FRONTEND_SETTINGS_LEVEL` (same
+precedence pattern as `AMA_FRONTEND_LIVE_GRAPH`: env always wins over toml).
+Getter: `ama_kbqa.config.get_frontend_settings_level()`. **Default is
+`"minimal"`** — the safe end, so an old config, a non-demo deployment, or a
+branch that forgot the key never starts advertising endpoint detail by
+accident. Both shipped `config.toml`/`config.docker.toml` on `demo-v2-int`
+opt in to `"full"`; `demo-public` overrides back to `"minimal"` (one line per
+config file — see below).
+
+At `"full"`, `demo-v2-int` itself (no branch override) shows the *generic*
+`endpoint_rows()`/`diagnostic_rows()` implementation: one row for the
+configured `[llm] chat_provider`, one for `[llm] embedding_provider`, and
+four diagnostic facts (Retrieval, Federation, Live graph, Config filename).
+Booth and llamacpp replace/extend those two functions; they don't change the
+contract.
+
+### The three branch seams
+
+A branch extends exactly three functions in `ama_kbqa/api/meta.py` — nothing
+else in that file, and nothing in React, needs to change:
+
+| Seam | Purpose |
+|---|---|
+| `endpoint_rows() -> list[dict]` | Which endpoints this build talks to. Return `[]` to hide the section entirely. |
+| `diagnostic_rows() -> list[dict]` | A handful of read-only build facts. Return `[]` to hide. |
+| `endpoint_notices(rows) -> list[str]` | Warning lines under the endpoint list; default turns every non-`ok` row into one line. |
+
+Shared helpers a branch composes from: `provider_endpoint_row()` (one row
+for a `config.toml`-configured provider, derives status from
+`api_key_state()` alone), `endpoint_row()` (raw 10-key row), `api_key_state()`,
+`diagnostic_row()`, plus the module-level `PROVIDER_KEY_ENV` (provider →
+env var name) and `PROVIDER_LABELS` (provider → display name) dicts and the
+`STATUS_*` constants.
+
+### Per-branch outcomes (2026-09-16)
+
+| Branch | Commit | `settings_level` | What the panel adds |
+|---|---|---|---|
+| `demo-public` | `39f9666` | `"minimal"` | Nothing — exactly one changed line per config file (`settings_level = "full"` → `"minimal"`); `/api/meta` reports `endpoints: null, diagnostics: null`. Needs zero Python. |
+| `demo-booth` | `2b97e4e` | `"full"` | Rows for KIT chat, KIT embedding, OpenRouter and DeepSeek, derived from `[[frontend.chat_models]]` via new `optional_chat_providers()` — not hard-coded. **A provider without its key stays visible** with `status: "no_key"` (hiding it would answer "can I use DeepSeek?" with silence). One notice per *provider*, not per model, worded differently from the picker's own `model_notices` and deduped against it so the presenter never reads the same sentence twice. Every billed row says so in both key states. Diagnostics add "Chat providers: N of M selectable" and "Embeddings: KIT KI-Toolbox, whatever the chat pick." |
+| `demo-llamacpp` | `3854c7b` | `"full"` | Rows for the local chat server (`:8080`) and local embedding server (`:8081`), `api_key: null` (this build has no keys by design), with a **probed** status — reuses the picker's cached `chat_controls._fetch_llamacpp_models()` (3s timeout, 30s TTL) for chat, a direct `fetch_provider_models()` call for embeddings. Adds its own failure cache (`_probe_cache`, 30s success / 10s failure TTL) because `st.cache_data` never caches exceptions, so a stopped server would otherwise repay the connect timeout on every `/api/meta` call. Down-server rows point at `scripts/start_local_llm.sh`. Diagnostics add "Runs locally: chat and embeddings, no cloud API." |
+
+**Known limitation, recorded honestly:** on `demo-booth`, `status: "ok"`
+means the API key is present in the environment — **not** that the endpoint
+answered. Nothing is probed for OpenRouter/DeepSeek (a deliberate choice:
+probing would put two network round-trips in front of the demo's first
+screen on every `/api/meta` call), so an expired or revoked booth key still
+renders `ok`. `demo-llamacpp` is the only branch that actually probes.
+
+### Follow-ups not yet done
+
+- The notice dedupe (dropping a line the model picker already shows via
+  `model_notices`) exists only on `demo-booth`'s `endpoint_notices()`.
+  Consider pushing it down to the shared default on `demo-v2-int` so every
+  branch benefits, not just booth.
+- `demo-llamacpp`'s `status: "ok"` path is exercised only through
+  monkeypatched fetches in tests; nobody has confirmed against a *live*
+  `llama-server --embedding` process that `GET {base_url}/models` actually
+  answers. If it doesn't, the embedding row would read `unreachable` even
+  with the server up.
+- Forward-merge friction to expect: `PROVIDER_LABELS` / `PROVIDER_KEY_ENV`
+  are shared dicts both booth and llamacpp edited; `endpoint_notices()` was
+  substantially rewritten on booth; `tests/api/test_meta_settings.py` picked
+  up booth-only assertions that booth then split into a separate
+  `tests/api/test_meta_settings_booth.py` to keep the shared file small — a
+  future branch should follow that pattern rather than growing the shared
+  file further.
+- The v1-line branches (`demo-hetzner`, `demo-kit-models`, `demo-bwcloud*`,
+  ~280 commits diverged from `demo-v2-int`) do not have the React frontend
+  at all yet, let alone this settings panel. Pending a decision on whether
+  they get it.
+- **Never visually reviewed.** Both new sidebar sections (booth and
+  llamacpp) are verified only by tests and live `curl` against `/api/meta`.
+  Browser automation was broken on this machine for the whole session
+  (Chrome launches but never completes its handshake — 180s timeouts across
+  the Playwright MCP, direct Playwright, a CDP port, and `chrome
+  --screenshot`; it worked earlier the same session doing the verification
+  in the section above, so this looks like an environment regression, not a
+  code problem).
