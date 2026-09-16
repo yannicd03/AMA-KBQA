@@ -1,3 +1,11 @@
+---
+status: accepted
+date: 2026-09-16
+summary: React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/) shipped as an additive second demo UI alongside Streamlit, which stays default and behaviorally unchanged; the API reuses the Streamlit chat page's own helpers directly.
+relates: [trace-inspector-frontend-architecture]
+affects: [amakbqa/task/langgraph-rewrite]
+---
+
 # ADR: React Demo Frontend — Additive Second UI, Not a Migration
 
 **Status:** Accepted (shipped 2026-09-16, commits `852d2ba` FastAPI backend, `095f79f` React app, `6b64a71` provider-aware model handling, `07afe15` tracked `web/src/lib` + duration formatting, on branch `demo-v2-int`). Merged forward: `demo-public` fast-forwarded to `07afe15`; `demo-booth` merge `5a71267`; `demo-llamacpp` merge `674bf6e`.

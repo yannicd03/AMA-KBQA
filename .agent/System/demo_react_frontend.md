@@ -1,3 +1,7 @@
+---
+summary: Architecture of the second demo frontend — React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/), 7 endpoints, SSE shapes, ports 8505/8506, single-uvicorn-worker rule, branch-portable model picker.
+---
+
 # React Demo Frontend + API
 
 ## Related Docs

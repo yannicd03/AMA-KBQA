@@ -1,0 +1,54 @@
+entities:
+  - id: branch/demo-v2-int
+    type: branch
+    status: active
+    as_of: 2026-09-16
+    title: demo-v2-int
+    summary: Shared integration base for the demo v2 line (Router/Federated picker, live graph panel). Tip moved 07afe15 -> e14e77d 2026-09-16 when the React frontend (web/ + ama_kbqa/api/) landed. Pushed to origin.
+    merged_into: [branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
+
+  - id: branch/demo-public
+    type: branch
+    status: active
+    as_of: 2026-09-16
+    title: demo-public
+    summary: Public-facing demo branch. Fast-forwarded to demo-v2-int (07afe15, then e14e77d) 2026-09-16 when the React frontend merged forward; no divergent commits of its own. Pushed to origin.
+    depends_on: [branch/demo-v2-int]
+
+  - id: branch/demo-booth
+    type: branch
+    status: active
+    as_of: 2026-09-16
+    title: demo-booth
+    summary: SEMANTiCS 2026 booth demo branch (demo-v2-int plus OpenRouter/DeepSeek chat providers). React frontend merged in at 5a71267 2026-09-16. Pushed to origin.
+    depends_on: [branch/demo-v2-int]
+
+  - id: branch/demo-llamacpp
+    type: branch
+    status: active
+    as_of: 2026-09-16
+    title: demo-llamacpp
+    summary: Local llama.cpp demo branch, created 2026-09-15 off demo-booth. React frontend merged in at 674bf6e 2026-09-16. Pushed to origin.
+    depends_on: [branch/demo-booth]
+
+  - id: feature/one-api-serves-every-demo-branch
+    type: feature
+    title: One API serves every demo branch
+    summary: ama_kbqa/api/ feature-detects each branch's model/provider picker (chat_controls.available_choices) so a single FastAPI backend serves demo-v2-int, demo-public, demo-booth, and demo-llamacpp without per-branch forks.
+    implemented_on: [branch/demo-v2-int, branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
+
+  - id: issue/react-demo-hetzner-deployment-gap
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: React demo frontend has no Hetzner port claim or cloudflared ingress
+    summary: web (8505) and api (8506) run local-only in Docker; verified there only. Not deployed, staged, or given a public hostname on the Hetzner box — no port claimed, no tunnel ingress rule added.
+    observed_in: [branch/demo-v2-int]
+
+  - id: issue/apply-chat-settings-process-global-concurrency
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: apply_chat_settings is a process-global override now serving concurrent sessions
+    summary: chat_controls.apply_chat_settings mutates process-global model/temperature config; built for one Streamlit tab, now shared by concurrent browser sessions through the single API process. RunManager._build_lock only serializes the override-then-build sequence, not a whole in-flight run.
+    observed_in: [branch/demo-v2-int]

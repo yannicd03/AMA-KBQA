@@ -1,3 +1,7 @@
+---
+summary: Public demo deployment runbook for the shared Hetzner box (compose projects, ports, Cloudflare tunnels). As of 2026-09-16, its React frontend section records that the new React frontend (web/api) is verified locally in Docker only — not deployed, staged, or given a port/ingress on this box.
+---
+
 # SOP: Public Demo Deployment on the Shared Hetzner Box
 
 ## Related Docs
