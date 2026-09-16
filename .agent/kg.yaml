@@ -4,7 +4,7 @@ entities:
     status: active
     as_of: 2026-09-16
     title: demo-v2-int
-    summary: Shared integration base for the demo v2 line (Router/Federated picker, live graph panel). Tip moved 07afe15 -> e14e77d 2026-09-16 when the React frontend (web/ + ama_kbqa/api/) landed. Pushed to origin.
+    summary: Shared integration base for the demo v2 line (Router/Federated picker, live graph panel). Tip moved e14e77d -> 2f0d406 (data-driven settings panel base mechanism) -> da0ccb8 (docs) 2026-09-16. Pushed to origin.
     merged_into: [branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
 
   - id: branch/demo-public
@@ -12,7 +12,7 @@ entities:
     status: active
     as_of: 2026-09-16
     title: demo-public
-    summary: Public-facing demo branch. Fast-forwarded to demo-v2-int (07afe15, then e14e77d) 2026-09-16 when the React frontend merged forward; no divergent commits of its own. Pushed to origin.
+    summary: Public-facing demo branch. Tip 39f9666 2026-09-16, merging demo-v2-int's data-driven settings panel with settings_level = "minimal" (endpoints and diagnostics hidden); 373 tests. Pushed to origin.
     depends_on: [branch/demo-v2-int]
 
   - id: branch/demo-booth
@@ -20,7 +20,7 @@ entities:
     status: active
     as_of: 2026-09-16
     title: demo-booth
-    summary: SEMANTiCS 2026 booth demo branch (demo-v2-int plus OpenRouter/DeepSeek chat providers). React frontend merged in at 5a71267 2026-09-16. Pushed to origin.
+    summary: SEMANTiCS 2026 booth demo branch (demo-v2-int plus OpenRouter/DeepSeek chat providers). Tip 2b97e4e 2026-09-16 adds KIT + OpenRouter + DeepSeek endpoint rows derived from config to the settings panel, plus per-provider notice dedupe; 406 tests. Pushed to origin.
     depends_on: [branch/demo-v2-int]
 
   - id: branch/demo-llamacpp
@@ -28,7 +28,7 @@ entities:
     status: active
     as_of: 2026-09-16
     title: demo-llamacpp
-    summary: Local llama.cpp demo branch, created 2026-09-15 off demo-booth. React frontend merged in at 674bf6e 2026-09-16. Pushed to origin.
+    summary: Local llama.cpp demo branch, created 2026-09-15 off demo-booth. Tip 3854c7b 2026-09-16 adds local chat (:8080) and embedding (:8081) settings rows with a probed status; 416 tests. Pushed to origin.
     depends_on: [branch/demo-booth]
 
   - id: feature/one-api-serves-every-demo-branch
@@ -36,6 +36,53 @@ entities:
     title: One API serves every demo branch
     summary: ama_kbqa/api/ feature-detects each branch's model/provider picker (chat_controls.available_choices) so a single FastAPI backend serves demo-v2-int, demo-public, demo-booth, and demo-llamacpp without per-branch forks.
     implemented_on: [branch/demo-v2-int, branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
+
+  - id: feature/data-driven-settings-panel
+    type: feature
+    title: Data-driven per-branch settings panel
+    summary: GET /api/meta grows an optional settings block (level, controls, endpoints, diagnostics) driven by [frontend] settings_level ("minimal"/"full", env override AMA_FRONTEND_SETTINGS_LEVEL, default minimal); branches extend endpoint_rows()/diagnostic_rows()/endpoint_notices() in ama_kbqa/api/meta.py, never React.
+    implemented_on: [branch/demo-v2-int, branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
+    relates: [amakbqa/decision/react-frontend-second-ui]
+
+  - id: issue/settings-panel-booth-llamacpp-not-visually-reviewed
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: Booth and llamacpp settings panels never visually reviewed
+    summary: Browser automation (Playwright) has been broken on this machine all session — Chrome launches but never completes its handshake, across four transports tried. Environment issue, not a code issue; the demo-booth and demo-llamacpp settings sections are unverified in a real browser.
+    observed_in: [branch/demo-booth, branch/demo-llamacpp]
+
+  - id: issue/demo-booth-endpoint-status-not-probed
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: demo-booth endpoint status "ok" only means the API key is present
+    summary: endpoint_rows() on demo-booth sets status "ok" from api_key_state() alone; nothing actually calls the endpoint. An expired or revoked key still reads "ok" in the settings panel.
+    observed_in: [branch/demo-booth]
+
+  - id: issue/demo-llamacpp-ok-path-unverified-live
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: demo-llamacpp's probed "ok" status only exercised via monkeypatched fetches
+    summary: _local_chat_row()/_local_embedding_row() probing logic is covered by tests that monkeypatch the fetch call; nobody has confirmed against a live llama-server --embedding that GET {base_url}/models actually answers as expected.
+    observed_in: [branch/demo-llamacpp]
+
+  - id: issue/notice-dedupe-not-pushed-to-v2-int
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: demo-booth's per-provider notice dedupe could be pushed down to demo-v2-int
+    summary: demo-booth's endpoint_notices() override (per-provider rather than per-model wording, deduped against chat_controls model_notices) currently lives only on demo-booth; the generic demo-v2-int implementation still emits one line per non-ok row.
+    observed_in: [branch/demo-booth, branch/demo-v2-int]
+
+  - id: issue/v1-line-branches-lack-react-frontend
+    type: issue
+    status: open
+    date: 2026-09-16
+    title: v1-line demo branches have no React frontend at all
+    summary: demo-hetzner, demo-kit-models, and demo-bwcloud* never received the React SPA / FastAPI backend or the data-driven settings panel; roughly 280 commits diverged from the demo-v2-int line. Whether/how to port is a pending user decision.
+    observed_in: [branch/demo-v2-int]
 
   - id: issue/react-demo-hetzner-deployment-gap
     type: issue
