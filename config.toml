@@ -8,6 +8,8 @@ embedding_temperature = 0.0
 [agent]
 auto_inject_journal = true
 zero_tool_call_retry_max = 3
+# Per-call timeout for MCP tool servers, read by framework/mcp_client.py.
+mcp_tool_timeout_seconds = 180
 
 [benchmark]
 # Number of questions processed concurrently by the benchmark runner.
@@ -114,6 +116,27 @@ live_graph = true
 # non-demo deployment never exposes endpoint detail by accident.
 # Override per deployment with AMA_FRONTEND_SETTINGS_LEVEL=minimal|full.
 settings_level = "full"
+
+# Chat endpoints offered next to the auto-discovered KIT models. An entry is
+# shown only when its provider's API key env var is set, and (for OpenRouter)
+# only when the live catalog still knows the id and it can call tools. Prices
+# are USD per 1M tokens; omitted here on purpose, so the picker shows what
+# OpenRouter's live catalog says this account is billed rather than a number
+# that silently goes stale in config.
+#
+# ORDERING HAZARD: these are TOML *array tables*. Every plain [frontend] key
+# above (live_graph, settings_level) must stay above them — a plain key written
+# after the first [[frontend.chat_models]] header silently becomes a key of
+# that array entry instead of a [frontend] key.
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4.1-flash"
+name = "DeepSeek V4.1 Flash"
 
 [federation]
 # Allow the orchestrator to dispatch a question to multiple specialists

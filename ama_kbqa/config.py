@@ -37,6 +37,16 @@ _config_cache: Optional[dict] = None
 CHAT_MODEL_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_MODEL"
 CHAT_TEMPERATURE_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_TEMPERATURE"
 
+# Same mechanism, one level up: which *endpoint* the chat model lives on. The
+# demo picker offers KIT models next to OpenRouter ones, and the model id alone
+# does not say which endpoint to post it to. Without this env channel the MCP
+# tool-server subprocesses would keep building a KIT client from their own
+# config.toml and post a foreign model id to it ("Model not found"), which is
+# exactly the failure CHAT_MODEL_OVERRIDE_ENV_VAR was added to fix — only
+# worse, because the parent process would answer while every specialist
+# silently stayed on KIT. Embeddings, reranking and synthesis are untouched.
+CHAT_PROVIDER_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_PROVIDER"
+
 # Provider API keys the system can authenticate with. No single one is
 # mandatory (a deployment may run exclusively against KIT, or exclusively
 # against OpenRouter); we only require that *at least one* is present so the
@@ -44,6 +54,14 @@ CHAT_TEMPERATURE_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_TEMPERATURE"
 # _get_api_key() still enforces that the specific configured provider's key
 # exists when a client is built.
 _PROVIDER_API_KEY_ENV_VARS = ("KIT_API_KEY", "OPENROUTER_API_KEY")
+
+# Chat providers the demo model picker may offer, i.e. the ones this build
+# knows how to build a client for *and* holds a key for. Kept next to the key
+# list so a new endpoint is added in one place; used to validate the
+# [[frontend.chat_models]] entries. Deliberately without "deepseek": this
+# build routes the DeepSeek presets through OpenRouter (see
+# get_frontend_chat_models).
+_FRONTEND_CHAT_PROVIDERS = ("kit", "openrouter")
 
 
 def assert_provider_api_key_present() -> None:
@@ -96,6 +114,30 @@ def load_config() -> dict:
         raise ValueError(f"Failed to parse config.toml: {e}")
 
 
+def get_chat_provider() -> str:
+    """Get the chat provider ("kit", "openrouter", ...).
+
+    Honors ``AMA_KBQA_CHAT_PROVIDER`` (``CHAT_PROVIDER_OVERRIDE_ENV_VAR``) when
+    set, taking precedence over config.toml. Every reader of
+    ``[llm].chat_provider`` goes through here, so a provider switch made in the
+    demo's model picker reaches the MCP tool-server subprocesses too: they
+    inherit the environment but load their own config.toml, and would otherwise
+    keep building a KIT client for an OpenRouter model id.
+
+    ``[llm].embedding_provider`` is deliberately *not* routed through here —
+    embeddings, reranking and synthesis stay where config.toml puts them no
+    matter which chat model the visitor picks.
+
+    Returns:
+        str: The chat provider name
+    """
+    override = os.getenv(CHAT_PROVIDER_OVERRIDE_ENV_VAR)
+    if override:
+        return override
+    config = load_config()
+    return config["llm"]["chat_provider"]
+
+
 def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
     """Get an OpenAI client configured for chat/reasoning tasks.
 
@@ -115,8 +157,7 @@ def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
         ValueError: If the configured provider is not supported
         KeyError: If required environment variables are missing
     """
-    config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     return _create_client(provider, model_type="chat", max_retries=max_retries)
 
@@ -150,7 +191,7 @@ def get_chat_model_name() -> str:
     if override:
         return override
     config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
     return config[provider]["chat_model"]
 
 
@@ -246,7 +287,7 @@ def get_chat_model_provider() -> Optional[str]:
         Optional[str]: The provider preference string, or None if not configured
     """
     config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -270,8 +311,7 @@ def get_provider_preferences() -> Optional[dict]:
             "allow_fallbacks": False
         }
     """
-    config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -525,7 +565,7 @@ def get_synthesis_client(max_retries: Optional[int] = None) -> OpenAI:
         logger.warning(
             "Synthesis provider not configured, falling back to chat provider"
         )
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
 
     return _create_client(provider, model_type="chat", max_retries=max_retries)
 
@@ -546,7 +586,7 @@ def get_synthesis_model_name() -> str:
         logger.warning(
             "Synthesis model not configured, falling back to chat model"
         )
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
         return config[provider]["chat_model"]
 
 
@@ -672,7 +712,7 @@ def get_synthesis_provider_preferences() -> Optional[dict]:
     if "synthesis" in config and "synthesis_provider" in config["synthesis"]:
         provider = config["synthesis"]["synthesis_provider"]
     else:
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -996,6 +1036,78 @@ def get_frontend_config() -> dict:
     """
     config = load_config()
     return dict(config.get("frontend", {}))
+
+
+def get_frontend_chat_models() -> list[dict]:
+    """Extra chat endpoints the demo model picker offers next to the KIT models.
+
+    Reads the ``[[frontend.chat_models]]`` array of tables. Each entry names a
+    provider, a provider-specific model id, an optional display name, optional
+    prices in USD per 1M tokens, and an optional ``default`` flag.
+
+    Never raises: a malformed or partially hand-edited config must degrade the
+    picker to "KIT only" rather than take the whole demo down, so invalid
+    entries are dropped with a warning and a missing/odd section yields an
+    empty list.
+
+    Note the TOML shape. ``[[frontend.chat_models]]`` are *array tables*, so
+    every plain ``[frontend]`` key (``live_graph``, ``settings_level``) must be
+    written above them — a key placed after the first ``[[...]]`` header
+    silently becomes a key of that array entry instead.
+
+    Returns:
+        list[dict]: Normalized entries with keys ``provider``, ``id``, ``name``
+        (may be ""), ``prompt_usd_per_m`` / ``completion_usd_per_m`` (float or
+        None) and ``default`` (bool), in config order.
+    """
+    raw = get_frontend_config().get("chat_models")
+    if not isinstance(raw, list):
+        if raw is not None:
+            logger.warning(
+                "[frontend].chat_models is not a list of tables; ignoring it"
+            )
+        return []
+
+    def _price(entry: dict, key: str) -> Optional[float]:
+        value = entry.get(key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"Ignoring non-numeric {key}={value!r} in [frontend].chat_models"
+            )
+            return None
+
+    models: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            logger.warning(f"Dropping non-table [frontend].chat_models entry: {entry!r}")
+            continue
+        provider = str(entry.get("provider") or "").strip()
+        model_id = str(entry.get("id") or "").strip()
+        if provider not in _FRONTEND_CHAT_PROVIDERS:
+            logger.warning(
+                f"Dropping [frontend].chat_models entry with unsupported provider "
+                f"{provider!r} (expected one of {list(_FRONTEND_CHAT_PROVIDERS)})"
+            )
+            continue
+        if not model_id:
+            logger.warning(
+                f"Dropping [frontend].chat_models entry for provider {provider!r} "
+                "with an empty id"
+            )
+            continue
+        models.append({
+            "provider": provider,
+            "id": model_id,
+            "name": str(entry.get("name") or "").strip(),
+            "prompt_usd_per_m": _price(entry, "prompt_usd_per_m"),
+            "completion_usd_per_m": _price(entry, "completion_usd_per_m"),
+            "default": bool(entry.get("default", False)),
+        })
+    return models
 
 
 def get_live_graph_enabled() -> bool:

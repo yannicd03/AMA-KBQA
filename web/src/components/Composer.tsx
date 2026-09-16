@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { AgentMeta } from "../api";
 import { AgentPicker } from "./AgentPicker";
-import { IconArrowUp, IconNewChat } from "./icons";
+import { IconArrowUp, IconNewChat, IconStop } from "./icons";
 
 const MAX_CHARS = 4000;
 
@@ -21,6 +21,10 @@ interface ComposerProps {
   caption?: ReactNode;
   onRestart?: () => void;
   restartDisabled?: boolean;
+  /** Set only while a run is in flight; takes over the action slot. */
+  onStop?: () => void;
+  /** true once Stop was pressed and the server has been told. */
+  stopping?: boolean;
   autoFocus?: boolean;
 }
 
@@ -37,6 +41,8 @@ export function Composer({
   caption,
   onRestart,
   restartDisabled,
+  onStop,
+  stopping,
   autoFocus,
 }: ComposerProps) {
   const [text, setText] = useState("");
@@ -111,7 +117,23 @@ export function Composer({
               {text.length}/{MAX_CHARS}
             </span>
           )}
-          {showInput ? (
+          {/* While a run is in flight Stop takes the slot, the way the send
+              button becomes a stop button in chat products. Send is disabled
+              then anyway, and New chat cannot be used mid-run either. */}
+          {onStop ? (
+            <button
+              type="button"
+              className="send send--stop"
+              onClick={onStop}
+              disabled={stopping}
+              aria-label={stopping ? "Stopping the run" : "Stop the run"}
+              // Honest: the token is cooperative, so the agent finishes the
+              // step it is on before the run actually ends.
+              title={stopping ? "Stopping — the agent is finishing its current step" : "Stop the run"}
+            >
+              <IconStop size={16} />
+            </button>
+          ) : showInput ? (
             <button
               type="submit"
               className="send"

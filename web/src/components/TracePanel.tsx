@@ -52,7 +52,8 @@ function Json({ value }: { value: unknown }) {
 }
 
 export function TracePanel({ runId, status }: { runId: string; status: RunStatus }) {
-  const finished = status === "done" || status === "error";
+  // A cancelled run is finished too: its partial trace is already frozen.
+  const finished = status === "done" || status === "error" || status === "cancelled";
   const [data, setData] = useState<TraceResponse | null>(() => cache.get(runId) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);

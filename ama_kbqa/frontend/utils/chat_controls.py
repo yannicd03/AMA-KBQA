@@ -16,12 +16,18 @@ case.
 
 from __future__ import annotations
 
+import os
+from dataclasses import dataclass
 from typing import Optional
 
 import streamlit as st
 
-from ama_kbqa.frontend.utils.config_editor import fetch_provider_models_meta
-from ama_kbqa.pricing import format_cost_usd, get_model_pricing
+from ama_kbqa.config import get_frontend_chat_models
+from ama_kbqa.frontend.utils.config_editor import (
+    fetch_provider_models_meta,
+    fetch_provider_models_pricing,
+)
+from ama_kbqa.pricing import format_cost_usd, get_model_pricing, register_runtime_pricing
 
 
 # KIT's ``/models`` endpoint advertises far more than locally-hosted chat
@@ -182,9 +188,246 @@ def price_caption(model: Optional[str]) -> Optional[str]:
     return caption.replace("$", r"\$")
 
 
-def apply_chat_settings(model: str, temperature: float) -> None:
+# Display label per provider, used by ``display_choice`` so the visitor can
+# see at a glance whether the next question is free (KIT) or billed.
+_PROVIDER_LABELS: dict[str, str] = {
+    "kit": "KIT",
+    "openrouter": "OpenRouter",
+}
+
+# Availability rule for the non-KIT endpoints: the provider's key env var is
+# set. Mirrors ``config._get_api_key``'s map; KIT is absent on purpose because
+# its entries come from the live catalog (with an offline fallback) rather
+# than from config, exactly as before.
+_PROVIDER_KEY_ENV: dict[str, str] = {
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+# The "type your own model id" entry. It is not a model: it is a placeholder
+# whose ``key`` the client sends back together with the id the user typed (see
+# ``ama_kbqa/api/runs.py``). The sentinel lives in the model slot so the key
+# has the same ``provider:model`` shape as every other entry and can never
+# collide with a real OpenRouter id (those always contain a "/").
+CUSTOM_MODEL_SENTINEL = "__custom__"
+CUSTOM_PROVIDER = "openrouter"
+CUSTOM_CHOICE_KEY = f"{CUSTOM_PROVIDER}:{CUSTOM_MODEL_SENTINEL}"
+CUSTOM_CHOICE_NAME = "OpenRouter (custom)"
+
+
+@dataclass(frozen=True)
+class ChatModelChoice:
+    """One selectable entry in the demo's model picker.
+
+    Carries the provider next to the model id: the two together are what
+    ``apply_chat_settings`` needs to point both this process and the MCP
+    tool-server subprocesses at the right endpoint. Prices are per token (the
+    unit both OpenRouter's catalog and ``pricing`` use), None when unknown.
+
+    ``custom`` marks the free-text placeholder rather than a real model.
+    """
+
+    provider: str
+    model: str
+    name: str
+    prompt_usd_per_token: Optional[float] = None
+    completion_usd_per_token: Optional[float] = None
+    default: bool = False
+    custom: bool = False
+
+    @property
+    def key(self) -> str:
+        """Stable selectbox value. The model id alone is not unique across
+        providers (the same id can exist on KIT and on OpenRouter)."""
+        return f"{self.provider}:{self.model}"
+
+
+def custom_choice() -> ChatModelChoice:
+    """The "OpenRouter (custom)" placeholder entry."""
+    return ChatModelChoice(
+        provider=CUSTOM_PROVIDER,
+        model=CUSTOM_MODEL_SENTINEL,
+        name=CUSTOM_CHOICE_NAME,
+        custom=True,
+    )
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def _fetch_openrouter_catalog() -> dict[str, dict]:
+    """Cached wrapper around the live OpenRouter ``/models`` fetch (5-min TTL).
+
+    Same TTL as the KIT fetch: long enough that the demo does not hit the
+    endpoint on every rerun, short enough that a price change shows up within
+    the day.
+    """
+    return fetch_provider_models_pricing("openrouter")
+
+
+def _per_token(per_million: Optional[float]) -> Optional[float]:
+    """Config prices are quoted per 1M tokens; everything else works per token."""
+    return None if per_million is None else per_million / 1_000_000
+
+
+def available_choices() -> tuple[list[ChatModelChoice], list[str]]:
+    """All selectable chat models, plus the notices explaining what is missing.
+
+    KIT entries come first and are exactly what ``available_models()`` returns
+    today (live catalog, offline fallback). Then the ``[[frontend.chat_models]]``
+    entries in config order, minus:
+
+    - every entry whose provider's API key is unset (one notice per provider,
+      rather than one per configured model),
+    - every OpenRouter entry the live catalog does not know (a retired or
+      mistyped id would otherwise fail only once the visitor asks a question).
+
+    When the OpenRouter catalog is unreachable the configured entries are kept
+    unvalidated and unpriced: a flaky network must not empty the picker.
+
+    The free-text "OpenRouter (custom)" entry is appended last, under the same
+    key rule as the presets: no OpenRouter key, no entry.
+
+    Prices resolved here are registered with ``pricing.register_runtime_pricing``
+    so the per-answer estimate in the chat footer works for billed models.
+    """
+    choices: list[ChatModelChoice] = [
+        ChatModelChoice(provider="kit", model=model, name=display_model_name(model))
+        for model in available_models()
+    ]
+    notices: list[str] = []
+
+    catalog: Optional[dict[str, dict]] = None
+    catalog_unreachable = False
+
+    def _openrouter_available() -> bool:
+        env_var = _PROVIDER_KEY_ENV["openrouter"]
+        if os.getenv(env_var):
+            return True
+        notice = f"OpenRouter models hidden: {env_var} not set"
+        if notice not in notices:
+            notices.append(notice)
+        return False
+
+    for entry in get_frontend_chat_models():
+        provider = entry["provider"]
+        if provider == "openrouter" and not _openrouter_available():
+            continue
+
+        name = entry["name"]
+        prompt = _per_token(entry["prompt_usd_per_m"])
+        completion = _per_token(entry["completion_usd_per_m"])
+
+        if provider == "openrouter":
+            if catalog is None and not catalog_unreachable:
+                try:
+                    catalog = _fetch_openrouter_catalog()
+                # Any failure at all (no key, HTTP error, junk payload) means
+                # "catalog unreachable": keep the config entries unvalidated.
+                except Exception:  # noqa: BLE001
+                    catalog_unreachable = True
+            if catalog is not None:
+                meta = catalog.get(entry["id"])
+                if meta is None:
+                    notices.append(
+                        f"OpenRouter model {entry['id']} is not in the live "
+                        "catalog and was hidden"
+                    )
+                    continue
+                if not meta["supports_tools"]:
+                    # Every agent in this demo answers by calling tools. A
+                    # model that cannot tool-call would return an unusable
+                    # answer on the first question, so hide it here rather
+                    # than let the visitor find out mid-demo.
+                    notices.append(
+                        f"OpenRouter model {entry['id']} cannot call tools "
+                        "and was hidden"
+                    )
+                    continue
+                name = name or meta["name"]
+                if prompt is None:
+                    prompt = meta["prompt"]
+                if completion is None:
+                    completion = meta["completion"]
+
+        choice = ChatModelChoice(
+            provider=provider,
+            model=entry["id"],
+            name=name or entry["id"],
+            prompt_usd_per_token=prompt,
+            completion_usd_per_token=completion,
+            default=entry["default"],
+        )
+        register_runtime_pricing(
+            choice.model, choice.prompt_usd_per_token, choice.completion_usd_per_token
+        )
+        choices.append(choice)
+
+    if _openrouter_available():
+        choices.append(custom_choice())
+
+    return choices, notices
+
+
+def default_choice(choices: list[ChatModelChoice]) -> ChatModelChoice:
+    """The entry the picker should pre-select.
+
+    An explicit ``default = true`` in config wins (that is what the flag is
+    for). Otherwise the KIT preference order applies, so the demo keeps opening
+    on a fast, free model and only spends money when the visitor chooses to.
+    Falls back to the first entry, and finally to a synthetic KIT placeholder
+    so the caller never has to handle an empty list.
+
+    The custom placeholder is never chosen as a fallback default: it carries no
+    model id, so a build that opened on it could not answer anything.
+    """
+    for choice in choices:
+        if choice.default and not choice.custom:
+            return choice
+    kit_by_model = {c.model: c for c in choices if c.provider == "kit"}
+    for candidate in DEFAULT_MODEL_PREFERENCE:
+        if candidate in kit_by_model:
+            return kit_by_model[candidate]
+    for choice in choices:
+        if not choice.custom:
+            return choice
+    fallback = DEFAULT_MODEL_PREFERENCE[0]
+    return ChatModelChoice(
+        provider="kit", model=fallback, name=display_model_name(fallback)
+    )
+
+
+def display_choice(choice: ChatModelChoice) -> str:
+    """Label shown in the dropdown, e.g. "DeepSeek V4 Pro · OpenRouter"."""
+    if choice.custom:
+        return choice.name
+    label = _PROVIDER_LABELS.get(choice.provider, choice.provider)
+    return f"{choice.name} · {label}"
+
+
+def price_caption_for(choice: ChatModelChoice) -> Optional[str]:
+    """One-line per-million-token price for ``choice``, or None.
+
+    KIT keeps today's illustrative table (nobody is billed for it). Non-KIT
+    entries use the price the picker actually resolved and say "(billed)", so
+    the visitor is never surprised by a number that turns out to be real. The
+    custom entry has no price until an id is typed, and guessing one would be
+    worse than showing none.
+    """
+    if choice.custom:
+        return None
+    if choice.provider == "kit":
+        return price_caption(choice.model)
+    if choice.prompt_usd_per_token is None or choice.completion_usd_per_token is None:
+        return None
+    per_in = format_cost_usd(choice.prompt_usd_per_token * 1_000_000)
+    per_out = format_cost_usd(choice.completion_usd_per_token * 1_000_000)
+    # Escape the ``$`` so Streamlit markdown does not read the pair of dollar
+    # signs as LaTeX math delimiters.
+    caption = f"{per_in} per 1M in and {per_out} per 1M out (billed)"
+    return caption.replace("$", r"\$")
+
+
+def apply_chat_settings(model: str, temperature: float, provider: str = "kit") -> None:
     """Point the in-memory config — and this process's environment — at the
-    chosen KIT model and temperature.
+    chosen provider, model and temperature.
 
     Mutates the cached config dict so agents created or queried next *in this
     process* pick the values up via ``get_chat_model_name()`` /
@@ -201,20 +444,31 @@ def apply_chat_settings(model: str, temperature: float) -> None:
     ``get_chat_temperature()`` check these env vars first and fall back to
     config.toml when unset, so default (non-demo) behaviour is unchanged.
 
+    The provider matters as much as the model: posting an OpenRouter model id
+    to the KIT endpoint fails with "Model not found", and the failure would
+    only surface inside a specialist mid-answer. ``AMA_KBQA_CHAT_PROVIDER`` is
+    what carries the pick across the subprocess boundary — without it the
+    parent process would talk to OpenRouter while every MCP tool server
+    silently kept using KIT, which still produces an answer and so hides the
+    bug completely.
+
+    ``provider`` defaults to "kit" so the two-argument call sites (the
+    Streamlit page, the smoke script's bare model id, older tests) keep
+    pinning KIT exactly as before.
+
     Like the ``_config_cache`` mutation above, this is process-global: a
     server process handling multiple concurrent demo sessions would apply
     the override to all of them, not just the session that picked it. Same
-    caveat as today, just extended to the env var.
+    caveat as today, just extended to the env vars.
     """
-    import os
-
     import ama_kbqa.config as cfg_module
 
     cfg = cfg_module.load_config()
-    cfg.setdefault("llm", {})["chat_provider"] = "kit"
-    cfg.setdefault("kit", {})["chat_model"] = model
+    cfg.setdefault("llm", {})["chat_provider"] = provider
+    cfg.setdefault(provider, {})["chat_model"] = model
     cfg["llm"]["chat_temperature"] = float(temperature)
     cfg_module._config_cache = cfg
 
+    os.environ[cfg_module.CHAT_PROVIDER_OVERRIDE_ENV_VAR] = provider
     os.environ[cfg_module.CHAT_MODEL_OVERRIDE_ENV_VAR] = model
     os.environ[cfg_module.CHAT_TEMPERATURE_OVERRIDE_ENV_VAR] = str(float(temperature))

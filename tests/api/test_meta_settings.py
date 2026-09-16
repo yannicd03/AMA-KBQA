@@ -79,23 +79,32 @@ def test_controls_follow_the_live_graph_flag(monkeypatch, patch_models, kit_path
     assert body["settings"]["controls"]["live_graph"] is False
 
 
-def test_endpoint_rows_describe_what_this_build_uses(client):
+def test_endpoint_rows_describe_what_this_build_uses(client, openrouter_key):
+    # NOTE: this assertion used to pin "every row is provider kit" and exactly
+    # the roles {chat, embedding}. That became false when this branch started
+    # offering OpenRouter models in the picker — the build really does talk to
+    # a second endpoint, so pinning one provider here would assert the demo is
+    # something it is not. The contract every branch shares (uniform key set,
+    # the KIT rows, no secrets) is what stays here; the OpenRouter row is
+    # demo-v2-int's own and is pinned in test_meta_settings_openrouter.py.
     rows = settings_of(client)["endpoints"]["rows"]
-    by_role = {row["role"]: row for row in rows}
-    assert set(by_role) == {"chat", "embedding"}
     for row in rows:
         assert set(row) == ROW_KEYS
-        assert row["provider"] == "kit"
         assert row["label"]
+        assert row["detail"]
+        assert row["status"] in {"ok", "no_key", "unreachable", "unknown"}
+
+    kit_rows = {row["role"]: row for row in rows if row["provider"] == "kit"}
+    assert set(kit_rows) == {"chat", "embedding"}
+    for row in kit_rows.values():
         assert row["base_url"] == cfg.load_config()["kit"]["base_url"]
         assert row["api_key"] == {"configured": True, "hint": "KIT_API_KEY"}
         assert row["status"] == "ok"
-        assert row["detail"]
     # The chat model is whatever the picker holds; the embedding model is fixed.
-    assert by_role["chat"]["model"] is None
-    assert by_role["chat"]["model_source"]
-    assert by_role["embedding"]["model"] == cfg.load_config()["kit"]["embedding_model"]
-    # Nothing to warn about while the key is set and the catalog is live.
+    assert kit_rows["chat"]["model"] is None
+    assert kit_rows["chat"]["model_source"]
+    assert kit_rows["embedding"]["model"] == cfg.load_config()["kit"]["embedding_model"]
+    # Nothing to warn about while every key is set and the catalog is live.
     assert settings_of(client)["endpoints"]["notices"] == []
 
 
@@ -146,7 +155,9 @@ def test_api_key_state_reports_presence_only(monkeypatch):
 # Degraded states
 # ---------------------------------------------------------------------------
 
-def test_missing_key_marks_the_row_and_raises_a_notice(monkeypatch, patch_models, kit_path, full):
+def test_missing_key_marks_the_row_and_raises_a_notice(
+    monkeypatch, patch_models, kit_path, full, openrouter_key,
+):
     monkeypatch.delenv("KIT_API_KEY", raising=False)
     monkeypatch.setattr(meta, "get_live_graph_enabled", lambda: True)
     with TestClient(app_module.create_app()) as c:
@@ -159,7 +170,9 @@ def test_missing_key_marks_the_row_and_raises_a_notice(monkeypatch, patch_models
     assert all("no API key" in notice for notice in section["notices"])
 
 
-def test_offline_catalog_marks_the_chat_row_unreachable(monkeypatch, kit_path, kit_key, full):
+def test_offline_catalog_marks_the_chat_row_unreachable(
+    monkeypatch, kit_path, kit_key, full, openrouter_key,
+):
     def boom(provider, **_kwargs):
         raise RuntimeError("endpoint down")
 

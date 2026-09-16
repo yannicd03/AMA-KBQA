@@ -172,3 +172,50 @@ def fetch_provider_models_meta(provider: str, *, timeout: float = 10.0) -> list[
     if not entries:
         raise RuntimeError(f"Provider '{provider}' returned no models.")
     return entries
+
+
+def _usd_per_token(raw) -> float | None:
+    """Parse one OpenRouter ``pricing`` value (a string of USD per token).
+
+    Returns None for anything unparseable so a single odd entry (an empty
+    string, a null, a future non-numeric marker) costs us that one price
+    rather than the whole catalog.
+    """
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def fetch_provider_models_pricing(
+    provider: str, *, timeout: float = 10.0
+) -> dict[str, dict]:
+    """Return ``{model_id: {name, prompt, completion, supports_tools}}``.
+
+    ``fetch_provider_models_meta`` normalizes for the KIT/Open WebUI catalog
+    and throws the price away, which is exactly what the demo model picker
+    needs for OpenRouter: it must show what an entry really costs and must not
+    offer a model the endpoint cannot tool-call. Prices are USD per token
+    (OpenRouter sends them as strings), ``supports_tools`` mirrors
+    ``"tools" in supported_parameters``.
+
+    Raises ``RuntimeError`` under the same conditions as
+    ``fetch_provider_models``, so the caller can treat the catalog as simply
+    unreachable.
+    """
+    raw = _fetch_provider_models_raw(provider, timeout=timeout)
+    catalog: dict[str, dict] = {}
+    for m in raw:
+        pricing = m.get("pricing") if isinstance(m.get("pricing"), dict) else {}
+        params = m.get("supported_parameters") or []
+        catalog[m["id"]] = {
+            "name": m.get("name") or m["id"],
+            "prompt": _usd_per_token(pricing.get("prompt")),
+            "completion": _usd_per_token(pricing.get("completion")),
+            "supports_tools": "tools" in params if isinstance(params, list) else False,
+        }
+    if not catalog:
+        raise RuntimeError(f"Provider '{provider}' returned no models.")
+    return catalog

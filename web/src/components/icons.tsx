@@ -30,6 +30,11 @@ export const IconArrowUp = (p: IconProps) => (
     <path d="m5.5 11.5 6.5-6.5 6.5 6.5" />
   </Svg>
 );
+export const IconStop = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
+  </Svg>
+);
 export const IconChevronDown = (p: IconProps) => (
   <Svg {...p}>
     <path d="m6 9 6 6 6-6" />

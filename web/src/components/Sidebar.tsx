@@ -7,6 +7,11 @@ import { Mark } from "./Mark";
 export interface Settings {
   agent: string;
   model: string;
+  /**
+   * The id typed into the free-text entry. Kept even while another model is
+   * selected, so switching away and back within a session does not lose it.
+   */
+  customModel: string;
   temperature: number;
   simplified: boolean;
   liveGraph: boolean;
@@ -23,6 +28,12 @@ interface SidebarProps {
   liveGraphAvailable: boolean;
   running: boolean;
   onModelChange: (id: string) => void;
+  /** The id typed into the free-text field ("" until the visitor types one). */
+  customModel: string;
+  /** Every keystroke in the free-text field. */
+  onCustomModelChange: (value: string) => void;
+  /** The typed id is settled (blur or Enter): treat it as a model change. */
+  onCustomModelCommit: () => void;
   onTemperatureChange: (t: number) => void;
   onSimplifiedChange: (v: boolean) => void;
   onLiveGraphChange: (v: boolean) => void;
@@ -150,9 +161,13 @@ export function Sidebar(props: SidebarProps) {
   const diagnostics = props.settingsMeta?.diagnostics;
   const diagnosticRows = diagnostics?.rows ?? [];
   const modelId = useId();
+  const customId = useId();
   const tempId = useId();
   const names = new Map(models.map((m) => [m.id, m.name]));
   const current = models.find((m) => m.id === settings.model);
+  // The custom entry is picked but nothing usable has been typed yet, so the
+  // composer is blocked and the field says why.
+  const customEmpty = Boolean(current?.custom) && props.customModel.trim().length === 0;
   // Provider-aware builds label each model; group them once there is a choice.
   const byProvider = new Map<string, ModelMeta[]>();
   for (const m of models) {
@@ -217,6 +232,7 @@ export function Sidebar(props: SidebarProps) {
         </h2>
 
         {showModel && (
+        <>
         <div className="field">
           <label htmlFor={modelId} className="field__label">
             Model
@@ -265,6 +281,48 @@ export function Sidebar(props: SidebarProps) {
             </ul>
           )}
         </div>
+
+        {current?.custom && (
+          <div className="field">
+            <label htmlFor={customId} className="field__label">
+              Model id
+            </label>
+            <input
+              id={customId}
+              className="text-input"
+              type="text"
+              value={props.customModel}
+              disabled={running}
+              placeholder="deepseek/deepseek-v4-pro"
+              spellCheck={false}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              aria-invalid={customEmpty || undefined}
+              aria-describedby={`${customId}-hint${customEmpty ? ` ${customId}-error` : ""}`}
+              onChange={(e) => props.onCustomModelChange(e.target.value)}
+              onBlur={props.onCustomModelCommit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  props.onCustomModelCommit();
+                }
+              }}
+            />
+            <p id={`${customId}-hint`} className="field__hint">
+              Any model id OpenRouter serves, sent exactly as typed. Billed to this deployment.
+            </p>
+            {customEmpty && (
+              <ul id={`${customId}-error`} className="field__notices">
+                <li>
+                  <IconAlert size={15} />
+                  <span>Type a model id to ask a question.</span>
+                </li>
+              </ul>
+            )}
+          </div>
+        )}
+        </>
         )}
 
         {showTemperature && (

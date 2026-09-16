@@ -35,6 +35,7 @@ from ama_kbqa.config import (
     get_chat_temperature,
     get_federation_enabled,
     get_federation_max_specialists,
+    get_frontend_chat_models,
     get_frontend_settings_level,
     get_hybrid_enabled,
     get_live_graph_enabled,
@@ -160,14 +161,22 @@ class ModelOption:
     model: str     # bare model id: what the endpoint and the pricing table know
     name: str
     price: Optional[str]
+    # True for the "type your own id" placeholder, which carries no model of
+    # its own: POST /api/runs must send a ``custom_model`` alongside its key.
+    custom: bool = False
 
     def to_meta(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "id": self.key,
             "name": self.name,
             "price": self.price,
             "provider": self.provider,
         }
+        # Emitted only when true: the key is a marker for the one placeholder
+        # entry, not a field every model carries.
+        if self.custom:
+            payload["custom"] = True
+        return payload
 
 
 class ModelCatalog:
@@ -267,6 +276,8 @@ def _choices_catalog() -> tuple[ModelCatalog, float]:
             model=choice.model,
             name=chat_controls.display_choice(choice),
             price=_plain_price(chat_controls.price_caption_for(choice)),
+            # getattr: the older provider-aware branches have no such field.
+            custom=bool(getattr(choice, "custom", False)),
         ))
     return ModelCatalog(options, default.key, notices), CHOICES_TTL_SECONDS
 
@@ -290,6 +301,72 @@ def get_models() -> list[dict[str, Any]]:
 
 def get_model_ids() -> list[str]:
     return get_catalog().keys()
+
+
+# ---------------------------------------------------------------------------
+# The custom (free-text) model entry
+# ---------------------------------------------------------------------------
+# The picker's "OpenRouter (custom)" entry has no model id of its own, so it
+# cannot be resolved from the catalog like every other pick. The client sends
+# its key *plus* the id the visitor typed, and the id is validated by shape
+# here rather than against an allowlist — the whole point of the entry is to
+# reach a model this build has never heard of.
+#
+# Deliberately NOT minted into the catalog: ``get_catalog`` is memoised with a
+# TTL and shared by every session, so a typed id added to it would vanish on
+# the next refresh and leak between visitors in the meantime.
+
+CUSTOM_MODEL_MAX_LENGTH = 200
+
+# OpenRouter ids look like "vendor/model" with optional ":variant" and dotted
+# versions. Anything with whitespace, quotes or control characters is a typo
+# or an injection attempt, not a model id.
+_CUSTOM_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@/:+-]*$")
+
+_CUSTOM_MODEL_HELP = (
+    "Type an OpenRouter model id, for example deepseek/deepseek-v4-pro."
+)
+
+
+class InvalidCustomModel(ValueError):
+    """The typed model id is empty or not shaped like a model id."""
+
+
+def custom_model_option(option: ModelOption, typed: Optional[str]) -> ModelOption:
+    """Resolve the custom placeholder plus a typed id into a real option.
+
+    ``option`` is the placeholder the catalog resolved (``custom`` set);
+    ``typed`` is the raw string from the client. Whitespace is trimmed, an
+    empty value is rejected, and the result is a normal :class:`ModelOption`
+    on the placeholder's provider, so everything downstream (the run record,
+    the multiturn agent key, ``apply_chat_settings``) treats it like any other
+    pick.
+
+    Price stays None: nobody knows what an arbitrary id costs, and the chat
+    footer showing no estimate is the honest outcome — a guessed number would
+    be worse.
+
+    Raises:
+        InvalidCustomModel: empty, over-long, or wrongly shaped.
+    """
+    candidate = (typed or "").strip()
+    if not candidate:
+        raise InvalidCustomModel(_CUSTOM_MODEL_HELP)
+    if len(candidate) > CUSTOM_MODEL_MAX_LENGTH:
+        raise InvalidCustomModel(
+            f"That model id is too long (max {CUSTOM_MODEL_MAX_LENGTH} characters)."
+        )
+    if not _CUSTOM_MODEL_RE.match(candidate):
+        raise InvalidCustomModel(
+            f"{candidate!r} is not a valid model id. {_CUSTOM_MODEL_HELP}"
+        )
+    return ModelOption(
+        key=f"{option.provider}:{candidate}",
+        provider=option.provider,
+        model=candidate,
+        name=candidate,
+        price=None,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +545,39 @@ def provider_endpoint_row(
     )
 
 
+# Said of every endpoint that costs real money, in both key states, so nobody
+# picks one of its models without knowing.
+BILLED_DETAIL = "Billed to this deployment's account when picked in the picker above."
+
+
+def _chat_model_entries() -> list[dict[str, Any]]:
+    """The ``[[frontend.chat_models]]`` entries, or ``[]`` when unreadable.
+
+    A hand-edited config must degrade the panel to "KIT only" rather than take
+    /api/meta down, which is what the picker does with it too.
+    """
+    try:
+        return list(get_frontend_chat_models())
+    except Exception:  # noqa: BLE001 - a broken config degrades to KIT only
+        _LOG.warning("Could not read [[frontend.chat_models]]", exc_info=True)
+        return []
+
+
+def optional_chat_providers() -> list[str]:
+    """The non-KIT chat providers this build offers, in config order.
+
+    Derived from ``[[frontend.chat_models]]`` rather than a hard-coded list, so
+    the Endpoints section follows whatever this build actually ships: drop the
+    OpenRouter entries from config and the OpenRouter row goes with them.
+    """
+    providers: list[str] = []
+    for entry in _chat_model_entries():
+        provider = entry.get("provider")
+        if provider and provider != "kit" and provider not in providers:
+            providers.append(provider)
+    return providers
+
+
 def endpoint_rows() -> list[dict[str, Any]]:
     """The endpoints this build talks to, newest-relevant first.
 
@@ -512,6 +622,34 @@ def endpoint_rows() -> list[dict[str, Any]]:
             model_source="config.toml",
             detail="Embeds your question for vector search over the graphs.",
         ))
+
+    # One row per *provider* the picker offers next to KIT, not one per model.
+    # Reachability is read off the API key alone: probing OpenRouter would put
+    # a network round-trip in front of the demo's first screen on every
+    # /api/meta call. A provider without its key stays visible with
+    # status "no_key", because hiding it would answer "can I use OpenRouter?"
+    # with silence.
+    entries = _chat_model_entries()
+    for provider in optional_chat_providers():
+        if provider == chat_provider:
+            continue  # already listed above as the configured chat endpoint
+        env_var = PROVIDER_KEY_ENV.get(provider)
+        count = sum(1 for entry in entries if entry.get("provider") == provider)
+        detail = BILLED_DETAIL
+        if env_var and not api_key_state(env_var)["configured"]:
+            detail = (
+                f"{BILLED_DETAIL} Set {env_var} in the environment to offer "
+                "its models in the picker."
+            )
+        rows.append(provider_endpoint_row(
+            provider,
+            role="chat",
+            model_source=(
+                f"{count} preset{'' if count == 1 else 's'} from config.toml plus "
+                "any id you type, chosen in the picker above"
+            ),
+            detail=detail,
+        ))
     return rows
 
 
@@ -520,16 +658,53 @@ def endpoint_notices(rows: Iterable[dict[str, Any]]) -> list[str]:
 
     **Branch seam.** The default turns every row that is not reachable into
     one line; a branch can append its own (llama-server not started, an
-    OpenRouter key missing at the booth).
+    OpenRouter key missing).
+
+    Because this build lists one row per provider, a deployment with no
+    OpenRouter key gets one line for OpenRouter rather than one per configured
+    model. Lines the model picker already serves through ``model_notices`` are
+    dropped, so nobody reads the identical sentence twice on one screen.
     """
-    notices: list[str] = []
+    optional = set(optional_chat_providers())
+    collected: list[str] = []
     for row in rows:
         status = row.get("status")
         if status == STATUS_NO_KEY:
-            notices.append(f"{row.get('label')}: no API key configured.")
+            collected.append(_no_key_notice(row, optional))
         elif status == STATUS_UNREACHABLE:
-            notices.append(f"{row.get('label')}: not reachable right now.")
+            collected.append(f"{row.get('label')}: not reachable right now.")
+
+    already_shown = _model_notices()
+    notices: list[str] = []
+    for notice in collected:
+        if notice in notices or notice in already_shown:
+            continue
+        notices.append(notice)
     return notices
+
+
+def _no_key_notice(row: dict[str, Any], optional: set[str]) -> str:
+    """One line for a row whose API key is missing.
+
+    An optional endpoint says what the missing key costs: its models are not
+    in the picker at all. KIT keeps the plain sentence, because the KIT half
+    of the picker still works off the offline fallback list when its key is
+    unset.
+    """
+    label = row.get("label")
+    hint = (row.get("api_key") or {}).get("hint")
+    if row.get("provider") in optional and hint:
+        return (f"{label}: no API key configured ({hint}), so its billed "
+                "models are hidden from the picker.")
+    return f"{label}: no API key configured."
+
+
+def _model_notices() -> tuple[str, ...]:
+    """What /api/meta already serves as ``model_notices`` (never raises)."""
+    try:
+        return get_catalog().notices
+    except Exception:  # noqa: BLE001 - a notice list is never worth a 500
+        return ()
 
 
 def diagnostic_row(label: str, value: str, detail: Optional[str] = None) -> dict[str, Any]:

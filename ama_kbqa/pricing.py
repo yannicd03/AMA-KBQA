@@ -17,6 +17,40 @@ from typing import Optional
 
 _PRICING_PATH = Path(__file__).resolve().parent / "data" / "model_pricing.json"
 
+# Prices learned at runtime rather than from the shipped table. The demo lets
+# the visitor pick a chat model from OpenRouter, whose ids are not in
+# ``data/model_pricing.json`` (that file only covers the KIT lineup). Those
+# models are really billed, so the per-answer estimate in the chat footer must
+# not silently disappear for them. The model picker registers the price it is
+# already showing next to the dropdown here, and ``get_model_pricing``
+# consults this registry first.
+#
+# Process-global on purpose, like the chat model/provider overrides: a price
+# registered for a model id is correct for every session in the process, since
+# it is keyed by the model id itself and not by who picked it.
+_RUNTIME_PRICING: dict[str, dict] = {}
+
+
+def register_runtime_pricing(
+    model: str,
+    prompt_usd_per_token: Optional[float],
+    completion_usd_per_token: Optional[float],
+) -> None:
+    """Teach the estimator the real per-token price of ``model``.
+
+    Called by the demo's model picker for non-KIT (billed) models. A call with
+    either rate missing is ignored, so a half-known price never shadows the
+    static table with an unusable entry — the footer then shows no cost at all,
+    which is the honest outcome for a model nobody has a price for.
+    """
+    if not model or prompt_usd_per_token is None or completion_usd_per_token is None:
+        return
+    _RUNTIME_PRICING[model] = {
+        "prompt_usd_per_token": float(prompt_usd_per_token),
+        "completion_usd_per_token": float(completion_usd_per_token),
+        "runtime": True,
+    }
+
 
 @lru_cache(maxsize=1)
 def _load() -> dict:
@@ -28,14 +62,26 @@ def _load() -> dict:
 
 
 def known_models() -> list[str]:
-    """Sorted list of KIT model ids present in the pricing table."""
+    """Sorted list of KIT model ids present in the pricing table.
+
+    Deliberately unaffected by the runtime registry: callers use this as "the
+    KIT models we shipped a price for", not as "everything we can price".
+    """
     return sorted(_load().get("models", {}).keys())
 
 
 def get_model_pricing(model: Optional[str]) -> Optional[dict]:
-    """Return the pricing entry for ``model`` if it has usable prices, else None."""
+    """Return the pricing entry for ``model`` if it has usable prices, else None.
+
+    The runtime registry wins over the static table: a price registered from
+    the live provider catalog is what the account is actually billed, whereas
+    the table holds illustrative OpenRouter list prices for KIT models.
+    """
     if not model:
         return None
+    runtime = _RUNTIME_PRICING.get(model)
+    if runtime and runtime.get("prompt_usd_per_token") is not None:
+        return runtime
     entry = _load().get("models", {}).get(model)
     if entry and entry.get("prompt_usd_per_token") is not None:
         return entry

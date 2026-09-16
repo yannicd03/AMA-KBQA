@@ -33,6 +33,11 @@ export interface ModelMeta {
   price: string | null;
   /** Present on provider-aware builds (demo-booth, demo-llamacpp). */
   provider?: string;
+  /**
+   * The free-text entry: it carries no model of its own, so a run picking it
+   * must send the typed id as `custom_model`.
+   */
+  custom?: boolean;
 }
 
 // ── Settings panel ──────────────────────────────────────────────────────────
@@ -119,6 +124,8 @@ export interface CreateRunBody {
   question: string;
   agent: string;
   model: string;
+  /** Only read when `model` is the picker's custom entry; ignored otherwise. */
+  custom_model?: string;
   temperature: number;
 }
 
@@ -227,12 +234,26 @@ export interface ErrorEvent {
   log_html: string | null;
 }
 
+/**
+ * The visitor pressed Stop. A cancelled run returns through the agent's own
+ * code, so this is NOT an error and must not be folded into `error`: it is a
+ * terminal status of its own, and both the SSE listener and `recover()` below
+ * depend on that (see the comments there).
+ */
+export interface CancelledEvent {
+  run_id: string;
+  status: "cancelled";
+  answer: string;
+  duration_s: number;
+  log_html: string | null;
+}
+
 export type RunRecord = {
   run_id: string;
   session_id: string;
   agent: string;
   question: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "cancelled";
   started_at: number | string;
 } & Partial<Omit<DoneEvent, "status" | "run_id" | "agent" | "question">> &
   Partial<Pick<ErrorEvent, "message">>;
@@ -285,6 +306,8 @@ export interface RunHandlers {
   onSnapshot: (s: Snapshot) => void;
   onDone: (d: DoneEvent) => void;
   onError: (e: ErrorEvent) => void;
+  /** The run was stopped on request; terminal, like done and error. */
+  onCancelled: (c: CancelledEvent) => void;
   /** The run is unknown to the server (evicted, or the server restarted). */
   onLost: (reason: string) => void;
   /** false while EventSource is reconnecting after a transport error. */
@@ -294,6 +317,8 @@ export interface RunHandlers {
 export interface ApiImpl {
   getMeta(): Promise<Meta>;
   createRun(body: CreateRunBody): Promise<CreateRunResponse>;
+  /** Ask the server to stop a run. Safe to call on an already-finished one. */
+  cancelRun(runId: string): Promise<void>;
   resetSession(sessionId: string): Promise<void>;
   getRun(runId: string): Promise<RunRecord>;
   getTrace(runId: string): Promise<TraceResponse>;
@@ -356,9 +381,20 @@ function recordToError(r: RunRecord): ErrorEvent {
   return { run_id: r.run_id, status: "error", message: r.message ?? "Unknown error", log_html: r.log_html ?? null };
 }
 
+function recordToCancelled(r: RunRecord): CancelledEvent {
+  return {
+    run_id: r.run_id,
+    status: "cancelled",
+    answer: r.answer ?? "",
+    duration_s: r.duration_s ?? 0,
+    log_html: r.log_html ?? null,
+  };
+}
+
 const realApi: ApiImpl = {
   getMeta: () => request<Meta>("/api/meta"),
   createRun: (body) => request<CreateRunResponse>("/api/runs", { method: "POST", body: JSON.stringify(body) }),
+  cancelRun: (runId) => request<void>(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" }),
   resetSession: (sessionId) =>
     request<void>(`/api/sessions/${encodeURIComponent(sessionId)}/reset`, { method: "POST" }),
   getRun: (runId) => request<RunRecord>(`/api/runs/${encodeURIComponent(runId)}`),
@@ -381,12 +417,18 @@ const realApi: ApiImpl = {
       try {
         const rec = await realApi.getRun(runId);
         if (finished) return;
+        // Every terminal status needs a branch here: anything that falls
+        // through is treated as still running and reconnects every 2s
+        // forever, which reads as a hang rather than as a bug.
         if (rec.status === "done") {
           finish();
           h.onDone(recordToDone(rec));
         } else if (rec.status === "error") {
           finish();
           h.onError(recordToError(rec));
+        } else if (rec.status === "cancelled") {
+          finish();
+          h.onCancelled(recordToCancelled(rec));
         } else {
           retryTimer = window.setTimeout(connect, 2000);
         }
@@ -413,6 +455,14 @@ const realApi: ApiImpl = {
         const data = JSON.parse((e as MessageEvent<string>).data) as DoneEvent;
         finish();
         h.onDone(data);
+      });
+      // EventSource silently drops events it has no listener for, so a
+      // missing listener here would strand the run: no terminal callback, and
+      // recover() would reconnect to a finished run forever.
+      es.addEventListener("cancelled", (e) => {
+        const data = JSON.parse((e as MessageEvent<string>).data) as CancelledEvent;
+        finish();
+        h.onCancelled(data);
       });
       // The server's named `error` event shares its type with EventSource's
       // own transport-error event. Only the server's carries data.
@@ -452,6 +502,7 @@ function impl(): Promise<ApiImpl> {
 export const api = {
   getMeta: () => impl().then((i) => i.getMeta()),
   createRun: (body: CreateRunBody) => impl().then((i) => i.createRun(body)),
+  cancelRun: (runId: string) => impl().then((i) => i.cancelRun(runId)),
   resetSession: (sessionId: string) => impl().then((i) => i.resetSession(sessionId)),
   getRun: (runId: string) => impl().then((i) => i.getRun(runId)),
   getTrace: (runId: string) => impl().then((i) => i.getTrace(runId)),
@@ -468,4 +519,5 @@ export const api = {
   },
   recordToDone,
   recordToError,
+  recordToCancelled,
 };
