@@ -67,7 +67,10 @@ def test_meta_shape(client):
     assert set(body) == {
         "title", "agents", "default_agent", "suggestions", "models",
         "default_model", "model_notices", "default_temperature", "live_graph", "demo",
+        "settings",
     }
+    # The settings panel's own description; see test_meta_settings.py.
+    assert set(body["settings"]) == {"level", "controls", "endpoints", "diagnostics"}
     # The KIT-only picker has nothing to explain, but the key is always there.
     assert body["model_notices"] == []
     assert body["title"] == "AMA-KBQA Assistant"

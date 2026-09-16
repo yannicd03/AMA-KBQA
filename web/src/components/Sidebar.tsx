@@ -1,5 +1,5 @@
-import { useId } from "react";
-import type { ModelMeta } from "../api";
+import { useId, type ReactNode } from "react";
+import type { EndpointRow, ModelMeta, SettingsMeta } from "../api";
 import { modelLabel } from "../lib/format";
 import { IconAlert, IconClose, IconHelp, IconNewChat, IconSidebar, IconSliders } from "./icons";
 import { Mark } from "./Mark";
@@ -18,6 +18,8 @@ interface SidebarProps {
   models: ModelMeta[];
   modelNotices: string[];
   settings: Settings;
+  /** What this build offers; absent on an older backend (everything shown). */
+  settingsMeta?: SettingsMeta | null;
   liveGraphAvailable: boolean;
   running: boolean;
   onModelChange: (id: string) => void;
@@ -66,8 +68,87 @@ function Switch({
   );
 }
 
+// ── Endpoints / build facts ────────────────────────────────────────────────
+// Rendered from whatever /api/meta sends. Nothing here knows a provider name:
+// a branch adds rows server-side and they show up. Statuses outside the four
+// known ones fall back to neutral styling and their own humanised text.
+
+const STATUS_TONES: Record<string, "ok" | "warn" | "bad" | "unknown"> = {
+  ok: "ok",
+  no_key: "warn",
+  unreachable: "bad",
+  unknown: "unknown",
+};
+
+const STATUS_TEXT: Record<string, string> = {
+  ok: "Reachable",
+  no_key: "No API key",
+  unreachable: "Unreachable",
+  unknown: "Unknown",
+};
+
+/** "no_key" → "No key"; "rate_limited" → "Rate limited". */
+function humanize(value: string): string {
+  const text = value.replace(/[_-]+/g, " ").trim();
+  return text ? text[0].toUpperCase() + text.slice(1) : "";
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone = STATUS_TONES[status] ?? "unknown";
+  return (
+    <span className={`status status--${tone}`}>
+      <span className="status__dot" aria-hidden="true" />
+      {STATUS_TEXT[status] ?? humanize(status)}
+    </span>
+  );
+}
+
+function Fact({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <>
+      <dt>{term}</dt>
+      <dd>{children}</dd>
+    </>
+  );
+}
+
+function Endpoint({ row }: { row: EndpointRow }) {
+  const key = row.api_key;
+  const caption = [row.role, row.provider].filter(Boolean).join(" · ");
+  return (
+    <li className="endpoint">
+      <div className="endpoint__head">
+        <span className="endpoint__label">{row.label}</span>
+        {row.status ? <StatusPill status={row.status} /> : null}
+      </div>
+      {caption ? <p className="endpoint__caption">{caption}</p> : null}
+      <dl className="facts">
+        {row.base_url ? <Fact term="URL">{row.base_url}</Fact> : null}
+        {row.model ? <Fact term="Model">{row.model}</Fact> : null}
+        {row.model_source ? <Fact term="Source">{row.model_source}</Fact> : null}
+        {key ? (
+          <Fact term="API key">
+            {key.configured ? "configured" : "not configured"}
+            {key.hint ? ` (${key.hint})` : ""}
+          </Fact>
+        ) : null}
+      </dl>
+      {row.detail ? <p className="field__hint">{row.detail}</p> : null}
+    </li>
+  );
+}
+
 export function Sidebar(props: SidebarProps) {
   const { mode, onToggle, models, settings, liveGraphAvailable, running } = props;
+  const controls = props.settingsMeta?.controls ?? {};
+  const showModel = controls.model ?? true;
+  const showTemperature = controls.temperature ?? true;
+  const showSimplified = controls.simplified_view ?? true;
+  const endpoints = props.settingsMeta?.endpoints;
+  const endpointRows = endpoints?.rows ?? [];
+  const endpointNotices = endpoints?.notices ?? [];
+  const diagnostics = props.settingsMeta?.diagnostics;
+  const diagnosticRows = diagnostics?.rows ?? [];
   const modelId = useId();
   const tempId = useId();
   const names = new Map(models.map((m) => [m.id, m.name]));
@@ -135,6 +216,7 @@ export function Sidebar(props: SidebarProps) {
           Settings
         </h2>
 
+        {showModel && (
         <div className="field">
           <label htmlFor={modelId} className="field__label">
             Model
@@ -183,7 +265,9 @@ export function Sidebar(props: SidebarProps) {
             </ul>
           )}
         </div>
+        )}
 
+        {showTemperature && (
         <div className="field">
           <div className="field__row">
             <label htmlFor={tempId} className="field__label">
@@ -206,13 +290,16 @@ export function Sidebar(props: SidebarProps) {
           />
           <p className="field__hint">Sampling temperature for the agent's LLM calls.</p>
         </div>
+        )}
 
-        <Switch
-          label="Simplified view"
-          hint="Hide the lifecycle figure, reasoning traces, token counters, and the inspector. Just chat."
-          checked={settings.simplified}
-          onChange={props.onSimplifiedChange}
-        />
+        {showSimplified && (
+          <Switch
+            label="Simplified view"
+            hint="Hide the lifecycle figure, reasoning traces, token counters, and the inspector. Just chat."
+            checked={settings.simplified}
+            onChange={props.onSimplifiedChange}
+          />
+        )}
         {liveGraphAvailable && (
           <Switch
             label="Live graph"
@@ -222,6 +309,44 @@ export function Sidebar(props: SidebarProps) {
           />
         )}
       </section>
+
+      {endpointRows.length > 0 && (
+        <section className="sidebar__section sidebar__section--tight" aria-labelledby="endpoints-heading">
+          <h2 id="endpoints-heading" className="sidebar__heading">
+            {endpoints?.label || "Endpoints"}
+          </h2>
+          <ul className="endpoints">
+            {endpointRows.map((row) => (
+              <Endpoint key={row.id} row={row} />
+            ))}
+          </ul>
+          {endpointNotices.length > 0 && (
+            <ul className="field__notices">
+              {endpointNotices.map((n, i) => (
+                <li key={i}>
+                  <IconAlert size={15} />
+                  <span>{n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {diagnosticRows.length > 0 && (
+        <section className="sidebar__section sidebar__section--tight" aria-labelledby="build-heading">
+          <h2 id="build-heading" className="sidebar__heading">
+            {diagnostics?.label || "This build"}
+          </h2>
+          <dl className="facts facts--standalone">
+            {diagnosticRows.map((row) => (
+              <Fact key={row.label} term={row.label}>
+                <span title={row.detail || undefined}>{row.value}</span>
+              </Fact>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <span className="sidebar__spacer" />
 

@@ -1040,6 +1040,15 @@ def get_sciqa_relation_threshold() -> float:
 # panel off without editing the mounted config.toml.
 FRONTEND_LIVE_GRAPH_ENV = "AMA_FRONTEND_LIVE_GRAPH"
 
+# How much of the settings panel the React demo (ama_kbqa/api/meta.py) offers.
+# "minimal" = model, temperature and the view toggles only (public demo);
+# "full" = additionally the endpoint list and the read-only build facts
+# (booth / local demos). Overridable per deployment with
+# AMA_FRONTEND_SETTINGS_LEVEL, like the live-graph flag above.
+FRONTEND_SETTINGS_LEVEL_ENV = "AMA_FRONTEND_SETTINGS_LEVEL"
+FRONTEND_SETTINGS_LEVELS = ("minimal", "full")
+FRONTEND_SETTINGS_LEVEL_DEFAULT = "minimal"
+
 
 def get_frontend_config() -> dict:
     """Get the [frontend] configuration section.
@@ -1135,3 +1144,36 @@ def get_live_graph_enabled() -> bool:
     if raw is not None:
         return _parse_env_bool(raw)
     return bool(get_frontend_config().get("live_graph", False))
+
+
+def get_frontend_settings_level() -> str:
+    """How much of the demo's settings panel this build offers.
+
+    Reads ``[frontend].settings_level``, overridable by
+    ``AMA_FRONTEND_SETTINGS_LEVEL=minimal|full`` (env always wins, same
+    channel as ``AMA_FRONTEND_LIVE_GRAPH``: a container mounts its
+    config.toml read-only).
+
+    Defaults to ``"minimal"`` — the *safe* end, like ``live_graph``'s default
+    False: an old config, a benchmark deployment, or a branch that forgot the
+    key shows only the model / temperature / view controls and never the
+    endpoint list. Both shipped toml files opt in to ``"full"``; the public
+    demo sets ``"minimal"``.
+
+    Returns:
+        str: one of ``FRONTEND_SETTINGS_LEVELS``.
+    """
+    raw = os.environ.get(FRONTEND_SETTINGS_LEVEL_ENV)
+    if raw is None:
+        raw = get_frontend_config().get("settings_level")
+    if raw is None:
+        return FRONTEND_SETTINGS_LEVEL_DEFAULT
+    level = str(raw).strip().lower()
+    if level in FRONTEND_SETTINGS_LEVELS:
+        return level
+    logger.warning(
+        f"Unknown frontend settings_level {raw!r} "
+        f"(expected one of {', '.join(FRONTEND_SETTINGS_LEVELS)}); "
+        f"falling back to {FRONTEND_SETTINGS_LEVEL_DEFAULT!r}"
+    )
+    return FRONTEND_SETTINGS_LEVEL_DEFAULT

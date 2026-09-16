@@ -35,6 +35,63 @@ export interface ModelMeta {
   provider?: string;
 }
 
+// ── Settings panel ──────────────────────────────────────────────────────────
+// /api/meta describes which settings this build offers, so a demo branch
+// differs by config and a few rows of data instead of by forked React code.
+// Every field is optional: an older backend sends no `settings` block at all,
+// and a newer/branch backend may send rows with providers and statuses this
+// build has never heard of. The panel renders those neutrally.
+
+/** Known values; a branch may send another string, rendered as plain text. */
+export type EndpointStatus = "ok" | "unreachable" | "unknown" | "no_key";
+
+export interface ApiKeyState {
+  configured: boolean;
+  /** Where the key comes from, e.g. "KIT_API_KEY". Never the key itself. */
+  hint?: string | null;
+}
+
+export interface EndpointRow {
+  id: string;
+  label: string;
+  /** "chat", "embedding", … — free-form, shown as a caption. */
+  role?: string | null;
+  provider?: string | null;
+  base_url?: string | null;
+  model?: string | null;
+  model_source?: string | null;
+  /** null = this endpoint needs no key. */
+  api_key?: ApiKeyState | null;
+  status?: EndpointStatus | (string & {}) | null;
+  detail?: string | null;
+}
+
+export interface EndpointsSection {
+  label?: string | null;
+  rows: EndpointRow[];
+  notices?: string[];
+}
+
+export interface DiagnosticRow {
+  label: string;
+  value: string;
+  detail?: string | null;
+}
+
+export interface DiagnosticsSection {
+  label?: string | null;
+  rows: DiagnosticRow[];
+}
+
+export interface SettingsMeta {
+  /** "minimal" = controls only; "full" = endpoints and build facts too. */
+  level?: "minimal" | "full" | (string & {});
+  /** Missing entries default to "offered". */
+  controls?: Partial<Record<"model" | "temperature" | "simplified_view" | "live_graph", boolean>>;
+  endpoints?: EndpointsSection | null;
+  diagnostics?: DiagnosticsSection | null;
+}
+
 export interface DemoLimits {
   enabled: boolean;
   max_queries_per_session: number;
@@ -53,6 +110,8 @@ export interface Meta {
   demo: DemoLimits;
   /** e.g. "The local llama.cpp server is not reachable". */
   model_notices?: string[];
+  /** Absent on backends older than the declarative settings panel. */
+  settings?: SettingsMeta | null;
 }
 
 export interface CreateRunBody {

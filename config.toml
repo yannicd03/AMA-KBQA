@@ -118,6 +118,16 @@ rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # Override per deployment with AMA_FRONTEND_LIVE_GRAPH=0/1.
 live_graph = true
 
+# How much of the React demo's settings panel this build offers.
+#   "minimal" — model, temperature and the view toggles only (public demo).
+#   "full"    — additionally the Endpoints list (which chat/embedding endpoint
+#               the build talks to, and whether its key is configured) and the
+#               read-only build facts. Never the key itself.
+# Default when the key is absent is "minimal", so an old config or a
+# non-demo deployment never exposes endpoint detail by accident.
+# Override per deployment with AMA_FRONTEND_SETTINGS_LEVEL=minimal|full.
+settings_level = "full"
+
 # Booth build: chat endpoints offered next to the auto-discovered KIT models.
 # An entry is shown only when its provider's API key env var is set. Prices
 # are USD per 1M tokens and are what the booth account is actually billed

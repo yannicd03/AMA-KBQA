@@ -122,6 +122,49 @@ const META: Meta = {
   default_temperature: 1.0,
   live_graph: true,
   demo: { enabled: false, max_queries_per_session: 20, min_seconds_between_queries: 3 },
+  settings: {
+    level: "full",
+    controls: { model: true, temperature: true, simplified_view: true, live_graph: true },
+    endpoints: {
+      label: "Endpoints",
+      rows: [
+        {
+          id: "kit-chat",
+          label: "KIT KI-Toolbox",
+          role: "chat",
+          provider: "kit",
+          base_url: "https://ki-toolbox.scc.kit.edu/api/v1",
+          model: null,
+          model_source: "Live /models catalog, chosen in the picker above",
+          api_key: { configured: true, hint: "KIT_API_KEY" },
+          status: "ok",
+          detail: "Chat completions for every agent and sub-agent.",
+        },
+        {
+          id: "kit-embedding",
+          label: "KIT KI-Toolbox",
+          role: "embedding",
+          provider: "kit",
+          base_url: "https://ki-toolbox.scc.kit.edu/api/v1",
+          model: "kit.qwen3-embedding-8b",
+          model_source: "config.toml",
+          api_key: { configured: true, hint: "KIT_API_KEY" },
+          status: "ok",
+          detail: "Embeds your question for vector search over the graphs.",
+        },
+      ],
+      notices: [],
+    },
+    diagnostics: {
+      label: "This build",
+      rows: [
+        { label: "Retrieval", value: "dense vectors" },
+        { label: "Federation", value: "off" },
+        { label: "Live graph", value: "on" },
+        { label: "Config", value: "config.toml" },
+      ],
+    },
+  },
 };
 
 // ── Figures ─────────────────────────────────────────────────────────────────
@@ -408,6 +451,48 @@ export const mockApi: ApiImpl = {
           { id: "llamacpp:qwen3.6-35b", name: "Qwen3.6 35B (local)", price: null, provider: "llama.cpp" },
         ],
         model_notices: ["The local llama.cpp server is not reachable."],
+        // The endpoint rows those branches add through meta.endpoint_rows():
+        // a provider without a key, and a local server that is down. Both
+        // render from the same component as the KIT rows.
+        settings: {
+          level: "full",
+          controls: { model: true, temperature: true, simplified_view: true, live_graph: true },
+          endpoints: {
+            label: "Endpoints",
+            rows: [
+              ...(META.settings?.endpoints?.rows ?? []),
+              {
+                id: "openrouter-chat",
+                label: "OpenRouter",
+                role: "chat",
+                provider: "openrouter",
+                base_url: "https://openrouter.ai/api/v1",
+                model: null,
+                model_source: "Live /models catalog",
+                api_key: { configured: false, hint: "OPENROUTER_API_KEY" },
+                status: "no_key",
+                detail: "Set OPENROUTER_API_KEY in the environment to reach this endpoint.",
+              },
+              {
+                id: "llamacpp-chat",
+                label: "llama-server (chat)",
+                role: "chat",
+                provider: "llamacpp",
+                base_url: "http://host.docker.internal:8080/v1",
+                model: "qwen3.6-35b",
+                model_source: "whatever the server has loaded",
+                api_key: null,
+                status: "unreachable",
+                detail: "Start llama-server on :8080 to use the local model.",
+              },
+            ],
+            notices: [
+              "OpenRouter: no API key configured.",
+              "llama-server (chat): not reachable right now.",
+            ],
+          },
+          diagnostics: META.settings?.diagnostics ?? null,
+        },
       };
     }
     return META;
