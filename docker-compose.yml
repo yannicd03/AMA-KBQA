@@ -85,7 +85,7 @@ services:
     # Reached by the web service as http://api:8506; the host port is only
     # for debugging (SSH-tunnel-only, like 8502).
     ports:
-      - "127.0.0.1:8506:8506"
+      - "127.0.0.1:2027:8506"
     # Lets the agents reach services on the Docker host by name, as the local
     # build (branch demo-llamacpp) does for its llama-server instances
     # (config.docker.toml: http://host.docker.internal:8080/v1). Linux Docker
@@ -129,7 +129,7 @@ services:
     container_name: web_ama_kbqa
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8505:80"
+      - "127.0.0.1:2026:80"
     depends_on:
       api:
         condition: service_healthy
