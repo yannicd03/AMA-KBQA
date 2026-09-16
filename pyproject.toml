@@ -44,6 +44,9 @@ rerank = [
 [project.scripts]
 ama-kbqa = "ama_kbqa.cli:main"
 ama-kbqa-frontend = "ama_kbqa.cli:frontend"
+# FastAPI backend for the React demo (web/), uvicorn on 0.0.0.0:8506 with
+# exactly one worker: runs and sessions are held in process memory.
+ama-kbqa-api = "ama_kbqa.cli:api"
 
 [dependency-groups]
 dev = [

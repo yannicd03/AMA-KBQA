@@ -122,7 +122,7 @@ This launches a multi-page web UI with Chat, Batch Processing, Evaluation, and S
 The `frontend` service in the root `docker-compose.yml` builds and runs the Streamlit UI as a container alongside Virtuoso and Qdrant:
 
 ```bash
-docker compose up -d          # starts all 3 services including frontend
+docker compose up -d          # starts all services, including frontend, api and web
 # or just restart the frontend after a config change:
 docker compose restart frontend
 ```
@@ -130,6 +130,29 @@ docker compose restart frontend
 The container shares the default bridge network and reaches Qdrant/Virtuoso by service name; `config.docker.toml` is bind-mounted as `/app/config.toml` -- edit on the host, then `docker compose restart frontend`. Access via SSH tunnel on port 8502.
 
 See [.agent/SOP/hetzner_deployment.md](.agent/SOP/hetzner_deployment.md) for the full deployment runbook.
+
+### Frontend (React demo)
+
+A second demo UI lives in `web/` (Vite + React). It talks to a small FastAPI backend in `ama_kbqa/api/`, which runs the agents in-process through the same code path as the Streamlit chat page. Streamlit stays the default; both run side by side.
+
+| Service | Container | Host port | Role |
+|---------|-----------|-----------|------|
+| `web` | `web_ama_kbqa` | `127.0.0.1:8505` | nginx serving the React build, proxies `/api/` to `api` |
+| `api` | `api_ama_kbqa` | `127.0.0.1:8506` | FastAPI/uvicorn (`ama-kbqa-api`), streams runs over SSE |
+
+```bash
+docker compose up -d --build api web
+curl -fs http://127.0.0.1:8506/api/health    # {"status":"ok"}
+```
+
+Then open http://127.0.0.1:8505 (through an SSH tunnel on a server, like 8502). The API keeps runs and sessions in memory, so it runs with exactly one uvicorn worker, and restarting the container drops open conversations.
+
+**Dev loop** (hot reload for the UI, API on the host):
+
+```bash
+uv run ama-kbqa-api                   # API on :8506, reads the host config.toml
+cd web && npm install && npm run dev  # Vite dev server, proxies /api to 127.0.0.1:8506
+```
 
 ### CLI
 
@@ -200,4 +223,6 @@ Models to test:
 | `ama_kbqa/agents/` | KQAPro and SciQA agents |
 | `ama_kbqa/server/` | MCP servers with knowledge graph tools |
 | `ama_kbqa/frontend/` | Streamlit multi-page UI |
+| `ama_kbqa/api/` | FastAPI backend for the React demo |
+| `web/` | React demo frontend (Vite, served by nginx) |
 | `.agent/` | Developer documentation (architecture, SOPs) |
