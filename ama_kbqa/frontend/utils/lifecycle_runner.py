@@ -41,6 +41,7 @@ from contextlib import redirect_stdout
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Optional
 
+from ama_kbqa.framework.cancellation import CancellationToken
 from ama_kbqa.frontend.utils.lifecycle_mapping import (
     ORCH_SUBAGENTS,
     lifecycle_node_phase,
@@ -358,6 +359,7 @@ def start_run(
     capture_io=None,
     is_continuation: bool = False,
     on_thread_start: Optional[Callable[[], None]] = None,
+    cancel_token: Optional[CancellationToken] = None,
 ) -> threading.Thread:
     """Spawn a daemon thread that runs the agent and streams notifications.
 
@@ -374,6 +376,14 @@ def start_run(
     hook raises, the run ends with an ``__error__`` item and ``ask()`` is never
     called. Omitting it (the Streamlit page does) leaves the worker exactly as
     it was.
+
+    ``cancel_token`` is an optional :class:`~ama_kbqa.framework.cancellation.
+    CancellationToken`. When supplied it is forwarded to ``agent.ask`` and the
+    caller can stop the run from any thread by calling ``token.cancel()``; the
+    agent notices at its next checkpoint and returns through its own code, so
+    the ``finally`` below still tears down on this worker's own event loop.
+    Omitting it (the Streamlit page does) calls ``ask(question)`` exactly as
+    before, so agents whose ``ask`` takes only the question keep working.
 
     ``is_continuation`` marks a follow-up turn on a reused agent instance
     (multiturn). When set, the worker first runs ``reset(keep_history=True)``
@@ -426,11 +436,14 @@ def start_run(
                     except Exception:
                         pass
 
+            # Only pass the kwarg when a token is actually in play, so an agent
+            # (or test double) whose ask() takes just the question is unaffected.
+            ask_kwargs = {"cancel_token": cancel_token} if cancel_token is not None else {}
             if capture_io is not None:
                 with redirect_stdout(capture_io):
-                    answer = loop.run_until_complete(agent.ask(question))
+                    answer = loop.run_until_complete(agent.ask(question, **ask_kwargs))
             else:
-                answer = loop.run_until_complete(agent.ask(question))
+                answer = loop.run_until_complete(agent.ask(question, **ask_kwargs))
             q.put(("__done__", {"answer": answer}))
         except BaseException as exc:  # noqa: BLE001
             _LOG.exception("Lifecycle agent run failed")

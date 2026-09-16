@@ -36,6 +36,11 @@ from ama_kbqa.config import (
     get_synthesis_max_tokens,
     get_synthesis_provider_preferences,
 )
+from ama_kbqa.framework.cancellation import (
+    CancellationToken,
+    cancelled_answer,
+    is_cancelled,
+)
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
 from ama_kbqa.framework.trace import (
@@ -1029,12 +1034,21 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
     # CORE AGENT LOOP
     # =========================================================================
 
-    async def ask(self, query: str) -> str:
+    async def ask(
+        self,
+        query: str,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         """
         Answer a question using the knowledge graph.
 
         Args:
             query: The natural language question
+            cancel_token: Optional cooperative stop flag (see
+                ``framework.cancellation``). Omitting it leaves behaviour
+                exactly as before; when it is supplied and cancelled, the run
+                stops at its next checkpoint and returns the cancelled answer
+                instead of continuing (and without paying for synthesis).
 
         Returns:
             The agent's answer
@@ -1059,15 +1073,28 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 },
                 payload={"query": query},
             ) as _root_span:
-                return await self._ask_impl(query, _root_span)
+                return await self._ask_impl(query, _root_span, cancel_token=cancel_token)
         finally:
             if _parent_token is not None:
                 _current_span_id.reset(_parent_token)
 
-    async def _ask_impl(self, query: str, _root_span) -> str:
+    async def _ask_impl(
+        self,
+        query: str,
+        _root_span,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         try:
             # Initialize MCP connection
             await self._init_mcp()
+
+            # First cancellation checkpoint: a run stopped here has not made a
+            # single billed LLM call. We return normally rather than raising,
+            # so the `finally` below still runs and the MCP connection stays
+            # owned by this task's event loop (see framework.cancellation).
+            if is_cancelled(cancel_token):
+                self._trace("Run cancelled before classification", COLOR_YELLOW)
+                return cancelled_answer(cancel_token)
 
             if not self.mcp:
                 self._trace(f"{COLOR_YELLOW}Tool server not available.{COLOR_END}", COLOR_YELLOW)
@@ -1227,7 +1254,8 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             refresh_interval = config.domain_settings.get("journal_refresh_interval", 5)
 
             answer = await self._run_tool_loop(
-                query, openai_tools, max_iterations, refresh_interval, qtype=qtype
+                query, openai_tools, max_iterations, refresh_interval, qtype=qtype,
+                cancel_token=cancel_token,
             )
 
             return answer
@@ -1575,6 +1603,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         max_iterations: int,
         refresh_interval: int,
         qtype: str = "",
+        cancel_token: Optional[CancellationToken] = None,
     ) -> str:
         """
         Run the main tool-calling loop.
@@ -1584,6 +1613,8 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             tools: OpenAI-format tools
             max_iterations: Maximum loop iterations
             refresh_interval: Iterations between journal refreshes
+            cancel_token: Optional cooperative stop flag, checked once per
+                iteration (see the checkpoint below). Absent by default.
 
         Returns:
             Final answer string
@@ -1612,6 +1643,38 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         while True:
             iteration_count += 1
             self._trace(f"Starting iteration {iteration_count}/{max_iterations}", COLOR_CYAN)
+
+            # Cooperative cancellation checkpoint. The top of the loop is the
+            # one place in the loop where the message stack is guaranteed
+            # consistent: the previous iteration appended every tool result in
+            # emission order (_execute_tool_calls phase 3). Cancelling *inside*
+            # _execute_tool_calls could leave an assistant message whose
+            # `tool_calls` have no matching `role=tool` results, and replaying
+            # that stack on a follow-up turn makes providers reject it (400) —
+            # so there is deliberately no finer-grained checkpoint there.
+            #
+            # This is also the one exit that does NOT go through synthesis,
+            # diverging from the ADR invariant noted just below. Synthesis is a
+            # second billed LLM call; a user who pressed stop must not pay for
+            # it. Every other exit still funnels through synthesis.
+            if is_cancelled(cancel_token):
+                self._trace(
+                    "Run cancelled - exiting tool loop without synthesis",
+                    COLOR_YELLOW,
+                )
+                self.recorder.event(
+                    "intervention",
+                    "run_cancelled",
+                    attributes={
+                        "iteration_count": iteration_count,
+                        "reason": cancel_token.reason,
+                    },
+                )
+                answer = cancelled_answer(cancel_token)
+                # Keep the stack answer-terminated like every other exit, so a
+                # follow-up turn on this instance replays a valid conversation.
+                self._messages.append({"role": "assistant", "content": answer})
+                return answer
 
             # Safety check
             if iteration_count > max_iterations:

@@ -36,6 +36,7 @@ load_dotenv(find_dotenv())
 
 from ama_kbqa.utils.sparql_results import compact_sparql_select_results
 from ama_kbqa.framework.deterministic import compare_numeric
+from ama_kbqa.framework.sparql_client import make_sparql_client
 from ama_kbqa.framework.adapters.kqapro_adapter import KQAProAdapter
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -96,6 +97,18 @@ SPARQL_PREFIXES = "\n" + _NAMESPACES.sparql_prefixes.rstrip() + "\n"
 COLLECTION_ENTITIES = _RESOLVED.vectors.entity_collection
 COLLECTION_RELATIONS = _RESOLVED.vectors.relation_collection
 VIRTUOSO_ENDPOINT = _RESOLVED.graph.endpoint
+SPARQL_TIMEOUT_MS = _RESOLVED.graph.timeout_ms
+
+
+def _build_sparql_client():
+    """The server's SPARQL client, with the resolved query timeout applied.
+
+    Every tool shares this one client via the lifespan context, so applying the
+    timeout at construction bounds all of them. Expiry surfaces as
+    `sparql_client.SparqlTimeout`, which the tool bodies (or FastMCP) turn into
+    a normal tool error instead of a hang.
+    """
+    return make_sparql_client(VIRTUOSO_ENDPOINT, SPARQL_TIMEOUT_MS)
 
 
 class AppContext(BaseModel):
@@ -585,8 +598,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         chat_client = get_chat_client()
         embedding_client = get_embedding_client()
 
-        sparql = SPARQLWrapper(VIRTUOSO_ENDPOINT)
-        sparql.setReturnFormat(JSON)
+        sparql = _build_sparql_client()
         # Yield the context so tools can access it
         yield AppContext(
             qdrant=qdrant,

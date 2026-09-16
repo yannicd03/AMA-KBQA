@@ -12,10 +12,11 @@ import asyncio
 from pathlib import Path
 from contextlib import AsyncExitStack
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.shared.exceptions import McpError
 from mcp.types import Tool as McpTool
 from asyncio.exceptions import CancelledError
 
@@ -27,6 +28,91 @@ COLOR_RED = '\033[91m'
 COLOR_YELLOW = '\033[93m'
 COLOR_CYAN = '\033[96m'
 COLOR_END = '\033[0m'
+
+# Bounded wait for a single MCP tool call. Without one, `call_tool` awaits a
+# response forever — the only genuinely unbounded wait in the system, and the
+# reason no run could promise a time limit (the SPARQL timeout one layer down
+# bounds the query, not a wedged or silent server subprocess).
+#
+# Resolution order mirrors framework.adapters.resolve: env var, then
+# config.toml, then this default. A value <= 0 means "no timeout" and restores
+# the old unbounded behaviour for a deliberately slow workload.
+DEFAULT_TOOL_TIMEOUT_SECONDS = 180.0
+TOOL_TIMEOUT_ENV_VAR = "AMA_KBQA_MCP_TOOL_TIMEOUT_SECONDS"
+TOOL_TIMEOUT_CONFIG_KEY = ("agent", "mcp_tool_timeout_seconds")
+
+# JSON-RPC error code the MCP SDK raises when a request read times out
+# (httpx.codes.REQUEST_TIMEOUT); matched by value so this module does not
+# import httpx just for a constant.
+_REQUEST_TIMEOUT_CODE = 408
+
+
+class McpToolTimeout(RuntimeError):
+    """An MCP tool call exceeded its configured timeout."""
+
+
+def is_timeout_error(exc: BaseException) -> bool:
+    """True when `exc` is an MCP read timeout (or a raw transport timeout)."""
+    if isinstance(exc, TimeoutError):
+        return True
+    return (
+        isinstance(exc, McpError)
+        and getattr(exc.error, "code", None) == _REQUEST_TIMEOUT_CODE
+    )
+
+
+def tool_timeout_error(
+    agent_name: str, tool_name: str, timeout: Optional[float]
+) -> McpToolTimeout:
+    """Build (and trace) the error for a tool call that outran its budget.
+
+    Shared by this client and the Orchestrator's own MCP client so both report
+    a stalled tool the same way.
+    """
+    budget = f"{timeout:.0f}s" if timeout else "the configured timeout"
+    trace(
+        agent_name,
+        f"{COLOR_YELLOW}Tool '{tool_name}' timed out after {budget}{COLOR_END}",
+        COLOR_YELLOW,
+    )
+    return McpToolTimeout(
+        f"Tool '{tool_name}' timed out after {budget}. The tool server did not "
+        f"respond; try a narrower request or a different tool."
+    )
+
+
+def resolve_tool_timeout(timeout_seconds: Optional[float] = None) -> Optional[float]:
+    """Resolve the per-call MCP tool timeout in seconds.
+
+    Returns None when the timeout is disabled (a configured value <= 0), which
+    callers pass straight through as "wait indefinitely".
+    """
+    value: Optional[float] = None
+
+    if timeout_seconds is not None:
+        value = float(timeout_seconds)
+    else:
+        raw = os.environ.get(TOOL_TIMEOUT_ENV_VAR)
+        if raw is not None:
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                value = None  # fall through to config.toml / default
+        if value is None:
+            try:
+                from ama_kbqa.config import load_config
+                section, key = TOOL_TIMEOUT_CONFIG_KEY
+                configured = load_config().get(section, {}).get(key)
+                if configured is not None:
+                    value = float(configured)
+            except Exception:
+                # config.toml is optional here: the client must stay
+                # constructible without one (tests, stand-alone scripts).
+                value = None
+        if value is None:
+            value = DEFAULT_TOOL_TIMEOUT_SECONDS
+
+    return value if value > 0 else None
 
 
 def trace(agent_name: str, msg: str, color: str = COLOR_BLUE) -> None:
@@ -47,19 +133,28 @@ class MCPClient:
     methods to list tools and call them.
     """
 
-    def __init__(self, server_path: str, agent_name: str):
+    def __init__(
+        self,
+        server_path: str,
+        agent_name: str,
+        tool_timeout_seconds: Optional[float] = None,
+    ):
         """
         Initialize the MCP client.
 
         Args:
             server_path: Path to the MCP server Python file
             agent_name: Name of the agent for tracing
+            tool_timeout_seconds: Per-call timeout for `call_tool`. Defaults to
+                the resolved configuration (see `resolve_tool_timeout`); pass a
+                value <= 0 to wait indefinitely.
         """
         self.server_path = Path(server_path)
         self.agent_name = agent_name
         self.exit_stack = AsyncExitStack()
         self.session: Optional[ClientSession] = None
         self._connected = False
+        self.tool_timeout_seconds = resolve_tool_timeout(tool_timeout_seconds)
 
     @property
     def is_connected(self) -> bool:
@@ -162,7 +257,12 @@ class MCPClient:
 
     async def call_tool(self, name: str, args: Dict) -> str:
         """
-        Call a tool on the MCP server.
+        Call a tool on the MCP server, bounded by the configured timeout.
+
+        The SDK's own `read_timeout_seconds` is used rather than an
+        `asyncio.wait_for` wrapper: it cancels the pending request inside the
+        session (so the response stream is cleaned up on the session's own
+        task) instead of cancelling an await from outside it.
 
         Args:
             name: Name of the tool to call
@@ -173,11 +273,25 @@ class MCPClient:
 
         Raises:
             RuntimeError: If not connected
+            McpToolTimeout: If the server did not answer within the timeout.
+                Callers (`BaseKBQAAgent._execute_single_tool`) already turn a
+                tool exception into a normal "Error executing ..." tool result,
+                so the agent can react to it like any other tool failure.
         """
         if not self.session:
             raise RuntimeError("Not connected to MCP server")
 
-        result = await self.session.call_tool(name, arguments=args)
+        timeout = self.tool_timeout_seconds
+        read_timeout = timedelta(seconds=timeout) if timeout else None
+
+        try:
+            result = await self.session.call_tool(
+                name, arguments=args, read_timeout_seconds=read_timeout
+            )
+        except Exception as e:
+            if is_timeout_error(e):
+                raise tool_timeout_error(self.agent_name, name, timeout) from e
+            raise
 
         if hasattr(result, "content") and result.content:
             return result.content[0].text

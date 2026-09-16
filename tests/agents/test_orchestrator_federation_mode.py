@@ -276,7 +276,7 @@ class TestRouteSpanMode:
             o.last_routing_reason = "world knowledge"
             return ["kqapro_agent"]
 
-        async def _fake_delegate(name, query):
+        async def _fake_delegate(name, query, cancel_token=None):
             return "answer"
 
         monkeypatch.setattr(o, "_init_mcp", _fake_init_mcp)
@@ -300,7 +300,7 @@ class TestRouteSpanMode:
             o.last_routing_reason = "spans both"
             return ["kqapro_agent", "sciqa_agent"]
 
-        async def _fake_federate(names, query):
+        async def _fake_federate(names, query, cancel_token=None):
             return "fused answer"
 
         monkeypatch.setattr(o, "_init_mcp", _fake_init_mcp)
@@ -324,7 +324,7 @@ class TestRouteSpanMode:
         async def _fake_route(query):
             return None
 
-        async def _fake_fallback(query):
+        async def _fake_fallback(query, cancel_token=None):
             return "fallback answer"
 
         monkeypatch.setattr(o, "_init_mcp", _fake_init_mcp)
