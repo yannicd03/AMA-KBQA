@@ -169,7 +169,10 @@ export default function App() {
   const busyRun = runInfos.map((i) => runs[i.runId]).find((r) => r && (r.status === "running" || r.status === "loading"));
   const running = Boolean(busyRun) || submitting;
   const inConversation = turns.length > 0;
-  const liveGraphOn = Boolean(meta?.live_graph && settings?.liveGraph);
+  // A build may offer the live graph and still have the toggle suppressed by
+  // its settings description (older backends send no `settings` at all).
+  const liveGraphAvailable = Boolean(meta?.live_graph && (meta?.settings?.controls?.live_graph ?? true));
+  const liveGraphOn = liveGraphAvailable && Boolean(settings?.liveGraph);
   const simplified = settings?.simplified ?? false;
   const panelAvailable = !simplified && inConversation && runInfos.length > 0;
   const orderedRuns = runInfos
@@ -378,7 +381,8 @@ export default function App() {
             models={meta.models}
             modelNotices={meta.model_notices ?? []}
             settings={settings}
-            liveGraphAvailable={meta.live_graph}
+            settingsMeta={meta.settings}
+            liveGraphAvailable={liveGraphAvailable}
             running={running}
             onModelChange={changeModel}
             onTemperatureChange={(t) => setSettings({ ...settings, temperature: t })}

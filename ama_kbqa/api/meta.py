@@ -30,7 +30,17 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
-from ama_kbqa.config import get_chat_temperature, get_live_graph_enabled
+from ama_kbqa.config import (
+    CONFIG_PATH,
+    get_chat_temperature,
+    get_federation_enabled,
+    get_federation_max_specialists,
+    get_frontend_settings_level,
+    get_hybrid_enabled,
+    get_live_graph_enabled,
+    get_reranker_enabled,
+    load_config,
+)
 from ama_kbqa.frontend.utils import chat_controls
 from ama_kbqa.frontend.utils.agent_factory import (
     AGENT_INFO,
@@ -165,10 +175,16 @@ class ModelCatalog:
     the notices explaining what is hidden. Immutable once built."""
 
     def __init__(self, options: Iterable[ModelOption], default_key: str,
-                 notices: Iterable[str] = ()) -> None:
+                 notices: Iterable[str] = (), live: Optional[bool] = None) -> None:
         self.options: tuple[ModelOption, ...] = tuple(options)
         self.default_key = default_key
         self.notices: tuple[str, ...] = tuple(notices)
+        # True when the list came from a live catalog fetch, False when it is
+        # the offline fallback, None when this path cannot tell (the
+        # provider-aware picker fetches per provider). Read by
+        # ``endpoint_rows`` to report the chat endpoint's reachability without
+        # issuing a second request.
+        self.live = live
         self._by_key = {option.key: option for option in self.options}
 
     def resolve(self, key: str) -> Optional[ModelOption]:
@@ -213,11 +229,13 @@ def _kit_catalog() -> tuple[ModelCatalog, float]:
         names = {e["id"]: e.get("name") for e in entries}
         options = [_kit_option(m, names.get(m)) for m in ids]
         ttl = MODELS_TTL_SECONDS
+        live = True
     else:
         options = [_kit_option(m) for m in chat_controls._OFFLINE_FALLBACK_MODELS]
         ttl = FALLBACK_TTL_SECONDS
+        live = False
     default_key = chat_controls.default_model([o.key for o in options])
-    return ModelCatalog(options, default_key), ttl
+    return ModelCatalog(options, default_key, live=live), ttl
 
 
 def _choices_catalog() -> tuple[ModelCatalog, float]:
@@ -303,6 +321,284 @@ def demo_settings() -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Settings panel
+# ---------------------------------------------------------------------------
+# /meta *describes* the settings panel instead of the React app hardcoding it,
+# so the demo branches differ by CONFIG plus a few rows of data rather than by
+# divergent frontend code. Everything branch-specific goes through two seams:
+#
+#   * ``endpoint_rows()``   - the chat/embedding endpoints this build talks to
+#     (demo-booth: one row per provider; demo-llamacpp: the local chat and
+#     embedding servers with a probed ``status``).
+#   * ``diagnostic_rows()`` - a handful of read-only facts about the build.
+#
+# A branch extends exactly those two functions; nothing else here and nothing
+# in the React panel needs to change. Rows are plain dicts with a fixed key
+# set, and the panel renders whatever it is given: an unknown provider, role
+# or status renders neutrally rather than breaking the layout.
+#
+# Two hard rules for anything added here:
+#   1. never an API key, token or password. ``api_key_state()`` reports only
+#      whether a key is configured, plus the env var's NAME as a hint;
+#   2. never a host path. ``CONFIG_PATH.name``, not ``CONFIG_PATH``.
+
+LEVEL_MINIMAL = "minimal"
+LEVEL_FULL = "full"
+
+# Per-row reachability. Unknown values are allowed (a branch may invent one);
+# the client falls back to neutral styling for anything it does not know.
+STATUS_OK = "ok"
+STATUS_UNREACHABLE = "unreachable"
+STATUS_UNKNOWN = "unknown"
+STATUS_NO_KEY = "no_key"
+
+ENDPOINTS_LABEL = "Endpoints"
+DIAGNOSTICS_LABEL = "This build"
+
+# Sentinel for provider_endpoint_row(key_env=...): derive the env var from the
+# provider. Pass ``key_env=None`` for an endpoint that needs no key at all.
+KEY_ENV_AUTO = "auto"
+
+# Env var holding each provider's API key; mirrors ``config._get_api_key``.
+# Providers absent here need no key (a local llama-server).
+PROVIDER_KEY_ENV: dict[str, str] = {
+    "kit": "KIT_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+# Display names for the providers this code line knows about. Anything else
+# shows under its config key, which is what a branch operator recognises.
+PROVIDER_LABELS: dict[str, str] = {
+    "kit": "KIT KI-Toolbox",
+    "openrouter": "OpenRouter",
+    "llamacpp": "llama.cpp (local)",
+}
+
+
+def provider_label(provider: str) -> str:
+    return PROVIDER_LABELS.get(provider) or provider
+
+
+def api_key_state(env_var: Optional[str]) -> dict[str, Any]:
+    """Whether a provider's API key is configured, and where it comes from.
+
+    Carries no part of the key itself: ``configured`` is a boolean and
+    ``hint`` is the environment variable's *name*.
+    """
+    configured = bool((os.environ.get(env_var) or "").strip()) if env_var else False
+    return {"configured": configured, "hint": env_var}
+
+
+def endpoint_row(
+    row_id: str,
+    label: str,
+    *,
+    role: Optional[str] = None,
+    provider: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    model_source: Optional[str] = None,
+    api_key: Optional[dict[str, Any]] = None,
+    status: str = STATUS_UNKNOWN,
+    detail: Optional[str] = None,
+) -> dict[str, Any]:
+    """One row of the Endpoints section.
+
+    Every key is always present (``None`` when unknown) so the client can
+    render rows uniformly. ``api_key=None`` means "needs no key" and the
+    client omits the line.
+    """
+    return {
+        "id": row_id,
+        "label": label,
+        "role": role,
+        "provider": provider,
+        "base_url": base_url,
+        "model": model,
+        "model_source": model_source,
+        "api_key": api_key,
+        "status": status,
+        "detail": detail,
+    }
+
+
+def provider_endpoint_row(
+    provider: str,
+    *,
+    role: str = "chat",
+    row_id: Optional[str] = None,
+    label: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+    model_source: Optional[str] = None,
+    status: Optional[str] = None,
+    detail: Optional[str] = None,
+    key_env: Optional[str] = KEY_ENV_AUTO,
+) -> dict[str, Any]:
+    """A row for a provider configured in config.toml.
+
+    Reads ``[<provider>] base_url`` and the provider's API-key env var, so a
+    branch adds a provider row in one call. ``status`` defaults to ``ok`` /
+    ``no_key`` from the key alone; pass it explicitly (e.g.
+    ``STATUS_UNREACHABLE`` after probing a local server).
+    """
+    section = load_config().get(provider, {})
+    if key_env == KEY_ENV_AUTO:
+        key_env = PROVIDER_KEY_ENV.get(provider)
+    key = api_key_state(key_env) if key_env else None
+    if status is None:
+        if key is None:
+            status = STATUS_UNKNOWN
+        else:
+            status = STATUS_OK if key["configured"] else STATUS_NO_KEY
+    if detail is None and status == STATUS_NO_KEY and key and key["hint"]:
+        detail = f"Set {key['hint']} in the environment to reach this endpoint."
+    return endpoint_row(
+        row_id or f"{provider}-{role}",
+        label or provider_label(provider),
+        role=role,
+        provider=provider,
+        base_url=section.get("base_url") if base_url is None else base_url,
+        model=model,
+        model_source=model_source,
+        api_key=key,
+        status=status,
+        detail=detail,
+    )
+
+
+def endpoint_rows() -> list[dict[str, Any]]:
+    """The endpoints this build talks to, newest-relevant first.
+
+    **Branch seam.** demo-booth appends one ``provider_endpoint_row`` per
+    offered provider; demo-llamacpp replaces/adds local-server rows with a
+    probed ``status`` (``STATUS_UNREACHABLE`` when llama-server is down).
+    Return ``[]`` to hide the section entirely.
+
+    The KIT-only build shows what it actually uses: the configured chat
+    provider (models come from its live catalog, picked in the sidebar) and
+    the configured embedding provider (model fixed in config.toml).
+    """
+    config = load_config()
+    llm = config.get("llm", {})
+    rows: list[dict[str, Any]] = []
+
+    chat_provider = llm.get("chat_provider")
+    if chat_provider:
+        key = api_key_state(PROVIDER_KEY_ENV.get(chat_provider))
+        status: Optional[str] = None
+        detail: Optional[str] = "Chat completions for every agent and sub-agent."
+        if not key["configured"] and PROVIDER_KEY_ENV.get(chat_provider):
+            status, detail = None, None  # derived below: no_key + its hint
+        elif get_catalog().live is False:
+            status = STATUS_UNREACHABLE
+            detail = ("The model catalog could not be fetched; the picker "
+                      "shows the offline fallback list.")
+        rows.append(provider_endpoint_row(
+            chat_provider,
+            role="chat",
+            model_source="Live /models catalog, chosen in the picker above",
+            status=status,
+            detail=detail,
+        ))
+
+    embedding_provider = llm.get("embedding_provider")
+    if embedding_provider:
+        rows.append(provider_endpoint_row(
+            embedding_provider,
+            role="embedding",
+            model=config.get(embedding_provider, {}).get("embedding_model"),
+            model_source="config.toml",
+            detail="Embeds your question for vector search over the graphs.",
+        ))
+    return rows
+
+
+def endpoint_notices(rows: Iterable[dict[str, Any]]) -> list[str]:
+    """Build-level warnings shown under the endpoint list.
+
+    **Branch seam.** The default turns every row that is not reachable into
+    one line; a branch can append its own (llama-server not started, an
+    OpenRouter key missing at the booth).
+    """
+    notices: list[str] = []
+    for row in rows:
+        status = row.get("status")
+        if status == STATUS_NO_KEY:
+            notices.append(f"{row.get('label')}: no API key configured.")
+        elif status == STATUS_UNREACHABLE:
+            notices.append(f"{row.get('label')}: not reachable right now.")
+    return notices
+
+
+def diagnostic_row(label: str, value: str, detail: Optional[str] = None) -> dict[str, Any]:
+    """One read-only label/value fact. Keep values short and human."""
+    return {"label": label, "value": value, "detail": detail}
+
+
+def diagnostic_rows() -> list[dict[str, Any]]:
+    """A few read-only facts about this build.
+
+    **Branch seam.** Keep it small and useful (this is not a config dump) and
+    never leak a secret or a host path. Return ``[]`` to hide the section.
+    """
+    retrieval = "hybrid (dense + BM25)" if get_hybrid_enabled() else "dense vectors"
+    if get_reranker_enabled():
+        retrieval += " + reranker"
+    federation = (
+        f"on, up to {get_federation_max_specialists()} specialists"
+        if get_federation_enabled() else "off"
+    )
+    return [
+        diagnostic_row("Retrieval", retrieval),
+        diagnostic_row("Federation", federation),
+        diagnostic_row("Live graph", "on" if get_live_graph_enabled() else "off"),
+        # Name only: the container mounts its own file over this path.
+        diagnostic_row("Config", CONFIG_PATH.name),
+    ]
+
+
+def settings_controls() -> dict[str, bool]:
+    """Which of the always-known controls the panel offers. All true here;
+    a branch can drop one without touching the React code."""
+    return {
+        "model": True,
+        "temperature": True,
+        "simplified_view": True,
+        "live_graph": bool(get_live_graph_enabled()),
+    }
+
+
+def settings_meta() -> dict[str, Any]:
+    """The declarative description of this build's settings panel.
+
+    ``level`` comes from ``[frontend].settings_level``
+    (``AMA_FRONTEND_SETTINGS_LEVEL``): ``minimal`` offers the controls only,
+    ``full`` adds the endpoint list and the build facts.
+    """
+    level = get_frontend_settings_level()
+    block: dict[str, Any] = {
+        "level": level,
+        "controls": settings_controls(),
+        "endpoints": None,
+        "diagnostics": None,
+    }
+    if level != LEVEL_FULL:
+        return block
+    rows = [row for row in endpoint_rows() if row]
+    if rows:
+        block["endpoints"] = {
+            "label": ENDPOINTS_LABEL,
+            "rows": rows,
+            "notices": endpoint_notices(rows),
+        }
+    facts = [row for row in diagnostic_rows() if row]
+    if facts:
+        block["diagnostics"] = {"label": DIAGNOSTICS_LABEL, "rows": facts}
+    return block
+
+
 def build_meta() -> dict[str, Any]:
     catalog = get_catalog()
     return {
@@ -316,6 +612,7 @@ def build_meta() -> dict[str, Any]:
         "default_temperature": default_temperature(),
         "live_graph": bool(get_live_graph_enabled()),
         "demo": demo_settings(),
+        "settings": settings_meta(),
     }
 
 

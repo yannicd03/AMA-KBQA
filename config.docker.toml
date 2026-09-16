@@ -84,6 +84,16 @@ rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # Override per deployment with AMA_FRONTEND_LIVE_GRAPH=0/1.
 live_graph = true
 
+# How much of the React demo's settings panel this build offers.
+#   "minimal" — model, temperature and the view toggles only (public demo).
+#   "full"    — additionally the Endpoints list (which chat/embedding endpoint
+#               the build talks to, and whether its key is configured) and the
+#               read-only build facts. Never the key itself.
+# Default when the key is absent is "minimal", so an old config or a
+# non-demo deployment never exposes endpoint detail by accident.
+# Override per deployment with AMA_FRONTEND_SETTINGS_LEVEL=minimal|full.
+settings_level = "full"
+
 [federation]
 enabled = false
 max_specialists = 2   # the demo's agent picker overrides this per instance
