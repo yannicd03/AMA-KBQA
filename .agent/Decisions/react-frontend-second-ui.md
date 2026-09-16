@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-09-16
-summary: React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/) shipped as an additive second demo UI alongside Streamlit, which stays default and behaviorally unchanged; the API reuses the Streamlit chat page's own helpers directly.
+summary: React SPA (web/) + FastAPI/SSE backend shipped as an additive second demo UI alongside Streamlit (stays default, unchanged); Addendum 2026-09-16 extends the same additive principle to a data-driven per-branch settings panel.
 relates: [trace-inspector-frontend-architecture]
 affects: [amakbqa/task/langgraph-rewrite]
 ---
