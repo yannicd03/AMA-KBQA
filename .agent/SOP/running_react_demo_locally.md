@@ -1,3 +1,7 @@
+---
+summary: How to run the React demo frontend + FastAPI backend locally — full Docker stack (api + web services) or a fast dev loop (uv run backend, Vite hot reload frontend).
+---
+
 # SOP: Running the React Demo Frontend Locally
 
 ## Related Docs

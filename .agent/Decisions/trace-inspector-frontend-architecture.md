@@ -1,3 +1,7 @@
+---
+relates: [react-frontend-second-ui]
+---
+
 # ADR: Trace Inspector + Graph View — Frontend and Instrumentation Architecture
 
 **Status:** Accepted (merged 2026-05-09, commit `880e865`)
