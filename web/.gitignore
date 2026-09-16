@@ -2,3 +2,7 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+
+# The repo-root .gitignore ignores lib/ (Python build output). web/src/lib is
+# TypeScript source and must be tracked.
+!src/lib/
