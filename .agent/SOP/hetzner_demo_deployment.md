@@ -553,3 +553,45 @@ origin/demo-booth` in `~/amakbqa-next`, image rebuilt, only
 
 HTTP 200 on 8504, `amakbqa-next.yanlab.de` and `amakbqa.yanlab.de`; ~6.5 GiB
 RAM available; no crash loop after 60 s.
+
+---
+
+## 11. React demo frontend (2026-09-16) — local/Docker only, Hetzner deployment NOT done
+
+A second frontend (`web/` + `ama_kbqa/api/`) shipped on `demo-v2-int`
+(2026-09-16) for a booth/public audience, running next to Streamlit — see
+[System/demo_react_frontend.md](../System/demo_react_frontend.md) and
+[Decisions/react-frontend-second-ui.md](../Decisions/react-frontend-second-ui.md)
+for what it is. It has been built and verified **locally in Docker only**
+(`docker compose up -d --build api web` — see
+[SOP/running_react_demo_locally.md](./running_react_demo_locally.md)). It has
+**not** been deployed to the Hetzner box, staged, or given a public hostname.
+
+Deploying it there (either as a v3 staging line following §9's pattern, or
+folded into the v2 rollout) would need, at minimum:
+
+- **A port claim.** The Hetzner box's occupied `127.0.0.1` ports as of this
+  SOP: `1111`/`8890` (Virtuoso), `6335` (Qdrant), `8502` (benchmark-stack
+  Streamlit), `8503` (v1 public Streamlit), `8504` (v2 staging Streamlit, see
+  §9). `web`/`api` default to `8505`/`8506` in the local `docker-compose.yml`
+  — free on the host today, but that has not been formally reserved or
+  recorded as claimed anywhere the way §9 recorded `8504`. Do that before
+  building on the host, not after — a silent port collision with a future
+  service is exactly the kind of drift this SOP exists to prevent.
+- **A cloudflared ingress rule.** `deploy/hetzner/cloudflared-amakbqa.yml`
+  would need a new hostname entry (e.g. `amakbqa-web.yanlab.de →
+  localhost:8505`) alongside the existing `amakbqa.yanlab.de` /
+  `amakbqa-next.yanlab.de` entries from §5/§9, and the same
+  `sudo systemctl restart cloudflared-amakbqa` to pick it up. The React app's
+  own nginx (`web/nginx.conf`) already sets `proxy_buffering off` + `gzip off`
+  on `/api/` for SSE; whatever sits in front of it on the Hetzner side
+  (cloudflared, and Cloudflare's edge itself) must not re-introduce buffering
+  on that path, or live run updates will stall or arrive in bursts.
+- Compose service definitions for `api`/`web` in whatever
+  `docker-compose.hetzner*.yml` override file is used — none exist yet; the
+  local `docker-compose.yml` `api`/`web` blocks are the starting point but
+  were not written with the Hetzner box's `DOCKER_BUILDKIT=0` constraint (§6)
+  or the v2-staging external-network pattern (§9 "Staging layout") in mind.
+
+Until this section is updated with an actual deploy, treat the React frontend
+as **local-only**.
