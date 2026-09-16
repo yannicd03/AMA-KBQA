@@ -35,6 +35,7 @@ from ama_kbqa.config import (
     get_chat_temperature,
     get_federation_enabled,
     get_federation_max_specialists,
+    get_frontend_chat_models,
     get_frontend_settings_level,
     get_hybrid_enabled,
     get_live_graph_enabled,
@@ -365,6 +366,7 @@ KEY_ENV_AUTO = "auto"
 PROVIDER_KEY_ENV: dict[str, str] = {
     "kit": "KIT_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 
 # Display names for the providers this code line knows about. Anything else
@@ -372,8 +374,20 @@ PROVIDER_KEY_ENV: dict[str, str] = {
 PROVIDER_LABELS: dict[str, str] = {
     "kit": "KIT KI-Toolbox",
     "openrouter": "OpenRouter",
+    "deepseek": "DeepSeek (direct)",
     "llamacpp": "llama.cpp (local)",
 }
+
+# Booth build: the picker offers KIT next to endpoints that cost real money, so
+# every row and notice about them has to say which is which. The presenter
+# reads this panel between questions, not the config file.
+KIT_CHAT_DETAIL = (
+    "Chat completions for every agent and sub-agent. Free for this build."
+)
+BILLED_DETAIL = (
+    "Optional chat endpoint: every question answered here is billed to the "
+    "booth account."
+)
 
 
 def provider_label(provider: str) -> str:
@@ -468,6 +482,45 @@ def provider_endpoint_row(
     )
 
 
+def _chat_model_entries() -> list[dict[str, Any]]:
+    """The ``[[frontend.chat_models]]`` entries, or ``[]`` when unreadable.
+
+    A hand-edited config must degrade the panel to "KIT only" rather than take
+    /api/meta down mid-demo, which is what the picker does with it too.
+    """
+    try:
+        return list(get_frontend_chat_models())
+    except Exception:  # noqa: BLE001 - a broken config degrades to KIT only
+        _LOG.warning("Could not read [[frontend.chat_models]]", exc_info=True)
+        return []
+
+
+def optional_chat_providers() -> list[str]:
+    """The non-KIT chat providers this build offers, in config order.
+
+    Derived from ``[[frontend.chat_models]]`` rather than a hard-coded list, so
+    the Endpoints section follows whatever the booth laptop actually ships:
+    drop the DeepSeek entries from config and the DeepSeek row goes with them.
+    """
+    providers: list[str] = []
+    for entry in _chat_model_entries():
+        provider = entry.get("provider")
+        if provider and provider != "kit" and provider not in providers:
+            providers.append(provider)
+    return providers
+
+
+def _provider_ready(provider: str) -> bool:
+    """Whether ``provider``'s models can be picked right now.
+
+    The picker's own rule (``chat_controls.available_choices``): an endpoint
+    that needs a key is offered only once that key is in the environment.
+    Reads the environment only, never the network.
+    """
+    env_var = PROVIDER_KEY_ENV.get(provider)
+    return True if env_var is None else api_key_state(env_var)["configured"]
+
+
 def endpoint_rows() -> list[dict[str, Any]]:
     """The endpoints this build talks to, newest-relevant first.
 
@@ -488,7 +541,7 @@ def endpoint_rows() -> list[dict[str, Any]]:
     if chat_provider:
         key = api_key_state(PROVIDER_KEY_ENV.get(chat_provider))
         status: Optional[str] = None
-        detail: Optional[str] = "Chat completions for every agent and sub-agent."
+        detail: Optional[str] = KIT_CHAT_DETAIL
         if not key["configured"] and PROVIDER_KEY_ENV.get(chat_provider):
             status, detail = None, None  # derived below: no_key + its hint
         elif get_catalog().live is False:
@@ -512,6 +565,32 @@ def endpoint_rows() -> list[dict[str, Any]]:
             model_source="config.toml",
             detail="Embeds your question for vector search over the graphs.",
         ))
+
+    # Booth extras: one row per *provider* the picker offers next to KIT, not
+    # one per model. Reachability is read off the API key alone. Probing
+    # OpenRouter and DeepSeek would put two network round-trips in front of
+    # the demo's first screen, on every /api/meta call.
+    entries = _chat_model_entries()
+    for provider in optional_chat_providers():
+        if provider == chat_provider:
+            continue  # already listed above as the configured chat endpoint
+        env_var = PROVIDER_KEY_ENV.get(provider)
+        count = sum(1 for entry in entries if entry.get("provider") == provider)
+        detail = BILLED_DETAIL
+        if env_var and not api_key_state(env_var)["configured"]:
+            detail = (
+                f"{BILLED_DETAIL} Set {env_var} in the environment to offer "
+                "its models in the picker."
+            )
+        rows.append(provider_endpoint_row(
+            provider,
+            role="chat",
+            model_source=(
+                f"{count} model{'' if count == 1 else 's'} from config.toml, "
+                "chosen in the picker above"
+            ),
+            detail=detail,
+        ))
     return rows
 
 
@@ -521,15 +600,53 @@ def endpoint_notices(rows: Iterable[dict[str, Any]]) -> list[str]:
     **Branch seam.** The default turns every row that is not reachable into
     one line; a branch can append its own (llama-server not started, an
     OpenRouter key missing at the booth).
+
+    Because demo-booth lists one row per provider, a booth laptop with no
+    DeepSeek key gets one line for DeepSeek rather than one per configured
+    DeepSeek model. Lines the model picker already serves through
+    ``model_notices`` are dropped, so the presenter never reads the identical
+    sentence twice on one screen.
     """
-    notices: list[str] = []
+    optional = set(optional_chat_providers())
+    collected: list[str] = []
     for row in rows:
         status = row.get("status")
         if status == STATUS_NO_KEY:
-            notices.append(f"{row.get('label')}: no API key configured.")
+            collected.append(_no_key_notice(row, optional))
         elif status == STATUS_UNREACHABLE:
-            notices.append(f"{row.get('label')}: not reachable right now.")
+            collected.append(f"{row.get('label')}: not reachable right now.")
+
+    already_shown = _model_notices()
+    notices: list[str] = []
+    for notice in collected:
+        if notice in notices or notice in already_shown:
+            continue
+        notices.append(notice)
     return notices
+
+
+def _no_key_notice(row: dict[str, Any], optional: set[str]) -> str:
+    """One line for a row whose API key is missing.
+
+    An optional booth endpoint says what the missing key costs the presenter:
+    its models are not in the picker at all. KIT keeps the plain sentence,
+    because the KIT half of the picker still works off the offline fallback
+    list when its key is unset.
+    """
+    label = row.get("label")
+    hint = (row.get("api_key") or {}).get("hint")
+    if row.get("provider") in optional and hint:
+        return (f"{label}: no API key configured ({hint}), so its billed "
+                "models are hidden from the picker.")
+    return f"{label}: no API key configured."
+
+
+def _model_notices() -> tuple[str, ...]:
+    """What /api/meta already serves as ``model_notices`` (never raises)."""
+    try:
+        return get_catalog().notices
+    except Exception:  # noqa: BLE001 - a notice list is never worth a 500
+        return ()
 
 
 def diagnostic_row(label: str, value: str, detail: Optional[str] = None) -> dict[str, Any]:
@@ -550,13 +667,32 @@ def diagnostic_rows() -> list[dict[str, Any]]:
         f"on, up to {get_federation_max_specialists()} specialists"
         if get_federation_enabled() else "off"
     )
-    return [
+    optional = optional_chat_providers()
+    ready = 1 + sum(1 for provider in optional if _provider_ready(provider))
+    rows = [
         diagnostic_row("Retrieval", retrieval),
         diagnostic_row("Federation", federation),
         diagnostic_row("Live graph", "on" if get_live_graph_enabled() else "off"),
-        # Name only: the container mounts its own file over this path.
-        diagnostic_row("Config", CONFIG_PATH.name),
+        # The booth question between two demos: how much of the picker is live
+        # on this laptop, and is the next question going to cost anything.
+        diagnostic_row(
+            "Chat providers",
+            f"{ready} of {len(optional) + 1} selectable",
+            detail="KIT is always offered and always free; a billed endpoint "
+                   "joins the picker only once its API key is set.",
+        ),
     ]
+    embedding_provider = load_config().get("llm", {}).get("embedding_provider")
+    if embedding_provider:
+        rows.append(diagnostic_row(
+            "Embeddings",
+            f"{provider_label(embedding_provider)}, whatever the chat pick",
+            detail="Picking a billed chat model changes chat completions "
+                   "only; your question is still embedded by this endpoint.",
+        ))
+    # Name only: the container mounts its own file over this path.
+    rows.append(diagnostic_row("Config", CONFIG_PATH.name))
+    return rows
 
 
 def settings_controls() -> dict[str, bool]:

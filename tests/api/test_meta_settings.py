@@ -44,7 +44,7 @@ def full(monkeypatch):
 
 
 @pytest.fixture
-def client(monkeypatch, patch_models, kit_path, kit_key, full):
+def client(monkeypatch, patch_models, kit_path, kit_key, booth_keys, full):
     monkeypatch.setattr(meta, "get_live_graph_enabled", lambda: True)
     with TestClient(app_module.create_app()) as c:
         yield c
@@ -80,22 +80,43 @@ def test_controls_follow_the_live_graph_flag(monkeypatch, patch_models, kit_path
 
 
 def test_endpoint_rows_describe_what_this_build_uses(client):
+    """What demo-booth shows: the free KIT pair plus the billed chat endpoints.
+
+    Adapted from the KIT-only build, where the rows were exactly one chat and
+    one embedding row, both on ``kit``. The booth picker also offers OpenRouter
+    and DeepSeek, so the panel carries a row per provider. The *contract* is
+    what is pinned here and is unchanged: the fixed key set on every row, a
+    label, a base_url that comes from config, a status and a detail.
+    """
     rows = settings_of(client)["endpoints"]["rows"]
-    by_role = {row["role"]: row for row in rows}
-    assert set(by_role) == {"chat", "embedding"}
     for row in rows:
         assert set(row) == ROW_KEYS
-        assert row["provider"] == "kit"
         assert row["label"]
-        assert row["base_url"] == cfg.load_config()["kit"]["base_url"]
-        assert row["api_key"] == {"configured": True, "hint": "KIT_API_KEY"}
-        assert row["status"] == "ok"
         assert row["detail"]
+        assert row["base_url"] == cfg.load_config()[row["provider"]]["base_url"]
+        assert row["status"] == "ok"
+
+    by_id = {row["id"]: row for row in rows}
+    kit_chat, kit_embedding = by_id["kit-chat"], by_id["kit-embedding"]
+    for row in (kit_chat, kit_embedding):
+        assert row["provider"] == "kit"
+        assert row["api_key"] == {"configured": True, "hint": "KIT_API_KEY"}
+    assert {kit_chat["role"], kit_embedding["role"]} == {"chat", "embedding"}
     # The chat model is whatever the picker holds; the embedding model is fixed.
-    assert by_role["chat"]["model"] is None
-    assert by_role["chat"]["model_source"]
-    assert by_role["embedding"]["model"] == cfg.load_config()["kit"]["embedding_model"]
-    # Nothing to warn about while the key is set and the catalog is live.
+    assert kit_chat["model"] is None
+    assert kit_chat["model_source"]
+    assert kit_embedding["model"] == cfg.load_config()["kit"]["embedding_model"]
+    # The presenter has to be able to tell free from billed at a glance.
+    assert "free" in kit_chat["detail"].lower()
+
+    for row_id, env_var in (("openrouter-chat", "OPENROUTER_API_KEY"),
+                            ("deepseek-chat", "DEEPSEEK_API_KEY")):
+        billed = by_id[row_id]
+        assert billed["role"] == "chat"
+        assert billed["api_key"] == {"configured": True, "hint": env_var}
+        assert "billed to the booth account" in billed["detail"]
+
+    # Nothing to warn about while every key is set and the catalog is live.
     assert settings_of(client)["endpoints"]["notices"] == []
 
 
@@ -118,12 +139,14 @@ def test_diagnostics_are_short_label_value_rows(client):
 # Secrets
 # ---------------------------------------------------------------------------
 
-def test_no_part_of_the_api_key_is_served(client, kit_key):
+def test_no_part_of_the_api_key_is_served(client, kit_key, booth_keys):
     raw = client.get("/api/meta").text
-    assert kit_key not in raw
-    # Not even a masked tail or head of it.
-    assert kit_key[-8:] not in raw
-    assert kit_key[:12] not in raw
+    # Every provider's key, not just KIT's: the booth rows carry two more.
+    for key in (kit_key, *booth_keys):
+        assert key not in raw
+        # Not even a masked tail or head of it.
+        assert key[-8:] not in raw
+        assert key[:12] not in raw
     assert "secret" not in raw.lower()
 
 
@@ -146,7 +169,11 @@ def test_api_key_state_reports_presence_only(monkeypatch):
 # Degraded states
 # ---------------------------------------------------------------------------
 
-def test_missing_key_marks_the_row_and_raises_a_notice(monkeypatch, patch_models, kit_path, full):
+def test_missing_key_marks_the_row_and_raises_a_notice(
+    monkeypatch, patch_models, kit_path, booth_keys, full,
+):
+    """Only KIT's key is missing here, so the billed booth rows stay quiet and
+    the assertions are about the KIT chat row exactly as on demo-v2-int."""
     monkeypatch.delenv("KIT_API_KEY", raising=False)
     monkeypatch.setattr(meta, "get_live_graph_enabled", lambda: True)
     with TestClient(app_module.create_app()) as c:
@@ -157,9 +184,14 @@ def test_missing_key_marks_the_row_and_raises_a_notice(monkeypatch, patch_models
     assert "KIT_API_KEY" in chat["detail"]
     assert section["notices"]
     assert all("no API key" in notice for notice in section["notices"])
+    # Both KIT rows lost the same key, and they share a label: the presenter
+    # reads one line about KIT, not the same sentence twice.
+    assert len(section["notices"]) == 1
 
 
-def test_offline_catalog_marks_the_chat_row_unreachable(monkeypatch, kit_path, kit_key, full):
+def test_offline_catalog_marks_the_chat_row_unreachable(
+    monkeypatch, kit_path, kit_key, booth_keys, full,
+):
     def boom(provider, **_kwargs):
         raise RuntimeError("endpoint down")
 

@@ -335,3 +335,31 @@ def harness(monkeypatch, patch_models, kit_path):
 @pytest.fixture
 def provider_harness(monkeypatch, patch_models, fake_choices):
     yield from _run_harness(monkeypatch, provider_path=True)
+
+
+# ---------------------------------------------------------------------------
+# Booth chat providers
+# ---------------------------------------------------------------------------
+# demo-booth offers OpenRouter and DeepSeek next to KIT, and /api/meta reports
+# each one as reachable or not from its API key env var alone. A developer's
+# .env (loaded by ama_kbqa.config at import) sets those keys on this machine
+# but not on CI, so any test that looks at the endpoint rows has to pin them
+# rather than inherit whichever state the machine happens to be in.
+
+OPENROUTER_SECRET = "sk-or-v1-0123456789abcdef-booth-account"
+DEEPSEEK_SECRET = "sk-ds-0123456789abcdef-booth-account"
+
+
+@pytest.fixture
+def booth_keys(monkeypatch):
+    """Both billed booth endpoints are reachable."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", OPENROUTER_SECRET)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", DEEPSEEK_SECRET)
+    return (OPENROUTER_SECRET, DEEPSEEK_SECRET)
+
+
+@pytest.fixture
+def no_booth_keys(monkeypatch):
+    """A booth laptop handed over without the billed providers' keys."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
