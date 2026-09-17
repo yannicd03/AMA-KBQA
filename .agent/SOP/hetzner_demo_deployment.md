@@ -1,5 +1,5 @@
 ---
-summary: Public demo deployment runbook for the shared Hetzner box (compose projects, ports, Cloudflare tunnels). As of 2026-09-16, its React frontend section records that the new React frontend (web/api) is verified locally in Docker only — not deployed, staged, or given a port/ingress on this box.
+summary: Public demo deployment runbook for the shared Hetzner box (compose projects, ports, Cloudflare tunnels). As of 2026-09-16, its React frontend section records that the new React frontend (web/api) is verified locally in Docker only — not deployed, staged, or given a port/ingress on this box — and that its local default ports 2026/2027 fall inside ORCA's 2025-2030 range here.
 ---
 
 # SOP: Public Demo Deployment on the Shared Hetzner Box
@@ -374,14 +374,19 @@ folded into the v2 rollout) would need, at minimum:
 - **A port claim.** The Hetzner box's occupied `127.0.0.1` ports as of this
   SOP: `1111`/`8890` (Virtuoso), `6335` (Qdrant), `8502` (benchmark-stack
   Streamlit), `8503` (v1 public Streamlit), `8504` (v2 staging Streamlit, see
-  §9). `web`/`api` default to `8505`/`8506` in the local `docker-compose.yml`
-  — free on the host today, but that has not been formally reserved or
-  recorded as claimed anywhere the way §9 recorded `8504`. Do that before
-  building on the host, not after — a silent port collision with a future
-  service is exactly the kind of drift this SOP exists to prevent.
+  §9). `web`/`api` publish on **`2026`/`2027`** in the local
+  `docker-compose.yml` (changed from `8505`/`8506` on 2026-09-16, commit
+  `a41ce3d`; host bindings only — the `api` container still listens on `8506`
+  internally). **This is a collision hazard on this specific box:** ORCA's
+  `mas-in-production` stack owns ports **2025–2030** (see "What happened and
+  why" above), which contains both `2026` and `2027`. Do not publish these
+  ports on the Hetzner box without re-checking what ORCA currently binds and
+  picking a free pair — the local default is chosen for a developer laptop,
+  not for this host. Claim whatever pair is chosen here, the way §9 recorded
+  `8504`, before building on the host rather than after.
 - **A cloudflared ingress rule.** `deploy/hetzner/cloudflared-amakbqa.yml`
   would need a new hostname entry (e.g. `amakbqa-web.yanlab.de →
-  localhost:8505`) alongside the existing `amakbqa.yanlab.de` /
+  localhost:<claimed web port>`) alongside the existing `amakbqa.yanlab.de` /
   `amakbqa-next.yanlab.de` entries from §5/§9, and the same
   `sudo systemctl restart cloudflared-amakbqa` to pick it up. The React app's
   own nginx (`web/nginx.conf`) already sets `proxy_buffering off` + `gzip off`

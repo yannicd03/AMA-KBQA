@@ -2,33 +2,32 @@ entities:
   - id: branch/demo-v2-int
     type: branch
     status: active
-    as_of: 2026-09-16
+    as_of: 2026-09-17
     title: demo-v2-int
-    summary: Shared integration base for the demo v2 line (Router/Federated picker, live graph panel). Tip moved e14e77d -> 2f0d406 (data-driven settings panel base mechanism) -> da0ccb8 (docs) 2026-09-16. Pushed to origin.
-    merged_into: [branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
+    summary: "Shared integration base for the demo v2 line (Router/Federated picker, live graph panel, data-driven settings panel). Tip 69cd5a9 2026-09-17, adding cooperative run cancellation and the provider-aware model picker. No longer KIT-only: it carries 2 [[frontend.chat_models]] DeepSeek presets plus a custom OpenRouter entry. Pushed to origin; the three downstream demo branches are each 3 commits behind and not yet merged forward."
 
   - id: branch/demo-public
     type: branch
     status: active
-    as_of: 2026-09-16
+    as_of: 2026-09-17
     title: demo-public
-    summary: Public-facing demo branch. Tip 39f9666 2026-09-16, merging demo-v2-int's data-driven settings panel with settings_level = "minimal" (endpoints and diagnostics hidden); 373 tests. Pushed to origin.
+    summary: "Public-facing demo branch, settings_level = minimal (endpoints and diagnostics hidden). Tip da98f01 2026-09-17, exactly 3 commits behind demo-v2-int; the ports move, cancellation and picker work are not merged forward yet. Pushed to origin."
     depends_on: [branch/demo-v2-int]
 
   - id: branch/demo-booth
     type: branch
     status: active
-    as_of: 2026-09-16
+    as_of: 2026-09-17
     title: demo-booth
-    summary: SEMANTiCS 2026 booth demo branch (demo-v2-int plus OpenRouter/DeepSeek chat providers). Tip 2b97e4e 2026-09-16 adds KIT + OpenRouter + DeepSeek endpoint rows derived from config to the settings panel, plus per-provider notice dedupe; 406 tests. Pushed to origin.
+    summary: "SEMANTiCS 2026 booth demo branch (KIT + OpenRouter + DeepSeek endpoint rows, per-provider notice dedupe). Tip 176b16b 2026-09-17, exactly 3 commits behind demo-v2-int and not merged forward. Carries 7 [[frontend.chat_models]] entries, the largest picker of any branch. Pushed to origin."
     depends_on: [branch/demo-v2-int]
 
   - id: branch/demo-llamacpp
     type: branch
     status: active
-    as_of: 2026-09-16
+    as_of: 2026-09-17
     title: demo-llamacpp
-    summary: Local llama.cpp demo branch, created 2026-09-15 off demo-booth. Tip 3854c7b 2026-09-16 adds local chat (:8080) and embedding (:8081) settings rows with a probed status; 416 tests. Pushed to origin.
+    summary: "Local llama.cpp demo branch, created 2026-09-15 off demo-booth; local chat (:8080) and embedding (:8081) settings rows with a probed status. Tip b5e486e 2026-09-17, exactly 3 commits behind demo-v2-int and not merged forward. Carries 0 [[frontend.chat_models]] entries. Pushed to origin."
     depends_on: [branch/demo-booth]
 
   - id: feature/one-api-serves-every-demo-branch
@@ -44,12 +43,122 @@ entities:
     implemented_on: [branch/demo-v2-int, branch/demo-public, branch/demo-booth, branch/demo-llamacpp]
     relates: [amakbqa/decision/react-frontend-second-ui]
 
+  - id: feature/cooperative-run-cancellation
+    type: feature
+    title: Cooperative run cancellation
+    summary: "A CancellationToken flipped by the API and checked by the agent at its own checkpoints (after MCP init, top of the tool loop). POST /api/runs/{run_id}/cancel answers 202, cancelled is a real SSE event, the session slot frees immediately, and overlap is bounded by MAX_DETACHED_RUNS_PER_SESSION = 2. A cancelled run skips synthesis so the visitor is not billed for it."
+    implemented_on: [branch/demo-v2-int]
+    relates: [amakbqa/decision/cooperative-run-cancellation, amakbqa/decision/react-frontend-second-ui]
+
+  - id: feature/provider-aware-model-picker
+    type: feature
+    title: Provider-aware demo model picker
+    summary: "Picker keys are provider:model rather than bare ids. Two DeepSeek presets are served through OpenRouter as [[frontend.chat_models]] config entries, plus a free-text custom OpenRouter id validated by shape, never minted into the catalog and shown without a price. AMA_KBQA_CHAT_PROVIDER carries the pick into MCP subprocesses."
+    implemented_on: [branch/demo-v2-int]
+    relates: [amakbqa/decision/demo-picker-provider-routing]
+
+  # -- problems these two decisions closed -------------------------------------
+
+  - id: issue/no-way-to-stop-a-run
+    type: issue
+    status: solved
+    date: 2026-09-16
+    title: A demo run could not be stopped, and left the session locked behind 409
+    summary: "A visitor who asked an expensive question waited it out; both the next question and New chat returned 409 for the whole run. The pre-existing cancel path never called run.finish, so a stopped run reported running forever and was never evicted."
+    solved_by: [amakbqa/decision/cooperative-run-cancellation]
+    observed_in: [branch/demo-v2-int]
+
+  - id: issue/unbounded-waits-sparql-and-mcp
+    type: issue
+    status: solved
+    date: 2026-09-16
+    title: SPARQL and MCP tool calls had no timeout at all
+    summary: "GraphConfig.timeout_ms (30s) was plumbed into the adapters and then never consumed, so servers built a bare SPARQLWrapper and urlopen waited forever; MCP tool calls had no timeout whatsoever. Cancellation cannot promise a time bound while a run can block forever between checkpoints."
+    solved_by: [amakbqa/decision/cooperative-run-cancellation]
+    observed_in: [branch/demo-v2-int]
+
+  - id: issue/demo-picker-was-kit-only
+    type: issue
+    status: solved
+    date: 2026-09-16
+    title: The demo model picker was KIT-only
+    summary: "A booth presenter had no way to show the system running on a frontier model, and no way to try an arbitrary model without a code change and a rebuild. Superseded on demo-v2-int by two DeepSeek presets and a custom OpenRouter entry."
+    solved_by: [amakbqa/decision/demo-picker-provider-routing]
+    observed_in: [branch/demo-v2-int]
+
+  - id: issue/chat-provider-lost-across-mcp-subprocess
+    type: issue
+    status: solved
+    date: 2026-09-16
+    title: Picking a non-KIT model left every sub-agent talking to KIT
+    summary: "MCP tool servers are spawned with env=os.environ.copy() and load their own config.toml, so mutating the parent's in-memory config never reached them. The failure was silent: questions still got answered by KIT while the parent used OpenRouter. Fixed by config.get_chat_provider() checking AMA_KBQA_CHAT_PROVIDER first, proven by a container control experiment."
+    solved_by: [amakbqa/decision/demo-picker-provider-routing]
+    observed_in: [branch/demo-v2-int]
+
+  # -- open gaps ---------------------------------------------------------------
+
+  - id: issue/cancelled-client-recovery-static-assertions-only
+    type: issue
+    status: open
+    date: 2026-09-17
+    title: The cancelled client path is verified by static source assertions only
+    summary: "There is no JS test runner in this repo. tests/api/test_web_client_contract.py reads web/src/api.ts as text and asserts the cancelled listener exists and that recover() treats cancelled as terminal. tsc -b passes, but no client code was ever executed and the infinite-reconnect scenario was never reproduced nor observed fixed. The riskiest unverified line in the feature."
+    observed_in: [branch/demo-v2-int]
+    relates: [feature/cooperative-run-cancellation]
+
+  - id: issue/stop-button-and-custom-model-field-never-rendered
+    type: issue
+    status: open
+    date: 2026-09-17
+    title: The Stop button and the custom-model field have never been rendered in a browser
+    summary: "No browser check was performed for either surface. Chrome automation remains broken on this machine, a pre-existing environment regression rather than a code problem, so both new UI controls are unverified visually."
+    observed_in: [branch/demo-v2-int]
+    relates: [feature/cooperative-run-cancellation, feature/provider-aware-model-picker, issue/settings-panel-booth-llamacpp-not-visually-reviewed]
+
+  - id: issue/no-real-billed-run-through-deepseek-or-custom-model
+    type: issue
+    status: open
+    date: 2026-09-17
+    title: No real billed question has been asked through a DeepSeek preset or a custom model id
+    summary: "No end-to-end answer from either exists. The wiring is verified by tests and by the in-container control experiment on AMA_KBQA_CHAT_PROVIDER, not by a completed run against a real billed endpoint."
+    observed_in: [branch/demo-v2-int]
+    relates: [feature/provider-aware-model-picker]
+
+  - id: issue/detached-run-cap-not-exercised-by-real-overlap
+    type: issue
+    status: open
+    date: 2026-09-17
+    title: The detached-run cap is tested by injecting session state, not by real overlapping runs
+    summary: "MAX_DETACHED_RUNS_PER_SESSION = 2 (ama_kbqa/api/runs.py:81) is covered by tests that set session.detached_runs directly. Two genuinely overlapping real runs, which is the situation the cap exists to bound, have never been driven."
+    observed_in: [branch/demo-v2-int]
+    relates: [feature/cooperative-run-cancellation]
+
+  - id: issue/react-demo-ports-collide-with-orca-range
+    type: issue
+    status: open
+    date: 2026-09-17
+    title: React demo host ports 2026/2027 fall inside ORCA's claimed 2025-2030 range on Hetzner
+    summary: "The demo frontend moved to host ports 2026 (web) and 2027 (api). SOP/hetzner_demo_deployment.md:21 records ORCA's mas-in-production stack owning ports 8001, 2025-2030 on that box, so these are a direct collision if the React frontend is ever deployed there. Harmless locally, where both bind loopback only. Container ports are unchanged."
+    observed_in: [branch/demo-v2-int]
+    relates: [issue/react-demo-hetzner-deployment-gap]
+
+  - id: issue/picker-symbols-independently-reimplemented-per-branch
+    type: issue
+    status: open
+    date: 2026-09-17
+    title: Three demo branches each carry an independent implementation of the same picker symbols
+    summary: "available_choices, default_choice, display_choice, price_caption_for, ChatModelChoice, get_frontend_chat_models and register_runtime_pricing now exist separately on demo-v2-int, demo-booth and demo-llamacpp. Merging forward is a design reconciliation, not a mechanical merge: [[frontend.chat_models]] counts are demo-v2-int 2, demo-booth 7, demo-llamacpp 0, so a careless resolution would silently cut booth from seven models to two."
+    observed_in: [branch/demo-v2-int, branch/demo-booth, branch/demo-llamacpp, branch/demo-public]
+    relates: [feature/provider-aware-model-picker]
+
+  # -- carried over ------------------------------------------------------------
+
   - id: issue/settings-panel-booth-llamacpp-not-visually-reviewed
     type: issue
     status: open
     date: 2026-09-16
     title: Booth and llamacpp settings panels never visually reviewed
-    summary: Browser automation (Playwright) has been broken on this machine all session — Chrome launches but never completes its handshake, across four transports tried. Environment issue, not a code issue; the demo-booth and demo-llamacpp settings sections are unverified in a real browser.
+    summary: Browser automation (Playwright) has been broken on this machine all session, Chrome launches but never completes its handshake, across four transports tried. Environment issue, not a code issue; the demo-booth and demo-llamacpp settings sections are unverified in a real browser.
     observed_in: [branch/demo-booth, branch/demo-llamacpp]
 
   - id: issue/demo-booth-endpoint-status-not-probed
@@ -70,10 +179,11 @@ entities:
 
   - id: issue/notice-dedupe-not-pushed-to-v2-int
     type: issue
-    status: open
-    date: 2026-09-16
+    status: solved
+    date: 2026-09-17
     title: demo-booth's per-provider notice dedupe could be pushed down to demo-v2-int
-    summary: demo-booth's endpoint_notices() override (per-provider rather than per-model wording, deduped against chat_controls model_notices) currently lives only on demo-booth; the generic demo-v2-int implementation still emits one line per non-ok row.
+    summary: "Solved: demo-v2-int's own endpoint_notices() now lists one row per provider and drops lines the picker already serves through model_notices (ama_kbqa/api/meta.py:656-682), which is what only demo-booth had. The generic one-line-per-non-ok-row behaviour is gone."
+    solved_by: [amakbqa/decision/demo-picker-provider-routing]
     observed_in: [branch/demo-booth, branch/demo-v2-int]
 
   - id: issue/v1-line-branches-lack-react-frontend
@@ -89,13 +199,15 @@ entities:
     status: open
     date: 2026-09-16
     title: React demo frontend has no Hetzner port claim or cloudflared ingress
-    summary: web (8505) and api (8506) run local-only in Docker; verified there only. Not deployed, staged, or given a public hostname on the Hetzner box — no port claimed, no tunnel ingress rule added.
+    summary: "web (host 2026) and api (host 2027) run local-only in Docker; verified there only. Not deployed, staged, or given a public hostname on the Hetzner box, no port claimed, no tunnel ingress rule added. Container ports are unchanged at 8506."
     observed_in: [branch/demo-v2-int]
+    relates: [issue/react-demo-ports-collide-with-orca-range]
 
   - id: issue/apply-chat-settings-process-global-concurrency
     type: issue
     status: open
     date: 2026-09-16
     title: apply_chat_settings is a process-global override now serving concurrent sessions
-    summary: chat_controls.apply_chat_settings mutates process-global model/temperature config; built for one Streamlit tab, now shared by concurrent browser sessions through the single API process. RunManager._build_lock only serializes the override-then-build sequence, not a whole in-flight run.
+    summary: "Still open, now bounded rather than fixed. chat_controls.apply_chat_settings mutates process-global model/temperature config and the picker widened it to the AMA_KBQA_CHAT_PROVIDER env var, so a pick applies to all concurrent sessions. Cancellation bounds the exposure window via MAX_DETACHED_RUNS_PER_SESSION = 2, and self.model is frozen at agent construction so a draining run cannot be retargeted."
     observed_in: [branch/demo-v2-int]
+    relates: [amakbqa/decision/cooperative-run-cancellation, amakbqa/decision/demo-picker-provider-routing]

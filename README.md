@@ -137,15 +137,15 @@ A second demo UI lives in `web/` (Vite + React). It talks to a small FastAPI bac
 
 | Service | Container | Host port | Role |
 |---------|-----------|-----------|------|
-| `web` | `web_ama_kbqa` | `127.0.0.1:8505` | nginx serving the React build, proxies `/api/` to `api` |
-| `api` | `api_ama_kbqa` | `127.0.0.1:8506` | FastAPI/uvicorn (`ama-kbqa-api`), streams runs over SSE |
+| `web` | `web_ama_kbqa` | `127.0.0.1:2026` | nginx serving the React build, proxies `/api/` to `api` |
+| `api` | `api_ama_kbqa` | `127.0.0.1:2027` | FastAPI/uvicorn (`ama-kbqa-api`), streams runs over SSE |
 
 ```bash
 docker compose up -d --build api web
-curl -fs http://127.0.0.1:8506/api/health    # {"status":"ok"}
+curl -fs http://127.0.0.1:2027/api/health    # {"status":"ok"}
 ```
 
-Then open http://127.0.0.1:8505 (through an SSH tunnel on a server, like 8502). The API keeps runs and sessions in memory, so it runs with exactly one uvicorn worker, and restarting the container drops open conversations.
+Then open http://127.0.0.1:2026 (through an SSH tunnel on a server, like 8502). The API keeps runs and sessions in memory, so it runs with exactly one uvicorn worker, and restarting the container drops open conversations.
 
 **Dev loop** (hot reload for the UI, API on the host):
 
