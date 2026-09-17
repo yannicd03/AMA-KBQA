@@ -80,7 +80,7 @@ services:
       dockerfile: Dockerfile.frontend
     image: ama-kbqa-api
     container_name: api_ama_kbqa
-    restart: unless-stopped
+    restart: "no"
     command: ["ama-kbqa-api", "--host", "0.0.0.0", "--port", "8506"]
     # Reached by the web service as http://api:8506; the host port is only
     # for debugging (SSH-tunnel-only, like 8502).
@@ -127,7 +127,7 @@ services:
       dockerfile: Dockerfile
     image: ama-kbqa-web
     container_name: web_ama_kbqa
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "127.0.0.1:2026:80"
     depends_on:
