@@ -112,8 +112,12 @@ def test_the_shipped_config_really_offers_the_two_presets():
     ]
     assert [e["name"] for e in entries] == ["DeepSeek V4 Pro", "DeepSeek V4.1 Flash"]
     # settings_level must still be a [frontend] key, not a key of the last
-    # array entry (which is exactly what bad ordering produces).
-    assert cfg.get_frontend_settings_level() == "full"
+    # array entry (which is exactly what bad ordering produces). Its *value*
+    # is branch-specific ("full" on this branch, "minimal" on demo-public),
+    # so assert only that it still resolves to a valid level; pinning "full"
+    # here breaks demo-public on every forward merge. The key's placement
+    # against the shipped config is guarded by test_config_frontend_settings.py.
+    assert cfg.get_frontend_settings_level() in cfg.FRONTEND_SETTINGS_LEVELS
     assert all(e["default"] is False for e in entries)
 
 
