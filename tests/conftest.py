@@ -23,26 +23,36 @@ os.environ.setdefault(
     tempfile.mkdtemp(prefix="ama-kbqa-test-logs-"),
 )
 
-# The demo's model picker (chat_controls.apply_chat_settings) writes these
-# straight into os.environ on purpose: MCP tool-server subprocesses inherit
-# the environment and that is the only channel that reaches them. Any test
-# that exercises the picker, directly or by running the Streamlit page under
-# AppTest, therefore leaves them set for the rest of the session. Since
-# config.get_chat_provider() / get_chat_model_name() read them first, a leaked
-# value silently redirects a *later* test away from the config it monkeypatched
-# (observed: AMA_KBQA_CHAT_PROVIDER=kit from an AppTest run breaking the
-# llamacpp stub in test_config_max_retries.py). Snapshot and restore around
-# every test so ordering cannot matter.
-_CHAT_OVERRIDE_ENV_VARS = (
-    "AMA_KBQA_CHAT_PROVIDER",
-    "AMA_KBQA_CHAT_MODEL",
-    "AMA_KBQA_CHAT_TEMPERATURE",
-)
-
 
 @pytest.fixture(autouse=True)
-def _isolate_chat_override_env():
-    saved = {name: os.environ.get(name) for name in _CHAT_OVERRIDE_ENV_VARS}
+def _restore_chat_overrides():
+    """Undo the process-global env writes ``apply_chat_settings`` makes.
+
+    ``chat_controls.apply_chat_settings`` points the MCP tool-server
+    subprocesses at the picked endpoint by writing AMA_KBQA_CHAT_PROVIDER /
+    _MODEL / _TEMPERATURE with a plain ``os.environ[...] = ...``. Any test that
+    calls it therefore leaks those into every test that runs afterwards.
+
+    ``monkeypatch.delenv(name, raising=False)`` does NOT protect against this,
+    which is the trap worth recording: pytest registers an undo only when the
+    variable *already existed*, so a var that starts unset is simply deleted
+    with no restore recorded, and a later plain assignment survives the test.
+
+    That leak is exactly what made a stale ``AMA_KBQA_CHAT_PROVIDER=kit``
+    silently win over the monkeypatched ``load_config`` in
+    ``tests/test_config_max_retries.py`` — the test passed alone and failed in
+    the full suite. Restoring the real values here kills the whole class.
+    """
+    # Imported late: this module runs before AMA_KBQA_LOG_DIR is honoured by
+    # the server modules, so nothing heavy may be imported at its top level.
+    import ama_kbqa.config as cfg
+
+    names = (
+        cfg.CHAT_PROVIDER_OVERRIDE_ENV_VAR,
+        cfg.CHAT_MODEL_OVERRIDE_ENV_VAR,
+        cfg.CHAT_TEMPERATURE_OVERRIDE_ENV_VAR,
+    )
+    saved = {name: os.environ.get(name) for name in names}
     yield
     for name, value in saved.items():
         if value is None:

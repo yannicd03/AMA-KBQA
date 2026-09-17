@@ -1,7 +1,7 @@
 """FastAPI application for the React demo frontend.
 
-Routes (all under ``/api``): ``health``, ``meta``, ``runs`` (create, record,
-SSE events, trace) and ``sessions/{id}/reset``. The behaviour mirrors the
+Routes (all under ``/api``): ``health``, ``meta``, ``runs`` (create, cancel,
+record, SSE events, trace) and ``sessions/{id}/reset``. The behaviour mirrors the
 Streamlit chat page (``ama_kbqa/frontend/chat.py``); see ``runs.py`` for the
 run lifecycle and ``stdout_router.py`` for the live-log capture.
 
@@ -28,6 +28,9 @@ class RunRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     agent: str
     model: str
+    # Only read when `model` is the picker's free-text entry; see
+    # meta.custom_model_option for the shape rules.
+    custom_model: Optional[str] = Field(default=None, max_length=200)
     temperature: float = Field(ge=0.0, le=2.0)
 
 
@@ -59,9 +62,19 @@ def build_router(manager: RunManager) -> APIRouter:
             question=body.question,
             agent_name=body.agent,
             model=body.model,
+            custom_model=body.custom_model,
             temperature=body.temperature,
         )
         return {"run_id": run.run_id, "continuation": run.continuation}
+
+    # 202, not 204: cancelling only *asks* the run to stop. The agent notices
+    # the token at its next checkpoint, so the work is still in flight when
+    # this answers — 204 would claim it was already over. Unknown, evicted and
+    # already-finished runs answer 202 too: stopping something that is no
+    # longer running is the outcome the caller wanted, not an error.
+    @router.post("/runs/{run_id}/cancel", status_code=202)
+    async def cancel_run(run_id: str) -> dict:
+        return manager.cancel_run(run_id)
 
     @router.post("/sessions/{session_id}/reset", status_code=204)
     async def reset_session(session_id: str) -> Response:

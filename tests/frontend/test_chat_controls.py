@@ -206,6 +206,7 @@ def test_apply_chat_settings_updates_config_cache(monkeypatch):
     base = {"llm": {"chat_provider": "openrouter", "chat_temperature": 0.2}, "kit": {"chat_model": "old"}}
     monkeypatch.setattr(cfg_module, "_config_cache", base)
     monkeypatch.setattr(cfg_module, "load_config", lambda: cfg_module._config_cache)
+    monkeypatch.delenv(cfg_module.CHAT_PROVIDER_OVERRIDE_ENV_VAR, raising=False)
     monkeypatch.delenv(cfg_module.CHAT_MODEL_OVERRIDE_ENV_VAR, raising=False)
     monkeypatch.delenv(cfg_module.CHAT_TEMPERATURE_OVERRIDE_ENV_VAR, raising=False)
 
@@ -225,14 +226,20 @@ def test_apply_chat_settings_sets_env_overrides_for_mcp_subprocesses(monkeypatch
     base = {"llm": {"chat_provider": "kit", "chat_temperature": 1.0}, "kit": {"chat_model": "old"}}
     monkeypatch.setattr(cfg_module, "_config_cache", base)
     monkeypatch.setattr(cfg_module, "load_config", lambda: cfg_module._config_cache)
+    # All three are process-global writes, so every one of them must be
+    # restored after this test — a leaked AMA_KBQA_CHAT_PROVIDER would
+    # silently override config.toml for every test that runs later.
+    monkeypatch.delenv(cfg_module.CHAT_PROVIDER_OVERRIDE_ENV_VAR, raising=False)
     monkeypatch.delenv(cfg_module.CHAT_MODEL_OVERRIDE_ENV_VAR, raising=False)
     monkeypatch.delenv(cfg_module.CHAT_TEMPERATURE_OVERRIDE_ENV_VAR, raising=False)
 
     chat_controls.apply_chat_settings("kit.glm-5.3", 0.55)
 
+    assert os.environ[cfg_module.CHAT_PROVIDER_OVERRIDE_ENV_VAR] == "kit"
     assert os.environ[cfg_module.CHAT_MODEL_OVERRIDE_ENV_VAR] == "kit.glm-5.3"
     assert os.environ[cfg_module.CHAT_TEMPERATURE_OVERRIDE_ENV_VAR] == "0.55"
     # The functions a freshly-spawned subprocess would call must honor it.
+    assert cfg_module.get_chat_provider() == "kit"
     assert cfg_module.get_chat_model_name() == "kit.glm-5.3"
     assert cfg_module.get_chat_temperature() == pytest.approx(0.55)
 

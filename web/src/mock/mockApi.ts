@@ -429,6 +429,7 @@ interface MockRun {
   orchestrated: boolean;
   group: "kqapro" | "sciqa";
   fail: boolean;
+  cancelRequested: boolean;
   final: DoneEvent | null;
   trace: TraceResponse | null;
 }
@@ -530,10 +531,19 @@ export const mockApi: ApiImpl = {
       orchestrated: agent.orchestrator,
       group: body.agent === "SciQA" ? "sciqa" : "kqapro",
       fail: /fail/i.test(body.question),
+      cancelRequested: false,
       final: null,
       trace: null,
     });
     return { run_id: id, continuation };
+  },
+
+  async cancelRun(runId) {
+    await wait(60);
+    const r = runs.get(runId);
+    // Like the server: flip the flag and return. The scripted run notices on
+    // its next tick, so the stop is never instantaneous here either.
+    if (r && r.record.status === "running") r.cancelRequested = true;
   },
 
   async resetSession(sessionId) {
@@ -592,6 +602,18 @@ export const mockApi: ApiImpl = {
 
     const step = () => {
       if (cancelled) return;
+      if (r.cancelRequested) {
+        cancelled = true;
+        r.record.status = "cancelled";
+        h.onCancelled({
+          run_id: runId,
+          status: "cancelled",
+          answer: "Run cancelled.",
+          duration_s: (Date.now() - r.startMs) / 1000,
+          log_html: log,
+        });
+        return;
+      }
       if (tick >= PAUSE) return;
       const idx = Math.min(plan.length - 1, Math.floor(tick / TICKS_PER_STEP));
       const p = plan[idx];

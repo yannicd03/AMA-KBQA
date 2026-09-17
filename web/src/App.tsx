@@ -11,7 +11,16 @@ import { Sidebar, type Settings } from "./components/Sidebar";
 import { modelLabel } from "./lib/format";
 import { useMediaQuery, usePrefersDark, useReducedMotion } from "./lib/hooks";
 import { aboutSeen, getSessionId, loadState, markAboutSeen, saveState, uid } from "./lib/session";
-import { applyDone, applyError, applySnapshot, newRunView, type RunInfo, type RunView, type Turn } from "./state";
+import {
+  applyCancelled,
+  applyDone,
+  applyError,
+  applySnapshot,
+  newRunView,
+  type RunInfo,
+  type RunView,
+  type Turn,
+} from "./state";
 
 interface Persisted {
   settings?: Partial<Settings>;
@@ -35,6 +44,7 @@ function resolveSettings(meta: Meta, saved?: Partial<Settings>): Settings {
   return {
     agent: saved?.agent && names.includes(saved.agent) ? saved.agent : fallbackAgent,
     model: saved?.model && meta.models.some((m) => m.id === saved.model) ? saved.model : meta.default_model,
+    customModel: typeof saved?.customModel === "string" ? saved.customModel : "",
     temperature: typeof t === "number" && t >= 0 && t <= 2 ? t : meta.default_temperature,
     simplified: saved?.simplified ?? false,
     liveGraph: saved?.liveGraph ?? true,
@@ -54,6 +64,7 @@ export default function App() {
     Object.fromEntries((persisted?.runs ?? []).map((i) => [i.runId, newRunView(i, "loading")])),
   );
   const [submitting, setSubmitting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [notice, setNotice] = useState<InlineNotice | null>(null);
 
   const wide = useMediaQuery("(min-width: 1000px)");
@@ -68,6 +79,9 @@ export default function App() {
   const [panelRunId, setPanelRunId] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(() => !aboutSeen());
 
+  // The custom model id we last treated as a model change, so committing the
+  // same string twice (blur after Enter) does not reset the conversation again.
+  const committedCustom = useRef<string | null>(null);
   const subs = useRef(new Map<string, () => void>());
   const scrollRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -113,6 +127,10 @@ export default function App() {
           subs.current.delete(id);
           patchRun(id, (r) => applyError(r, e));
         },
+        onCancelled: (c) => {
+          subs.current.delete(id);
+          patchRun(id, (r) => applyCancelled(r, c));
+        },
         onLost: (reason) => {
           subs.current.delete(id);
           patchRun(id, (r) => ({ ...r, status: "lost", errorMessage: reason }));
@@ -144,6 +162,7 @@ export default function App() {
         .then((rec) => {
           if (rec.status === "done") patchRun(id, (r) => applyDone(r, api.recordToDone(rec)));
           else if (rec.status === "error") patchRun(id, (r) => applyError(r, api.recordToError(rec)));
+          else if (rec.status === "cancelled") patchRun(id, (r) => applyCancelled(r, api.recordToCancelled(rec)));
           else {
             patchRun(id, (r) => ({ ...r, status: "running" }));
             subscribe(id);
@@ -166,6 +185,9 @@ export default function App() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const agentMeta = meta?.agents.find((a) => a.name === settings?.agent);
+  const modelMeta = meta?.models.find((m) => m.id === settings?.model);
+  // The free-text entry is selected but empty: there is no model to ask.
+  const customPending = Boolean(modelMeta?.custom) && (settings?.customModel ?? "").trim().length === 0;
   const busyRun = runInfos.map((i) => runs[i.runId]).find((r) => r && (r.status === "running" || r.status === "loading"));
   const running = Boolean(busyRun) || submitting;
   const inConversation = turns.length > 0;
@@ -202,6 +224,12 @@ export default function App() {
   const submit = useCallback(
     async (question: string): Promise<boolean> => {
       if (!meta || !settings || running) return false;
+      const picked = meta.models.find((m) => m.id === settings.model);
+      const typed = settings.customModel.trim();
+      if (picked?.custom && !typed) {
+        setNotice({ tone: "warn", text: "Type an OpenRouter model id before asking a question." });
+        return false;
+      }
       setSubmitting(true);
       setNotice(null);
       try {
@@ -210,6 +238,7 @@ export default function App() {
           question,
           agent: settings.agent,
           model: settings.model,
+          ...(picked?.custom ? { custom_model: typed } : {}),
           temperature: settings.temperature,
         });
         const info: RunInfo = { runId: res.run_id, question, agent: settings.agent, startedAt: Date.now() };
@@ -245,6 +274,23 @@ export default function App() {
     [meta, settings, running, sessionId, liveGraphOn, wide, subscribe],
   );
 
+  // Cooperative stop: the server flips the run's token and frees the session
+  // at once, but the agent only notices at its next checkpoint, so the run
+  // keeps streaming for a moment after this resolves. The terminal `cancelled`
+  // event is what actually ends the turn.
+  const stopRun = useCallback(() => {
+    const runId = busyRun?.runId;
+    if (!runId || stopping) return;
+    setStopping(true);
+    api.cancelRun(runId).catch(() => {
+      /* already finished, evicted or offline: the stream decides anyway */
+    });
+  }, [busyRun, stopping]);
+
+  useEffect(() => {
+    if (!running) setStopping(false);
+  }, [running]);
+
   const newChat = useCallback(() => {
     if (running) return;
     setTurns([]);
@@ -272,6 +318,30 @@ export default function App() {
     if (inConversation) {
       const names = new Map(meta.models.map((m) => [m.id, m.name]));
       pushNotice(`Model changed to ${modelLabel(id, names)}. The next question starts a new conversation.`);
+    }
+  };
+
+  // Typing alone must not reset anything: the conversation resets when the id
+  // is settled (blur or Enter), the same moment picking another model does.
+  const changeCustomModel = (value: string) => {
+    if (!settings) return;
+    setSettings({ ...settings, customModel: value });
+    setNotice(null);
+  };
+
+  const commitCustomModel = () => {
+    if (!settings || !meta) return;
+    const next = settings.customModel.trim();
+    const picked = meta.models.find((m) => m.id === settings.model);
+    if (!picked?.custom || !next || committedCustom.current === next) return;
+    const first = committedCustom.current === null;
+    committedCustom.current = next;
+    // Selecting the custom entry already reset via changeModel; only a later
+    // edit of the id is a second model change.
+    if (first) return;
+    resetServer();
+    if (inConversation) {
+      pushNotice(`Model changed to ${next}. The next question starts a new conversation.`);
     }
   };
 
@@ -385,6 +455,9 @@ export default function App() {
             liveGraphAvailable={liveGraphAvailable}
             running={running}
             onModelChange={changeModel}
+            customModel={settings.customModel}
+            onCustomModelChange={changeCustomModel}
+            onCustomModelCommit={commitCustomModel}
             onTemperatureChange={(t) => setSettings({ ...settings, temperature: t })}
             onSimplifiedChange={(v) => setSettings({ ...settings, simplified: v })}
             onLiveGraphChange={(v) => setSettings({ ...settings, liveGraph: v })}
@@ -447,8 +520,10 @@ export default function App() {
                 pickerDisabled={running}
                 showInput
                 placeholder="Ask a question…"
-                inputDisabled={running}
+                inputDisabled={running || customPending}
                 onSubmit={submit}
+                onStop={busyRun ? stopRun : undefined}
+                stopping={stopping}
                 autoFocus={!mobile && !aboutOpen}
               />
               {inlineNotice}
@@ -460,7 +535,7 @@ export default function App() {
                         type="button"
                         className="suggestion"
                         data-color={s.color ?? undefined}
-                        disabled={running}
+                        disabled={running || customPending}
                         onClick={() => void submit(s.question)}
                         title={s.question}
                       >
@@ -497,7 +572,7 @@ export default function App() {
                   pickerDisabled={running}
                   showInput={followups}
                   placeholder="Follow up…"
-                  inputDisabled={running}
+                  inputDisabled={running || customPending}
                   onSubmit={submit}
                   autoFocus={!mobile}
                   caption={
@@ -510,6 +585,8 @@ export default function App() {
                   }
                   onRestart={newChat}
                   restartDisabled={running}
+                  onStop={busyRun ? stopRun : undefined}
+                  stopping={stopping}
                 />
               </div>
             </div>

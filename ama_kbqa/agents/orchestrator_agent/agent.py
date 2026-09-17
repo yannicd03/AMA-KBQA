@@ -6,7 +6,7 @@ import inspect
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from contextlib import AsyncExitStack
-from datetime import datetime
+from datetime import datetime, timedelta
 import traceback
 
 from dotenv import load_dotenv, find_dotenv
@@ -24,6 +24,16 @@ from ama_kbqa.config import (
     get_chat_model_name,
     get_federation_enabled,
     get_federation_max_specialists,
+)
+from ama_kbqa.framework.cancellation import (
+    CancellationToken,
+    cancelled_answer,
+    is_cancelled,
+)
+from ama_kbqa.framework.mcp_client import (
+    is_timeout_error,
+    resolve_tool_timeout,
+    tool_timeout_error,
 )
 
 load_dotenv(find_dotenv())
@@ -95,12 +105,21 @@ def trace(agent_name: str, msg: str, color: str = COLOR_BLUE):
 
 
 class MCPClient:
-    def __init__(self, server_path: str, agent_name: str):
+    def __init__(
+        self,
+        server_path: str,
+        agent_name: str,
+        tool_timeout_seconds: Optional[float] = None,
+    ):
         self.server_path = Path(server_path)
         self.agent_name = agent_name
         self.exit_stack = AsyncExitStack()
         self.session: Optional[ClientSession] = None
         self._connected = False
+        # Same bounded wait as the shared framework client (see
+        # framework.mcp_client): the routing probe runs on every question, so
+        # an unbounded wait here hangs the run before routing even happens.
+        self.tool_timeout_seconds = resolve_tool_timeout(tool_timeout_seconds)
 
     async def start(self):
         if self._connected:
@@ -142,7 +161,19 @@ class MCPClient:
     async def call_tool(self, name: str, args: Dict) -> str:
         if not self.session:
             raise RuntimeError("Not connected")
-        result = await self.session.call_tool(name, arguments=args)
+        timeout = self.tool_timeout_seconds
+        read_timeout = timedelta(seconds=timeout) if timeout else None
+        try:
+            result = await self.session.call_tool(
+                name, arguments=args, read_timeout_seconds=read_timeout
+            )
+        except Exception as e:
+            # A timed-out probe is handled by _route_autonomously's own
+            # except-branch (it degrades to a domain-only routing decision),
+            # so this only has to name the failure clearly.
+            if is_timeout_error(e):
+                raise tool_timeout_error(self.agent_name, name, timeout) from e
+            raise
         if hasattr(result, "content") and result.content:
             return result.content[0].text
         return str(result)
@@ -585,8 +616,21 @@ class Orchestrator:
                     out.append({**snap, "source_agent": name})
         return out
 
-    async def ask(self, query: str) -> str:
-        """Main method: Route the request and get the answer."""
+    async def ask(
+        self,
+        query: str,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
+        """Main method: Route the request and get the answer.
+
+        ``cancel_token`` is the optional cooperative stop flag (see
+        ``framework.cancellation``); omitting it leaves behaviour unchanged.
+        The orchestrator has no tool loop, so its checkpoints bracket the
+        billed steps instead: routing, dispatch, and fusion. Each one returns
+        normally so the ``finally`` below still closes the orchestrator's MCP
+        connection on this task's own event loop, and each specialist still
+        unwinds inside its own task in ``_run_specialist``.
+        """
         self._trace(f"USER: {query}", COLOR_GREEN)
 
         async with self.recorder.span(
@@ -597,6 +641,11 @@ class Orchestrator:
         ):
             try:
                 await self._init_mcp()
+
+                # Checkpoint 1: before the routing probe + decision call.
+                if is_cancelled(cancel_token):
+                    self._trace("Run cancelled before routing", COLOR_YELLOW)
+                    return cancelled_answer(cancel_token)
 
                 async with self.recorder.span(
                     "classify",
@@ -618,18 +667,27 @@ class Orchestrator:
                 answer = ""
                 print("-" * 50)
 
+                # Checkpoint 2: routing is done, no specialist has started yet.
+                if is_cancelled(cancel_token):
+                    self._trace("Run cancelled before dispatch", COLOR_YELLOW)
+                    return cancelled_answer(cancel_token)
+
                 if not selected_agent_names:
                     self._trace("Routing failed. Fallback to KQAPro agent.", COLOR_YELLOW)
-                    answer = await self._fallback_kqapro(query)
+                    answer = await self._fallback_kqapro(query, cancel_token=cancel_token)
                 elif len(selected_agent_names) == 1:
                     self._trace(f"Routing successful -> {selected_agent_names[0]}", COLOR_GREEN)
-                    answer = await self._delegate(selected_agent_names[0], query)
+                    answer = await self._delegate(
+                        selected_agent_names[0], query, cancel_token=cancel_token
+                    )
                 else:
                     self._trace(
                         f"Routing successful -> federated: {', '.join(selected_agent_names)}",
                         COLOR_GREEN,
                     )
-                    answer = await self._federate(selected_agent_names, query)
+                    answer = await self._federate(
+                        selected_agent_names, query, cancel_token=cancel_token
+                    )
 
                 return answer
             finally:
@@ -666,7 +724,13 @@ class Orchestrator:
             return None
         return rendered or None
 
-    async def _run_specialist(self, agent_name: str, query: str, fallback: bool = False) -> Dict[str, Any]:
+    async def _run_specialist(
+        self,
+        agent_name: str,
+        query: str,
+        fallback: bool = False,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> Dict[str, Any]:
         """Run one sub-agent under its own `delegate` span; raises on failure.
 
         We hand the sub-agent our recorder + the current span id; its
@@ -688,11 +752,25 @@ class Orchestrator:
             agent_name: Key into self._agent_config.
             query: The user's question, verbatim.
             fallback: Mark this run as a fallback on the delegate span.
+            cancel_token: Optional cooperative stop flag, forwarded to the
+                sub-agent so its own tool-loop checkpoint sees it too.
 
         Raises:
             RuntimeError: If the agent cannot be loaded.
             Exception: Whatever the sub-agent's ask() raises.
         """
+        # Cancelled before this specialist started: nothing has been loaded and
+        # no MCP connection exists yet, so there is nothing to unwind. Return a
+        # normal handoff record so single and federated dispatch handle it like
+        # any other result instead of growing a cancellation branch each.
+        if is_cancelled(cancel_token):
+            self._trace(f"Run cancelled - skipping {agent_name}", COLOR_YELLOW)
+            return {
+                "agent": agent_name,
+                "answer": cancelled_answer(cancel_token),
+                "scratchpad": None,
+            }
+
         attributes: Dict[str, Any] = {"sub_agent": agent_name}
         if fallback:
             attributes["fallback"] = True
@@ -715,11 +793,14 @@ class Orchestrator:
             except AttributeError:
                 pass
 
+            # Only pass the kwarg when a token is actually in play, so an
+            # ask(query)-only implementation keeps working untouched.
+            ask_kwargs = {"cancel_token": cancel_token} if cancel_token is not None else {}
             try:
                 if inspect.iscoroutinefunction(agent.ask):
-                    answer = await agent.ask(query)
+                    answer = await agent.ask(query, **ask_kwargs)
                 else:
-                    answer = agent.ask(query)
+                    answer = agent.ask(query, **ask_kwargs)
             finally:
                 # Close this specialist's MCP connection in the SAME task
                 # that opened it (agent.ask() -> BaseKBQAAgent._init_mcp()).
@@ -774,7 +855,12 @@ class Orchestrator:
             _delegate_span.set_attribute("scratchpad_captured", scratchpad is not None)
             return {"agent": agent_name, "answer": answer, "scratchpad": scratchpad}
 
-    async def _delegate(self, agent_name: str, query: str) -> str:
+    async def _delegate(
+        self,
+        agent_name: str,
+        query: str,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         """Single dispatch: run one specialist, falling back to KQAPro on error.
 
         Single dispatch returns the specialist's answer verbatim; the
@@ -784,14 +870,27 @@ class Orchestrator:
         `_run_specialist`, in its own span via `_fallback_kqapro`.
         """
         try:
-            result = await self._run_specialist(agent_name, query)
+            result = await self._run_specialist(
+                agent_name, query, cancel_token=cancel_token
+            )
             return result["answer"]
         except Exception as e:
             self._trace(f"{COLOR_RED}Agent Error: {e}{COLOR_END}", COLOR_RED)
+            # A cancelled run must not spend a whole second agent on a
+            # fallback: the failure above is usually the cancellation itself
+            # unwinding, not a specialist the fallback could rescue.
+            if is_cancelled(cancel_token):
+                self._trace("Run cancelled - skipping KQAPro fallback", COLOR_YELLOW)
+                return cancelled_answer(cancel_token)
             self._trace("Executing KQAPro agent fallback.", COLOR_YELLOW)
             return await self._fallback_kqapro(query)
 
-    async def _federate(self, agent_names: List[str], query: str) -> str:
+    async def _federate(
+        self,
+        agent_names: List[str],
+        query: str,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         """Federated dispatch: run several specialists concurrently, fuse answers.
 
         Each specialist runs under its own `delegate` span via
@@ -799,8 +898,16 @@ class Orchestrator:
         we degrade to the surviving answers and only fall back to KQAPro
         when ALL specialists failed (mirroring `_delegate`'s policy).
         """
+        # The token goes into BOTH branches of the fan-out: each specialist
+        # runs in its own task, notices the cancellation at its own tool-loop
+        # checkpoint, and unwinds through its own code — which is what keeps
+        # its MCP teardown (the `finally` in _run_specialist) inside the task
+        # that opened it.
         results = await asyncio.gather(
-            *(self._run_specialist(name, query) for name in agent_names),
+            *(
+                self._run_specialist(name, query, cancel_token=cancel_token)
+                for name in agent_names
+            ),
             return_exceptions=True,
         )
 
@@ -813,6 +920,14 @@ class Orchestrator:
             else:
                 # result is the handoff record {"agent", "answer", "scratchpad"}.
                 answers.append(result)
+
+        # Checkpoint 3: fusion is another billed LLM call, and a cancelled
+        # fan-out returns cancellation placeholders rather than answers worth
+        # fusing. This also keeps a cancelled run out of the KQAPro fallback
+        # below.
+        if is_cancelled(cancel_token):
+            self._trace("Run cancelled - skipping fusion", COLOR_YELLOW)
+            return cancelled_answer(cancel_token)
 
         if not answers:
             self._trace(
@@ -954,7 +1069,11 @@ class Orchestrator:
             self._trace(f"Fused answer from [{agent_list}]", COLOR_GREEN)
             return fused
 
-    async def _fallback_kqapro(self, query: str) -> str:
+    async def _fallback_kqapro(
+        self,
+        query: str,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         """Route to the KQAPro agent for knowledge base queries.
 
         There is no further LLM-only fallback: if the KQAPro agent cannot be
@@ -967,7 +1086,9 @@ class Orchestrator:
         `delegate` span like any other dispatch.
         """
         self._trace("Loading KQAPro agent...", COLOR_CYAN)
-        result = await self._run_specialist("kqapro_agent", query, fallback=True)
+        result = await self._run_specialist(
+            "kqapro_agent", query, fallback=True, cancel_token=cancel_token
+        )
         return result["answer"]
 
 

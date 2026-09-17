@@ -30,7 +30,8 @@ interface SidePanelProps {
 const TAB_LABEL: Record<PanelTab, string> = { graph: "Subgraph", lifecycle: "Lifecycle", trace: "Trace" };
 
 function runLabel(r: RunView): string {
-  const state = r.status === "running" ? " (running)" : r.status === "error" ? " (error)" : "";
+  const state =
+    r.status === "running" ? " (running)" : r.status === "error" ? " (error)" : r.status === "cancelled" ? " (stopped)" : "";
   return `${clockTime(r.startedAt)}  ${r.agent}: ${truncate(r.question, 60)}${state}`;
 }
 
@@ -165,7 +166,9 @@ function LifecycleTab({ run }: { run: RunView }) {
     );
   }
   if (!run.figure) {
-    return <p className="empty">{run.status === "error" ? "The run stopped before the lifecycle could be drawn." : "No trace selected."}</p>;
+    if (run.status === "error") return <p className="empty">The run stopped before the lifecycle could be drawn.</p>;
+    if (run.status === "cancelled") return <p className="empty">You stopped this run before the lifecycle could be drawn.</p>;
+    return <p className="empty">No trace selected.</p>;
   }
   return (
     <div className="stack">

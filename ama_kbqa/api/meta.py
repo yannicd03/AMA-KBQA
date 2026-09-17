@@ -161,14 +161,22 @@ class ModelOption:
     model: str     # bare model id: what the endpoint and the pricing table know
     name: str
     price: Optional[str]
+    # True for the "type your own id" placeholder, which carries no model of
+    # its own: POST /api/runs must send a ``custom_model`` alongside its key.
+    custom: bool = False
 
     def to_meta(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "id": self.key,
             "name": self.name,
             "price": self.price,
             "provider": self.provider,
         }
+        # Emitted only when true: the key is a marker for the one placeholder
+        # entry, not a field every model carries.
+        if self.custom:
+            payload["custom"] = True
+        return payload
 
 
 class ModelCatalog:
@@ -268,6 +276,8 @@ def _choices_catalog() -> tuple[ModelCatalog, float]:
             model=choice.model,
             name=chat_controls.display_choice(choice),
             price=_plain_price(chat_controls.price_caption_for(choice)),
+            # getattr: the older provider-aware branches have no such field.
+            custom=bool(getattr(choice, "custom", False)),
         ))
     return ModelCatalog(options, default.key, notices), CHOICES_TTL_SECONDS
 
@@ -291,6 +301,72 @@ def get_models() -> list[dict[str, Any]]:
 
 def get_model_ids() -> list[str]:
     return get_catalog().keys()
+
+
+# ---------------------------------------------------------------------------
+# The custom (free-text) model entry
+# ---------------------------------------------------------------------------
+# The picker's "OpenRouter (custom)" entry has no model id of its own, so it
+# cannot be resolved from the catalog like every other pick. The client sends
+# its key *plus* the id the visitor typed, and the id is validated by shape
+# here rather than against an allowlist — the whole point of the entry is to
+# reach a model this build has never heard of.
+#
+# Deliberately NOT minted into the catalog: ``get_catalog`` is memoised with a
+# TTL and shared by every session, so a typed id added to it would vanish on
+# the next refresh and leak between visitors in the meantime.
+
+CUSTOM_MODEL_MAX_LENGTH = 200
+
+# OpenRouter ids look like "vendor/model" with optional ":variant" and dotted
+# versions. Anything with whitespace, quotes or control characters is a typo
+# or an injection attempt, not a model id.
+_CUSTOM_MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@/:+-]*$")
+
+_CUSTOM_MODEL_HELP = (
+    "Type an OpenRouter model id, for example deepseek/deepseek-v4-pro."
+)
+
+
+class InvalidCustomModel(ValueError):
+    """The typed model id is empty or not shaped like a model id."""
+
+
+def custom_model_option(option: ModelOption, typed: Optional[str]) -> ModelOption:
+    """Resolve the custom placeholder plus a typed id into a real option.
+
+    ``option`` is the placeholder the catalog resolved (``custom`` set);
+    ``typed`` is the raw string from the client. Whitespace is trimmed, an
+    empty value is rejected, and the result is a normal :class:`ModelOption`
+    on the placeholder's provider, so everything downstream (the run record,
+    the multiturn agent key, ``apply_chat_settings``) treats it like any other
+    pick.
+
+    Price stays None: nobody knows what an arbitrary id costs, and the chat
+    footer showing no estimate is the honest outcome — a guessed number would
+    be worse.
+
+    Raises:
+        InvalidCustomModel: empty, over-long, or wrongly shaped.
+    """
+    candidate = (typed or "").strip()
+    if not candidate:
+        raise InvalidCustomModel(_CUSTOM_MODEL_HELP)
+    if len(candidate) > CUSTOM_MODEL_MAX_LENGTH:
+        raise InvalidCustomModel(
+            f"That model id is too long (max {CUSTOM_MODEL_MAX_LENGTH} characters)."
+        )
+    if not _CUSTOM_MODEL_RE.match(candidate):
+        raise InvalidCustomModel(
+            f"{candidate!r} is not a valid model id. {_CUSTOM_MODEL_HELP}"
+        )
+    return ModelOption(
+        key=f"{option.provider}:{candidate}",
+        provider=option.provider,
+        model=candidate,
+        name=candidate,
+        price=None,
+    )
 
 
 # ---------------------------------------------------------------------------

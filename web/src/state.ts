@@ -1,5 +1,6 @@
 // Client-side view of a run, folded from SSE snapshots and the final event.
 import type {
+  CancelledEvent,
   DoneEvent,
   ErrorEvent,
   Figure,
@@ -11,7 +12,7 @@ import type {
   Tokens,
 } from "./api";
 
-export type RunStatus = "loading" | "running" | "done" | "error" | "lost";
+export type RunStatus = "loading" | "running" | "done" | "error" | "cancelled" | "lost";
 
 export interface RunInfo {
   runId: string;
@@ -135,6 +136,19 @@ export function applyDone(run: RunView, d: DoneEvent): RunView {
     next.graphStats = null;
   }
   return next;
+}
+
+/** Terminal, and deliberately not an error: the run stopped because it was
+ * asked to, so nothing here sets `errorMessage`. */
+export function applyCancelled(run: RunView, c: CancelledEvent): RunView {
+  return {
+    ...run,
+    status: "cancelled",
+    connected: true,
+    answer: c.answer,
+    durationS: c.duration_s,
+    logHtml: c.log_html ?? run.logHtml,
+  };
 }
 
 export function applyError(run: RunView, e: ErrorEvent): RunView {

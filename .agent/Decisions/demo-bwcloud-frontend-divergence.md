@@ -5,8 +5,10 @@
 > dialog, in-chat agent picker, KIT-only sidebar controls, illustrative
 > pricing) carried forward unchanged onto the `demo-v2`/`demo-hetzner` line
 > (this worktree: `demo-v2-int`) when the demo frontend was rebuilt on top of
-> `dev`. File paths below are still accurate for that line. See the dated
-> addendum at the bottom for what changed in the port, and
+> `dev`. File paths below are still accurate for that line. **The "KIT-only
+> sidebar controls" half no longer holds on `demo-v2-int` as of 2026-09-17 —
+> see the 2026-09-17 addendum.** See the dated addenda at the bottom for what
+> changed in the port and since, and
 > [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) for
 > the current-state reference.
 
@@ -124,6 +126,11 @@ or other providers must not be possible. The endpoint is pinned to KIT in
 > `System/demo_bwcloud_frontend.md` and `SOP/hetzner_demo_deployment.md` §4 for the
 > "Model not found" incident that motivated the env-var half.
 
+> **2026-09-17 update — superseded on this branch:** the KIT-only rule above no
+> longer describes `demo-v2-int`; its picker is now provider-aware. See the
+> 2026-09-17 addendum at the bottom and
+> [Decisions/demo-picker-provider-routing.md](demo-picker-provider-routing.md).
+
 ### 5. Per-answer cost display (commit `eae0a74`)
 
 **Chose:** Show an illustrative `~$X est.` cost next to time and tokens in the chat
@@ -164,6 +171,7 @@ These full-build features exist on `dev`/`main` but are absent on the demo build
 - [System/project_architecture.md](../System/project_architecture.md) — full-build (`dev`) architecture (canonical)
 - [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) — current-state reference for the demo-build frontend
 - [Decisions/federated-dispatch-and-fusion.md](federated-dispatch-and-fusion.md) — backend federated dispatch decision behind the Router/Federated picker split
+- [Decisions/demo-picker-provider-routing.md](demo-picker-provider-routing.md) — **current position on the model picker**, superseding decision 4's KIT-only rule on `demo-v2-int`
 - [Decisions/live-trace-and-chat-unification.md](live-trace-and-chat-unification.md) — live trace pipeline (shared with full build)
 - [Decisions/multiturn-direct-agent-conversation.md](multiturn-direct-agent-conversation.md) — multiturn session semantics (shared with full build)
 - [SOP/hetzner_demo_deployment.md](../SOP/hetzner_demo_deployment.md) — deployment runbook, including the v2 staging/switch procedure
@@ -204,3 +212,34 @@ them two distinct, separately-labelled picker entries keeps that distinction vis
 in the UI itself rather than hidden behind a toggle a visitor might not notice, and
 keeps `AGENT_SUGGESTIONS` mode-specific (Federated's example questions are chosen to
 plausibly span both graphs; Router's are single-domain).
+
+---
+
+## Addendum 2026-09-17: `demo-v2-int` is no longer the KIT-only branch
+
+Decision 4's "KIT-only model dropdown" was accurate when written and remained
+accurate through 2026-09-16. It no longer describes this branch. `demo-v2-int`
+now carries a provider-aware picker: two DeepSeek presets routed through
+OpenRouter (`deepseek/deepseek-v4-pro`, `deepseek/deepseek-v4.1-flash`, both
+`[[frontend.chat_models]]` entries in `config.toml`) plus a free-text custom
+OpenRouter model entry, with choice keys of the form `provider:model` rather
+than bare ids.
+
+[Decisions/demo-picker-provider-routing.md](demo-picker-provider-routing.md) is
+the current position on the picker — rationale, custom-id rules, and the
+subprocess-routing fix all live there. Decision 4 above is retained as the
+superseded KIT-only decision, not as a description of current state.
+
+**What changed is this branch's status, not a cross-branch reversal.** The
+other demo lines were never uniformly KIT-only either: `demo-booth` has carried
+its own provider-aware picker with 7 `[[frontend.chat_models]]` entries (5
+OpenRouter, 2 direct-DeepSeek), and `demo-llamacpp` configures no cloud entries
+at all, substituting local endpoints instead. Decision 4's "KIT-only" claim now
+holds only for the older `demo-bwcloud` / `demo-hetzner` line it was written
+for.
+
+The consequence worth planning around: these branches each carry an
+**independent implementation of the same picker symbols**, rather than one
+shared implementation varied by per-branch config. Merging forward between them
+is a reconciliation, not a mechanical merge — expect to choose between several
+live versions of the picker instead of fast-forwarding one.

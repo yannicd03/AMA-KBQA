@@ -30,6 +30,7 @@ from typing import Any, Optional
 from ama_kbqa.api import meta, stdout_router
 from ama_kbqa.api.stdout_router import RunLog, route_current_context
 from ama_kbqa.config import get_live_graph_enabled
+from ama_kbqa.framework.cancellation import CancellationToken
 from ama_kbqa.frontend.utils.agent_factory import (
     AGENT_INFO,
     ORCHESTRATOR_MODES,
@@ -71,6 +72,13 @@ HEARTBEAT_SECONDS = 1.0
 
 MAX_RUNS = 200
 SESSION_IDLE_SECONDS = 2 * 60 * 60
+
+# How many *detached* runs one session may have draining at once. A cancelled
+# run keeps executing until the agent reaches its next checkpoint, but its
+# session is unlocked immediately, so the visitor can ask the next question
+# while the old agent is still winding down. That overlap is what this cap
+# bounds; see RunManager.cancel_run for why it is not zero and not unlimited.
+MAX_DETACHED_RUNS_PER_SESSION = 2
 
 # The live log shown in the UI is the tail of the captured stdout.
 LOG_TAIL_CHARS = 100_000
@@ -314,6 +322,10 @@ class Session:
     last_seen: float = field(default_factory=time.time)
     demo_query_count: int = 0
     demo_last_query_time: float = 0.0
+    # Cancelled runs of this session that are still draining. They no longer
+    # hold `active_run_id`, so they must be counted separately or the session
+    # would look idle (and be evicted) while its agents are still running.
+    detached_runs: int = 0
 
 
 @dataclass(frozen=True)
@@ -361,7 +373,8 @@ class _Connection:
 
 
 class Run:
-    """One question, from acceptance to its ``done``/``error`` event."""
+    """One question, from acceptance to its ``done``/``error``/``cancelled``
+    event."""
 
     def __init__(
         self,
@@ -387,6 +400,14 @@ class Run:
         self.status = "running"
         self.started_at = time.time()
         self.started_at_iso = datetime.now().isoformat(timespec="seconds")
+
+        # One token per run, flipped by cancel_run from the event loop and read
+        # by the agent on its own worker thread. The run's terminal kind is
+        # decided by this flag, never by the answer text the agent returns.
+        self.cancel_token = CancellationToken()
+        # Set when cancelling handed the session back before this run finished,
+        # so _release knows to drop the session's detached count exactly once.
+        self.detached = False
 
         self.agent: Any = None
         self.queue: Optional[queue.Queue] = queue.Queue()
@@ -506,7 +527,11 @@ class RunManager:
     def evict_idle_sessions(self, now: Optional[float] = None) -> None:
         now = time.time() if now is None else now
         for session_id, session in list(self.sessions.items()):
-            if session.active_run_id is None and now - session.last_seen > SESSION_IDLE_SECONDS:
+            if (
+                session.active_run_id is None
+                and session.detached_runs == 0
+                and now - session.last_seen > SESSION_IDLE_SECONDS
+            ):
                 del self.sessions[session_id]
 
     def _evict_runs(self) -> None:
@@ -551,6 +576,32 @@ class RunManager:
 
     # -- runs -------------------------------------------------------------------
 
+    def cancel_run(self, run_id: str) -> dict[str, Any]:
+        """Ask ``run_id`` to stop, and hand its session back immediately.
+
+        Idempotent by construction: an unknown, evicted or already-finished run
+        is a no-op, and the token ignores a second cancel. Nothing here waits
+        for the agent — it notices the flag at its own next checkpoint and
+        returns through its own code (see ``framework.cancellation``), which is
+        why the session is released here instead of when the run really ends.
+        """
+        run = self.runs.get(run_id)
+        if run is None or run.finished:
+            return {"run_id": run_id, "cancelling": False}
+        run.cancel_token.cancel("stopped from the demo UI")
+        session = self.sessions.get(run.session_id)
+        if session is not None and session.active_run_id == run.run_id:
+            session.active_run_id = None
+            # v1: never reuse a cancelled agent. Its message stack was cut
+            # mid-turn and its MCP connection belongs to a worker loop that is
+            # still unwinding, so the next question builds a fresh agent
+            # rather than continuing this conversation.
+            session.stored = None
+            session.detached_runs += 1
+            session.last_seen = time.time()
+            run.detached = True
+        return {"run_id": run_id, "cancelling": True}
+
     async def create_run(
         self,
         *,
@@ -559,6 +610,7 @@ class RunManager:
         agent_name: str,
         model: str,
         temperature: float,
+        custom_model: Optional[str] = None,
     ) -> Run:
         """Validate, build (or reuse) the agent, start it, return the run."""
         if agent_name not in AGENT_INFO:
@@ -573,6 +625,17 @@ class RunManager:
         option = catalog.resolve(model)
         if option is None:
             raise ApiError(400, f"Unknown model: {model}")
+        # The free-text entry resolves to a placeholder carrying no model id;
+        # the id the visitor typed comes alongside it and is validated by
+        # shape, not against the catalog (that is the point of the entry).
+        # ``custom_model`` on any other pick is ignored rather than rejected:
+        # a stale field from a client that switched entries mid-edit must not
+        # fail a perfectly valid question.
+        if option.custom:
+            try:
+                option = meta.custom_model_option(option, custom_model)
+            except meta.InvalidCustomModel as exc:
+                raise ApiError(400, str(exc)) from exc
 
         self.evict_idle_sessions()
         session = self.sessions.get(session_id)
@@ -581,6 +644,14 @@ class RunManager:
         session.last_seen = time.time()
         if session.active_run_id is not None:
             raise ApiError(409, "This session already has a run in flight.")
+        # Cancelling frees the session before the old agent has actually
+        # stopped, so a new run can overlap a draining one. See cancel_run.
+        if session.detached_runs >= MAX_DETACHED_RUNS_PER_SESSION:
+            raise ApiError(
+                409,
+                "A stopped run from this session is still winding down. "
+                "Try again in a moment.",
+            )
         self._check_demo_limits(session)
 
         run = Run(
@@ -635,6 +706,7 @@ class RunManager:
             capture_io=None,
             is_continuation=continuation,
             on_thread_start=lambda: route_current_context(log),
+            cancel_token=run.cancel_token,
         )
         run.publish(*self._render(run))
         run.task = asyncio.create_task(self._consume(run, session))
@@ -723,8 +795,14 @@ class RunManager:
 
     @staticmethod
     def _release(session: Session, run: Run) -> None:
+        # Only clear the slot if it is still this run's: a cancelled run hands
+        # the session back early, and by the time it finishes the visitor may
+        # already have started another one.
         if session.active_run_id == run.run_id:
             session.active_run_id = None
+        if run.detached:
+            run.detached = False
+            session.detached_runs = max(0, session.detached_runs - 1)
         session.last_seen = time.time()
 
     def _final_event(self, run: Run) -> tuple[str, dict]:
@@ -751,6 +829,18 @@ class RunManager:
         run.trace_events = truncate_trace_events(events)
 
         log_html = log_tail_html(run.log.text(), head_dropped=run.log.truncated)
+        # The token decides, not the answer text: a cancelled run comes back
+        # through the agent's normal return path, so its queue item is
+        # ``__done__`` and its answer is whatever cancelled_answer() built.
+        if run.cancel_token.cancelled:
+            stopped_at = state.finished_at or time.time()
+            return "cancelled", {
+                "run_id": run.run_id,
+                "status": "cancelled",
+                "answer": state.answer if isinstance(state.answer, str) else "",
+                "duration_s": round(stopped_at - (state.started_at or stopped_at), 2),
+                "log_html": log_html,
+            }
         if state.status != "done":
             return "error", {
                 "run_id": run.run_id,

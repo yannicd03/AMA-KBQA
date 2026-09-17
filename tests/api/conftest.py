@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from ama_kbqa.api import app as app_module
 from ama_kbqa.api import meta, runs
+from ama_kbqa.framework.cancellation import cancelled_answer
 from ama_kbqa.framework.trace import TraceRecorder
 from ama_kbqa.frontend.utils import chat_controls
 
@@ -74,6 +75,8 @@ class FakeChoice:
     model: str
     name: str
     default: bool = False
+    # Set only on the free-text placeholder (chat_controls.custom_choice).
+    custom: bool = False
 
     @property
     def key(self) -> str:
@@ -116,6 +119,11 @@ class FakeChoices:
 
     @staticmethod
     def price_caption_for(choice) -> Optional[str]:
+        # The free-text placeholder has no model yet, so the real helper
+        # returns None for it rather than inventing a price. Mirror that here
+        # or the fake would claim a cost the picker never shows.
+        if getattr(choice, "custom", False):
+            return None
         # Escaped like the real helper (Streamlit markdown), or plain text.
         return {
             "kit": r"\$0.10 per 1M in and \$0.30 per 1M out",
@@ -132,6 +140,38 @@ def fake_choices(monkeypatch):
     meta.reset_caches()
     yield fake
     meta.reset_caches()
+
+
+# The free-text entry, as demo-v2-int's chat_controls.custom_choice() builds
+# it: a placeholder whose "model" is a sentinel, never a real id.
+CUSTOM_CHOICE = FakeChoice("openrouter", "__custom__", "OpenRouter (custom)", custom=True)
+CUSTOM_KEY = CUSTOM_CHOICE.key
+
+
+class FakeChoicesWithCustom(FakeChoices):
+    """The same picker plus the free-text entry, always listed last."""
+
+    def available_choices(self):
+        choices, notices = super().available_choices()
+        return choices + [CUSTOM_CHOICE], notices
+
+
+@pytest.fixture
+def fake_choices_custom(monkeypatch):
+    fake = FakeChoicesWithCustom()
+    for name in ("available_choices", "default_choice", "display_choice", "price_caption_for"):
+        monkeypatch.setattr(chat_controls, name, getattr(fake, name), raising=False)
+    meta.reset_caches()
+    yield fake
+    meta.reset_caches()
+
+
+@pytest.fixture
+def openrouter_key(monkeypatch):
+    """Pin OPENROUTER_API_KEY so tests never depend on the developer's own
+    environment: ``endpoint_rows`` derives the OpenRouter row's status from
+    the key's presence alone."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test-0123456789")
 
 
 @pytest.fixture
@@ -155,11 +195,15 @@ class FakeAgent:
     ``GetNodeLabel`` tool call found (so the frozen graph has a highlight).
     """
 
+    ANSWER = "Inception was directed by Christopher Nolan."
+
     def __init__(self, name: str, *, marker: str, model: str = MODEL, fail: bool = False,
                  gate: Optional[threading.Event] = None, big_payload: bool = False,
-                 prints: int = 3, delay: float = 0.0) -> None:
+                 prints: int = 3, delay: float = 0.0,
+                 answer: Optional[str] = None) -> None:
         self.name = name
         self.marker = marker
+        self.answer = self.ANSWER if answer is None else answer
         self.fail = fail
         self.gate = gate
         self.big_payload = big_payload
@@ -172,6 +216,7 @@ class FakeAgent:
         self.mcp: Any = object()
         self.reset_calls: list[dict] = []
         self.asked: list[str] = []
+        self.seen_token: Any = None
 
     async def reset(self, keep_mcp_open: bool = False, keep_history: bool = False) -> None:
         self.reset_calls.append({"keep_mcp_open": keep_mcp_open, "keep_history": keep_history})
@@ -179,7 +224,10 @@ class FakeAgent:
         self.journal_snapshots = []
         self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-    async def ask(self, question: str) -> str:
+    async def ask(self, question: str, cancel_token=None) -> str:
+        # The API always supplies a token (the Streamlit page supplies none),
+        # so the fake takes it exactly like a real agent's ask().
+        self.seen_token = cancel_token
         self.asked.append(question)
         if self.mcp is None:
             self.mcp = object()
@@ -203,11 +251,19 @@ class FakeAgent:
                 print(f"[{self.marker}] line {i}")
                 await asyncio.sleep(self.delay)
             while self.gate is not None and not self.gate.is_set():
+                # A real agent notices the token at its own checkpoints and
+                # leaves through its normal return path; so does this one.
+                if cancel_token is not None and cancel_token.cancelled:
+                    break
                 await asyncio.sleep(0.01)
         self.token_usage = {"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}
+        # A cancelled run ends normally, with the cancelled answer — never by
+        # raising, so the queue item is __done__ and not __error__.
+        if cancel_token is not None and cancel_token.cancelled:
+            return cancelled_answer(cancel_token)
         if self.fail:
             raise RuntimeError("boom")
-        return "Inception was directed by Christopher Nolan."
+        return self.answer
 
 
 class Harness:
@@ -242,14 +298,20 @@ class Harness:
         return agent
 
     def post(self, *, session: str = "s1", agent: str = "KQAPro", model: str = MODEL,
-             question: str = "Who is the director of Inception?", temperature: float = 1.0):
-        return self.client.post("/api/runs", json={
+             question: str = "Who is the director of Inception?", temperature: float = 1.0,
+             custom_model: Any = None):
+        body: dict[str, Any] = {
             "session_id": session,
             "question": question,
             "agent": agent,
             "model": model,
             "temperature": temperature,
-        })
+        }
+        # Omitted entirely unless a test sets it, so the default POST stays
+        # exactly the body the React app sends for a normal model pick.
+        if custom_model is not None:
+            body["custom_model"] = custom_model
+        return self.client.post("/api/runs", json=body)
 
     def run(self, **kwargs) -> tuple[str, list]:
         """POST a run and follow it to its final event."""
@@ -334,6 +396,12 @@ def harness(monkeypatch, patch_models, kit_path):
 
 @pytest.fixture
 def provider_harness(monkeypatch, patch_models, fake_choices):
+    yield from _run_harness(monkeypatch, provider_path=True)
+
+
+@pytest.fixture
+def custom_harness(monkeypatch, patch_models, fake_choices_custom):
+    """A provider-aware picker that also offers the free-text entry."""
     yield from _run_harness(monkeypatch, provider_path=True)
 
 

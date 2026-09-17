@@ -216,6 +216,16 @@ _PROVIDER_KEY_ENV: dict[str, str] = {
     "deepseek": "DEEPSEEK_API_KEY",
 }
 
+# The "type your own model id" entry. It is not a model: it is a placeholder
+# whose ``key`` the client sends back together with the id the user typed (see
+# ``ama_kbqa/api/runs.py``). The sentinel lives in the model slot so the key
+# has the same ``provider:model`` shape as every other entry and can never
+# collide with a real OpenRouter id (those always contain a "/").
+CUSTOM_MODEL_SENTINEL = "__custom__"
+CUSTOM_PROVIDER = "openrouter"
+CUSTOM_CHOICE_KEY = f"{CUSTOM_PROVIDER}:{CUSTOM_MODEL_SENTINEL}"
+CUSTOM_CHOICE_NAME = "OpenRouter (custom)"
+
 
 @dataclass(frozen=True)
 class ChatModelChoice:
@@ -225,6 +235,8 @@ class ChatModelChoice:
     ``apply_chat_settings`` needs to point both this process and the MCP
     tool-server subprocesses at the right endpoint. Prices are per token (the
     unit both OpenRouter's catalog and ``pricing`` use), None when unknown.
+
+    ``custom`` marks the free-text placeholder rather than a real model.
     """
 
     provider: str
@@ -233,12 +245,23 @@ class ChatModelChoice:
     prompt_usd_per_token: Optional[float] = None
     completion_usd_per_token: Optional[float] = None
     default: bool = False
+    custom: bool = False
 
     @property
     def key(self) -> str:
         """Stable selectbox value. The model id alone is not unique across
         providers (``deepseek-v4-pro`` exists on OpenRouter and direct)."""
         return f"{self.provider}:{self.model}"
+
+
+def custom_choice() -> ChatModelChoice:
+    """The "OpenRouter (custom)" placeholder entry."""
+    return ChatModelChoice(
+        provider=CUSTOM_PROVIDER,
+        model=CUSTOM_MODEL_SENTINEL,
+        name=CUSTOM_CHOICE_NAME,
+        custom=True,
+    )
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -273,6 +296,9 @@ def available_choices() -> tuple[list[ChatModelChoice], list[str]]:
 
     When the OpenRouter catalog is unreachable the configured entries are kept
     unvalidated and unpriced: a flaky network must not empty the picker.
+
+    The free-text "OpenRouter (custom)" entry is appended last, under the same
+    key rule as the presets: no OpenRouter key, no entry.
 
     Prices resolved here are registered with ``pricing.register_runtime_pricing``
     so the per-answer estimate in the chat footer works for billed models,
@@ -348,6 +374,13 @@ def available_choices() -> tuple[list[ChatModelChoice], list[str]]:
         )
         choices.append(choice)
 
+    # The free-text entry follows the same key rule as the presets: no
+    # OpenRouter key, no entry. No notice is raised here — the loop above
+    # already emitted one for this provider's configured presets, and the
+    # custom entry is not a model the presenter is missing out on.
+    if os.getenv(_PROVIDER_KEY_ENV["openrouter"]):
+        choices.append(custom_choice())
+
     return choices, notices
 
 
@@ -359,16 +392,20 @@ def default_choice(choices: list[ChatModelChoice]) -> ChatModelChoice:
     opening on a fast, free model and only spends money when the presenter
     chooses to. Falls back to the first entry, and finally to a synthetic KIT
     placeholder so the caller never has to handle an empty list.
+
+    The custom placeholder is never chosen as a fallback default: it carries no
+    model id, so a build that opened on it could not answer anything.
     """
     for choice in choices:
-        if choice.default:
+        if choice.default and not choice.custom:
             return choice
     kit_by_model = {c.model: c for c in choices if c.provider == "kit"}
     for candidate in DEFAULT_MODEL_PREFERENCE:
         if candidate in kit_by_model:
             return kit_by_model[candidate]
-    if choices:
-        return choices[0]
+    for choice in choices:
+        if not choice.custom:
+            return choice
     fallback = DEFAULT_MODEL_PREFERENCE[0]
     return ChatModelChoice(
         provider="kit", model=fallback, name=display_model_name(fallback)
@@ -377,6 +414,8 @@ def default_choice(choices: list[ChatModelChoice]) -> ChatModelChoice:
 
 def display_choice(choice: ChatModelChoice) -> str:
     """Label shown in the dropdown, e.g. "Claude Sonnet 4.5 · OpenRouter"."""
+    if choice.custom:
+        return choice.name
     label = _PROVIDER_LABELS.get(choice.provider, choice.provider)
     return f"{choice.name} · {label}"
 
@@ -386,8 +425,12 @@ def price_caption_for(choice: ChatModelChoice) -> Optional[str]:
 
     KIT keeps today's illustrative table (nobody is billed for it). Non-KIT
     entries use the price the picker actually resolved and say "(billed)", so
-    the presenter is never surprised by a number that turns out to be real.
+    the presenter is never surprised by a number that turns out to be real. The
+    custom entry has no price until an id is typed, and guessing one would be
+    worse than showing none.
     """
+    if choice.custom:
+        return None
     if choice.provider == "kit":
         return price_caption(choice.model)
     if choice.prompt_usd_per_token is None or choice.completion_usd_per_token is None:
@@ -421,7 +464,11 @@ def apply_chat_settings(model: str, temperature: float, provider: str = "kit") -
 
     The provider matters as much as the model: posting an OpenRouter model id
     to the KIT endpoint fails with "Model not found", and the failure would
-    only surface inside a specialist mid-answer.
+    only surface inside a specialist mid-answer. ``AMA_KBQA_CHAT_PROVIDER`` is
+    what carries the pick across the subprocess boundary. Without it the parent
+    process would talk to OpenRouter or DeepSeek while every MCP tool server
+    silently kept using KIT, which still produces an answer and so hides the
+    bug completely.
 
     ``provider`` defaults to "kit" so the two-argument call sites (the smoke
     script's bare model id, older tests) keep pinning KIT exactly as before.

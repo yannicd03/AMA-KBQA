@@ -22,13 +22,14 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 from pydantic import BaseModel, Field
-from SPARQLWrapper import SPARQLWrapper, JSON as SPARQL_JSON
+from SPARQLWrapper import SPARQLWrapper
 
 from ama_kbqa.config import (
     get_chat_client,
     get_chat_model_name,
     get_provider_preferences,
 )
+from ama_kbqa.framework.sparql_client import make_sparql_client
 from ama_kbqa.utils.artifact_golds import materialize_artifact_gold
 
 # Project root
@@ -882,8 +883,10 @@ class PostProcessor:
             self._client = get_chat_client()
 
         if self.mode == "sparql":
-            self._sparql_wrapper = SPARQLWrapper(VIRTUOSO_ENDPOINT)
-            self._sparql_wrapper.setReturnFormat(SPARQL_JSON)
+            # Built through the shared factory so the judge's verification
+            # queries inherit the same query timeout as the servers' (a hung
+            # query here would stall a whole benchmark run).
+            self._sparql_wrapper = make_sparql_client(VIRTUOSO_ENDPOINT)
             print(f"[OK] Connected to Virtuoso endpoint: {VIRTUOSO_ENDPOINT}")
 
         if self.mode == "llm_judge":

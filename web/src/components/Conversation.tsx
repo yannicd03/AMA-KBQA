@@ -75,6 +75,8 @@ function AssistantTurn({ run, runId, simplified, inspectAvailable, onInspect }: 
           ) : (
             <LiveReasoning run={run} />
           )
+        ) : run.status === "cancelled" ? (
+          <CancelledAnswer run={run} simplified={simplified} />
         ) : run.status === "error" ? (
           <ErrorAnswer run={run} simplified={simplified} />
         ) : (
@@ -172,6 +174,28 @@ function DoneAnswer({
           )}
         </div>
       </div>
+    </>
+  );
+}
+
+// Stopped on request, so this is a neutral status rather than an error card.
+function CancelledAnswer({ run, simplified }: { run: RunView; simplified: boolean }) {
+  return (
+    <>
+      <p className="muted" role="status">
+        Stopped. The agent may take a moment to finish the step it was on.
+      </p>
+      {!simplified && run.logHtml && (
+        <details className="disclosure">
+          <summary>
+            <IconChevronRight size={15} className="disclosure__chevron" />
+            <span className="disclosure__label">Log</span>
+          </summary>
+          <div className="disclosure__body">
+            <LogConsole html={run.logHtml} follow={false} />
+          </div>
+        </details>
+      )}
     </>
   );
 }

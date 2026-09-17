@@ -1,5 +1,5 @@
 ---
-summary: Architecture of the second demo frontend — React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/), 7 endpoints, SSE shapes, ports 8505/8506, single-uvicorn-worker rule, branch-portable model picker, data-driven per-branch settings panel.
+summary: Architecture of the second demo frontend — React SPA (web/) + FastAPI/SSE backend (ama_kbqa/api/), 8 endpoints, SSE shapes, host ports 2026/2027, single-uvicorn-worker rule, cooperative run cancellation, provider-carrying model picker with DeepSeek presets and a custom OpenRouter id, data-driven per-branch settings panel.
 ---
 
 # React Demo Frontend + API
@@ -39,8 +39,15 @@ for why this is additive, not a migration, and the trade-offs it accepted.
 | Service | Container | Host port | Purpose |
 |---|---|---|---|
 | `frontend` (Streamlit) | `frontend_ama_kbqa` | `127.0.0.1:8502` | Default demo UI, unchanged |
-| `api` (FastAPI) | `api_ama_kbqa` | `127.0.0.1:8506` | Backend for the React app; reached internally by `web` as `http://api:8506` |
-| `web` (nginx + React build) | `web_ama_kbqa` | `127.0.0.1:8505` | Static SPA + reverse proxy for `/api/` |
+| `api` (FastAPI) | `api_ama_kbqa` | `127.0.0.1:2027` | Backend for the React app; **listens on `8506` inside the container**, reached internally by `web` as `http://api:8506` |
+| `web` (nginx + React build) | `web_ama_kbqa` | `127.0.0.1:2026` | Static SPA + reverse proxy for `/api/` (container port 80) |
+
+The host ports moved from `8505`/`8506` to `2026`/`2027` on 2026-09-16 (commit
+`a41ce3d`). **Host bindings only:** the container ports are unchanged, so
+`web/nginx.conf` still proxies `http://api:8506`, the compose command is still
+`--port 8506`, and both healthchecks are untouched. Deployment note: `2026`/
+`2027` fall inside the `2025–2030` range ORCA occupies on the shared Hetzner
+box — see `SOP/hetzner_demo_deployment.md` §10 before publishing them there.
 
 All three are `127.0.0.1`-only (SSH-tunnel-only deployment model, same as the
 rest of this project — see `SOP/hetzner_deployment.md`). `api` and `web` are
@@ -105,8 +112,9 @@ already has.
 |---|---|
 | `GET /api/health` | `{"status": "ok"}` liveness probe |
 | `GET /api/meta` | Everything the app needs for its first screen: title, agent list, suggestions, model catalog, default model/temperature, `live_graph` flag, demo-mode limits |
-| `POST /api/runs` | Body `{session_id, question, agent, model, temperature}` → `201 {run_id, continuation}`. Builds or reuses the session's agent, starts the run, returns immediately (the run itself streams via `/events`) |
-| `GET /api/runs/{id}/events` | Server-Sent Events: `snapshot` frames while running, then one `done` or `error` frame, then the stream closes |
+| `POST /api/runs` | Body `{session_id, question, agent, model, temperature, custom_model?}` → `201 {run_id, continuation}`. Builds or reuses the session's agent, starts the run, returns immediately (the run itself streams via `/events`). `custom_model` is read only when `model` is the free-text picker entry |
+| `POST /api/runs/{id}/cancel` | `202 {run_id, cancelling: bool}`. Asks the run to stop and frees the session slot immediately. Never 404s — see "Cooperative cancellation" below |
+| `GET /api/runs/{id}/events` | Server-Sent Events: `snapshot` frames while running, then one `done`, `error` or `cancelled` frame, then the stream closes |
 | `GET /api/runs/{id}` | Current `Run.record()` — session/agent/question/status plus the final payload once finished |
 | `GET /api/runs/{id}/trace` | `409` until `run.finished`; then `{trace_id, summary, events}` — the same shape `trace_render.summarise` produces for the (retired) Streamlit Trace Inspector page |
 | `POST /api/sessions/{id}/reset` | `204`; clears the session's stored multiturn agent. `409` if a run is still in flight for that session |
@@ -119,8 +127,9 @@ get `400 {"detail": str}` (not FastAPI's default 422 list) via a
 ### SSE frame format
 
 Each frame: `id: <seq>\nevent: <kind>\ndata: <json>\n\n`. `<kind>` is
-`"snapshot"`, `"done"`, or `"error"`; a bare `: ping\n\n` comment line is sent
-every 15s of silence to keep the connection alive through proxies.
+`"snapshot"`, `"done"`, `"error"`, or `"cancelled"`; a bare `: ping\n\n`
+comment line is sent every 15s of silence to keep the connection alive through
+proxies.
 
 **`snapshot` data** (from `_Connection.snapshot_data`):
 ```
@@ -144,6 +153,9 @@ every 15s of silence to keep the connection alive through proxies.
 ```
 
 **`error` data:** `{run_id, status: "error", message, log_html}`.
+
+**`cancelled` data:** `{run_id, status: "cancelled", answer, duration_s, log_html}`.
+A distinct event kind, not a reused `error` — see "Cooperative cancellation".
 
 ---
 
@@ -184,21 +196,59 @@ setting `truncated=True`; the UI only ever renders the last ~100KB
 `ModelCatalog`, which **feature-detects** the shape of `chat_controls` at
 runtime so the same `ama_kbqa/api/` code runs unchanged across branches:
 
-- **Provider-aware** (`demo-booth`, `demo-llamacpp`): `chat_controls` exposes
-  `available_choices()`, returning `ChatModelChoice` objects that carry a
-  `provider` next to the model id. Each becomes a `ModelOption` whose `key`
-  (the `/meta` "id", and what `POST /api/runs`'s `model` field expects back)
-  is the picker key `"provider:model"`. `/api/meta`'s response carries a
-  `model_notices` array (e.g. hidden/unavailable entries). `runs.py`'s
-  `apply_model_settings` inspects `chat_controls.apply_chat_settings`'s
-  signature (`inspect.signature`, `_accepts_provider`) and passes
+- **Provider-aware** (`demo-v2-int` since 2026-09-16, `demo-booth`,
+  `demo-llamacpp`): `chat_controls` exposes `available_choices()`, returning
+  `ChatModelChoice` objects that carry a `provider` next to the model id. Each
+  becomes a `ModelOption` whose `key` (the `/meta` "id", and what
+  `POST /api/runs`'s `model` field expects back) is the picker key
+  `"provider:model"`. `/api/meta`'s response carries a `model_notices` array
+  (e.g. hidden/unavailable entries). `runs.py`'s `apply_model_settings`
+  inspects `chat_controls.apply_chat_settings`'s signature
+  (`inspect.signature`, `_accepts_provider`) and passes
   `provider=option.provider` only when the function accepts it.
-- **KIT-only** (`demo-v2-int`): no `available_choices`; the catalog is built
-  from the live KIT `/models` endpoint (`fetch_provider_models_meta("kit")`,
-  filtered by `chat_controls.filter_selectable_models`, with an offline
-  fallback list). Ids are bare KIT model ids; `provider` is always `"kit"`.
+- **KIT-only** (the pre-2026-09-16 shape, still supported): no
+  `available_choices`; the catalog is built from the live KIT `/models`
+  endpoint (`fetch_provider_models_meta("kit")`, filtered by
+  `chat_controls.filter_selectable_models`, with an offline fallback list).
+  Ids are bare KIT model ids; `provider` is always `"kit"`.
   `apply_model_settings` calls the two-argument `apply_chat_settings(model,
   temperature)`.
+
+### What the picker offers on `demo-v2-int` (2026-09-16)
+
+The list is assembled in `chat_controls.available_choices()`:
+
+1. **The live KIT catalog first** — whatever `available_models()` returns
+   (3 models as of 2026-09-16: Mistral Small 4, DeepSeek V4 Flash, GLM-5.3).
+2. **Then each `[[frontend.chat_models]]` config entry in config order** — two
+   OpenRouter DeepSeek presets (`deepseek/deepseek-v4-pro`,
+   `deepseek/deepseek-v4.1-flash`), shipped in both `config.toml` and
+   `config.docker.toml`.
+3. **Then the free-text entry last** — key `openrouter:__custom__`, emitted in
+   `/api/meta` with `custom: true`, where the presenter types any OpenRouter
+   model id.
+
+So six entries on 2026-09-16, but the count is not fixed: the KIT half comes
+from a live catalog, and a config entry is dropped (with a `model_notices`
+line) when its provider's key is unset, when the live OpenRouter catalog no
+longer knows the id, or when the catalog says it cannot call tools. If the
+OpenRouter catalog is unreachable the configured entries are kept unvalidated
+and unpriced rather than hidden — a flaky network must not empty the picker.
+
+**Custom ids** are validated by *shape* (`meta.custom_model_option`,
+`_CUSTOM_MODEL_RE`, 200-char cap), sent in `POST /api/runs`'s separate
+`custom_model` field, and **never minted into the catalog** (it is TTL-cached,
+so a minted id would be dropped on refresh and could leak between sessions).
+They show **no price** rather than a guessed one. A `custom_model` sent
+alongside any other pick is ignored, not rejected.
+
+**Provider propagation is load-bearing.** `apply_chat_settings` also exports
+`AMA_KBQA_CHAT_PROVIDER` (next to the existing `AMA_KBQA_CHAT_MODEL` /
+`AMA_KBQA_CHAT_TEMPERATURE`), because MCP tool servers are spawned with
+`env=os.environ.copy()` and load their **own** `config.toml` — an in-memory
+override alone leaves every sub-agent on KIT while the parent uses OpenRouter,
+and they still answer, which hides the fault completely. See
+`Decisions/demo-picker-provider-routing.md`.
 
 `meta.provider_aware()` (`callable(getattr(chat_controls,
 "available_choices", None))`) is the single detection point. The catalog is
@@ -211,6 +261,46 @@ llama.cpp server 30s since the operator may swap the model behind it).
 spanning kit/openrouter/deepseek. `demo-llamacpp` — 384 tests, single local
 model priced "Runs locally: no API cost" with a server-down notice when the
 llama-server host is unreachable.
+
+---
+
+## Cooperative cancellation
+
+**Route:** `POST /api/runs/{id}/cancel` → `202 {run_id, cancelling}`.
+
+The run is not killed. It executes on a daemon worker thread that owns its own
+event loop, so the route only flips a `CancellationToken`; the agent notices it
+at its own next checkpoint and returns through its own code, letting MCP tear
+down on the loop that opened it. The mechanics live in
+`System/agent_framework.md` § "Cooperative Cancellation"; the rationale in
+`Decisions/cooperative-run-cancellation.md`.
+
+What the API layer adds on top:
+
+- **202, never 404.** Unknown, evicted and already-finished runs also answer
+  `202`, with `cancelling: false` — stopping something already stopped is the
+  caller's intent, and a 404 would render a successful Stop as a failure.
+- **The session slot frees immediately.** `RunManager.cancel_run` clears
+  `active_run_id` and drops `session.stored`, so the next question and "New
+  chat" work at once. Before this, a stopped run left both returning `409` for
+  its full remaining duration. A cancelled agent is never reused: its message
+  stack was cut mid-turn and its MCP connection belongs to a loop that is still
+  unwinding.
+- **Overlap is bounded, not blocked.** Because the slot frees early, a new run
+  can overlap a still-draining one. `Session.detached_runs` counts those, and
+  `MAX_DETACHED_RUNS_PER_SESSION = 2` caps them — a third request gets `409`
+  ("still winding down"). Detached runs also keep a session from being evicted
+  as idle. Safety rests on `self.model` being frozen at agent construction, so
+  a new run cannot retarget a draining agent.
+- **The terminal event kind is decided by the token, never by the answer
+  text.** A cancelled run comes back through the agent's normal return path, so
+  its queue item is `__done__`; `_final_event` checks `run.cancel_token` first
+  and emits `cancelled`.
+
+**Stop latency** is dominated by whatever the run is waiting on: the LLM call is
+synchronous and not interruptible, and there is deliberately no checkpoint
+inside tool execution, so a long tool call completes first. A fast-path run
+already in flight has no checkpoint at all.
 
 ---
 
@@ -249,16 +339,44 @@ KIT green `#009682` is the accent (`--brand`). White text on `#009682` is only
 
 ---
 
-## Verification evidence (2026-09-16)
+## Verification evidence
+
+**2026-09-16 (initial ship):**
 
 - 346 tests passing on `demo-v2-int`, `ruff` clean.
 - Full stack run in Docker: `docker compose up -d --no-deps api web`.
-- A real question through nginx on `127.0.0.1:8505` streamed 58 SSE snapshots
-  over 57s and answered "Albert Einstein was born in Ulm," with the
+- A real question through nginx (then on `127.0.0.1:8505`) streamed 58 SSE
+  snapshots over 57s and answered "Albert Einstein was born in Ulm," with the
   orchestrator figure, the KQAPro sub-agent pane, live graph growth, and a
   29-event trace all rendering correctly.
 - Browser check (Playwright) confirmed: the About dialog, a live run in
   progress, the finished answer, and the Trace span tree.
+
+**2026-09-16 (ports, cancellation, picker — `a41ce3d`/`34c2314`/`69cd5a9`):**
+
+- Full suite **1137 passed, 0 failed** (up from 1003).
+- `AMA_KBQA_CHAT_PROVIDER` crossing the subprocess boundary was proven by a
+  control experiment in the container: with the variable stripped, the child
+  carried model `deepseek/deepseek-v4-pro` but resolved `base_url` to KIT; with
+  it exported, OpenRouter.
+
+**Not verified — recorded honestly, do not assume these work:**
+
+- **No browser check at all for this change.** The Stop button and the
+  custom-model field have **never been rendered**. Chrome automation is broken
+  on this machine (pre-existing regression, see below).
+- **The client half of cancellation is covered by static source assertions
+  only, never executed.** There is no JS test runner in this repo;
+  `tests/api/test_web_client_contract.py` reads `web/src/api.ts` and
+  `web/src/state.ts` as text. `tsc -b` passes, but no client code was run, and
+  the infinite-reconnect failure mode it guards against was never reproduced
+  nor observed fixed. This is the riskiest unverified line in the feature.
+- **No real billed question** has been asked through a DeepSeek preset or a
+  custom model id, so no end-to-end answer from either exists.
+- **The detached-run cap is tested by injecting session state**, not by driving
+  two genuinely overlapping real runs.
+- The three commits were not individually test-verified in isolation, so the
+  history may not bisect cleanly.
 
 ---
 
@@ -318,8 +436,12 @@ config file — see below).
 
 At `"full"`, `demo-v2-int` itself (no branch override) shows the *generic*
 `endpoint_rows()`/`diagnostic_rows()` implementation: one row for the
-configured `[llm] chat_provider`, one for `[llm] embedding_provider`, and
-four diagnostic facts (Retrieval, Federation, Live graph, Config filename).
+configured `[llm] chat_provider`, one for `[llm] embedding_provider`, and —
+since 2026-09-16 — **one row per non-KIT chat provider the picker offers**,
+derived from `[[frontend.chat_models]]` via `optional_chat_providers()` rather
+than hard-coded. With the shipped config that third row is `openrouter-chat`.
+Plus four diagnostic facts (Retrieval, Federation, Live graph, Config
+filename).
 Booth and llamacpp replace/extend those two functions; they don't change the
 contract.
 
@@ -349,8 +471,9 @@ env var name) and `PROVIDER_LABELS` (provider → display name) dicts and the
 | `demo-booth` | `2b97e4e` | `"full"` | Rows for KIT chat, KIT embedding, OpenRouter and DeepSeek, derived from `[[frontend.chat_models]]` via new `optional_chat_providers()` — not hard-coded. **A provider without its key stays visible** with `status: "no_key"` (hiding it would answer "can I use DeepSeek?" with silence). One notice per *provider*, not per model, worded differently from the picker's own `model_notices` and deduped against it so the presenter never reads the same sentence twice. Every billed row says so in both key states. Diagnostics add "Chat providers: N of M selectable" and "Embeddings: KIT KI-Toolbox, whatever the chat pick." |
 | `demo-llamacpp` | `3854c7b` | `"full"` | Rows for the local chat server (`:8080`) and local embedding server (`:8081`), `api_key: null` (this build has no keys by design), with a **probed** status — reuses the picker's cached `chat_controls._fetch_llamacpp_models()` (3s timeout, 30s TTL) for chat, a direct `fetch_provider_models()` call for embeddings. Adds its own failure cache (`_probe_cache`, 30s success / 10s failure TTL) because `st.cache_data` never caches exceptions, so a stopped server would otherwise repay the connect timeout on every `/api/meta` call. Down-server rows point at `scripts/start_local_llm.sh`. Diagnostics add "Runs locally: chat and embeddings, no cloud API." |
 
-**Known limitation, recorded honestly:** on `demo-booth`, `status: "ok"`
-means the API key is present in the environment — **not** that the endpoint
+**Known limitation, recorded honestly:** on `demo-v2-int`'s own
+`openrouter-chat` row and on every `demo-booth` row, `status: "ok"` means the
+API key is present in the environment — **not** that the endpoint
 answered. Nothing is probed for OpenRouter/DeepSeek (a deliberate choice:
 probing would put two network round-trips in front of the demo's first
 screen on every `/api/meta` call), so an expired or revoked booth key still

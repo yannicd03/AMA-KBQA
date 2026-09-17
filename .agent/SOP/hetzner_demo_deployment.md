@@ -1,5 +1,5 @@
 ---
-summary: Public demo deployment runbook for the shared Hetzner box (compose projects, ports, Cloudflare tunnels). As of 2026-09-16, its React frontend section records that the new React frontend (web/api) is verified locally in Docker only — not deployed, staged, or given a port/ingress on this box.
+summary: Public demo deployment runbook for the shared Hetzner box (compose projects, ports, Cloudflare tunnels). As of 2026-09-16, its React frontend section records that the new React frontend (web/api) is verified locally in Docker only — not deployed, staged, or given a port/ingress on this box — and that its local default ports 2026/2027 fall inside ORCA's 2025-2030 range here.
 ---
 
 # SOP: Public Demo Deployment on the Shared Hetzner Box
@@ -571,20 +571,37 @@ for what it is. It has been built and verified **locally in Docker only**
 [SOP/running_react_demo_locally.md](./running_react_demo_locally.md)). It has
 **not** been deployed to the Hetzner box, staged, or given a public hostname.
 
+### BLOCKER: the React demo's ports 2026/2027 fall inside ORCA's range on this box
+
+`web`/`api` publish on **`2026`/`2027`** in the local `docker-compose.yml`
+(changed from `8505`/`8506` on 2026-09-16, commit `a41ce3d`; host bindings
+only — the `api` container still listens on `8506` internally). ORCA's
+`mas-in-production` stack owns ports **2025–2030** on this box (see "What
+happened and why" above), so **both** React ports sit inside a range another
+production stack has already claimed.
+
+**Scope: this is currently harmless.** Both bindings are `127.0.0.1`-only and
+exist only on the developer machine; nothing from this line is deployed to
+Hetzner, so nothing is colliding today. The collision only materialises *if
+and when* the React frontend is rolled out to this host.
+
+**It must be resolved before a Hetzner rollout begins, not during one.**
+Re-check what ORCA currently binds, pick a free pair for `web`/`api`, and
+record the claim in this section the way §9 recorded `8504` — before building
+on the host, not after. The fix is to move the demo's ports; ORCA is the
+incumbent production stack and does not move. The `2026`/`2027` default was
+chosen for a developer laptop, not for this box.
+
 Deploying it there (either as a v3 staging line following §9's pattern, or
 folded into the v2 rollout) would need, at minimum:
 
-- **A port claim.** The Hetzner box's occupied `127.0.0.1` ports as of this
-  SOP: `1111`/`8890` (Virtuoso), `6335` (Qdrant), `8502` (benchmark-stack
-  Streamlit), `8503` (v1 public Streamlit), `8504` (v2 staging Streamlit, see
-  §9). `web`/`api` default to `8505`/`8506` in the local `docker-compose.yml`
-  — free on the host today, but that has not been formally reserved or
-  recorded as claimed anywhere the way §9 recorded `8504`. Do that before
-  building on the host, not after — a silent port collision with a future
-  service is exactly the kind of drift this SOP exists to prevent.
+- **A port claim** — see the BLOCKER above, which must be closed first. The
+  Hetzner box's occupied `127.0.0.1` ports as of this SOP: `1111`/`8890`
+  (Virtuoso), `6335` (Qdrant), `8502` (benchmark-stack Streamlit), `8503` (v1
+  public Streamlit), `8504` (v2 staging Streamlit, see §9).
 - **A cloudflared ingress rule.** `deploy/hetzner/cloudflared-amakbqa.yml`
   would need a new hostname entry (e.g. `amakbqa-web.yanlab.de →
-  localhost:8505`) alongside the existing `amakbqa.yanlab.de` /
+  localhost:<claimed web port>`) alongside the existing `amakbqa.yanlab.de` /
   `amakbqa-next.yanlab.de` entries from §5/§9, and the same
   `sudo systemctl restart cloudflared-amakbqa` to pick it up. The React app's
   own nginx (`web/nginx.conf`) already sets `proxy_buffering off` + `gzip off`

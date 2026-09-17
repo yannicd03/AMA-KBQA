@@ -40,9 +40,12 @@ CHAT_TEMPERATURE_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_TEMPERATURE"
 # Same mechanism, one level up: which *endpoint* the chat model lives on. The
 # booth build lets the presenter switch between KIT, OpenRouter and DeepSeek,
 # and the model id alone does not say which. Without this env channel the MCP
-# tool servers would keep building a KIT client and post a foreign model id to
-# it ("Model not found"), exactly the failure the model override was added to
-# fix. Embeddings, reranking and synthesis are untouched by this override.
+# tool-server subprocesses would keep building a KIT client from their own
+# config.toml and post a foreign model id to it ("Model not found"), which is
+# exactly the failure CHAT_MODEL_OVERRIDE_ENV_VAR was added to fix, only worse:
+# the parent process would answer while every specialist silently stayed on
+# KIT, so the question still answers and the fault is invisible. Embeddings,
+# reranking and synthesis are untouched by this override.
 CHAT_PROVIDER_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_PROVIDER"
 
 # Provider API keys the system can authenticate with. No single one is
@@ -113,9 +116,14 @@ def get_chat_provider() -> str:
 
     Honors ``AMA_KBQA_CHAT_PROVIDER`` (``CHAT_PROVIDER_OVERRIDE_ENV_VAR``) when
     set, taking precedence over config.toml. Every reader of
-    ``[llm].chat_provider`` goes through here so a provider switch made in the
-    frontend reaches the MCP tool-server subprocesses too, which inherit the
-    environment but load their own config.toml.
+    ``[llm].chat_provider`` goes through here, so a provider switch made in the
+    frontend reaches the MCP tool-server subprocesses too: they inherit the
+    environment but load their own config.toml, and would otherwise keep
+    building a KIT client for an OpenRouter or DeepSeek model id.
+
+    ``[llm].embedding_provider`` is deliberately *not* routed through here.
+    Embeddings, reranking and synthesis stay where config.toml puts them no
+    matter which chat model the visitor picks.
 
     Returns:
         str: The chat provider name
@@ -1072,6 +1080,11 @@ def get_frontend_chat_models() -> list[dict]:
     booth picker to "KIT only" rather than take the whole page down mid-demo,
     so invalid entries are dropped with a warning and a missing/odd section
     yields an empty list.
+
+    Note the TOML shape. ``[[frontend.chat_models]]`` are *array tables*, so
+    every plain ``[frontend]`` key (``live_graph``, ``settings_level``) must be
+    written above them: a key placed after the first ``[[...]]`` header
+    silently becomes a key of that array entry instead.
 
     Returns:
         list[dict]: Normalized entries with keys ``provider``, ``id``, ``name``

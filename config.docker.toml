@@ -8,6 +8,8 @@ embedding_temperature = 0.0
 [agent]
 auto_inject_journal = true
 zero_tool_call_retry_max = 3
+# Per-call timeout for MCP tool servers, read by framework/mcp_client.py.
+mcp_tool_timeout_seconds = 180
 
 [synthesis]
 synthesis_enabled = false
@@ -108,11 +110,18 @@ live_graph = true
 settings_level = "full"
 
 # Booth build: chat endpoints offered next to the auto-discovered KIT models.
-# An entry is shown only when its provider's API key env var is set. Prices
-# are USD per 1M tokens and are what the booth account is actually billed
-# (OpenRouter entries fall back to the live catalog price when omitted).
+# An entry is shown only when its provider's API key env var is set, and (for
+# OpenRouter) only when the live catalog still knows the id and it can call
+# tools. Prices are USD per 1M tokens and are what the booth account is
+# actually billed; OpenRouter entries omit them on purpose so the picker shows
+# the live catalog price rather than a number that silently goes stale here.
 # `default = true` on one entry pre-selects it; otherwise the KIT default
 # preference applies.
+#
+# ORDERING HAZARD: these are TOML *array tables*. Every plain [frontend] key
+# above (live_graph, settings_level) must stay above them: a plain key written
+# after the first [[frontend.chat_models]] header silently becomes a key of
+# that array entry instead of a [frontend] key.
 [[frontend.chat_models]]
 provider = "openrouter"
 id = "deepseek/deepseek-v4-flash"
@@ -122,6 +131,11 @@ name = "DeepSeek V4 Flash"
 provider = "openrouter"
 id = "deepseek/deepseek-v4-pro"
 name = "DeepSeek V4 Pro"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4.1-flash"
+name = "DeepSeek V4.1 Flash"
 
 [[frontend.chat_models]]
 provider = "openrouter"

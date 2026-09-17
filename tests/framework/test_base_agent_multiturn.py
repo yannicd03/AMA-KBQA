@@ -190,7 +190,10 @@ class _HookAgent(BaseKBQAAgent):
         self.filter_calls += 1
         return None
 
-    async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype=""):
+    async def _run_tool_loop(
+        self, query, openai_tools, max_iterations, refresh_interval, qtype="",
+        cancel_token=None,
+    ):
         self.tool_loop_calls.append({"query": query, "qtype": qtype})
         return f"ANSWER: {query}"
 
