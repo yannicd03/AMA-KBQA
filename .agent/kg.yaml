@@ -211,3 +211,94 @@ entities:
     summary: "Still open, now bounded rather than fixed. chat_controls.apply_chat_settings mutates process-global model/temperature config and the picker widened it to the AMA_KBQA_CHAT_PROVIDER env var, so a pick applies to all concurrent sessions. Cancellation bounds the exposure window via MAX_DETACHED_RUNS_PER_SESSION = 2, and self.model is frozen at agent construction so a draining run cannot be retargeted."
     observed_in: [branch/demo-v2-int]
     relates: [amakbqa/decision/cooperative-run-cancellation, amakbqa/decision/demo-picker-provider-routing]
+
+  - id: issue/repo-going-public-leaks-host-details
+    type: issue
+    status: solved
+    date: 2026-09-20
+    title: Public repo would leak host-specific deployment details
+    summary: Hardcoded origin IP, Cloudflare tunnel id, deploy user and home paths in tracked config/docs would let traffic bypass the Cloudflare proxy once the repo goes public.
+    solved_by: [decision/public-repo-deploy-config-extraction]
+    observed_in: [public-repo-migration-audit]
+
+  - id: component/deploy-hetzner
+    type: component
+    title: Hetzner deploy config (deploy/hetzner/)
+    summary: Deployment config directory for the Hetzner box - cloudflared tunnel config/service files, deploy.env, and render-deploy-config.sh that renders them from committed templates.
+
+  - id: branch/feat-langgraph-rewrite
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: feat/langgraph-rewrite
+    summary: Structural agent-loop rewrite onto a plain LangGraph StateGraph. Phases 0-5 done, Phase 6 open, engine default still legacy. Last substantive commit 2026-08-23; took the public-repo scrub commit 0d6d01a today.
+
+  - id: branch/chore-deploy-config-extraction
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: chore/deploy-config-extraction
+    summary: Cut off demo-v2-int today. Moves Hetzner deploy host details into a gitignored deploy.env rendered from committed templates, ahead of the repo going public. Commits 4c4a5a0, f7fab65.
+
+  - id: branch/chore-scrub-local-paths
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: chore/scrub-local-paths
+    summary: Cut off dev today, scrubbing local username/paths out of tracked files ahead of the repo going public. Commit 3a1bab4.
+
+  - id: branch/dev
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: dev
+    summary: Integration branch. One of the four target branches of the 2026-09-20 branch-consolidation-plus-public-repo-migration plan.
+
+  - id: branch/main
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: main
+    summary: Paper/release line, 47 commits behind dev. One of the four target branches of the 2026-09-20 branch-consolidation plan.
+
+  - id: branch/wikikgqa-2026
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: wikikgqa-2026
+    summary: ISWC 2026 WikiKGQA submission branch, locally ahead of the public repo's copy by 3 commits. One of the four target branches of the 2026-09-20 branch-consolidation plan.
+
+  - id: branch/semantics-submission
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: semantics-submission
+    summary: SEMANTiCS 2026 submission branch, content-identical to the public repo's copy. One of the four target branches of the 2026-09-20 branch-consolidation plan.
+
+  - id: branch/demo-hetzner
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: demo-hetzner
+    summary: Quarantine line - descends from the pre-scrub lineage and carries the dead leaked OpenRouter key. Must never be merged or pushed to the public repo. See git-security-key-scrub.
+
+  - id: branch/demo-kit-models
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: demo-kit-models
+    summary: Quarantine line - descends from the pre-scrub lineage and carries the dead leaked OpenRouter key. Must never be merged or pushed to the public repo. See git-security-key-scrub.
+
+  - id: branch/demo-bwcloud-deploy
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: demo-bwcloud-deploy
+    summary: Quarantine line - descends from the pre-scrub lineage and carries the dead leaked OpenRouter key. Must never be merged or pushed to the public repo. See git-security-key-scrub.
+
+  - id: branch/demo-bwcloud
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: demo-bwcloud
+    summary: Quarantine line - descends from the pre-scrub lineage and carries the dead leaked OpenRouter key. Must never be merged or pushed to the public repo. See git-security-key-scrub.

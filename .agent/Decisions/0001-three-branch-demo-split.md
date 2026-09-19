@@ -1,5 +1,16 @@
 # ADR 0001: Three-branch demo split (`demo-v2-int` / `demo-public` / `demo-booth`)
 
+> **Superseded in part, 2026-09-20:** SEMANTiCS 2026 is over and the demo
+> line is being consolidated back into `dev` (see
+> `Decisions/0004-demo-line-consolidation-into-dev.md`). `demo-booth` is the
+> variant kept; `demo-llamacpp` is dropped; `demo-public` is deprecated (its
+> only distinguishing content, `settings_level = "minimal"`, survives as a
+> supported config value rather than a branch). The billed-provider-isolation
+> *problem* this ADR solved is unchanged and still real — only the
+> branch-per-audience *mechanism* is being retired now that there is no
+> conference deadline or active public-deployment plan requiring it. Body
+> below left unchanged as the historical record of that original decision.
+
 ## Related Docs
 - [SOP/hetzner_demo_deployment.md](../SOP/hetzner_demo_deployment.md) §9–§10 — deployment mechanics for all three branches
 - [System/demo_bwcloud_frontend.md](../System/demo_bwcloud_frontend.md) "Model picker (booth build)" — the feature this split exists to isolate

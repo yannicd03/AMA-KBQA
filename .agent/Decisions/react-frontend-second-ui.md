@@ -82,3 +82,27 @@ Decision 1's original threshold (multi-user auth, real-time collaboration, URL-r
 **Trade-off accepted:** the three seams are still branch-specific *Python*, so `PROVIDER_LABELS`/`PROVIDER_KEY_ENV` (shared dicts) and `endpoint_notices()` (substantially rewritten by `demo-booth`) are recurring forward-merge friction points — smaller and more mechanical than a React fork, but not zero. See `System/demo_react_frontend.md`'s "Follow-ups not yet done" for the specific known friction.
 
 **Status:** shipped on `demo-v2-int` (`2f0d406`), `demo-public` (`39f9666`), `demo-booth` (`2b97e4e`), `demo-llamacpp` (`3854c7b`). Not yet ported to the v1-line branches (`demo-hetzner`, `demo-kit-models`, `demo-bwcloud*`), which don't have the React frontend at all.
+
+## Addendum 2026-09-20: the flagged `fastapi`/`uvicorn` conflict is resolved
+
+Point 4 of the "Trade-offs recorded honestly" section above flagged that
+`Tasks/active/langgraph-rewrite.md`'s Dependencies section said `fastapi` and
+`uvicorn` would be removed as unused, which was already false on
+`demo-v2-int` at the time. `feat/langgraph-rewrite` and the demo line have
+since been merged together onto `integrate/dev-consolidation` (see
+`Decisions/0004-demo-line-consolidation-into-dev.md`), and the PRD file
+itself now records the resolution in its Phase 5 result section (§16):
+`fastapi>=0.115.0` and `uvicorn==0.38.0` are back in `pyproject.toml` because
+`ama_kbqa/api/` needs them; only `openai-agents` stays dropped (it was never
+imported by anything, on either line). `System/project_architecture.md`'s
+Tech Stack table has been corrected to match.
+
+The other half of point 4 — the thread+queue bridge in `lifecycle_runner.py`
+that `feat/langgraph-rewrite`'s Phase 4 planned to delete — is **not**
+resolved by this merge. Phase 4 landed (`80ffca9`) without touching
+`lifecycle_runner.py`: the graph engine's harness/frontend integration needed
+no code changes because the facade (`BaseKBQAAgent.ask()`, `token_usage`,
+etc.) stayed stable, so the predicted deletion never happened. The bridge
+this ADR's React API depends on is intact; option (c) never had to be
+decided. Still worth re-checking if `feat/langgraph-rewrite`'s remaining
+Phase 6 cleanup work touches streaming.

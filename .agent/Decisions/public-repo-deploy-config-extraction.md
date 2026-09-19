@@ -2,9 +2,9 @@
 type: decision
 status: accepted
 date: 2026-09-20
-summary: Host-specific deployment values (origin address, Cloudflare tunnel id, deploy user, home paths) moved out of tracked files into a gitignored deploy.env, rendered into the real config via committed .template files and render-deploy-config.sh, because the repo is about to go public and the origin address in particular would let traffic bypass the Cloudflare proxy.
+summary: Host-specific deploy values (origin IP, tunnel id, deploy user, home paths) moved into a gitignored deploy.env, rendered via committed .template files, ahead of the repo going public.
 addresses: [issue/repo-going-public-leaks-host-details]
-affects: [deploy/hetzner, System/demo_bwcloud_frontend, SOP/hetzner_demo_deployment, SOP/hetzner_deployment]
+affects: [component/deploy-hetzner, System/demo_bwcloud_frontend, SOP/hetzner_demo_deployment, SOP/hetzner_deployment]
 relates: [demo-bwcloud-frontend-divergence]
 evidence:
   - "commit 4c4a5a0"

@@ -192,6 +192,8 @@ The **Orchestrator** is a separate implementation with its own checkpoints (`orc
 
 **Everything is opt-in:** `cancel_token=None` is the default at every entry point and `is_cancelled(None)` is `False`, so the Streamlit page and the benchmark runners are unchanged. `cancelled_answer()` returns `"Run cancelled."` plus a reason when one was given; callers that must distinguish a cancelled run should consult their own token rather than string-match `CANCELLED_ANSWER`.
 
+**Graph engine gap (`[agent].engine = "graph"`, found 2026-09-20):** the table above and the Orchestrator checkpoints below describe the legacy engine only. Neither `graph/pipeline.py` nor `graph/orchestrator.py` has a checkpoint at any node boundary — a token is honoured only if it is already cancelled *before* the graph is dispatched (one check at the dispatch call site, same shape as the "after `_init_mcp()`, before classification" row above, just narrowed to "before graph dispatch"); once a graph run is under way it cannot be stopped, and `_run_tool_loop`'s graph dispatch does not even accept a `cancel_token` parameter, so cancellation there is a pure no-op regardless of timing. See [Graph Engine → "What the graph engine does not cover yet"](graph_engine.md#what-the-graph-engine-does-not-cover-yet-found-merging-the-demo-line-2026-09-20) for the exact code paths; this is one of the two open Phase 6 blockers in `Tasks/active/langgraph-rewrite.md` §16 (the other is Federated-mode dispatch).
+
 See `Decisions/cooperative-run-cancellation.md` for the full rationale, and `System/demo_react_frontend.md` for the HTTP/SSE surface.
 
 ---

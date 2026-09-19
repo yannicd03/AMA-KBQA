@@ -9,10 +9,12 @@ describes **current state**; phase-by-phase history and rationale live in
 
 ## Related Docs
 - [Decisions/langgraph-adoption.md](../Decisions/langgraph-adoption.md) — ADR: why LangGraph, why not `deepagents`/`create_agent`, Phase 0 evidence
-- [Tasks/active/langgraph-rewrite.md](../Tasks/active/langgraph-rewrite.md) — full PRD, phase-by-phase results log (§10-§15)
-- [System/agent_framework.md](agent_framework.md) — `BaseKBQAAgent` mechanics the graph engine ports (loop detection, trace spans, retry, token tracking, journal, synthesis funnel) — this doc assumes that one as background
-- [System/orchestrator_routing.md](orchestrator_routing.md) — legacy `Orchestrator._route_autonomously` that `graph/orchestrator.py` mirrors
+- [Tasks/active/langgraph-rewrite.md](../Tasks/active/langgraph-rewrite.md) — full PRD, phase-by-phase results log (§10-§16, incl. the two demo-line gaps below)
+- [System/agent_framework.md](agent_framework.md) — `BaseKBQAAgent` mechanics the graph engine ports (loop detection, trace spans, retry, token tracking, journal, synthesis funnel, cooperative cancellation) — this doc assumes that one as background
+- [System/orchestrator_routing.md](orchestrator_routing.md) — legacy `Orchestrator._route_autonomously` that `graph/orchestrator.py` mirrors; Router vs. Federated mode
 - [System/project_architecture.md](project_architecture.md) — full repo structure, config system
+- [Decisions/cooperative-run-cancellation.md](../Decisions/cooperative-run-cancellation.md) — why cancellation is cooperative at all; background for "What the graph engine does not cover yet" below
+- [Decisions/federated-dispatch-and-fusion.md](../Decisions/federated-dispatch-and-fusion.md) — federated dispatch/fusion ADR; 2026-09-14 addendum point 6 anticipated the graph engine's federation gap
 
 ---
 
@@ -443,6 +445,70 @@ no graph-engine-specific work at all.
 - **LangSmith tracing**: opt-in only (`LANGSMITH_TRACING=true` + API key);
   nothing in either graph requires it, and `TraceRecorder` remains the
   primary trace source for both engines.
+
+---
+
+## What the graph engine does not cover yet (found merging the demo line, 2026-09-20)
+
+Two demo-line features exist only on the legacy path. Both are tracked as
+open Phase 6 blockers in `Tasks/active/langgraph-rewrite.md` §16 ("Still open
+before flipping `[agent].engine` default to `graph`") — the legacy loop
+cannot be deleted until they're ported.
+
+**1. Federated dispatch — a Federated orchestrator always takes the legacy
+body, engine setting notwithstanding.** `graph/orchestrator.py` models Router
+mode only (its `probe`/`select_agent` nodes send the single-agent
+`select_agent` schema — see below). `Orchestrator.ask()`
+(`ama_kbqa/agents/orchestrator_agent/agent.py:655-668`) checks
+`self._federation_enabled` *before* dispatching to the graph engine: if the
+orchestrator is Federated (`[federation].enabled` or
+`Orchestrator(federation=True)`), it traces a warning ("Graph engine
+requested but this orchestrator is in Federated mode; falling back to the
+legacy body.") and runs the full legacy routing/fan-out/fusion body instead —
+this is the same fallback rule text-mode tool-call agents already follow
+(`_ask_impl`/`_run_tool_loop`, "What is NOT on the graph engine" above). This
+resolves `Decisions/federated-dispatch-and-fusion.md`'s 2026-09-14 addendum
+point 6 more conservatively than that note anticipated: it doesn't reject
+`federation=True`, it silently routes it to the (fully-federation-capable)
+legacy engine rather than to a graph engine that can't federate — so a demo
+operator never sees a Federated instance quietly behave like Router mode.
+Pinned by `test_federated_instance_takes_legacy_body_even_with_graph_engine`.
+
+**2. Cooperative cancellation — the graph engine has no checkpoints inside
+either graph.** Neither `graph/pipeline.py` nor `graph/orchestrator.py`
+checks `cancel_token` at any node boundary (contrast
+`agent_framework.md`'s Cooperative Cancellation table, which lists two
+checkpoints in the legacy loop). Concretely:
+- `BaseKBQAAgent._ask_impl` (`base_agent.py:1100-1115`) checks
+  `is_cancelled(cancel_token)` once, immediately before dispatching to
+  `run_pipeline_graph` — a token already cancelled at that point is honoured
+  (`cancelled_answer(cancel_token)` returned, no dispatch). If the token is
+  merely present but not yet cancelled, it traces a warning ("Graph engine
+  does not support mid-run cancellation yet; the stop request will only take
+  effect after this run.") and dispatches anyway; nothing inside the pipeline
+  graph consults the token again, so a Stop pressed mid-run has no effect
+  until the whole question finishes.
+- `Orchestrator.ask()` (`agent.py:663-668`) applies the identical
+  already-cancelled-or-not check right before its own graph dispatch (after
+  the Federated check above), with the same "honour if already cancelled,
+  otherwise dispatch and ignore" behaviour.
+- `BaseKBQAAgent._run_tool_loop`'s graph dispatch (`base_agent.py:1659-1664`)
+  is stricter still: it calls `run_tool_loop_graph(...)` with **no
+  `cancel_token` argument at all** and **no pre-dispatch check** — the
+  cancellation token never reaches the tool-loop graph in any form, so
+  cancelling a graph-engine run at the tool-loop level is a pure no-op, not
+  even a "honoured if already set" best effort. (This code path is only
+  reached directly when something calls `_run_tool_loop` outside the
+  pipeline graph — e.g. a caller that bypasses `_ask_impl` — since the
+  pipeline graph's own `tool_loop` node calls `agent._run_tool_loop(...)`,
+  which re-enters this same dispatch.)
+
+Pinned by `test_cancelled_token_is_honoured_before_graph_pipeline_dispatch`
+and `test_cancelled_token_is_honoured_before_graph_orchestrator_dispatch`.
+See `Decisions/cooperative-run-cancellation.md` for why cancellation is
+cooperative at all, and `Decisions/langgraph-adoption.md` for why the
+rewrite didn't design checkpoints into the graph topology from the start
+(the PRD predates the cancellation ADR by three weeks).
 
 ---
 
