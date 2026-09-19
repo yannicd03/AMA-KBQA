@@ -130,7 +130,7 @@ Restore via the Qdrant REST API (run from the server):
 # Example: restore kqapro-entities
 curl -X POST "http://localhost:6335/collections/kqapro-entities/snapshots/upload" \
   -H "Content-Type: multipart/form-data" \
-  -F "snapshot=@/home/yannic/qdrant_snapshots/kqapro-entities.snapshot"
+  -F "snapshot=@$HOME/qdrant_snapshots/kqapro-entities.snapshot"
 
 # Repeat for each collection: kqapro-relations, sciqa-entities, sciqa-relations
 ```
