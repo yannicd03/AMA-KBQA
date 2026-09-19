@@ -30,10 +30,11 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 
-sys.path.insert(0, "/home/yannic/code/AMAKBQA")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from qdrant_client import QdrantClient, models
 from ama_kbqa.retrieval.search import BM25_MODEL, BM25_SPARSE_VECTOR_NAME
 
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 QDRANT_URL = "http://localhost:6335"
 EMBED_MODEL = "qwen/qwen3-embedding-8b"
 THRESHOLD = 0.6          # config.toml [search] score_threshold
@@ -100,7 +101,8 @@ def load_sciqa(n):
     # The repo copy is root-owned/absent locally; SCIQA_CSV points at a local copy.
     path = os.environ.get(
         "SCIQA_CSV",
-        "/home/yannic/code/AMAKBQA/db/datasets/SciQA/Handcrafted/full dataset.csv")
+        os.path.join(REPO_ROOT, "db", "datasets", "SciQA", "Handcrafted",
+                     "full dataset.csv"))
     items = []
     with open(path, encoding="utf-8") as f:
         for row in list(csv.DictReader(f))[:n]:
