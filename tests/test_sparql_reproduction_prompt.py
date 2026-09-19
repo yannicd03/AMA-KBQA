@@ -9,6 +9,8 @@ them.
 
 from __future__ import annotations
 
+import pytest
+
 import ama_kbqa.config as config
 from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
 from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
@@ -132,3 +134,131 @@ def test_sciqa_hint_degrades_when_raw_sparql_is_gated_off(monkeypatch):
     assert "GRAPH <http://sciqa.org/kg>" in hint
     assert "Raw SPARQL execution is disabled" in hint
     assert "(not executed)" in hint
+
+
+# ---------------------------------------------------------------------------
+# Synthesis is a SEPARATE final-answer path and owes the same section
+# ---------------------------------------------------------------------------
+
+def _synthesis_template(agent_cls, mode, monkeypatch):
+    """The synthesis user prompt as base_agent actually assembles it: the
+    format()-ed template plus the brace-heavy hint appended afterwards."""
+    agent = agent_cls.__new__(agent_cls)
+    monkeypatch.setattr(config, "get_synthesis_mode", lambda: mode)
+    return agent._get_synthesis_prompt_template() + agent._get_synthesis_sparql_hint()
+
+
+def _synthesis_system_prompt(agent_cls, mode, monkeypatch):
+    agent = agent_cls.__new__(agent_cls)
+    monkeypatch.setattr(config, "get_synthesis_mode", lambda: mode)
+    return agent._get_synthesis_system_prompt()
+
+
+def test_conversational_synthesis_template_states_the_section_contract(monkeypatch):
+    """Regression: the max-tool-call / max-iteration exits answer through
+    synthesis, not the agent loop, and used to drop the section entirely."""
+    for agent_cls in (KQAProAgent, SciQAAgent):
+        template = _synthesis_template(agent_cls, "conversational", monkeypatch)
+        assert SECTION_TITLE in template
+        assert "```sparql" in template
+        # No tools in this step, so the default marker is "(not executed)".
+        assert "(not executed)" in template
+        assert "NO tools in this step" in template
+        assert "no query could be formed" in template
+        # The placeholders the synthesis call formats must survive.
+        assert "{journal_summary}" in template
+        assert "{query}" in template
+
+
+def test_conversational_synthesis_template_carries_the_real_uri_scheme(monkeypatch):
+    kqapro = _synthesis_template(KQAProAgent, "conversational", monkeypatch)
+    assert "PREFIX ex:   <http://kqapro.org/entity/>" in kqapro
+    assert "FROM <http://kqapro.org/kb>" in kqapro
+
+    sciqa = _synthesis_template(SciQAAgent, "conversational", monkeypatch)
+    assert "PREFIX orkgr: <http://orkg.org/orkg/resource/>" in sciqa
+    assert "GRAPH <http://sciqa.org/kg>" in sciqa
+
+
+def test_conversational_synthesis_system_prompt_states_the_section_contract(monkeypatch):
+    """The system message covers the re-synthesis re-prompt too, which only
+    says "answer using the specific values found"."""
+    for agent_cls in (KQAProAgent, SciQAAgent):
+        prompt = _synthesis_system_prompt(agent_cls, "conversational", monkeypatch)
+        assert SECTION_TITLE in prompt
+        assert "```sparql" in prompt
+        assert "(not executed)" in prompt
+        assert "including any rewrite" in prompt
+
+
+def test_benchmark_synthesis_template_has_no_section_text(monkeypatch):
+    for agent_cls in (KQAProAgent, SciQAAgent):
+        template = _synthesis_template(agent_cls, "benchmark", monkeypatch)
+        assert SECTION_TITLE not in template
+        assert "sparql" not in template.lower()
+        assert "(not executed)" not in template
+
+
+def test_benchmark_synthesis_system_prompt_has_no_section_text(monkeypatch):
+    for agent_cls in (KQAProAgent, SciQAAgent):
+        prompt = _synthesis_system_prompt(agent_cls, "benchmark", monkeypatch)
+        assert SECTION_TITLE not in prompt
+        assert "sparql" not in prompt.lower()
+
+
+def test_synthesis_hint_tells_the_model_it_cannot_run_the_query():
+    """The loop variant asks for a verification run; the synthesis variant must
+    not, because that call is made without any tools."""
+    from ama_kbqa.agents.kqapro_agent.prompts import (
+        SPARQL_REPRODUCTION_HINT as KQAPRO_LOOP,
+        SPARQL_REPRODUCTION_HINT_SYNTHESIS as KQAPRO_SYNTH,
+    )
+    from ama_kbqa.agents.sciqa_agent.prompts import (
+        SPARQL_REPRODUCTION_HINT as SCIQA_LOOP,
+        SPARQL_REPRODUCTION_HINT_SYNTHESIS as SCIQA_SYNTH,
+    )
+
+    assert "single verification run" in KQAPRO_LOOP
+    assert "single verification run" not in KQAPRO_SYNTH
+    assert "NO tools in this step" in KQAPRO_SYNTH
+
+    assert "single verification run" in SCIQA_LOOP
+    assert "single verification run" not in SCIQA_SYNTH
+    assert "NO tools in this step" in SCIQA_SYNTH
+
+    # Both variants still teach the same URI scheme.
+    for loop, synth in ((KQAPRO_LOOP, KQAPRO_SYNTH), (SCIQA_LOOP, SCIQA_SYNTH)):
+        assert "URI scheme:" in loop and "URI scheme:" in synth
+
+
+def test_synthesis_template_still_formats_with_its_two_fields(monkeypatch):
+    """Regression: the SPARQL hint is full of literal `{` / `}` from the query
+    examples. Appending it to the template BEFORE str.format made synthesis
+    raise KeyError: '\\n    GRAPH <http' and return no answer at all. The hint
+    must therefore never be part of the formatted string."""
+    for agent_cls in (KQAProAgent, SciQAAgent):
+        agent = agent_cls.__new__(agent_cls)
+        monkeypatch.setattr(config, "get_synthesis_mode", lambda: "conversational")
+
+        # The template alone formats cleanly...
+        formatted = agent._get_synthesis_prompt_template().format(
+            journal_summary="Discovered values: Q25191 / R187008",
+            query="Who directed Inception?",
+        )
+        assert "Who directed Inception?" in formatted
+        assert "R187008" in formatted
+
+        # ...and the hint, which cannot be formatted, is appended after.
+        hint = agent._get_synthesis_sparql_hint()
+        assert "{" in hint  # literal SPARQL braces, i.e. genuinely unformattable
+        with pytest.raises((KeyError, IndexError, ValueError)):
+            hint.format(journal_summary="x", query="y")
+
+        assert SECTION_TITLE in (formatted + hint) or "URI scheme:" in hint
+
+
+def test_benchmark_synthesis_hint_is_empty(monkeypatch):
+    for agent_cls in (KQAProAgent, SciQAAgent):
+        agent = agent_cls.__new__(agent_cls)
+        monkeypatch.setattr(config, "get_synthesis_mode", lambda: "benchmark")
+        assert agent._get_synthesis_sparql_hint() == ""

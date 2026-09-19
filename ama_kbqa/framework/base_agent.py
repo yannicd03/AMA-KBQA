@@ -401,6 +401,20 @@ Based on this information, answer: "{query}"
 
 YOUR FINAL ANSWER:"""
 
+    def _get_synthesis_sparql_hint(self) -> str:
+        """KG-specific URI scheme for the synthesis path's SPARQL block.
+
+        Synthesis is a distinct final-answer path — the max-iteration and
+        max-tool-call exits answer through it, never through the agent loop —
+        so it needs its own copy of the graph's URI scheme, in a no-tools
+        variant (this call is made without any tools).
+
+        Overrides must return "" outside conversational mode, exactly as
+        _get_synthesis_prompt_template does — benchmark synthesis prompts stay
+        byte-identical. The base returns "" for agents with no raw SPARQL tool.
+        """
+        return ""
+
     def _get_synthesis_system_prompt(self) -> str:
         """Return the system message used during the final synthesis call.
 
@@ -424,7 +438,17 @@ YOUR FINAL ANSWER:"""
                 "because the knowledge graph does not contain that information. After "
                 "the answer, add a short \"How I found this:\" section with 1-3 concise "
                 "bullets summarising the key steps taken to reach it, based only on the "
-                "journal data."
+                "journal data. Then ALWAYS end with a section titled \"Reproduce with "
+                "SPARQL:\" holding exactly one fenced ```sparql code block whose query "
+                "retrieves that answer from the knowledge graph, built only from the ids "
+                "and predicates present in the journal data — never invent an id. This "
+                "step has no tools, so put \"(not executed)\" on its own line under the "
+                "block, unless the journal shows that exact query was already run and "
+                "returned the answer, in which case write \"Verified against the "
+                "knowledge graph.\" instead. Never omit this section: with no answer, "
+                "show the query that was tried or write \"no query could be formed\". "
+                "This applies to every answer you write here, including any rewrite you "
+                "are asked for afterwards."
             )
         return (
             "You are a precise question-answering system. Answer based strictly "
@@ -2610,11 +2634,13 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         # Take a final structured snapshot for the graph view.
         await self._snapshot_journal(trigger="synthesis")
 
-        # Build synthesis prompt
+        # Build synthesis prompt. The KG-specific SPARQL hint is appended AFTER
+        # formatting on purpose: it is full of literal SPARQL braces, which
+        # str.format would read as replacement fields and reject.
         synthesis_prompt = self._get_synthesis_prompt_template().format(
             journal_summary=journal_summary,
             query=query
-        )
+        ) + self._get_synthesis_sparql_hint()
 
         # Use MINIMAL messages for synthesis instead of full history
         # This is the single biggest token saving in the pipeline

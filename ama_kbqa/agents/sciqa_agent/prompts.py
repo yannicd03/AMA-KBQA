@@ -1273,6 +1273,13 @@ Guidelines:
   bullet points summarising the key steps that led to it — which resources/entities
   you looked up and which lookups/queries produced the answer — based only on the
   journal above. If you don't know the answer, briefly note what you searched for instead.
+- Finally add a section titled "Reproduce with SPARQL:" holding exactly one fenced
+  ```sparql code block with the query that retrieves this answer from the ORKG
+  graph, built ONLY from the resource ids and predicates in the journal above —
+  never invent an id. Include the PREFIX lines and the GRAPH
+  <http://sciqa.org/kg> wrapper so it runs as-is. Never omit this section: if you
+  don't know the answer, show the query you tried, or else write
+  "no query could be formed" in place of the block.
 
 YOUR FINAL ANSWER:"""
 
@@ -1379,6 +1386,14 @@ _SPARQL_VERIFICATION_UNAVAILABLE = """\
 - Raw SPARQL execution is disabled in this run, so you cannot verify the query.
   Still print it, and put "(not executed)" under the code block."""
 
+_SPARQL_VERIFICATION_SYNTHESIS = """\
+- You have NO tools in this step, so you cannot run the query. Under the code
+  block put this exact line:
+  (not executed)
+  The one exception: if the journal above shows that this exact query was already
+  executed and returned the answer, write this line instead:
+  Verified against the knowledge graph."""
+
 # str.replace, not str.format: the template body is full of literal SPARQL
 # braces that format() would try to interpret as fields.
 SPARQL_REPRODUCTION_HINT = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
@@ -1386,6 +1401,9 @@ SPARQL_REPRODUCTION_HINT = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
 )
 SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
     "{verification}", _SPARQL_VERIFICATION_UNAVAILABLE
+)
+SPARQL_REPRODUCTION_HINT_SYNTHESIS = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
+    "{verification}", _SPARQL_VERIFICATION_SYNTHESIS
 )
 
 # ==============================================================================

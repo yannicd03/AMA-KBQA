@@ -35,6 +35,7 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
     JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL,
     SPARQL_REPRODUCTION_HINT,
     SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL,
+    SPARQL_REPRODUCTION_HINT_SYNTHESIS,
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
@@ -171,6 +172,18 @@ class SciQAAgent(BaseKBQAAgent):
         if get_synthesis_mode() == "conversational":
             return SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL
         return SYNTHESIS_PROMPT_TEMPLATE
+
+    def _get_synthesis_sparql_hint(self) -> str:
+        """ORKG URI scheme for the synthesis path's SPARQL block.
+
+        Kept out of _get_synthesis_prompt_template because that string goes
+        through str.format(journal_summary=..., query=...) and this hint is
+        full of literal SPARQL braces; base_agent appends it after formatting.
+        """
+        from ama_kbqa.config import get_synthesis_mode
+        if get_synthesis_mode() == "conversational":
+            return SPARQL_REPRODUCTION_HINT_SYNTHESIS
+        return ""
 
     def _get_journal_refresh_template(self) -> str:
         """Get the journal refresh template."""

@@ -393,7 +393,13 @@ Guidelines:
 - After the answer, add a short section titled "How I found this:" with 1–3 concise
   bullet points summarising the key steps that led to it — which entities you looked
   up and which lookups/queries produced the answer — based only on the discovered
-  data above. If you don't know the answer, briefly note what you searched for instead."""
+  data above. If you don't know the answer, briefly note what you searched for instead.
+- Finally add a section titled "Reproduce with SPARQL:" holding exactly one fenced
+  ```sparql code block with the query that retrieves this answer from the KQAPro
+  graph, built ONLY from the entity ids and predicate names in the discovered data
+  above — never invent an id. Include the PREFIX lines and FROM
+  <http://kqapro.org/kb> so it runs as-is. Never omit this section: if you don't
+  know the answer, show the query you tried or write "no query could be formed"."""
 
 # GetJournalSummary follow-up prompt (benchmark: terse, answer only)
 JOURNAL_SUMMARY_ANSWER_PROMPT = "You have reviewed everything you discovered in your journal. Now you MUST provide your final answer to the original question as clear, direct text. Do NOT call any more tools."
@@ -418,16 +424,17 @@ JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
     "have no answer, show the query you tried or write \"no query could be formed\"."
 )
 
-# KG-specific detail for the conversational "Reproduce with SPARQL" block,
-# appended to the system prompt by KQAProAgent._get_sparql_reproduction_hint.
+# KG-specific detail for the conversational "Reproduce with SPARQL" block.
 # The URI scheme mirrors RunSPARQL's docstring (the single source of truth for
 # how KQAPro ids map to URIs); FROM names the graph the demo's Virtuoso serves,
 # so a booth visitor can paste the block into the raw endpoint unchanged.
-SPARQL_REPRODUCTION_HINT = """
+#
+# The {verification} slot differs per final-answer path: the agent loop can run
+# the query once, the synthesis call cannot (it has no tools at all).
+SPARQL_REPRODUCTION_HINT_TEMPLATE = """
 
 REPRODUCE-WITH-SPARQL DETAILS (KQAPro, a Wikidata subset):
-- Raw SPARQL tool for the single verification run: RunSPARQL. Pass the query
-  exactly as it appears in your code block.
+{verification}
 - The code block must carry these PREFIX lines and name the graph with FROM:
 
   PREFIX ex:   <http://kqapro.org/entity/>
@@ -452,6 +459,27 @@ REPRODUCE-WITH-SPARQL DETAILS (KQAPro, a Wikidata subset):
 - RunSPARQL cannot execute ASK queries. If your answer is yes/no, still print the
   ASK query in the block, but verify it by running the same graph pattern once as
   SELECT ?x WHERE { ... } LIMIT 1 and checking the expected row comes back."""
+
+_SPARQL_VERIFICATION_TOOL_LOOP = """\
+- Raw SPARQL tool for the single verification run: RunSPARQL. Pass the query
+  exactly as it appears in your code block."""
+
+_SPARQL_VERIFICATION_SYNTHESIS = """\
+- You have NO tools in this step, so you cannot run the query. Under the code
+  block put this exact line:
+  (not executed)
+  The one exception: if the discovered data above shows that this exact query was
+  already executed and returned the answer, write this line instead:
+  Verified against the knowledge graph."""
+
+# str.replace, not str.format: the template body is full of literal SPARQL
+# braces that format() would try to interpret as fields.
+SPARQL_REPRODUCTION_HINT = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
+    "{verification}", _SPARQL_VERIFICATION_TOOL_LOOP
+)
+SPARQL_REPRODUCTION_HINT_SYNTHESIS = SPARQL_REPRODUCTION_HINT_TEMPLATE.replace(
+    "{verification}", _SPARQL_VERIFICATION_SYNTHESIS
+)
 
 # Tool-specific loop recovery guidance - COMPACT
 TOOL_LOOP_GUIDANCE = {
