@@ -152,7 +152,13 @@ class TestCreateAgent:
         assert isinstance(agent, _FakeOrchestrator)
         assert agent.kwargs == {"federation": expected_federation}
 
-    def test_kqapro_and_sciqa_construction_unchanged(self):
+    def test_kqapro_and_sciqa_construction_unchanged(self, monkeypatch):
+        # Real agents build their LLM client in __init__, which needs the
+        # configured provider's key to exist. Fake ones keep this test
+        # independent of a local .env (CI has none).
+        for var in ("KIT_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY"):
+            monkeypatch.setenv(var, "test-key")
+
         from ama_kbqa.agents.kqapro_agent.agent import KQAProAgent
         from ama_kbqa.agents.sciqa_agent.agent import SciQAAgent
 
