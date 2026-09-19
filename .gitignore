@@ -235,3 +235,11 @@ claude.md
 
 # Playwright MCP screenshot artefacts
 .playwright-mcp/
+
+# Deployment config rendered from deploy/hetzner/*.template by
+# deploy/hetzner/render-deploy-config.sh. These hold the origin host, the
+# Cloudflare tunnel id and the deploy user, so they stay out of the public
+# repository. Commit the .template and .example files instead.
+deploy/hetzner/deploy.env
+deploy/hetzner/cloudflared-amakbqa.yml
+deploy/hetzner/cloudflared-amakbqa.service

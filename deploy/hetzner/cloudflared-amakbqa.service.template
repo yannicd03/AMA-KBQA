@@ -1,0 +1,16 @@
+[Unit]
+# Generated from this template by deploy/hetzner/render-deploy-config.sh.
+# Do not edit the rendered file: edit this template or deploy.env instead.
+Description=cloudflared tunnel for the AMA-KBQA demo (${DEMO_HOSTNAME})
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${DEPLOY_USER}
+ExecStart=/usr/local/bin/cloudflared --no-autoupdate --config ${CLOUDFLARE_CREDENTIALS_DIR}/amakbqa.yml tunnel run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,14 @@ summary: Public demo deployment runbook for the shared Hetzner box (compose proj
 
 ## What happened and why
 
-bwcloud (host `seminar`, `203.0.113.20`) reaches end of life on **2026-09-15**. On **2026-09-14** the public demo at **https://amakbqa.yanlab.de** moved off bwcloud onto the **shared Hetzner box** (ssh alias `hetzner`, `203.0.113.10`, user `yannic`, 4 vCPU / 7.6 GiB RAM + 4 GiB swap, **no buildx**).
+bwcloud (host `seminar`) reaches end of life on **2026-09-15**. On **2026-09-14** the public demo at **https://amakbqa.yanlab.de** moved off bwcloud onto the **shared Hetzner box** (4 vCPU / 7.6 GiB RAM + 4 GiB swap, **no buildx**).
+
+> **Host details are not in this repository.** The origin address, ssh alias
+> and deploy user live in `deploy/hetzner/deploy.env`, which is gitignored.
+> Copy `deploy/hetzner/deploy.env.example` and fill it in. Throughout this SOP,
+> `$DEPLOY_SSH_ALIAS`, `$DEPLOY_USER` and `$DEPLOY_HOST` refer to those values.
+> Publishing the origin address would let traffic bypass the Cloudflare proxy
+> and reach the box directly.
 
 That box already runs other services, none of which this migration touched:
 - **ORCA** — MAS production stack, compose project `mas-in-production` at `/srv/orca`, ports 8001, 2025–2030, 6333/6334, 27017; root `cloudflared.service` tunnel `orca`.
@@ -66,7 +73,8 @@ Cherry-picked from branch `demo-kit-models` onto `demo-hetzner` alongside the ho
 
 ## 5. Tunnel
 
-- Cloudflare tunnel `amakbqa-hetzner` (id `00000000-0000-0000-0000-000000000000`).
+- Cloudflare tunnel `amakbqa-hetzner` (id in `deploy/hetzner/deploy.env` as
+  `CLOUDFLARE_TUNNEL_ID`; `cloudflared tunnel list` also prints it).
 - Config committed at `deploy/hetzner/cloudflared-amakbqa.yml`, installed to `~/.cloudflared/amakbqa.yml` on the server.
 - Unit `deploy/hetzner/cloudflared-amakbqa.service` installed to `/etc/systemd/system` with `User=yannic` (not root — distinguishes it from ORCA's root-owned `cloudflared.service`).
 - Ingress: `amakbqa.yanlab.de` and staging `amakbqa-next.yanlab.de` → `localhost:8503`. (§9: as of 2026-09-14, staging now points at `localhost:8504` instead — see below.)
@@ -200,7 +208,8 @@ v1's already-seeded, already-running data services read-only.
   resolves v1's `qdrant`/`virtuoso` containers by v1's own service names — v2
   has no data containers of its own.
 - Datasets and questionnaire JSONs are **bind-mounted read-only** straight from
-  the v1 checkout on the host (`/home/yannic/amakbqa-demo/db/...:...:ro`) —
+  the v1 checkout on the host (`${DEMO_V1_DATA_ROOT}/db/...:...:ro`, set in
+  `.env`) —
   v2 never needs its own copy.
 
 **Setup, from a fresh checkout on the Hetzner box:**

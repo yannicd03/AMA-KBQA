@@ -54,9 +54,10 @@ services:
       - ./config.docker.toml:/app/config.toml:ro
       - ./.streamlit_cache:/app/.streamlit
       # Read-only: reuse v1's already-seeded runtime data, never our own copy.
-      - /home/yannic/amakbqa-demo/db/datasets:/app/db/datasets:ro
-      - /home/yannic/amakbqa-demo/db/kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
-      - /home/yannic/amakbqa-demo/db/sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro
+      # DEMO_V1_DATA_ROOT is the v1 checkout on the host; set it in .env.
+      - ${DEMO_V1_DATA_ROOT:?set DEMO_V1_DATA_ROOT in .env (see .env_example)}/db/datasets:/app/db/datasets:ro
+      - ${DEMO_V1_DATA_ROOT:?set DEMO_V1_DATA_ROOT in .env (see .env_example)}/db/kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
+      - ${DEMO_V1_DATA_ROOT:?set DEMO_V1_DATA_ROOT in .env (see .env_example)}/db/sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro
       - ./benchmark_results:/app/benchmark_results
       - ./batch_results:/app/batch_results
     healthcheck:

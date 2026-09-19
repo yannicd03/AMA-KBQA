@@ -22,7 +22,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 
-sys.path.insert(0, "/home/yannic/code/AMAKBQA")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from qdrant_client import QdrantClient, models
 from ama_kbqa.retrieval.search import BM25_MODEL, BM25_SPARSE_VECTOR_NAME
 from ama_kbqa.agents.kqapro_agent.prompts import CLASSIFICATION_AND_EXTRACTION_PROMPT
