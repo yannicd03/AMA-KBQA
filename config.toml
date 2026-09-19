@@ -23,6 +23,8 @@ checkpointer = "none"
 # Sqlite file for checkpointer = "sqlite" (relative to repo root unless
 # absolute). Env override: AMA_AGENT_CHECKPOINTER_PATH.
 checkpointer_path = "benchmark_results/checkpoints.sqlite"
+# Per-call timeout for MCP tool servers, read by framework/mcp_client.py.
+mcp_tool_timeout_seconds = 180
 
 [benchmark]
 # Number of questions processed concurrently by the benchmark runner.
@@ -51,6 +53,19 @@ chat_model_provider = ""
 base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
 chat_model = "kit.gemma4-31b-it"
 embedding_model = "kit.qwen3-embedding-8b"
+
+[deepseek]
+# Direct DeepSeek endpoint (OpenAI-compatible). Key: DEEPSEEK_API_KEY.
+# Chat only; embeddings stay on KIT.
+base_url = "https://api.deepseek.com"
+chat_model = "deepseek-flash"
+# DeepSeek runs every model in thinking mode by default, and a request that
+# carries `tools` then requires each assistant message to be passed back with
+# its `reasoning_content`. Our tool loop synthesises assistant tool_calls
+# messages that have no reasoning to return, so the second turn of a question
+# fails with a 400. false = send thinking.type = "disabled" on chat calls.
+# Only set this to true for single-turn experiments.
+thinking_enabled = false
 
 [llamacpp]
 base_url = "http://localhost:8080/v1"
@@ -111,6 +126,89 @@ reranker_enabled = true       # independent of hybrid; also reranks dense-only r
 reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
 rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # rerank_threshold = 0.0      # optional gate on cross-encoder scores; unset = no gate
+
+[frontend]
+# Live "explored subgraph" side panel in the demo chat page. Frontend-only:
+# reads journal snapshots and tool results the agent already produces, so it
+# costs no extra tool calls or tokens. Rendering is client-side (vis-network
+# from CDN). Off = the page is exactly the pre-feature single-column layout.
+# Override per deployment with AMA_FRONTEND_LIVE_GRAPH=0/1.
+live_graph = true
+
+# How much of the React demo's settings panel this build offers.
+#   "minimal" — model, temperature and the view toggles only (public demo).
+#   "full"    — additionally the Endpoints list (which chat/embedding endpoint
+#               the build talks to, and whether its key is configured) and the
+#               read-only build facts. Never the key itself.
+# Default when the key is absent is "minimal", so an old config or a
+# non-demo deployment never exposes endpoint detail by accident.
+# Override per deployment with AMA_FRONTEND_SETTINGS_LEVEL=minimal|full.
+settings_level = "full"
+
+# Booth build: chat endpoints offered next to the auto-discovered KIT models.
+# An entry is shown only when its provider's API key env var is set, and (for
+# OpenRouter) only when the live catalog still knows the id and it can call
+# tools. Prices are USD per 1M tokens and are what the booth account is
+# actually billed; OpenRouter entries omit them on purpose so the picker shows
+# the live catalog price rather than a number that silently goes stale here.
+# `default = true` on one entry pre-selects it; otherwise the KIT default
+# preference applies.
+#
+# ORDERING HAZARD: these are TOML *array tables*. Every plain [frontend] key
+# above (live_graph, settings_level) must stay above them: a plain key written
+# after the first [[frontend.chat_models]] header silently becomes a key of
+# that array entry instead of a [frontend] key.
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-flash"
+name = "DeepSeek V4 Flash"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4.1-flash"
+name = "DeepSeek V4.1 Flash"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "anthropic/claude-sonnet-4.5"
+name = "Claude Sonnet 4.5"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "openai/gpt-5"
+name = "GPT-5"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "google/gemini-2.5-pro"
+name = "Gemini 2.5 Pro"
+
+[[frontend.chat_models]]
+provider = "deepseek"
+id = "deepseek-flash"
+name = "DeepSeek Flash (direct)"
+prompt_usd_per_m = 0.30
+completion_usd_per_m = 1.20
+
+[[frontend.chat_models]]
+provider = "deepseek"
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro (direct)"
+prompt_usd_per_m = 1.32
+completion_usd_per_m = 3.96
+
+[federation]
+# Allow the orchestrator to dispatch a question to multiple specialists
+# concurrently and fuse their answers. Off by default: federation doubles
+# token spend where it triggers, and the benchmark numbers were measured
+# with single dispatch.
+enabled = false
+max_specialists = 2
 
 [sciqa]
 entity_threshold = 0.7

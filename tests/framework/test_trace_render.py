@@ -145,6 +145,10 @@ class TestJournalToGraph:
         assert edges[0]["label"] == "country"
 
     def test_unvisited_endpoint_creates_pseudo_node(self):
+        # Literal objects get a synthetic `lit:<subject>:<attr>:<n>` id rather
+        # than being keyed by the value itself, so two entities that share a
+        # value (two cities with the same population) stay separate leaves
+        # instead of collapsing into one spurious hub node.
         state = {
             "visited_nodes": {"Q1": "Berlin"},
             "verified_facts": [
@@ -153,19 +157,23 @@ class TestJournalToGraph:
         }
         nodes, edges = journal_to_graph(state)
         ids = {n["id"]: n for n in nodes}
-        assert "3700000" in ids
-        # Literal value should be classified as 'literal'.
-        assert ids["3700000"]["group"] == "literal"
+        assert ids["lit:Q1:population:0"]["group"] == "literal"
+        assert ids["lit:Q1:population:0"]["label"] == "3700000"
+        assert edges[0]["from"] == "Q1" and edges[0]["to"] == "lit:Q1:population:0"
 
-    def test_found_values_appear_in_node_tooltip(self):
+    def test_found_values_become_literal_leaves(self):
+        # found_values used to be squeezed into the subject's tooltip; they
+        # are now first-class leaf nodes, which is what makes the live panel
+        # show the values an agent retrieved rather than just the entities.
         state = {
             "visited_nodes": {"Q1": "Berlin"},
             "found_values": {"Q1": {"population": 3700000}},
             "verified_facts": [],
         }
-        nodes, _ = journal_to_graph(state)
-        node = next(n for n in nodes if n["id"] == "Q1")
-        assert "population" in node["title"]
+        nodes, edges = journal_to_graph(state)
+        leaf = next(n for n in nodes if n["group"] == "literal")
+        assert leaf["label"] == "3700000"
+        assert edges[0]["label"] == "population"
 
     def test_empty_state_yields_empty_lists(self):
         nodes, edges = journal_to_graph({})

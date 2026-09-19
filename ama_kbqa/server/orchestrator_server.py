@@ -10,9 +10,11 @@ from pydantic import BaseModel, ConfigDict
 from fastmcp import FastMCP, Context
 from loguru import logger
 from ama_kbqa.config import (
+    assert_provider_api_key_present,
     get_chat_client,
     get_chat_model_name,
     get_chat_seed,
+    get_chat_extra_body,
     get_provider_preferences,
     get_qdrant_host,
     get_qdrant_port,
@@ -76,6 +78,11 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     Code after 'yield' runs on shutdown.
     """
     logger.info("Starting up: Connecting to Qdrant & OpenAI...")
+
+    # Fail fast (and visibly in this subprocess's logs) if no provider key is
+    # set, instead of dying later in get_chat_client() with the parent only
+    # seeing an opaque "Connection closed".
+    assert_provider_api_key_present()
 
     qdrant: Optional[QdrantClient] = None
     try:
@@ -175,6 +182,11 @@ def extract_semantics(client: OpenAI, question: str) -> dict:
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
             logger.debug(f"Using provider preferences: {provider_prefs}")
+        # Merge, never clobber the "provider" key above. Both retries below
+        # reuse this same call_params, so one merge covers them.
+        chat_extra = get_chat_extra_body()
+        if chat_extra:
+            call_params.setdefault("extra_body", {}).update(chat_extra)
 
         completion = client.chat.completions.create(**call_params)
         content = completion.choices[0].message.content

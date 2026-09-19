@@ -8,7 +8,7 @@ Each scenario asserts (1) the routing decision matches what
 scripted inputs, and (2) the recorder's ``(kind, name)`` event/span sequence
 matches between the two engines for the routing portion (``agent_run`` +
 ``classify``) — delegate/fallback bodies are exercised through
-``Orchestrator._delegate``/``_fallback_kqapro``/``_fallback_llm`` UNCHANGED
+``Orchestrator._delegate``/``_fallback_kqapro`` UNCHANGED
 (see ``ama_kbqa.graph.orchestrator``'s module docstring), so this file
 focuses on proving the graph reaches the same node/branch legacy reaches, not
 on re-testing delegation itself (already covered by
@@ -166,7 +166,7 @@ def test_routes_to_sciqa_agent_matching_legacy_decision(monkeypatch):
 
     delegate_calls = []
 
-    async def _fake_delegate(agent_name, query):
+    async def _fake_delegate(agent_name, query, cancel_token=None):
         delegate_calls.append((agent_name, query))
         return f"DELEGATED:{agent_name}"
 
@@ -174,7 +174,7 @@ def test_routes_to_sciqa_agent_matching_legacy_decision(monkeypatch):
 
     answer = _run(run_orchestrator_graph(graph, QUERY))
 
-    assert legacy_selected == "sciqa_agent"
+    assert legacy_selected == ["sciqa_agent"]
     assert answer == "DELEGATED:sciqa_agent"
     assert delegate_calls == [("sciqa_agent", QUERY)]
     assert graph.last_routing_reason == "scholarly"
@@ -196,7 +196,7 @@ def test_routes_to_kqapro_agent(monkeypatch):
 
     delegate_calls = []
 
-    async def _fake_delegate(agent_name, query):
+    async def _fake_delegate(agent_name, query, cancel_token=None):
         delegate_calls.append((agent_name, query))
         return f"DELEGATED:{agent_name}"
 
@@ -254,7 +254,7 @@ def test_probe_failure_degrades_to_domain_only_decision_matching_legacy():
 
     delegate_calls = []
 
-    async def _fake_delegate(agent_name, query):
+    async def _fake_delegate(agent_name, query, cancel_token=None):
         delegate_calls.append(agent_name)
         return f"DELEGATED:{agent_name}"
 
@@ -262,7 +262,7 @@ def test_probe_failure_degrades_to_domain_only_decision_matching_legacy():
 
     answer = _run(run_orchestrator_graph(graph, QUERY))
 
-    assert legacy_selected == "sciqa_agent"
+    assert legacy_selected == ["sciqa_agent"]
     assert answer == "DELEGATED:sciqa_agent"
     user_content = captured[0]["messages"][1]["content"]
     evidence = json.loads(user_content.split("knowledge graphs:\n", 1)[1])
@@ -351,7 +351,7 @@ def test_recorder_event_kinds_match_legacy_ask_for_same_script():
     decision_tc = [_make_tool_call(arguments='{"agent": "sciqa_agent", "reason": "scholarly"}')]
 
     async def _fake_delegate_factory(calls):
-        async def _fake_delegate(agent_name, query):
+        async def _fake_delegate(agent_name, query, cancel_token=None):
             calls.append(agent_name)
             return f"DELEGATED:{agent_name}"
 
@@ -389,3 +389,48 @@ def test_recorder_event_kinds_match_legacy_ask_for_same_script():
     legacy_kinds = [k for k, _ in _event_seq(legacy)]
     graph_kinds = [k for k, _ in _event_seq(graph)]
     assert legacy_kinds == graph_kinds == ["classify", "agent_run"]
+
+
+# ---------------------------------------------------------------------------
+# Engine switch guards: what the graph engine deliberately does not cover yet
+# ---------------------------------------------------------------------------
+
+def _forbid_graph(monkeypatch):
+    async def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("run_orchestrator_graph must not be reached")
+
+    monkeypatch.setattr("ama_kbqa.graph.orchestrator.run_orchestrator_graph", _must_not_run)
+
+
+def test_federated_instance_takes_legacy_body_even_with_graph_engine(monkeypatch):
+    """The graph topology only models one specialist per question, so a
+    Federated orchestrator must stay on the legacy body."""
+    monkeypatch.setenv("AMA_AGENT_ENGINE", "graph")
+    _forbid_graph(monkeypatch)
+
+    o = _make_orchestrator(_FakeMcp(_EVIDENCE_JSON), MagicMock())
+    o._federation_enabled = True
+
+    async def _route(_query):
+        return ["kqapro_agent", "sciqa_agent"]
+
+    async def _federate(names, query, cancel_token=None):
+        return "FUSED:" + "+".join(names)
+
+    o._route_autonomously = _route
+    o._federate = _federate
+
+    assert _run(o.ask(QUERY)) == "FUSED:kqapro_agent+sciqa_agent"
+
+
+def test_cancelled_token_is_honoured_before_graph_dispatch(monkeypatch):
+    from ama_kbqa.framework.cancellation import CancellationToken, cancelled_answer
+
+    monkeypatch.setenv("AMA_AGENT_ENGINE", "graph")
+    _forbid_graph(monkeypatch)
+
+    token = CancellationToken()
+    token.cancel("user pressed stop")
+    o = _make_orchestrator(_FakeMcp(_EVIDENCE_JSON), MagicMock())
+
+    assert _run(o.ask(QUERY, cancel_token=token)) == cancelled_answer(token)

@@ -24,6 +24,61 @@ CONFIG_PATH = REPO_ROOT / "config.toml"
 # Global config cache
 _config_cache: Optional[dict] = None
 
+# When set, these override the chat model / temperature that would otherwise
+# come from config.toml. Used by the demo's model picker
+# (frontend.utils.chat_controls.apply_chat_settings) to steer MCP tool-server
+# subprocesses: those are spawned with env=os.environ.copy() (see
+# orchestrator_agent/agent.py, framework/mcp_client.py) and load their own
+# config.toml independently, so mutating this process's in-memory
+# _config_cache alone never reaches them. Like _config_cache, these are
+# process-global (same cross-session caveat: in a server process handling
+# multiple demo sessions at once, the override applies to all of them, not
+# just the session that set it).
+CHAT_MODEL_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_MODEL"
+CHAT_TEMPERATURE_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_TEMPERATURE"
+
+# Same mechanism, one level up: which *endpoint* the chat model lives on. The
+# booth build lets the presenter switch between KIT, OpenRouter and DeepSeek,
+# and the model id alone does not say which. Without this env channel the MCP
+# tool-server subprocesses would keep building a KIT client from their own
+# config.toml and post a foreign model id to it ("Model not found"), which is
+# exactly the failure CHAT_MODEL_OVERRIDE_ENV_VAR was added to fix, only worse:
+# the parent process would answer while every specialist silently stayed on
+# KIT, so the question still answers and the fault is invisible. Embeddings,
+# reranking and synthesis are untouched by this override.
+CHAT_PROVIDER_OVERRIDE_ENV_VAR = "AMA_KBQA_CHAT_PROVIDER"
+
+# Provider API keys the system can authenticate with. No single one is
+# mandatory (a deployment may run exclusively against KIT, or exclusively
+# against OpenRouter); we only require that *at least one* is present so the
+# system can talk to some LLM provider. The per-provider check in
+# _get_api_key() still enforces that the specific configured provider's key
+# exists when a client is built.
+_PROVIDER_API_KEY_ENV_VARS = ("KIT_API_KEY", "OPENROUTER_API_KEY", "DEEPSEEK_API_KEY")
+
+# Chat providers the demo model picker may offer. Kept next to the key map so
+# a new endpoint is added in one place; used to validate [frontend].chat_models.
+_FRONTEND_CHAT_PROVIDERS = ("kit", "openrouter", "deepseek")
+
+
+def assert_provider_api_key_present() -> None:
+    """Fail fast if no LLM provider API key is configured.
+
+    Call this at application startup. We deliberately do not require any one
+    key (notably not OPENROUTER_API_KEY): asserting that at least one of the
+    supported keys is set is enough to guarantee the system can authenticate
+    with a provider, while leaving the choice of provider to config.toml.
+
+    Raises:
+        RuntimeError: If none of the supported provider API keys are set.
+    """
+    if not any(os.getenv(var) for var in _PROVIDER_API_KEY_ENV_VARS):
+        raise RuntimeError(
+            "No LLM provider API key found. Set at least one of "
+            f"{', '.join(_PROVIDER_API_KEY_ENV_VARS)} in your environment "
+            "or .env file."
+        )
+
 
 def load_config() -> dict:
     """Load configuration from config.toml file.
@@ -56,6 +111,30 @@ def load_config() -> dict:
         raise ValueError(f"Failed to parse config.toml: {e}")
 
 
+def get_chat_provider() -> str:
+    """Get the chat provider ("kit", "openrouter", "deepseek", ...).
+
+    Honors ``AMA_KBQA_CHAT_PROVIDER`` (``CHAT_PROVIDER_OVERRIDE_ENV_VAR``) when
+    set, taking precedence over config.toml. Every reader of
+    ``[llm].chat_provider`` goes through here, so a provider switch made in the
+    frontend reaches the MCP tool-server subprocesses too: they inherit the
+    environment but load their own config.toml, and would otherwise keep
+    building a KIT client for an OpenRouter or DeepSeek model id.
+
+    ``[llm].embedding_provider`` is deliberately *not* routed through here.
+    Embeddings, reranking and synthesis stay where config.toml puts them no
+    matter which chat model the visitor picks.
+
+    Returns:
+        str: The chat provider name
+    """
+    override = os.getenv(CHAT_PROVIDER_OVERRIDE_ENV_VAR)
+    if override:
+        return override
+    config = load_config()
+    return config["llm"]["chat_provider"]
+
+
 def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
     """Get an OpenAI client configured for chat/reasoning tasks.
 
@@ -75,8 +154,7 @@ def get_chat_client(max_retries: Optional[int] = None) -> OpenAI:
         ValueError: If the configured provider is not supported
         KeyError: If required environment variables are missing
     """
-    config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     return _create_client(provider, model_type="chat", max_retries=max_retries)
 
@@ -100,11 +178,17 @@ def get_embedding_client() -> OpenAI:
 def get_chat_model_name() -> str:
     """Get the configured chat model name.
 
+    Honors ``AMA_KBQA_CHAT_MODEL`` (``CHAT_MODEL_OVERRIDE_ENV_VAR``) when set,
+    taking precedence over config.toml — see that constant's docstring for why.
+
     Returns:
         str: The chat model name
     """
+    override = os.getenv(CHAT_MODEL_OVERRIDE_ENV_VAR)
+    if override:
+        return override
     config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
     return config[provider]["chat_model"]
 
 
@@ -133,9 +217,22 @@ def get_embedding_model_name() -> str:
 def get_chat_temperature() -> float:
     """Get the configured chat temperature.
 
+    Honors ``AMA_KBQA_CHAT_TEMPERATURE`` (``CHAT_TEMPERATURE_OVERRIDE_ENV_VAR``)
+    when set to a valid float, taking precedence over config.toml — same
+    override mechanism as ``get_chat_model_name``.
+
     Returns:
         float: The chat temperature value
     """
+    override = os.getenv(CHAT_TEMPERATURE_OVERRIDE_ENV_VAR)
+    if override:
+        try:
+            return float(override)
+        except ValueError:
+            logger.warning(
+                f"Ignoring invalid {CHAT_TEMPERATURE_OVERRIDE_ENV_VAR}="
+                f"{override!r} (not a float); falling back to config.toml"
+            )
     config = load_config()
     return config["llm"].get("chat_temperature", 1.0)
 
@@ -187,7 +284,7 @@ def get_chat_model_provider() -> Optional[str]:
         Optional[str]: The provider preference string, or None if not configured
     """
     config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -211,8 +308,7 @@ def get_provider_preferences() -> Optional[dict]:
             "allow_fallbacks": False
         }
     """
-    config = load_config()
-    provider = config["llm"]["chat_provider"]
+    provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -230,6 +326,39 @@ def get_provider_preferences() -> Optional[dict]:
         "order": [provider_pref],
         "allow_fallbacks": False
     }
+
+
+def get_chat_extra_body() -> dict:
+    """Provider-specific ``extra_body`` fields for a chat-provider request.
+
+    Returns an empty dict for every provider that needs nothing, so a call site
+    can merge unconditionally and OpenRouter/KIT requests stay byte-identical
+    to what they were before this helper existed. OpenRouter routing
+    preferences are NOT included here: they stay in
+    ``get_provider_preferences()`` under the separate ``provider`` key.
+
+    DeepSeek's direct API runs every model in thinking mode by default, and
+    once a request carries ``tools`` it requires the ``reasoning_content`` of
+    each assistant message to be passed back. Our tool loop cannot do that: the
+    fast path synthesises assistant ``tool_calls`` messages itself
+    (``base_agent._append_fast_path_tool_messages``), which have no reasoning to
+    return, so the second turn of any question fails with "The
+    `reasoning_content` in the thinking mode must be passed back to the API".
+    Disabling thinking is the booth-safe trade: reliability over a reasoning
+    trace nobody shows on stage. Set ``[deepseek] thinking_enabled = true`` to
+    opt back in for single-turn experiments. OpenRouter is unaffected because
+    it reconciles this itself.
+
+    Returns:
+        dict: Extra request-body fields, empty when the provider needs none.
+    """
+    provider = get_chat_provider()
+    if provider != "deepseek":
+        return {}
+    config = load_config()
+    if bool(config.get("deepseek", {}).get("thinking_enabled", False)):
+        return {}
+    return {"thinking": {"type": "disabled"}}
 
 
 def _create_client(
@@ -324,6 +453,7 @@ def _get_api_key(provider: str, provider_config: dict) -> str:
     env_var_map = {
         "openrouter": "OPENROUTER_API_KEY",
         "kit": "KIT_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
     }
 
     env_var = env_var_map.get(provider)
@@ -466,7 +596,7 @@ def get_synthesis_client(max_retries: Optional[int] = None) -> OpenAI:
         logger.warning(
             "Synthesis provider not configured, falling back to chat provider"
         )
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
 
     return _create_client(provider, model_type="chat", max_retries=max_retries)
 
@@ -487,7 +617,7 @@ def get_synthesis_model_name() -> str:
         logger.warning(
             "Synthesis model not configured, falling back to chat model"
         )
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
         return config[provider]["chat_model"]
 
 
@@ -683,7 +813,7 @@ def get_synthesis_provider_preferences() -> Optional[dict]:
     if "synthesis" in config and "synthesis_provider" in config["synthesis"]:
         provider = config["synthesis"]["synthesis_provider"]
     else:
-        provider = config["llm"]["chat_provider"]
+        provider = get_chat_provider()
 
     # Only relevant for OpenRouter
     if provider != "openrouter":
@@ -836,6 +966,39 @@ def get_rerank_threshold() -> Optional[float]:
 
 
 # ==============================================================================
+# Federation Configuration Functions
+# ==============================================================================
+
+def get_federation_enabled() -> bool:
+    """Whether the orchestrator may dispatch a question to MULTIPLE
+    specialist agents concurrently and fuse their answers.
+
+    When False (default), the router commits to exactly one specialist per
+    question, preserving the single-dispatch behaviour the benchmark numbers
+    were measured with. Federation doubles token spend on questions where it
+    triggers, so it is opt-in per deployment.
+
+    Returns:
+        bool: True to allow federated multi-agent dispatch (default: False).
+    """
+    config = load_config()
+    return bool(config.get("federation", {}).get("enabled", False))
+
+
+def get_federation_max_specialists() -> int:
+    """Maximum number of specialists the router may select for one question.
+
+    Caps the fan-out (and therefore the token cost) of a federated dispatch.
+    Selections beyond the cap are truncated in router order.
+
+    Returns:
+        int: max concurrent specialists (default: 2).
+    """
+    config = load_config()
+    return int(config.get("federation", {}).get("max_specialists", 2))
+
+
+# ==============================================================================
 # SciQA / ORKG Configuration Functions
 # ==============================================================================
 
@@ -943,3 +1106,157 @@ def get_sciqa_relation_threshold() -> float:
     """
     config = load_config()
     return config.get("sciqa", {}).get("relation_threshold", 0.65)
+
+
+# ==============================================================================
+# Frontend (demo UI) Configuration Functions
+# ==============================================================================
+
+# Environment override for the [frontend] live-graph flag. Parsed with the
+# same truthiness rules as the AMA_RETRIEVAL_* overrides, and honoured by the
+# Streamlit entrypoint as well as the page body, so a deployment can turn the
+# panel off without editing the mounted config.toml.
+FRONTEND_LIVE_GRAPH_ENV = "AMA_FRONTEND_LIVE_GRAPH"
+
+# How much of the settings panel the React demo (ama_kbqa/api/meta.py) offers.
+# "minimal" = model, temperature and the view toggles only (public demo);
+# "full" = additionally the endpoint list and the read-only build facts
+# (booth / local demos). Overridable per deployment with
+# AMA_FRONTEND_SETTINGS_LEVEL, like the live-graph flag above.
+FRONTEND_SETTINGS_LEVEL_ENV = "AMA_FRONTEND_SETTINGS_LEVEL"
+FRONTEND_SETTINGS_LEVELS = ("minimal", "full")
+FRONTEND_SETTINGS_LEVEL_DEFAULT = "minimal"
+
+
+def get_frontend_config() -> dict:
+    """Get the [frontend] configuration section.
+
+    Returns:
+        dict: Demo-frontend settings (empty dict when the section is absent,
+        which is the case for every config written before the live graph).
+    """
+    config = load_config()
+    return dict(config.get("frontend", {}))
+
+
+def get_frontend_chat_models() -> list[dict]:
+    """Extra chat endpoints the demo model picker offers next to the KIT models.
+
+    Reads the ``[[frontend.chat_models]]`` array of tables. Each entry names a
+    provider, a provider-specific model id, an optional display name, optional
+    prices in USD per 1M tokens, and an optional ``default`` flag.
+
+    Never raises: a malformed or partially hand-edited config must degrade the
+    booth picker to "KIT only" rather than take the whole page down mid-demo,
+    so invalid entries are dropped with a warning and a missing/odd section
+    yields an empty list.
+
+    Note the TOML shape. ``[[frontend.chat_models]]`` are *array tables*, so
+    every plain ``[frontend]`` key (``live_graph``, ``settings_level``) must be
+    written above them: a key placed after the first ``[[...]]`` header
+    silently becomes a key of that array entry instead.
+
+    Returns:
+        list[dict]: Normalized entries with keys ``provider``, ``id``, ``name``
+        (may be ""), ``prompt_usd_per_m`` / ``completion_usd_per_m`` (float or
+        None) and ``default`` (bool), in config order.
+    """
+    raw = get_frontend_config().get("chat_models")
+    if not isinstance(raw, list):
+        if raw is not None:
+            logger.warning(
+                "[frontend].chat_models is not a list of tables; ignoring it"
+            )
+        return []
+
+    def _price(entry: dict, key: str) -> Optional[float]:
+        value = entry.get(key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"Ignoring non-numeric {key}={value!r} in [frontend].chat_models"
+            )
+            return None
+
+    models: list[dict] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            logger.warning(f"Dropping non-table [frontend].chat_models entry: {entry!r}")
+            continue
+        provider = str(entry.get("provider") or "").strip()
+        model_id = str(entry.get("id") or "").strip()
+        if provider not in _FRONTEND_CHAT_PROVIDERS:
+            logger.warning(
+                f"Dropping [frontend].chat_models entry with unsupported provider "
+                f"{provider!r} (expected one of {list(_FRONTEND_CHAT_PROVIDERS)})"
+            )
+            continue
+        if not model_id:
+            logger.warning(
+                f"Dropping [frontend].chat_models entry for provider {provider!r} "
+                "with an empty id"
+            )
+            continue
+        models.append({
+            "provider": provider,
+            "id": model_id,
+            "name": str(entry.get("name") or "").strip(),
+            "prompt_usd_per_m": _price(entry, "prompt_usd_per_m"),
+            "completion_usd_per_m": _price(entry, "completion_usd_per_m"),
+            "default": bool(entry.get("default", False)),
+        })
+    return models
+
+
+def get_live_graph_enabled() -> bool:
+    """Whether the demo chat page shows the live "explored subgraph" panel.
+
+    Reads ``[frontend].live_graph``, overridable by
+    ``AMA_FRONTEND_LIVE_GRAPH=0/1`` (same truthy parsing as the
+    ``AMA_RETRIEVAL_*`` overrides; env always wins). Default False, so an old
+    config, or a benchmark/dev deployment that never opted in, keeps the
+    pre-feature single-column page exactly as it was.
+
+    Returns:
+        bool: True to render the live graph panel (default: False).
+    """
+    raw = os.environ.get(FRONTEND_LIVE_GRAPH_ENV)
+    if raw is not None:
+        return _parse_env_bool(raw)
+    return bool(get_frontend_config().get("live_graph", False))
+
+
+def get_frontend_settings_level() -> str:
+    """How much of the demo's settings panel this build offers.
+
+    Reads ``[frontend].settings_level``, overridable by
+    ``AMA_FRONTEND_SETTINGS_LEVEL=minimal|full`` (env always wins, same
+    channel as ``AMA_FRONTEND_LIVE_GRAPH``: a container mounts its
+    config.toml read-only).
+
+    Defaults to ``"minimal"`` — the *safe* end, like ``live_graph``'s default
+    False: an old config, a benchmark deployment, or a branch that forgot the
+    key shows only the model / temperature / view controls and never the
+    endpoint list. Both shipped toml files opt in to ``"full"``; the public
+    demo sets ``"minimal"``.
+
+    Returns:
+        str: one of ``FRONTEND_SETTINGS_LEVELS``.
+    """
+    raw = os.environ.get(FRONTEND_SETTINGS_LEVEL_ENV)
+    if raw is None:
+        raw = get_frontend_config().get("settings_level")
+    if raw is None:
+        return FRONTEND_SETTINGS_LEVEL_DEFAULT
+    level = str(raw).strip().lower()
+    if level in FRONTEND_SETTINGS_LEVELS:
+        return level
+    logger.warning(
+        f"Unknown frontend settings_level {raw!r} "
+        f"(expected one of {', '.join(FRONTEND_SETTINGS_LEVELS)}); "
+        f"falling back to {FRONTEND_SETTINGS_LEVEL_DEFAULT!r}"
+    )
+    return FRONTEND_SETTINGS_LEVEL_DEFAULT

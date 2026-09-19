@@ -141,7 +141,7 @@ class _ToolLoopStubMixin:
 
     tool_loop_calls: List[Dict[str, Any]]
 
-    async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype=""):
+    async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype="", cancel_token=None):
         self.tool_loop_calls.append(
             {
                 "query": query,
@@ -210,7 +210,7 @@ class _LegacyHookAgent(BaseKBQAAgent):
     def _get_allowed_tools_for_qtype(self, qtype):
         return None
 
-    async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype=""):
+    async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype="", cancel_token=None):
         self.tool_loop_calls.append(
             {
                 "query": query,
@@ -438,7 +438,7 @@ def test_exception_inside_tool_loop_propagates_but_still_finalizes(monkeypatch):
     monkeypatch.setenv("AMA_AGENT_ENGINE", "graph")
 
     class Agent(PipelineAgentDouble):
-        async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype=""):
+        async def _run_tool_loop(self, query, openai_tools, max_iterations, refresh_interval, qtype="", cancel_token=None):
             raise RuntimeError("boom")
 
     agent = Agent()
@@ -452,3 +452,30 @@ def test_exception_inside_tool_loop_propagates_but_still_finalizes(monkeypatch):
     assert len(agent_run_events) == 1
     assert agent_run_events[0]["status"] == "error"
     assert "boom" in (agent_run_events[0]["error"] or "")
+
+
+# ---------------------------------------------------------------------------
+# Cancellation: the graph pipeline has no mid-run checkpoints yet, but a token
+# that is already cancelled must stop the run before anything is dispatched.
+# ---------------------------------------------------------------------------
+
+def test_cancelled_token_is_honoured_before_graph_pipeline_dispatch(monkeypatch):
+    from ama_kbqa.framework.cancellation import CancellationToken, cancelled_answer
+
+    class GraphAgent(_ToolLoopStubMixin, PipelineAgentDouble):
+        def __init__(self):
+            PipelineAgentDouble.__init__(self)
+            self.tool_loop_calls = []
+
+    async def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("run_pipeline_graph must not be reached")
+
+    monkeypatch.setenv("AMA_AGENT_ENGINE", "graph")
+    monkeypatch.setattr("ama_kbqa.graph.pipeline.run_pipeline_graph", _must_not_run)
+
+    token = CancellationToken()
+    token.cancel("user pressed stop")
+    agent = GraphAgent()
+
+    assert _run(agent.ask(QUERY, cancel_token=token)) == cancelled_answer(token)
+    assert agent.tool_loop_calls == []

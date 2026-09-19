@@ -1,0 +1,73 @@
+# Booth demo stack (built from the `demo-booth` branch) on the shared Hetzner
+# box, running alongside the live v1 demo (compose project "amakbqa-demo",
+# checkout ~/amakbqa-demo, see .agent/SOP/hetzner_demo_deployment.md) without
+# touching it. This is the stack the team shows at SEMANTiCS 2026: the model
+# picker offers OpenRouter and DeepSeek endpoints next to KIT (add
+# OPENROUTER_API_KEY / DEEPSEEK_API_KEY to ./.env on the box; entries whose key
+# is missing are simply hidden) and the demo rate limits are relaxed for
+# presenter use.
+#
+# v2 has no data of its own here: it reuses v1's already-seeded Qdrant and
+# Virtuoso containers read-only, by joining v1's compose network
+# ("amakbqa-demo_default", created by v1's `name: amakbqa-demo` project) and
+# resolving them by v1's service names ("qdrant", "virtuoso"). Datasets and
+# the questionnaire JSONs are bind-mounted read-only straight from the v1
+# checkout on the host for the same reason — v2 never needs its own copy.
+#
+# IMPORTANT: never run `docker compose down` on the v1 project
+# (`amakbqa-demo`) while this stack is up — that removes the
+# "amakbqa-demo_default" network this stack depends on and takes v2 down
+# with it. Use `docker compose stop` / `restart <service>` on v1 instead.
+#
+# Usage, from this (v2) checkout on the Hetzner box:
+#   docker compose -f docker-compose.hetzner-next.yml up -d --build
+# Staging ingress amakbqa-next.yanlab.de -> localhost:8504 (v1's frontend
+# owns 8503, the benchmark stack owns 8502).
+
+name: amakbqa-next
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: amakbqa-next-frontend
+    container_name: frontend_amakbqa_next
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8504:8502"
+    mem_limit: 1536m
+    env_file:
+      - ./.env
+    environment:
+      # Belt-and-suspenders alongside config.docker.toml's
+      # [retrieval] reranker_enabled = false — see that file's comment for
+      # why the demo image can't run the cross-encoder reranker.
+      - AMA_RETRIEVAL_RERANKER_ENABLED=false
+      # Presenter usage, not public traffic: the booth operator asks many
+      # questions back to back, so the public demo's throttle would only get
+      # in the way. The public hostname is served by a different stack.
+      - DEMO_MAX_QUERIES_PER_SESSION=500
+      - DEMO_MIN_SECONDS_BETWEEN_QUERIES=1
+    volumes:
+      # Own config: points chat/embedding/judge/synthesis at KIT, reranker off.
+      - ./config.docker.toml:/app/config.toml:ro
+      - ./.streamlit_cache:/app/.streamlit
+      # Read-only: reuse v1's already-seeded runtime data, never our own copy.
+      # DEMO_V1_DATA_ROOT is the v1 checkout on the host; set it in .env.
+      - ${DEMO_V1_DATA_ROOT:?set DEMO_V1_DATA_ROOT in .env (see .env_example)}/db/datasets:/app/db/datasets:ro
+      - ${DEMO_V1_DATA_ROOT:?set DEMO_V1_DATA_ROOT in .env (see .env_example)}/db/kqapro_questionnaire.json:/app/db/kqapro_questionnaire.json:ro
+      - ${DEMO_V1_DATA_ROOT:?set DEMO_V1_DATA_ROOT in .env (see .env_example)}/db/sciqa_questionnaire.json:/app/db/sciqa_questionnaire.json:ro
+      - ./benchmark_results:/app/benchmark_results
+      - ./batch_results:/app/batch_results
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8502/_stcore/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  default:
+    name: amakbqa-demo_default
+    external: true

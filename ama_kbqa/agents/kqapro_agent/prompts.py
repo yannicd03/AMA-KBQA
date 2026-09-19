@@ -268,6 +268,13 @@ RULES:
 4. COMPLETE RETRIEVAL: After FindNode, always call GetAttributeDetails/GetRelationDetails for actual values.
 5. VERIFY ALL CONSTRAINTS: Check ALL identifying details (duration, year, color) before answering.
 6. TRUST VERIFIED DATA: Once in found_values/verified_facts, treat as ground truth. Don't second-guess.
+7. GROUNDED ANSWER OR "I DON'T KNOW" (HARD RULE): Every final answer MUST be supported by values
+   in your journal (found_values / verified_facts). You may NEVER answer from your own training-data
+   knowledge. If — and only if — after genuine investigation (including the GetNodeSummary requirement
+   in rule 0a and the PIVOT/INVERSE attempts in rule 3) the KG does not contain the information needed,
+   do NOT guess and do NOT supply a remembered fact: say plainly that you do not know, e.g.
+   "I don't know — the knowledge graph does not contain this information." A truthful "I don't know"
+   is the correct output in that case; a plausible-sounding answer pulled from memory is a hard error.
 
 KG PREFIXES (auto-injected in SPARQL, don't redefine):
 ex:=Entities, prop:=Properties, attr:=Attributes, qual:=Qualifiers, unit:=Units
@@ -361,7 +368,9 @@ SYNTHESIS_PROMPT_TEMPLATE = """DISCOVERED DATA:
 
 QUESTION: "{query}"
 
-Answer directly using the discovered data above. Be concise. If data is missing, say what's missing."""
+Answer directly using ONLY the discovered data above. Be concise. Do not use any outside or
+remembered knowledge. If the discovered data does not contain the answer, do not guess — reply
+exactly: I don't know."""
 
 # Synthesis prompt template - CONVERSATIONAL (user-facing)
 SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL = """DISCOVERED DATA:
@@ -376,12 +385,73 @@ Guidelines:
 - Add 1–3 sentences of helpful supporting context drawn from the discovered data
   (e.g., related entities, dates, categories) when it aids understanding.
 - You may use short lists or paragraphs; keep it tight — no filler.
-- Do NOT invent facts beyond the discovered data. If something is missing or
-  uncertain, say so plainly.
-- Do not describe your tool-calling process; speak to the user about the answer."""
+- Answer ONLY from the discovered data above; never use outside or remembered
+  knowledge. Do NOT invent facts beyond the discovered data.
+- If the discovered data does not actually contain the answer, do not guess: tell
+  the user plainly that you don't know because the knowledge graph does not contain
+  that information.
+- After the answer, add a short section titled "How I found this:" with 1–3 concise
+  bullet points summarising the key steps that led to it — which entities you looked
+  up and which lookups/queries produced the answer — based only on the discovered
+  data above. If you don't know the answer, briefly note what you searched for instead."""
 
-# GetJournalSummary follow-up prompt
+# GetJournalSummary follow-up prompt (benchmark: terse, answer only)
 JOURNAL_SUMMARY_ANSWER_PROMPT = "You have reviewed everything you discovered in your journal. Now you MUST provide your final answer to the original question as clear, direct text. Do NOT call any more tools."
+
+# GetJournalSummary follow-up prompt (conversational: answer + brief step summary)
+JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL = (
+    "You have reviewed everything you discovered in your journal. Now provide your "
+    "final answer to the original question as clear, direct text. Do NOT call any "
+    "more tools.\n\n"
+    "Then add a short section titled \"How I found this:\" with 1–3 concise bullet "
+    "points summarising the key steps you took to reach the answer — which entities "
+    "you looked up and which tools/queries produced it. Keep it brief and base it "
+    "only on what you actually did. If you could not find the answer, say so and "
+    "briefly note what you searched for.\n\n"
+    "Finally add a section titled \"Reproduce with SPARQL:\" holding exactly one "
+    "fenced ```sparql code block with the query that retrieves this answer from "
+    "the KQAPro graph, built only from the entity ids and predicate names in your "
+    "journal, with the PREFIX lines and FROM <http://kqapro.org/kb> included. You "
+    "cannot call tools now: if you already ran that query and it returned the "
+    "answer, write \"Verified against the knowledge graph.\" under the block; "
+    "otherwise write \"(not executed)\" under it. Never omit this section — if you "
+    "have no answer, show the query you tried or write \"no query could be formed\"."
+)
+
+# KG-specific detail for the conversational "Reproduce with SPARQL" block,
+# appended to the system prompt by KQAProAgent._get_sparql_reproduction_hint.
+# The URI scheme mirrors RunSPARQL's docstring (the single source of truth for
+# how KQAPro ids map to URIs); FROM names the graph the demo's Virtuoso serves,
+# so a booth visitor can paste the block into the raw endpoint unchanged.
+SPARQL_REPRODUCTION_HINT = """
+
+REPRODUCE-WITH-SPARQL DETAILS (KQAPro, a Wikidata subset):
+- Raw SPARQL tool for the single verification run: RunSPARQL. Pass the query
+  exactly as it appears in your code block.
+- The code block must carry these PREFIX lines and name the graph with FROM:
+
+  PREFIX ex:   <http://kqapro.org/entity/>
+  PREFIX prop: <http://kqapro.org/property/>
+  PREFIX attr: <http://kqapro.org/attribute/>
+  PREFIX qual: <http://kqapro.org/qualifier/>
+  PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+  PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+  SELECT ?answer ?answerLabel
+  FROM <http://kqapro.org/kb>
+  WHERE {
+    ex:<the Q-id you looked up> prop:<the relation you followed> ?answer .
+    ?answer rdfs:label ?answerLabel .
+  }
+
+- URI scheme: entities are ex:Q<number>, entity-to-entity relations are
+  prop:<relation_name>, literal attributes are attr:<attribute_name>, qualifiers
+  are qual:P<number>. A qualified attribute value hangs off an intermediate
+  node: ?node rdf:value ?value ; qual:P585 ?date .
+- When the answer is an entity, bind its rdfs:label too so the visitor sees a
+  name rather than a bare Q-id.
+- RunSPARQL cannot execute ASK queries. If your answer is yes/no, still print the
+  ASK query in the block, but verify it by running the same graph pattern once as
+  SELECT ?x WHERE { ... } LIMIT 1 and checking the expected row comes back."""
 
 # Tool-specific loop recovery guidance - COMPACT
 TOOL_LOOP_GUIDANCE = {

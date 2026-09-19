@@ -25,6 +25,7 @@ from ama_kbqa.config import (
     get_chat_temperature,
     get_chat_max_tokens,
     get_chat_seed,
+    get_chat_extra_body,
     get_provider_preferences,
     get_auto_inject_journal,
     get_zero_tool_call_retry,
@@ -35,6 +36,11 @@ from ama_kbqa.config import (
     get_synthesis_temperature,
     get_synthesis_max_tokens,
     get_synthesis_provider_preferences,
+)
+from ama_kbqa.framework.cancellation import (
+    CancellationToken,
+    cancelled_answer,
+    is_cancelled,
 )
 from ama_kbqa.framework.config import KnowledgeGraphConfig
 from ama_kbqa.framework.mcp_client import MCPClient, trace
@@ -64,6 +70,49 @@ COLOR_END = '\033[0m'
 
 # Default timeout
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "60"))
+
+
+# Appended to every agent's system prompt in conversational mode. In that mode
+# synthesis is bypassed and the user sees the agent's final loop message
+# verbatim, so the agent itself must self-explain — independent of whether it
+# happened to call GetJournalSummary (some models, e.g. gemma4, answer directly
+# and would otherwise return a bare value with no reasoning).
+_CONVERSATIONAL_ANSWER_DIRECTIVE = """
+
+USER-FACING ANSWER (conversational mode): Your FINAL answer is shown directly to a
+person, so always format it as:
+1. The direct answer in a natural, friendly sentence.
+2. A short section titled "How I found this:" with 1-3 concise bullets naming the
+   entities you looked up and the tools/queries that produced the answer.
+3. A section titled "Reproduce with SPARQL:" containing EXACTLY ONE fenced code
+   block tagged sparql, holding a single query that retrieves the answer you just
+   gave, so a visitor can paste it into the knowledge graph's SPARQL endpoint and
+   get the same result back.
+Base every statement only on your journal / discovered data; never use outside
+knowledge. Include the "How I found this:" section in EVERY final answer, even if
+you did not call GetJournalSummary first.
+
+RULES FOR THE "Reproduce with SPARQL:" BLOCK:
+- The query must return the answer itself: the entities or values you named (ALL
+  of them when the answer is a list), an ASK query when the answer is yes/no, and
+  SELECT (COUNT(...) AS ?count) when the answer is a count.
+- Build it ONLY from identifiers you actually saw in this session: the entity or
+  resource ids and the predicate/attribute names your tools returned. Never
+  invent an id and never recall one from outside knowledge.
+- It must run as-is: include the PREFIX lines and the graph clause exactly as
+  described below, spell out every id, and never abbreviate with "...".
+- Verify it before you answer. While you are still allowed to call tools, run the
+  query ONCE with the raw SPARQL tool named below and check that the result
+  contains your answer. If it does, put this exact line directly under the code
+  block:
+  Verified against the knowledge graph.
+- You get at most ONE verification attempt. If it errors, returns nothing, or you
+  can no longer call tools (the final-answer step forbids it), still print your
+  best query and put the single line "(not executed)" directly under the code
+  block. Do not retry it and do not loop.
+- NEVER omit this section. If your answer is that you do not know, show the query
+  you tried under the heading anyway, or write "no query could be formed" in
+  place of the block."""
 
 
 class BaseKBQAAgent(ABC):
@@ -171,7 +220,7 @@ class BaseKBQAAgent(ABC):
 
         # Message history
         self._messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": self._get_system_prompt()}
+            {"role": "system", "content": self._get_effective_system_prompt()}
         ]
 
         # Some models on some endpoints (e.g. minimax-m2.7 on KIT) don't emit
@@ -251,6 +300,34 @@ class BaseKBQAAgent(ABC):
             System prompt string
         """
         return "You are a KBQA agent."
+
+    def _get_effective_system_prompt(self) -> str:
+        """The subclass system prompt plus shared mode-specific guidance.
+
+        Used everywhere the system message is (re)built so every agent gets the
+        same conversational answer directive without each subclass repeating it.
+        """
+        prompt = self._get_system_prompt()
+        try:
+            from ama_kbqa.config import get_synthesis_mode
+            conversational = get_synthesis_mode() == "conversational"
+        except Exception:
+            conversational = False
+        if conversational:
+            prompt += _CONVERSATIONAL_ANSWER_DIRECTIVE
+            prompt += self._get_sparql_reproduction_hint()
+        return prompt
+
+    def _get_sparql_reproduction_hint(self) -> str:
+        """KG-specific detail for the conversational "Reproduce with SPARQL" block.
+
+        The shared directive states the contract; this hook supplies the one
+        thing only the subclass knows — the graph's real URI scheme, its named
+        graph / FROM clause, and the raw SPARQL tool used for the single
+        verification round trip. Returns "" for agents with no raw SPARQL tool,
+        in which case the block is still required but never verified.
+        """
+        return ""
 
     def _get_qtype_strategies(self) -> Dict[str, str]:
         """
@@ -339,13 +416,21 @@ YOUR FINAL ANSWER:"""
         if mode == "conversational":
             return (
                 "You are a helpful assistant answering a user's question using "
-                "the provided journal data. Write a clear, friendly, human-readable "
+                "ONLY the provided journal data. Write a clear, friendly, human-readable "
                 "response. Lead with the direct answer, then add brief supporting "
-                "context from the data. Do not invent facts beyond the journal."
+                "context from the data. Do not invent facts beyond the journal and "
+                "never use outside or remembered knowledge. If the journal data does "
+                "not contain the answer, do not guess: say plainly that you don't know "
+                "because the knowledge graph does not contain that information. After "
+                "the answer, add a short \"How I found this:\" section with 1-3 concise "
+                "bullets summarising the key steps taken to reach it, based only on the "
+                "journal data."
             )
         return (
             "You are a precise question-answering system. Answer based strictly "
-            "on the provided journal data. Give only the answer value."
+            "on the provided journal data; never use outside or remembered knowledge. "
+            "Give only the answer value. If the journal data does not contain the "
+            "answer, reply exactly: I don't know."
         )
 
     def _get_journal_refresh_template(self) -> str:
@@ -550,12 +635,26 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         return None
 
     def _finalize_answer_text(self, answer: str, qtype: str = "") -> str:
-        """Apply final answer-shape cleanup without changing non-Verify semantics."""
+        """Apply final answer-shape cleanup without changing non-Verify semantics.
+
+        Verify normalization collapses the whole answer to "yes"/"no", which is
+        exactly the benchmark contract and exactly wrong for a user-facing
+        answer: it would throw away the "How I found this:" and "Reproduce with
+        SPARQL:" sections the conversational contract requires. So it is applied
+        in benchmark mode only; benchmark behaviour is unchanged (the mode
+        defaults to "benchmark", including when config is unreadable).
+        """
         cleaned = self._strip_think_blocks(answer)
         if qtype == "Verify":
-            normalized = self._normalize_verify_answer(cleaned)
-            if normalized:
-                return normalized
+            try:
+                from ama_kbqa.config import get_synthesis_mode
+                conversational = get_synthesis_mode() == "conversational"
+            except Exception:
+                conversational = False
+            if not conversational:
+                normalized = self._normalize_verify_answer(cleaned)
+                if normalized:
+                    return normalized
         return cleaned
 
     def _get_journal_summary_answer_prompt(self) -> str:
@@ -655,6 +754,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 }
                 if _classify_seed is not None:
                     call_params["seed"] = _classify_seed
+                _classify_extra = get_chat_extra_body()
+                if _classify_extra:
+                    call_params["extra_body"] = _classify_extra
                 response = self._create_with_retry(
                     self.client, call_params, label="classification"
                 )
@@ -936,12 +1038,21 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
     # CORE AGENT LOOP
     # =========================================================================
 
-    async def ask(self, query: str) -> str:
+    async def ask(
+        self,
+        query: str,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         """
         Answer a question using the knowledge graph.
 
         Args:
             query: The natural language question
+            cancel_token: Optional cooperative stop flag (see
+                ``framework.cancellation``). Omitting it leaves behaviour
+                exactly as before; when it is supplied and cancelled, the run
+                stops at its next checkpoint and returns the cancelled answer
+                instead of continuing (and without paying for synthesis).
 
         Returns:
             The agent's answer
@@ -966,12 +1077,17 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 },
                 payload={"query": query},
             ) as _root_span:
-                return await self._ask_impl(query, _root_span)
+                return await self._ask_impl(query, _root_span, cancel_token=cancel_token)
         finally:
             if _parent_token is not None:
                 _current_span_id.reset(_parent_token)
 
-    async def _ask_impl(self, query: str, _root_span) -> str:
+    async def _ask_impl(
+        self,
+        query: str,
+        _root_span,
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> str:
         # Engine switch (`[agent].engine` / `AMA_AGENT_ENGINE`, see config.py).
         # Phase 3: the whole per-question pipeline around the tool loop
         # (MCP init, tool listing, follow-up detection, classification,
@@ -982,12 +1098,33 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         # ``_run_tool_loop`` already applies for the Phase 1/2 tool loop).
         from ama_kbqa.config import get_agent_engine
         if get_agent_engine() == "graph" and not getattr(self, "_text_tool_call_mode", False):
+            # The graph engine has no cooperative cancellation checkpoints yet
+            # (tracked under Phase 6 in .agent/Tasks/active/langgraph-rewrite.md).
+            # Honour a token that is already cancelled, since that costs
+            # nothing; after dispatch the run cannot be stopped mid-flight.
+            if is_cancelled(cancel_token):
+                self._trace("Run cancelled before graph dispatch", COLOR_YELLOW)
+                return cancelled_answer(cancel_token)
+            if cancel_token is not None:
+                self._trace(
+                    "Graph engine does not support mid-run cancellation yet; "
+                    "the stop request will only take effect after this run.",
+                    COLOR_YELLOW,
+                )
             from ama_kbqa.graph.pipeline import run_pipeline_graph
             return await run_pipeline_graph(self, query, _root_span)
 
         try:
             # Initialize MCP connection
             await self._init_mcp()
+
+            # First cancellation checkpoint: a run stopped here has not made a
+            # single billed LLM call. We return normally rather than raising,
+            # so the `finally` below still runs and the MCP connection stays
+            # owned by this task's event loop (see framework.cancellation).
+            if is_cancelled(cancel_token):
+                self._trace("Run cancelled before classification", COLOR_YELLOW)
+                return cancelled_answer(cancel_token)
 
             if not self.mcp:
                 self._trace(f"{COLOR_YELLOW}Tool server not available.{COLOR_END}", COLOR_YELLOW)
@@ -1147,7 +1284,8 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             refresh_interval = config.domain_settings.get("journal_refresh_interval", 5)
 
             answer = await self._run_tool_loop(
-                query, openai_tools, max_iterations, refresh_interval, qtype=qtype
+                query, openai_tools, max_iterations, refresh_interval, qtype=qtype,
+                cancel_token=cancel_token,
             )
 
             return answer
@@ -1249,7 +1387,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 )
                 values = self._extract_attribute_values(attr_result)
                 if values:
-                    return self._format_fast_path_values(values)
+                    return await self._finish_fast_path(
+                        values, entity_name, node_id, relation_name, "attribute"
+                    )
 
             if qtype == "QueryRelation" and relation_name:
                 relation_result = await self._execute_fast_path_tool(
@@ -1265,7 +1405,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     labels = self._extract_batch_labels(labels_result)
                     values = [labels[rid] for rid in related_ids if rid in labels]
                     if values:
-                        return self._format_fast_path_values(values)
+                        return await self._finish_fast_path(
+                            values, entity_name, node_id, relation_name, "relation"
+                        )
 
             # Step 3: Preserve broad evidence for the fallback loop, but do not
             # let a synthesis-only fast path answer from this summary.
@@ -1276,6 +1418,105 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         except Exception as e:
             self._trace(f"Fast path error: {e}", COLOR_YELLOW)
             return None
+
+    def _build_fast_path_reproduction_query(
+        self,
+        node_id: str,
+        member: str,
+        kind: str,
+    ) -> Optional[Dict[str, str]]:
+        """Return the SPARQL that reproduces a fast-path 1-hop lookup.
+
+        `kind` is "attribute" (literal values hanging off the node) or
+        "relation" (entity targets). Returns a dict with "tool" (the raw SPARQL
+        tool to verify with) and "query" (the self-contained, pasteable query),
+        or None when the subclass cannot express the lookup — only the subclass
+        knows its graph's URI scheme.
+        """
+        return None
+
+    async def _finish_fast_path(
+        self,
+        values: List[str],
+        entity_name: str,
+        node_id: str,
+        member: str,
+        kind: str,
+    ) -> Optional[str]:
+        """Shape a fast-path result into the answer the current mode expects.
+
+        Benchmark mode keeps the bare joined value (exact-match scoring depends
+        on it). Conversational mode owes the user the full contract — answer,
+        "How I found this:", "Reproduce with SPARQL:" — and the fast path has no
+        final LLM turn to write it, so it is assembled here from the lookup that
+        just ran and the query is verified with one extra RunSPARQL call. If no
+        query can be built or it comes back empty, return None so the caller
+        falls back to the full agent loop rather than emit an answer that
+        violates the contract.
+        """
+        bare = self._format_fast_path_values(values)
+        try:
+            from ama_kbqa.config import get_synthesis_mode
+            conversational = get_synthesis_mode() == "conversational"
+        except Exception:
+            conversational = False
+        if not conversational:
+            return bare
+
+        repro = self._build_fast_path_reproduction_query(node_id, member, kind)
+        if not repro:
+            self._trace(
+                "Fast path: no reproduction query for this lookup - using full loop",
+                COLOR_YELLOW,
+            )
+            return None
+
+        verify_result = await self._execute_fast_path_tool(
+            repro["tool"], {"query": repro["query"]}
+        )
+        if not self._sparql_result_has_rows(verify_result):
+            self._trace(
+                "Fast path: reproduction query returned nothing - using full loop",
+                COLOR_YELLOW,
+            )
+            return None
+
+        readable = ", ".join(str(v).strip() for v in values if str(v).strip())
+        member_label = member or kind
+        return (
+            f"{readable}\n\n"
+            "How I found this:\n"
+            f"- Looked up \"{entity_name}\" in the knowledge graph ({node_id}).\n"
+            f"- Read its \"{member_label}\" {kind} directly from that node.\n"
+            f"- Re-ran the lookup as a SPARQL query to confirm the result.\n\n"
+            "Reproduce with SPARQL:\n"
+            f"```sparql\n{repro['query']}\n```\n"
+            "Verified against the knowledge graph."
+        )
+
+    @staticmethod
+    def _satisfies_conversational_contract(content: str) -> bool:
+        """True when `content` is a complete user-facing answer.
+
+        The conversational contract is answer + "How I found this:" +
+        "Reproduce with SPARQL:". Used to tell a real final answer apart from a
+        filler turn ("Task completed.") the model may take after it.
+        """
+        if not content or not content.strip():
+            return False
+        return (
+            "How I found this:" in content
+            and "Reproduce with SPARQL:" in content
+        )
+
+    @classmethod
+    def _sparql_result_has_rows(cls, raw: str) -> bool:
+        """True when a raw SPARQL tool result carries at least one binding."""
+        data = cls._parse_tool_json(raw)
+        if not isinstance(data, dict):
+            return False
+        bindings = data.get("bindings")
+        return bool(isinstance(bindings, list) and bindings)
 
     async def _execute_fast_path_tool(self, func_name: str, func_args: Dict[str, Any]) -> str:
         """Execute a fast-path tool through normal tracing and mirror it into messages."""
@@ -1303,7 +1544,11 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             })
             return
 
-        tool_call_id = f"fast_path_{len(self.tool_call_durations)}_{func_name}"
+        # Exactly 9 alphanumeric chars: Mistral's chat template (KIT's vLLM) keeps
+        # only the last 9 chars of a tool-call id and rejects anything but
+        # [a-zA-Z0-9], so the old "fast_path_<n>_<tool>" became "_FindNode" and
+        # failed with a 400. Other providers accept any id; random keeps it unique.
+        tool_call_id = os.urandom(5).hex()[:9]
         self._messages.append({
             "role": "assistant",
             "content": None,
@@ -1388,6 +1633,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         max_iterations: int,
         refresh_interval: int,
         qtype: str = "",
+        cancel_token: Optional[CancellationToken] = None,
     ) -> str:
         """
         Run the main tool-calling loop.
@@ -1397,6 +1643,8 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             tools: OpenAI-format tools
             max_iterations: Maximum loop iterations
             refresh_interval: Iterations between journal refreshes
+            cancel_token: Optional cooperative stop flag, checked once per
+                iteration (see the checkpoint below). Absent by default.
 
         Returns:
             Final answer string
@@ -1422,6 +1670,18 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
 
         iteration_count = 0
         final_agent_content: Optional[str] = None
+        # Set once the journal-summary answer prompt ("provide your final
+        # answer, do NOT call any more tools") has been injected. From that
+        # point the loop must stop forcing tool calls, and any assistant
+        # message that satisfies the conversational answer contract is a
+        # better final answer than a later filler turn.
+        answer_prompt_injected = False
+        contract_answer: Optional[str] = None
+        try:
+            from ama_kbqa.config import get_synthesis_mode
+            conversational_mode = get_synthesis_mode() == "conversational"
+        except Exception:
+            conversational_mode = False
         # Fast-path evidence is collected before the loop. Count it here so a
         # model may synthesize from already-recorded tool evidence without being
         # mislabeled as a true zero-tool answer.
@@ -1432,6 +1692,38 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         while True:
             iteration_count += 1
             self._trace(f"Starting iteration {iteration_count}/{max_iterations}", COLOR_CYAN)
+
+            # Cooperative cancellation checkpoint. The top of the loop is the
+            # one place in the loop where the message stack is guaranteed
+            # consistent: the previous iteration appended every tool result in
+            # emission order (_execute_tool_calls phase 3). Cancelling *inside*
+            # _execute_tool_calls could leave an assistant message whose
+            # `tool_calls` have no matching `role=tool` results, and replaying
+            # that stack on a follow-up turn makes providers reject it (400) —
+            # so there is deliberately no finer-grained checkpoint there.
+            #
+            # This is also the one exit that does NOT go through synthesis,
+            # diverging from the ADR invariant noted just below. Synthesis is a
+            # second billed LLM call; a user who pressed stop must not pay for
+            # it. Every other exit still funnels through synthesis.
+            if is_cancelled(cancel_token):
+                self._trace(
+                    "Run cancelled - exiting tool loop without synthesis",
+                    COLOR_YELLOW,
+                )
+                self.recorder.event(
+                    "intervention",
+                    "run_cancelled",
+                    attributes={
+                        "iteration_count": iteration_count,
+                        "reason": cancel_token.reason,
+                    },
+                )
+                answer = cancelled_answer(cancel_token)
+                # Keep the stack answer-terminated like every other exit, so a
+                # follow-up turn on this instance replays a valid conversation.
+                self._messages.append({"role": "assistant", "content": answer})
+                return answer
 
             # Safety check
             if iteration_count > max_iterations:
@@ -1474,8 +1766,22 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 await self._inject_journal_refresh(iteration_count)
 
             # Call LLM - use tool_choice="required" for early iterations
-            # to force the model to call a tool instead of "thinking"
-            tc = "required" if iteration_count <= 3 else "auto"
+            # to force the model to call a tool instead of "thinking".
+            #
+            # Exception (conversational mode only): once the journal-summary
+            # answer prompt has been injected, "required" directly contradicts
+            # it — the prompt says "do NOT call any more tools" while the API
+            # forces one. Models resolve that by writing the real answer as
+            # content AND attaching a throwaway tool call; the loop then takes
+            # another turn whose filler content ("Task completed.") overwrites
+            # the real answer. Benchmark mode keeps the contradiction on
+            # purpose: its loop behaviour is what the paper's numbers were
+            # measured with, and its terse answers are re-derived by synthesis
+            # anyway, so changing it there would be an unmeasured change.
+            if conversational_mode and answer_prompt_injected:
+                tc = "auto"
+            else:
+                tc = "required" if iteration_count <= 3 else "auto"
             self._trace(f"Calling LLM with {len(self._messages)} messages (tool_choice={tc})...", COLOR_YELLOW)
             # Text-mode: don't pass tools= to the API call. The catalog is in
             # the system prompt and the format is in the format-instruction.
@@ -1494,6 +1800,17 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
             if message.content:
                 self._trace(f"Thought: {message.content}", COLOR_BLUE)
                 final_agent_content = message.content
+                # Remember the first post-answer-prompt message that actually
+                # satisfies the conversational contract. A model that answers
+                # and then takes one more turn would otherwise have its real
+                # answer overwritten by that turn's filler content.
+                if (
+                    conversational_mode
+                    and answer_prompt_injected
+                    and contract_answer is None
+                    and self._satisfies_conversational_contract(message.content)
+                ):
+                    contract_answer = message.content
 
             # Text-mode fallback: model didn't emit structured tool_calls but
             # may have written `<tool_call>{...}</tool_call>` blocks in content.
@@ -1655,6 +1972,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                     "role": "user",
                     "content": self._get_journal_summary_answer_prompt()
                 })
+                answer_prompt_injected = True
 
             # Raw-SPARQL distress intervention: fires once per question when
             # the agent leans on hand-written SPARQL instead of wrapped tools.
@@ -1693,6 +2011,23 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         # Synthesis can be bypassed via config (synthesis.synthesis_enabled = false)
         # to use the agent's own final message as the answer. This saves a
         # second LLM call at the cost of losing the deterministic answer shaping.
+        # Conversational mode: prefer a remembered contract-satisfying answer
+        # over a last message that is too short to be one or is missing the
+        # "Reproduce with SPARQL:" section (typically a "Task completed."
+        # filler turn taken after the real answer).
+        if (
+            conversational_mode
+            and contract_answer
+            and contract_answer != final_agent_content
+            and not self._satisfies_conversational_contract(final_agent_content or "")
+        ):
+            self._trace(
+                "Final message lacks the conversational answer contract - "
+                "using the earlier contract-satisfying answer",
+                COLOR_YELLOW,
+            )
+            final_agent_content = contract_answer
+
         if not get_synthesis_enabled():
             if final_agent_content and final_agent_content.strip():
                 self._trace(
@@ -2295,7 +2630,8 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         if final_answer and final_answer.strip():
             # Verification pass: if synthesis indicates failure but journal has data, re-prompt
             failure_phrases = ["cannot answer", "no data", "not found", "insufficient",
-                               "unable to determine", "could not find", "no information"]
+                               "unable to determine", "could not find", "no information",
+                               "i don't know", "i do not know", "don't know"]
             answer_lower = final_answer.lower()
             if any(phrase in answer_lower for phrase in failure_phrases):
                 # Check if journal actually has useful data. Key off markers
@@ -2423,6 +2759,12 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         provider_prefs = get_provider_preferences()
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
+        # Merge, never clobber: OpenRouter routing lives under "provider" and
+        # must survive alongside anything the chat provider needs (today,
+        # DeepSeek's thinking switch).
+        _extra = get_chat_extra_body()
+        if _extra:
+            call_params.setdefault("extra_body", {}).update(_extra)
 
         self._trace(f"Calling {self.model} (timeout: {self.request_timeout}s)", COLOR_CYAN)
 
@@ -2508,6 +2850,9 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         provider_prefs = get_provider_preferences()
         if provider_prefs:
             call_params["extra_body"] = {"provider": provider_prefs}
+        _extra = get_chat_extra_body()
+        if _extra:
+            call_params.setdefault("extra_body", {}).update(_extra)
 
         with self.recorder.span_sync(
             "llm_call",
@@ -2629,7 +2974,7 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 resets, giving each turn a fresh trace and per-turn token totals.
         """
         if not keep_history:
-            self._messages = [{"role": "system", "content": self._get_system_prompt()}]
+            self._messages = [{"role": "system", "content": self._get_effective_system_prompt()}]
             # The message stack was wiped, so the text-mode tool catalog (injected
             # in _ask_impl) must be re-added on the next ask.
             self._catalog_injected = False

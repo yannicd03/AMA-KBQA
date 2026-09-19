@@ -1,3 +1,7 @@
+---
+relates: [react-frontend-second-ui]
+---
+
 # ADR: Trace Inspector + Graph View — Frontend and Instrumentation Architecture
 
 **Status:** Accepted (merged 2026-05-09, commit `880e865`)
@@ -31,6 +35,8 @@ Two capabilities were added, modelled after Langfuse:
 - The `TraceRecorder` is designed with an OTel-compatible shape — it is renderer-agnostic. A future React frontend would consume `recorder.to_dicts()` / `recorder.to_jsonl()` verbatim, so the instrumentation layer is not throwaway work.
 
 **Threshold to revisit:** multi-user auth requirement, real-time collaboration need, or URL-routable deep-linking. Until then, Streamlit is sufficient.
+
+> **Narrowed 2026-09-16:** a React frontend was added — see [react-frontend-second-ui.md](./react-frontend-second-ui.md). It is not the migration rejected above: Streamlit stays the default and this code path is unchanged; React is an *additional* frontend for a booth/public audience, with the API a thin reuse layer over these same helpers. Decisions 2-6 below are unaffected and are reused as-is by the new API.
 
 ---
 

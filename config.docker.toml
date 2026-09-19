@@ -1,6 +1,6 @@
 [llm]
 chat_provider = "kit"
-embedding_provider = "openrouter"
+embedding_provider = "kit"
 chat_temperature = 1.0
 chat_max_tokens = 16000
 embedding_temperature = 0.0
@@ -8,11 +8,13 @@ embedding_temperature = 0.0
 [agent]
 auto_inject_journal = true
 zero_tool_call_retry_max = 3
+# Per-call timeout for MCP tool servers, read by framework/mcp_client.py.
+mcp_tool_timeout_seconds = 180
 
 [synthesis]
 synthesis_enabled = false
-synthesis_provider = "openrouter"
-synthesis_model = "deepseek/deepseek-v4-flash"
+synthesis_provider = "kit"
+synthesis_model = "kit.mistral-small-4-119b-a8b"
 synthesis_model_provider = ""
 synthesis_temperature = 0.7
 synthesis_max_tokens = 2048
@@ -26,7 +28,21 @@ chat_model_provider = ""
 
 [kit]
 base_url = "https://ki-toolbox.scc.kit.edu/api/v1"
-chat_model = "kit.qwen3.5-397b-A17b"
+chat_model = "kit.mistral-small-4-119b-a8b"
+embedding_model = "kit.qwen3-embedding-8b"
+
+[deepseek]
+# Direct DeepSeek endpoint (OpenAI-compatible). Key: DEEPSEEK_API_KEY.
+# Chat only; embeddings stay on KIT.
+base_url = "https://api.deepseek.com"
+chat_model = "deepseek-flash"
+# DeepSeek runs every model in thinking mode by default, and a request that
+# carries `tools` then requires each assistant message to be passed back with
+# its `reasoning_content`. Our tool loop synthesises assistant tool_calls
+# messages that have no reasoning to return, so the second turn of a question
+# fails with a 400. false = send thinking.type = "disabled" on chat calls.
+# Only set this to true for single-turn experiments.
+thinking_enabled = false
 
 [llamacpp]
 base_url = "http://localhost:8080/v1"
@@ -64,10 +80,95 @@ sciqa_virtuoso_graph = "http://sciqa.org/kg"
 hybrid_enabled = false        # false = pure dense vector search + reranker ("dense_rerank")
 fusion = "rrf"                # "rrf" | "dbsf" — inert while hybrid_enabled = false
 prefetch_limit = 20           # per-branch candidates before fusion
-reranker_enabled = true       # independent of hybrid; also reranks dense-only results
+# reranker_enabled = false: the demo image does not install the `rerank`
+# extra (no torch/sentence-transformers), and with it left true
+# search.py's cross-encoder import re-raises ImportError, which FindNode
+# (kqapro_server.py ~2076) swallows into empty semantic results — i.e. every
+# query returns no evidence. Decided 2026-09-14 to run the demo without the
+# cross-encoder reranker (memory/latency budget on the shared 4-vCPU box).
+reranker_enabled = false
 reranker_model = "Alibaba-NLP/gte-reranker-modernbert-base"
 rerank_candidates = 20        # fused/dense hits fed to the cross-encoder
 # rerank_threshold = 0.0      # optional gate on cross-encoder scores; unset = no gate
+
+[frontend]
+# Live "explored subgraph" side panel in the demo chat page. Frontend-only:
+# reads journal snapshots and tool results the agent already produces, so it
+# costs no extra tool calls or tokens. Rendering is client-side (vis-network
+# from CDN). Off = the page is exactly the pre-feature single-column layout.
+# Override per deployment with AMA_FRONTEND_LIVE_GRAPH=0/1.
+live_graph = true
+
+# How much of the React demo's settings panel this build offers.
+#   "minimal" — model, temperature and the view toggles only (public demo).
+#   "full"    — additionally the Endpoints list (which chat/embedding endpoint
+#               the build talks to, and whether its key is configured) and the
+#               read-only build facts. Never the key itself.
+# Default when the key is absent is "minimal", so an old config or a
+# non-demo deployment never exposes endpoint detail by accident.
+# Override per deployment with AMA_FRONTEND_SETTINGS_LEVEL=minimal|full.
+settings_level = "full"
+
+# Booth build: chat endpoints offered next to the auto-discovered KIT models.
+# An entry is shown only when its provider's API key env var is set, and (for
+# OpenRouter) only when the live catalog still knows the id and it can call
+# tools. Prices are USD per 1M tokens and are what the booth account is
+# actually billed; OpenRouter entries omit them on purpose so the picker shows
+# the live catalog price rather than a number that silently goes stale here.
+# `default = true` on one entry pre-selects it; otherwise the KIT default
+# preference applies.
+#
+# ORDERING HAZARD: these are TOML *array tables*. Every plain [frontend] key
+# above (live_graph, settings_level) must stay above them: a plain key written
+# after the first [[frontend.chat_models]] header silently becomes a key of
+# that array entry instead of a [frontend] key.
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-flash"
+name = "DeepSeek V4 Flash"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4-pro"
+name = "DeepSeek V4 Pro"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "deepseek/deepseek-v4.1-flash"
+name = "DeepSeek V4.1 Flash"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "anthropic/claude-sonnet-4.5"
+name = "Claude Sonnet 4.5"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "openai/gpt-5"
+name = "GPT-5"
+
+[[frontend.chat_models]]
+provider = "openrouter"
+id = "google/gemini-2.5-pro"
+name = "Gemini 2.5 Pro"
+
+[[frontend.chat_models]]
+provider = "deepseek"
+id = "deepseek-flash"
+name = "DeepSeek Flash (direct)"
+prompt_usd_per_m = 0.30
+completion_usd_per_m = 1.20
+
+[[frontend.chat_models]]
+provider = "deepseek"
+id = "deepseek-v4-pro"
+name = "DeepSeek V4 Pro (direct)"
+prompt_usd_per_m = 1.32
+completion_usd_per_m = 3.96
+
+[federation]
+enabled = false
+max_specialists = 2   # the demo's agent picker overrides this per instance
 
 [sciqa]
 entity_threshold = 0.7
@@ -79,8 +180,27 @@ autogenerated_dataset = "db/datasets/SciQA/Autogenerated"
 level = "INFO"
 
 [postprocessing]
-judge_provider = "openrouter"
-judge_model = "deepseek/deepseek-v4-flash"
+judge_provider = "kit"
+judge_model = "kit.mistral-small-4-119b-a8b"
 chat_model_provider = ""
 judge_temperature = 0.7
 generate_fewshot = false
+
+[fewshot_generator]
+# LLM that analyzes benchmark traces and emits new fewshot examples / tool tips.
+# Reads provider base_url + api_key_env from the matching [<provider>] section above.
+provider = "kit"
+model = "kit.mistral-small-4-119b-a8b"
+temperature = 1.0
+max_tokens = 16000
+# When true, the agent's MCP tool catalog (names + signatures + descriptions) is
+# injected into the generator prompt so it can judge whether the chosen tool path
+# was the most direct one available.
+include_tool_descriptions = true
+# When true, the FULL conversation (all messages, untruncated tool results) is
+# sent to the generator rather than the tail-window summary. Costs more tokens
+# but lets the generator critique path optimality.
+include_full_conversation = true
+# Fallback truncation knobs — only used when include_full_conversation = false.
+max_messages = 20
+max_result_chars = 500

@@ -3,8 +3,11 @@
 
 ``Orchestrator.ask()`` dispatches here when
 ``ama_kbqa.config.get_agent_engine() == "graph"``; the legacy body (built
-around ``Orchestrator._route_autonomously``/``_delegate``/``_fallback_kqapro``/
-``_fallback_llm``) stays completely unchanged and is still the default.
+around ``Orchestrator._route_autonomously``/``_delegate``/``_fallback_kqapro``)
+stays completely unchanged and is still the default. This graph models Router
+mode only: a Federated orchestrator (``[federation].enabled`` or
+``Orchestrator(federation=True)``) always takes the legacy body, and
+``Orchestrator.ask()`` enforces that before dispatching here.
 
 Node list (see ``.agent/Tasks/active/langgraph-rewrite.md`` §4.2/Phase 3):
 
@@ -37,17 +40,12 @@ Node list (see ``.agent/Tasks/active/langgraph-rewrite.md`` §4.2/Phase 3):
   UNCHANGED — reached when routing produced no decision (dead/absent MCP,
   degraded probe + a routing LLM call that still failed to commit, or an
   unknown/missing tool call).
-- ``fallback_llm``: NOT a separate top-level graph node with its own
-  conditional-edge trigger. Legacy's ``_route_autonomously`` never
-  distinguishes "the probe/decision definitely failed, skip straight to the
-  bare LLM" from "routing failed, try KQAPro first" — every routing failure
-  goes through ``_fallback_kqapro`` first, which itself falls back to
-  ``_fallback_llm`` (via ``Orchestrator._fallback_llm``, called unchanged)
-  only if the KQAPro agent ALSO fails to load or answer. This graph
-  preserves that nesting exactly rather than adding an edge condition that
-  cannot fire under the legacy contract — see the "Resolved ambiguity"
-  section of ``ama_kbqa.graph.pipeline`` for the analogous call on the
-  pipeline graph's ``synthesis`` node.
+- There is no ``fallback_llm`` node. The legacy orchestrator used to fall
+  back to a knowledge-base-free LLM answer when the KQAPro agent also failed;
+  that fallback was removed because it hid real failures (missing key, dead
+  MCP server) behind a plausible-looking response. ``_fallback_kqapro`` now
+  raises in that case, and the error propagates out of this graph exactly as
+  it does out of the legacy body.
 
 Why ``probe``/``select_agent`` duplicate ``_route_autonomously``'s body
 --------------------------------------------------------------------------

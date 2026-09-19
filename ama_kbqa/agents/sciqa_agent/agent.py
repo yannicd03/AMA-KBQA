@@ -32,6 +32,9 @@ from ama_kbqa.agents.sciqa_agent.prompts import (
     SYNTHESIS_PROMPT_TEMPLATE,
     SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL,
     JOURNAL_SUMMARY_ANSWER_PROMPT,
+    JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL,
+    SPARQL_REPRODUCTION_HINT,
+    SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL,
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
@@ -190,8 +193,27 @@ class SciQAAgent(BaseKBQAAgent):
         return LOOP_INTERVENTION_TEMPLATE
 
     def _get_journal_summary_answer_prompt(self) -> str:
-        """Get the prompt to inject after GetJournalSummary."""
+        """Get the prompt to inject after GetJournalSummary.
+
+        In conversational mode the user-facing answer also asks for a brief
+        "How I found this" step summary; benchmark mode stays terse so exact
+        string matching is unaffected.
+        """
+        from ama_kbqa.config import get_synthesis_mode
+        if get_synthesis_mode() == "conversational":
+            return JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL
         return JOURNAL_SUMMARY_ANSWER_PROMPT
+
+    def _get_sparql_reproduction_hint(self) -> str:
+        """ORKG URI scheme + named-graph wrapper for the conversational block.
+
+        When RunORKGSPARQL is gated off the URI scheme still has to reach the
+        model (the block is required either way); only the verification
+        instruction swaps to "(not executed)".
+        """
+        if "RunORKGSPARQL" in self._get_denied_tool_names():
+            return SPARQL_REPRODUCTION_HINT_NO_RAW_SPARQL
+        return SPARQL_REPRODUCTION_HINT
 
     def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
         """Return set of tool names allowed for this question type, or None for all."""

@@ -38,6 +38,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "chatkit", extra = ["langchain"] },
+    { name = "fastapi" },
     { name = "fastmcp" },
     { name = "htbuilder" },
     { name = "langchain-core" },
@@ -54,6 +55,7 @@ dependencies = [
     { name = "streamlit" },
     { name = "tenacity" },
     { name = "tqdm" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -72,6 +74,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "chatkit", extras = ["langchain"], git = "https://github.com/yannicd03/ChatKIT.git?rev=v1.1.0" },
+    { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastmcp", specifier = ">=2.13.1" },
     { name = "htbuilder", specifier = ">=0.9.0" },
     { name = "langchain-core", specifier = ">=1.6.0" },
@@ -90,6 +93,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9.0.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", marker = "extra == 'rerank'", specifier = ">=4.48" },
+    { name = "uvicorn", specifier = "==0.38.0" },
 ]
 provides-extras = ["rerank"]
 
@@ -610,6 +614,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/cc/28/c14e053b6762b1044f34a13aab6859bbf40456d37d23aa286ac24cfd9a5d/executing-2.2.1.tar.gz", hash = "sha256:3632cc370565f6648cc328b32435bd120a1e4ebb20c77e3fdde9a13cd1e533c4", size = 1129488, upload-time = "2025-09-01T09:48:10.866Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/ea/53f2148663b321f21b5a606bd5f191517cf40b7072c0497d3c92c4a13b1e/executing-2.2.1-py2.py3-none-any.whl", hash = "sha256:760643d3452b4d777d295bb167ccc74c64a81df23fb5e08eff250c425a4b2017", size = 28317, upload-time = "2025-09-01T09:48:08.5Z" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.141.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/02/91e3416a8fdd715abb903a952a6bec7cdd8d14eed55d415fc8595524c319/fastapi-0.141.1.tar.gz", hash = "sha256:e8822fc40db1e1858054d7a949a888695bc9bdce70139178e33bd2871a453ca1", size = 425799, upload-time = "2026-07-29T17:18:05.568Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/03/10388a42375ee7e4ac9b94eb2c5c569c8b5795e377e701c9ac3ad63de890/fastapi-0.141.1-py3-none-any.whl", hash = "sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3", size = 131954, upload-time = "2026-07-29T17:18:04.364Z" },
 ]
 
 [[package]]

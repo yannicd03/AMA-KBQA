@@ -29,6 +29,8 @@ from ama_kbqa.agents.kqapro_agent.prompts import (
     SYNTHESIS_PROMPT_TEMPLATE,
     SYNTHESIS_PROMPT_TEMPLATE_CONVERSATIONAL,
     JOURNAL_SUMMARY_ANSWER_PROMPT,
+    JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL,
+    SPARQL_REPRODUCTION_HINT,
     TOOL_LOOP_GUIDANCE,
     GENERIC_LOOP_GUIDANCE,
     LOOP_INTERVENTION_TEMPLATE,
@@ -218,8 +220,75 @@ class KQAProAgent(BaseKBQAAgent):
         return LOOP_INTERVENTION_TEMPLATE
 
     def _get_journal_summary_answer_prompt(self) -> str:
-        """Get the prompt to inject after GetJournalSummary."""
+        """Get the prompt to inject after GetJournalSummary.
+
+        In conversational mode the user-facing answer also asks for a brief
+        "How I found this" step summary; benchmark mode stays terse so exact
+        string matching is unaffected.
+        """
+        from ama_kbqa.config import get_synthesis_mode
+        if get_synthesis_mode() == "conversational":
+            return JOURNAL_SUMMARY_ANSWER_PROMPT_CONVERSATIONAL
         return JOURNAL_SUMMARY_ANSWER_PROMPT
+
+    def _get_sparql_reproduction_hint(self) -> str:
+        """KQAPro URI scheme + FROM clause for the conversational SPARQL block."""
+        return SPARQL_REPRODUCTION_HINT
+
+    # Prefixed-name local parts KQAPro predicates are allowed to use here. A
+    # name outside this set (e.g. "FIPS_6-4_(US_counties)") is not safely
+    # expressible as attr:/prop: shorthand, so the fast path declines and the
+    # full agent loop writes the query instead.
+    _SAFE_PREDICATE_LOCAL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
+
+    def _build_fast_path_reproduction_query(
+        self,
+        node_id: str,
+        member: str,
+        kind: str,
+    ) -> Optional[Dict[str, str]]:
+        """Rebuild a fast-path 1-hop lookup as a pasteable KQAPro SPARQL query.
+
+        Mirrors the URI scheme RunSPARQL documents: ex:Q<n> entities,
+        prop:<name> entity relations, attr:<name> literal attributes. Attribute
+        values may be stored directly or on an intermediate qualifier node, so
+        the attribute form COALESCEs over rdf:value rather than assuming one
+        shape.
+        """
+        if not KQAProAdapter.ENTITY_ID_PATTERN.match(node_id or ""):
+            return None
+        if not member or not self._SAFE_PREDICATE_LOCAL_NAME.match(member):
+            return None
+
+        if kind == "relation":
+            body = (
+                f"  ex:{node_id} prop:{member} ?answer .\n"
+                "  ?answer rdfs:label ?answerLabel .\n"
+            )
+            projection = "SELECT ?answer ?answerLabel"
+        elif kind == "attribute":
+            body = (
+                f"  ex:{node_id} attr:{member} ?node .\n"
+                "  OPTIONAL { ?node rdf:value ?direct . }\n"
+                "  BIND(COALESCE(?direct, ?node) AS ?answer)\n"
+            )
+            projection = "SELECT ?answer"
+        else:
+            return None
+
+        query = (
+            "PREFIX ex:   <http://kqapro.org/entity/>\n"
+            "PREFIX prop: <http://kqapro.org/property/>\n"
+            "PREFIX attr: <http://kqapro.org/attribute/>\n"
+            "PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
+            "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n"
+            f"{projection}\n"
+            "FROM <http://kqapro.org/kb>\n"
+            "WHERE {\n"
+            f"{body}"
+            "}"
+        )
+        return {"tool": "RunSPARQL", "query": query}
 
     def _get_allowed_tools_for_qtype(self, qtype: str) -> Optional[set]:
         """Return set of tool names allowed for this question type, or None for all."""

@@ -238,5 +238,31 @@ def frontend():
     sys.exit(subprocess.call([sys.executable, "-m", "streamlit", "run", "ama_kbqa/frontend/app.py", *sys.argv[1:]]))
 
 
+def api():
+    """Launch the FastAPI backend of the React demo frontend (web/).
+
+    Always exactly one uvicorn worker: runs, sessions and persisted multiturn
+    agents live in this process's memory, so a second worker could neither
+    stream nor continue a run the first one started.
+    """
+    import uvicorn
+
+    parser = argparse.ArgumentParser(
+        prog="ama-kbqa-api",
+        description="FastAPI backend for the AMA-KBQA React demo (single worker).",
+    )
+    parser.add_argument("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8506, help="Port (default: 8506)")
+    parser.add_argument("--log-level", default="info", help="uvicorn log level (default: info)")
+    args = parser.parse_args()
+    uvicorn.run(
+        "ama_kbqa.api.app:app",
+        host=args.host,
+        port=args.port,
+        workers=1,
+        log_level=args.log_level,
+    )
+
+
 if __name__ == "__main__":
     main()

@@ -1,0 +1,63 @@
+{
+  "note": "Illustrative prices only. The KIT endpoint does not charge us; these USD-per-token figures are OpenRouter list prices for the equivalent model, used to show an estimated cost per answer. Regenerate with scripts/fetch_model_pricing.py.",
+  "source": "openrouter.ai/api/v1/models",
+  "kit_model_source": "curated KNOWN_KIT_MODELS fallback",
+  "currency": "USD",
+  "unit": "per_token",
+  "models": {
+    "azure.gpt-4.1-mini": {
+      "openrouter_id": "openai/gpt-4.1-mini",
+      "prompt_usd_per_token": 4e-07,
+      "completion_usd_per_token": 1.6e-06,
+      "matched": true
+    },
+    "azure.o4-mini": {
+      "openrouter_id": "openai/o4-mini",
+      "prompt_usd_per_token": 1.1e-06,
+      "completion_usd_per_token": 4.4e-06,
+      "matched": true
+    },
+    "kit.gemma4-31b-it": {
+      "openrouter_id": "google/gemma-4-31b-it",
+      "prompt_usd_per_token": 1.2e-07,
+      "completion_usd_per_token": 3.7e-07,
+      "matched": true
+    },
+    "kit.gpt-oss-120b": {
+      "openrouter_id": "openai/gpt-oss-120b",
+      "prompt_usd_per_token": 3.9e-08,
+      "completion_usd_per_token": 1.8e-07,
+      "matched": true
+    },
+    "kit.minimax-m2.1-229b": {
+      "openrouter_id": "minimax/minimax-m2.1",
+      "prompt_usd_per_token": 2.9e-07,
+      "completion_usd_per_token": 9.5e-07,
+      "matched": true
+    },
+    "kit.minimax-m2.7-229b": {
+      "openrouter_id": "minimax/minimax-m2.7",
+      "prompt_usd_per_token": 2.79e-07,
+      "completion_usd_per_token": 1.2e-06,
+      "matched": true
+    },
+    "kit.mixtral-8x22b-instruct": {
+      "openrouter_id": "mistralai/mixtral-8x22b-instruct",
+      "prompt_usd_per_token": 2e-06,
+      "completion_usd_per_token": 6e-06,
+      "matched": true
+    },
+    "kit.qwen3-vl-235b-a22b-instruct": {
+      "openrouter_id": "qwen/qwen3-vl-235b-a22b-instruct",
+      "prompt_usd_per_token": 2e-07,
+      "completion_usd_per_token": 8.8e-07,
+      "matched": true
+    },
+    "kit.qwen3.5-397b-A17b": {
+      "openrouter_id": "qwen/qwen3.5-397b-a17b",
+      "prompt_usd_per_token": 3.9e-07,
+      "completion_usd_per_token": 2.34e-06,
+      "matched": true
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# Build context of Dockerfile.frontend (services frontend and api).
+# The React app in web/ has its own build context (service web) and is never
+# copied by Dockerfile.frontend; excluding it keeps web/node_modules out of
+# every Python image build.
+web/

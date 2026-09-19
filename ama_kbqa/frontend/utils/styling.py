@@ -288,8 +288,20 @@ SHARED_CSS = """
         stroke-dasharray: 5 4;
         stroke: #94a3b8;
     }
+    .lifecycle-svg .edge[data-state="active"] {
+        stroke: #2563eb;
+        stroke-width: 2.8;
+        filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.5));
+        animation: lifecycle-edge-pulse 1.2s ease-in-out infinite;
+    }
+    .lifecycle-svg .edge.dashed[data-state="active"] {
+        stroke: #2563eb;
+    }
     .lifecycle-svg .edge-arrow {
         fill: #64748b;
+    }
+    .lifecycle-svg .edge-arrow-active {
+        fill: #2563eb;
     }
     .lifecycle-svg .edge-label {
         font-size: 10.5px;
@@ -304,6 +316,68 @@ SHARED_CSS = """
     @keyframes lifecycle-pulse {
         0%, 100% { opacity: 1; }
         50%      { opacity: 0.78; }
+    }
+    @keyframes lifecycle-edge-pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.55; }
+    }
+
+    /* ── Orchestrator (multi-agent) figure ───────────────────────────────── */
+    .lifecycle-svg.orchestrator-svg {
+        max-height: 460px;
+    }
+    .orchestrator-svg .node-container {
+        fill: #f8fafc;
+        stroke: #cbd5e1;
+        stroke-width: 1.6;
+    }
+    .orchestrator-svg [data-state="visited"] .node-container {
+        fill: #ffffff;
+        stroke: #475569;
+    }
+    .orchestrator-svg [data-state="active"] .node-container {
+        fill: #eff6ff;
+        stroke: #2563eb;
+    }
+    .orchestrator-svg .subagent-label {
+        font-size: 12px;
+        font-weight: 700;
+        fill: #475569;
+        letter-spacing: 0.01em;
+    }
+    .orchestrator-svg [data-state="active"] .subagent-label {
+        fill: #1d4ed8;
+    }
+    /* The specialist that is not dispatched stays "inactive": dimmed + dashed,
+       echoing the inactive sub-agent in the paper figure. */
+    .orchestrator-svg [data-state="idle"] .node-container {
+        opacity: 0.6;
+        stroke-dasharray: 5 4;
+    }
+    .orchestrator-svg [data-state="idle"] .subagent-label {
+        opacity: 0.5;
+    }
+    .orchestrator-svg [data-state="idle"] .node-smallbox {
+        opacity: 0.65;
+    }
+
+    /* ── Floating "About" help button (demo) ──────────────────────────── */
+    .st-key-about_help_btn {
+        position: fixed;
+        bottom: 1.25rem;
+        right: 1.25rem;
+        z-index: 1000;
+        width: auto;
+    }
+    .st-key-about_help_btn button {
+        border-radius: 50%;
+        width: 2.5rem;
+        min-width: 2.5rem;
+        height: 2.5rem;
+        padding: 0;
+        font-size: 1.15rem;
+        font-weight: 700;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
     }
 </style>
 """

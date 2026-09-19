@@ -30,7 +30,9 @@ question-type strategies and tool catalogs live in the per-agent docs.
 | `operations.py` | Abstract operation contract: `AtomicOperation`, `ATOMIC_OPERATIONS` (11 required + 3 optional), `CoverageReport`, `validate_bindings()`. Replaced the old `types.py` response-type module (June 2026 abstract-operation-contract ADR). | ~200 |
 | `deterministic.py` | Shared LLM-free math core: `parse_numeric`, `NumericComparison`, `compare_numeric`; both servers' `VerifyNumericCondition` tools wrap it (byte-identical output). | ~100 |
 | `base_agent.py` | `BaseKBQAAgent` ABC — full agent lifecycle, tool-calling loop, span instrumentation, synthesis funnel. | ~600 |
-| `mcp_client.py` | Shared `MCPClient` class for MCP server communication. | ~120 |
+| `mcp_client.py` | Shared `MCPClient` class for MCP server communication; per-call tool timeout (see Bounded Waits below). | ~290 |
+| `cancellation.py` | `CancellationToken` (thread-safe stop flag), `is_cancelled()`, `cancelled_answer()`, `CANCELLED_ANSWER`. See Cooperative Cancellation below. | ~90 |
+| `sparql_client.py` | `make_sparql_client()` / `TimeoutAwareSPARQLWrapper` / `SparqlTimeout`: the single construction point that applies `GraphConfig.timeout_ms` to every SPARQL client. | ~120 |
 | `config.py` | Configuration dataclasses (NamespaceConfig, KnowledgeGraphConfig). | ~220 |
 | `state.py` | `JournalState` (Pydantic `BaseModel`, single source of truth with caps/helpers) and `JournalManager`. | ~340 |
 | `text_tool_calls.py` | Text-mode tool-call shim for models that can't emit native function calls. | ~150 |
@@ -75,6 +77,8 @@ As of the 2026-07-05 architecture audit (items B1/B2, `Decisions/architecture-au
 - **Synthesis LLM call exceptions:** previously re-raised (`raise`). Now caught and converted to `return ""`, so the caller's existing empty-answer fallback fires instead of the whole question erroring out.
 
 Net effect: infra hiccups at or near the very end of a question no longer throw away tool-loop progress that was otherwise complete.
+
+**One deliberate exception (2026-09-16):** a run cancelled at the tool-loop checkpoint returns **without** synthesis. Synthesis is a second billed LLM call, and a user who pressed Stop must not pay for it. Every other terminal path still funnels through synthesis. See Cooperative Cancellation below and `Decisions/cooperative-run-cancellation.md`.
 
 ---
 
@@ -164,6 +168,40 @@ class MCPClient:
 ```
 
 **Close-delay trim (2026-07 reconciliation, adjacent to but distinct from audit item C6a):** `close()` used to sleep 0.5s after `exit_stack.aclose()` plus an additional 0.2s cleanup delay — pure dead time paid on every close, notably the Orchestrator, which closes its probe server on every question. Trimmed to a single 0.05s yield; on stdio, `aclose()` already tears down the transport, so a short yield is enough to let the child process reap. **Note:** an MCP-client *instance dedup* (reusing one client across probe + delegate calls, audit item A1) was drafted on a since-superseded branch and did **not** land in this change — `MCPClient` instances are still created per use; do not assume dedup exists without re-checking `mcp_client.py` and the orchestrator's client construction sites. See `Decisions/branch-reconciliation-2026-07-18.md`.
+
+---
+
+## Cooperative Cancellation (`cancellation.py`)
+
+**Why cooperative:** a run executes on a daemon worker thread that owns its own event loop (`lifecycle_runner.start_run`), and its MCP connection is bound to *that* loop. The thread cannot be killed; cancelling the consumer task would stop only the stream while the agent kept running and billing; and closing MCP from any other task trips anyio's `Attempted to exit cancel scope in a different task`. So the stop is a flag the agent reads itself.
+
+`CancellationToken` wraps a `threading.Event` because the setter (an HTTP handler on the API's event loop, or a Streamlit button on the main thread) and the reader (the agent, on the worker thread) live on different threads. Cancellation is one-way.
+
+**Checkpoints in `BaseKBQAAgent`:**
+
+| Location | Behaviour |
+|---|---|
+| After `_init_mcp()`, before classification | Returns `cancelled_answer(token)`. No billed LLM call has been made yet. |
+| Top of each tool-loop iteration | Emits an `intervention`/`run_cancelled` recorder event, appends the answer to `self._messages` (keeping the stack answer-terminated), and returns **without synthesis**. |
+
+Both exits are plain `return`s, never raises, so the worker's own `finally` closes MCP on the loop that opened it.
+
+**No checkpoint inside `_execute_tool_calls`** — deliberately. Cancelling mid-execution could leave an assistant message whose `tool_calls` have no matching `role=tool` results, and replaying that stack makes providers return 400. The top of the loop is the only point where the message stack is guaranteed consistent.
+
+The **Orchestrator** is a separate implementation with its own checkpoints (`orchestrator_agent/agent.py`), covering the routing decision, both branches of the federated fan-out, and the KQAPro fallback.
+
+**Everything is opt-in:** `cancel_token=None` is the default at every entry point and `is_cancelled(None)` is `False`, so the Streamlit page and the benchmark runners are unchanged. `cancelled_answer()` returns `"Run cancelled."` plus a reason when one was given; callers that must distinguish a cancelled run should consult their own token rather than string-match `CANCELLED_ANSWER`.
+
+See `Decisions/cooperative-run-cancellation.md` for the full rationale, and `System/demo_react_frontend.md` for the HTTP/SSE surface.
+
+---
+
+## Bounded Waits
+
+Cancellation can only promise a time bound if a run cannot block forever between checkpoints. Two waits were previously unbounded:
+
+- **SPARQL (`sparql_client.py`).** `GraphConfig.timeout_ms` (30s default) had been plumbed through `adapters/resolve.py` into both adapters and then never consumed — the servers built a bare `SPARQLWrapper(endpoint)`, leaving `urlopen` with no timeout at all, so a query Virtuoso never finished blocked the tool call and the agent's whole worker thread. Every client now builds through `make_sparql_client(endpoint, timeout_ms)`, which applies the timeout once at construction so the ~60 call sites inherit it unchanged. Expiry (including a timeout that fires while the response body is being consumed in `convert()`) raises `SparqlTimeout`, whose message names the budget and suggests narrowing the query, so the agent gets an actionable tool error. Construction sites: `server/kqapro_server.py`, `server/sciqa_server.py`, and `postprocessing.py` (the third site the original plumbing missed).
+- **MCP tool calls (`mcp_client.py`).** Previously no timeout at all. Now bounded by `[agent] mcp_tool_timeout_seconds` (default 180, env `AMA_KBQA_MCP_TOOL_TIMEOUT_SECONDS`; `<= 0` restores unbounded). Implemented with the SDK's native `read_timeout_seconds` rather than an `asyncio.wait_for` wrapper, because the SDK cancels the pending request **inside the session's own task** instead of abandoning an await from outside it — the same anyio constraint that shapes cooperative cancellation above. Expiry raises `McpToolTimeout`; `_execute_single_tool` already turns a tool exception into a normal "Error executing ..." result, so the agent reacts to it like any other tool failure.
 
 ---
 
