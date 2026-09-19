@@ -508,6 +508,12 @@ KNOWLEDGE GRAPH ACCESS TOOLS (TWO-TIER PATTERN)
 
 TIER 1 - DISCOVERY (Lightweight):
 - FindResource(semantic_query): Semantic vector search for papers, authors, contributions
+- LookupResourceByLabel(label, mode): Deterministic, non-vector label lookup. Use this
+  when FindResource's results look plausible but wrong (confident scores, wrong
+  resource), or when you hold an over-specified mention (e.g. "text summarization
+  survey 2020" for an ORKG paper titled just "Text Summarization") — mode="prefix"
+  drops trailing qualifiers, mode="contains" tries substrings anywhere, mode="exact"
+  is a vector-free confirmation of a literal title.
 - FindPredicate(semantic_query): Find predicate by description
 - GetPredicateReference(domain?): Curated known-good predicate IDs per domain
   (core, energy, chemistry, agriculture, benchmarks, biology, comparison)
@@ -1311,15 +1317,25 @@ TOOL_LOOP_GUIDANCE = {
     ),
     "FindResource": (
         "**FindResource Loop Recovery:**\n"
-        "   Can't find the entity you're searching for.\n"
+        "   Can't find the entity you're searching for, OR the results you keep getting\n"
+        "   back look plausible (decent scores) but are the WRONG resource.\n"
         "   NOTE: FindResource is capped at 8 calls per question. After that, you MUST use other tools.\n"
         "   Try alternatives:\n"
+        "   - LookupResourceByLabel(label, mode='prefix'|'contains') — deterministic,\n"
+        "     no vectors; use this specifically if your query was an over-specified\n"
+        "     mention (e.g. 'text summarization survey 2020' for a title stored as\n"
+        "     just 'Text Summarization') or if semantic hits keep being confidently wrong\n"
         "   - Search for a related entity (paper instead of author)\n"
         "   - Try different search terms\n"
         "   - Use FindByPredicateValue for value-based lookup\n"
         "   - If you already found a Comparison, use GetComparisonContributions / AggregateComparisonValues\n"
         "   - Use GetComparisonContributions if you already have a Comparison resource\n"
         "   - The entity might not exist in ORKG"
+    ),
+    "LookupResourceByLabel": (
+        "**LookupResourceByLabel Loop Recovery:**\n"
+        "   No lexical match either. Try the other `mode` ('exact'/'prefix'/'contains'),\n"
+        "   fall back to FindResource's semantic search, or the resource may not exist in ORKG."
     ),
     "GetRelationTargets": (
         "**GetRelationTargets Loop Recovery:**\n"

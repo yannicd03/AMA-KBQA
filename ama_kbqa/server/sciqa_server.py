@@ -106,6 +106,28 @@ TOP_N = 5
 ENTITY_THRESHOLD = get_sciqa_entity_threshold()
 RELATION_THRESHOLD = get_sciqa_relation_threshold()
 
+# FindResource exact-match phase: how many byte-identical-label points to pull
+# from Qdrant, and how many to actually return in `matches` when the label is
+# ambiguous. Mirrors KQAPro's EXACT_MATCH_SCROLL_LIMIT/MAX_EXACT_MATCHES_RETURNED
+# (kqapro_server.py) exactly, giving SciQA the same automatic disambiguation
+# behavior FindNode already has. NOTE: sciqa-entities has no payload index
+# (see db/migrate_add_label_index.py), so this phase is an unindexed
+# server-side scan on EVERY FindResource call — but measured directly
+# against the live collections (median of 7 filtered scrolls, limit=50):
+# kqapro-entities (17,754 pts) ~109.8ms vs sciqa-entities (171,588 pts,
+# ~10x the points) ~36.5ms. Scan cost here is dominated by payload SIZE,
+# not point count: KQAPro payloads carry full `attributes`/`relations`
+# arrays, sciqa-entities' are four small fields (uri/name/node_type/
+# class_uri). So this phase is CHEAPER in absolute terms than the KQAPro
+# phase already shipping, not ~10x more expensive as point count alone
+# would suggest — roughly 1.5% overhead against a FindResource call
+# measured in seconds. The payload index is still worth adding (it makes
+# LookupResourceByLabel's n-gram probing in "contains"/"prefix" mode cheap,
+# where the cost multiplies by up to MAX_NGRAM_PROBES), but it is an
+# optimisation for this automatic phase, not a prerequisite.
+EXACT_MATCH_SCROLL_LIMIT = 50
+MAX_EXACT_MATCHES_RETURNED = 20
+
 # --- ORKG Namespaces ---
 # Namespaces, endpoint, named graph, and vector-collection bindings are
 # owned by the KG adapter (single source of truth); the server only
@@ -155,6 +177,17 @@ class SearchResponse(BaseModel):
     """The top-level response object for search."""
     matches: List[ResourceMatch] = Field(default_factory=list)
     result_count: int = Field(...)
+    disambiguation_notice: Optional[str] = Field(
+        default=None,
+        description=(
+            "Set only when more than one resource shares the exact same label as "
+            "the query. Vector similarity cannot discriminate between byte-identical "
+            "labels, so the caller MUST NOT trust the top-ranked match — inspect "
+            "distinguishing predicates (e.g. publication year, authors, DOI) via "
+            "GetResourceSummary/GetResourceDetails across the candidates before "
+            "picking one."
+        ),
+    )
 
 
 class PredicateMatch(BaseModel):
@@ -1119,7 +1152,14 @@ async def FindResource(
             to the requested class via a single SPARQL ASK-batch.
 
     Returns:
-        JSON with matching resources and their available predicates
+        JSON with matching resources and their available predicates.
+        `disambiguation_notice` is set when more than one resource shares the
+        exact same label as `semantic_query` (an automatic exact-match phase
+        runs alongside the vector search specifically to catch this — vector
+        similarity can't discriminate identical labels). If your results look
+        plausible but wrong, or `semantic_query` was an over-specified mention
+        (e.g. a trailing qualifier the stored title doesn't have), use
+        LookupResourceByLabel instead of retrying this with different wording.
     """
     app = app_context.request_context.lifespan_context
 
@@ -1246,18 +1286,222 @@ async def FindResource(
                 if node_type_filter:
                     filter_source = f"{filter_source}+lexical_label" if filter_source else "lexical_label"
 
+        # --- Automatic exact-match phase (mirrors KQAPro FindNode's Phase 1) ---
+        # Runs on EVERY call, same as KQAPro — closing the KQAPro/SciQA
+        # asymmetry. sciqa-entities has no payload index either (see
+        # EXACT_MATCH_SCROLL_LIMIT's comment above for measured numbers): in
+        # absolute terms this scan is actually CHEAPER than KQAPro's
+        # equivalent (small 4-field payloads vs KQAPro's full attributes/
+        # relations arrays), so it's accepted unconditionally rather than
+        # gated behind an opt-in flag — it is exactly ONE bounded scroll
+        # call, not the multiplied n-gram probing LookupResourceByLabel
+        # below uses. Surfaces duplicate-label ambiguity the semantic-only
+        # path structurally cannot detect, and gives an exact hit priority
+        # over a merely plausible semantic one.
+        disambiguation_notice = None
+        try:
+            exact_lookup = retrieval.lookup_by_label(
+                app.qdrant,
+                COLLECTION_ENTITIES,
+                semantic_query,
+                mode="exact",
+                label_field="name",
+                limit=EXACT_MATCH_SCROLL_LIMIT,
+                normalize=True,
+            )
+            wanted_class = ""
+            if node_type_filter:
+                wanted_class = node_type_filter.strip()
+                if wanted_class.startswith("orkgc:"):
+                    wanted_class = wanted_class[6:]
+
+            exact_matches: list[ResourceMatch] = []
+            for point in exact_lookup.matches:
+                payload = point.payload or {}
+                resource_id = payload.get("uri", "").split("/")[-1]
+                if not resource_id:
+                    continue
+                node_type = payload.get("node_type", "resource")
+                if wanted_class and not _payload_node_type_matches(str(node_type), wanted_class):
+                    continue
+                name = payload.get("name", "")
+                session_journal.visited_nodes[resource_id] = name
+                exact_matches.append(ResourceMatch(
+                    original_id=resource_id,
+                    name=name,
+                    node_type=node_type,
+                    relevance_score=1.0,
+                    available_predicates=_get_available_predicates(app, resource_id),
+                ))
+
+            if len(exact_matches) > 1:
+                # Ambiguous label: multiple ORKG resources share this exact
+                # string, and vector similarity can't tell them apart.
+                # Surface ALL exact matches (capped) instead of letting
+                # top_n truncation silently drop the one the caller needs.
+                exact_sorted = sorted(exact_matches, key=lambda x: x.relevance_score, reverse=True)
+                shown_exact = exact_sorted[:MAX_EXACT_MATCHES_RETURNED]
+                seen_ids = {m.original_id for m in shown_exact}
+                extra = [m for m in matches if m.original_id not in seen_ids]
+                matches = shown_exact + extra[:top_n]
+                disambiguation_notice = (
+                    f"{len(exact_matches)} resources in ORKG share the exact label "
+                    f"'{semantic_query.strip()}' (showing {len(shown_exact)}). Do NOT "
+                    f"assume the first/top match is correct — inspect distinguishing "
+                    f"predicates (e.g. publication year, authors, DOI) via "
+                    f"GetResourceSummary/GetResourceDetails across the candidates "
+                    f"below to pick the right one."
+                )
+                filter_source = f"{filter_source}+exact_label" if filter_source else "exact_label"
+            elif exact_matches:
+                combined = {m.original_id: m for m in exact_matches}
+                for m in matches:
+                    combined.setdefault(m.original_id, m)
+                matches = sorted(combined.values(), key=lambda x: x.relevance_score, reverse=True)[:top_n]
+                filter_source = f"{filter_source}+exact_label" if filter_source else "exact_label"
+        except Exception as e:
+            logger.warning(f"FindResource: exact-match phase failed: {e}")
+
         suffix = f", filter={node_type_filter}:{filter_source}" if node_type_filter else ""
         session_journal.completed_steps.append(
             f"FindResource('{semantic_query}') -> {len(matches)} results{suffix}"
         )
 
-        response = SearchResponse(matches=matches, result_count=len(matches))
+        response = SearchResponse(
+            matches=matches,
+            result_count=len(matches),
+            disambiguation_notice=disambiguation_notice,
+        )
         return response.model_dump_json(indent=2)
 
     except Exception as e:
         error_msg = f"Error in FindResource: {str(e)}"
         logger.error(error_msg)
         session_journal.failed_attempts.append(f"FindResource('{semantic_query}'): {str(e)}")
+        return json.dumps({"error": error_msg}, indent=2)
+
+
+# ==============================================================================
+# TOOL 1B: LookupResourceByLabel
+# ==============================================================================
+
+@mcp.tool()
+async def LookupResourceByLabel(
+    app_context: Context,
+    label: str,
+    mode: str = "contains",
+    top_n: int = 5,
+) -> str:
+    """
+    Deterministic, non-vector, non-BM25 label lookup. Reach for this SPECIFICALLY
+    when:
+
+    1. A previous FindResource call returned results that look plausible (decent
+       relevance_score) but are the WRONG resource — gated dense search can return a
+       full, confident-looking result set with the correct resource simply absent,
+       and no score threshold can detect that. Retrying FindResource with more
+       semantic rephrasing rarely helps; this tool bypasses vectors entirely.
+    2. You already hold what looks like a literal title/name, especially an
+       OVER-SPECIFIED mention — e.g. the question mentions "text summarization
+       survey 2020" but ORKG stores the plain paper title as "Text Summarization".
+       FindResource's own automatic exact-match phase only matches the FULL string
+       byte-for-byte, so it structurally cannot catch this; this tool does, by
+       trying the query's own trailing/interior word-substrings and matching those
+       exactly instead of the whole thing.
+
+    Args:
+        label: The literal title/name or over-specified mention to resolve.
+        mode: "contains" (default) — tries substrings of `label` anchored at EVERY
+            position, longest first, capped at a small number of probes; best when
+            the extra qualifier could be anywhere in the mention.
+            "prefix" — tries only substrings anchored at the START (progressively
+            drops TRAILING words); cheaper, and covers the common case of a
+            trailing annotation ("... survey 2020", "... (extended)").
+            "exact" — a single byte-for-byte (case/whitespace-lenient) match on
+            `label` itself, no substring probing; use when you already believe
+            `label` IS the exact stored title and just want a vector-free
+            confirmation.
+        top_n: Max resources to return.
+
+    Returns:
+        JSON SearchResponse. In "contains"/"prefix" mode, `matches` is the
+        UNION of every substring probe that hit something (longest substring
+        first, deduped) — NOT just the single longest match, because a longer
+        but unrelated substring can happen to match a different resource
+        while the correct (shorter) one also matched; both are returned
+        rather than the heuristic silently discarding one.
+        `disambiguation_notice` is set whenever more than one distinct
+        resource matched — whether from duplicate exact labels or from
+        different substrings each matching a different resource — do NOT
+        assume the first result is correct in that case; inspect
+        distinguishing predicates via GetResourceSummary before picking one.
+    """
+    app = app_context.request_context.lifespan_context
+    label_clean = label.strip()
+    logger.info(f"LookupResourceByLabel: mode={mode!r} label={label_clean!r}")
+
+    try:
+        lookup_result = retrieval.lookup_by_label(
+            app.qdrant,
+            COLLECTION_ENTITIES,
+            label_clean,
+            mode=mode,
+            label_field="name",
+            limit=max(top_n, MAX_EXACT_MATCHES_RETURNED),
+            normalize=True,
+        )
+
+        matched_on = lookup_result.matched_text or label_clean
+        matches = []
+        for point in lookup_result.matches[:top_n] if not lookup_result.ambiguous else lookup_result.matches:
+            payload = point.payload or {}
+            resource_id = payload.get("uri", "").split("/")[-1]
+            if not resource_id:
+                continue
+            name = payload.get("name", "")
+            node_type = payload.get("node_type", "resource")
+            session_journal.visited_nodes[resource_id] = name
+            matches.append(ResourceMatch(
+                original_id=resource_id,
+                name=name,
+                node_type=node_type,
+                relevance_score=1.0,
+                available_predicates=_get_available_predicates(app, resource_id),
+            ))
+
+        disambiguation_notice = None
+        if lookup_result.ambiguous:
+            matches = matches[:MAX_EXACT_MATCHES_RETURNED]
+            disambiguation_notice = (
+                f"{lookup_result.total_matched} resources in ORKG share the exact "
+                f"label '{matched_on}' (showing {len(matches)}). Do NOT assume the "
+                f"first/top match is correct — inspect distinguishing predicates "
+                f"(e.g. publication year, authors, DOI) via "
+                f"GetResourceSummary/GetResourceDetails across the candidates "
+                f"below to pick the right one."
+            )
+        elif not lookup_result.exhaustive and not matches:
+            disambiguation_notice = (
+                f"No match found for '{label_clean}' within the bounded lookup "
+                f"(mode={mode}). This does not confirm the resource is absent from "
+                f"ORKG — try a different mode, a shorter substring, or FindResource."
+            )
+
+        session_journal.completed_steps.append(
+            f"LookupResourceByLabel('{label_clean}', mode={mode}) -> {len(matches)} matches"
+        )
+
+        response = SearchResponse(
+            matches=matches,
+            result_count=len(matches),
+            disambiguation_notice=disambiguation_notice,
+        )
+        return response.model_dump_json(indent=2)
+
+    except Exception as e:
+        error_msg = f"Error in LookupResourceByLabel: {str(e)}"
+        logger.error(error_msg)
+        session_journal.failed_attempts.append(f"LookupResourceByLabel('{label_clean}'): {str(e)}")
         return json.dumps({"error": error_msg}, indent=2)
 
 

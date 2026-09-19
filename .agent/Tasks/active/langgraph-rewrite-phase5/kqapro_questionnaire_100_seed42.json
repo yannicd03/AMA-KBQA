@@ -1,0 +1,6105 @@
+{
+  "metadata": {
+    "dataset": "kqapro",
+    "source_file": "db/datasets/kqapro/val.json",
+    "total_source_questions": 11797,
+    "sample_size": 100,
+    "seed": 42,
+    "generated_at": "2026-08-23T16:06:15.284712"
+  },
+  "questions": [
+    {
+      "id": 0,
+      "question": "Is the duration less than 238.9 seconds for the visual artwork whose official website is http://www.theflowersofwarmovie.com/?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <official_website> ?pv_1 . ?pv_1 <pred:value> \"http://www.theflowersofwarmovie.com/\" . ?e <duration> ?pv . ?pv <pred:unit> \"second\" . ?pv <pred:value> ?v . FILTER ( ?v < \"238.9\"^^xsd:double ) .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.theflowersofwarmovie.com/"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "duration"
+          ]
+        },
+        {
+          "function": "VerifyNum",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "238.9 second",
+            "<"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "question": "What is the language associated with the official website (http://www.bladetrinity.com/) for Blade: Trinity?",
+      "answer": "English",
+      "choices": [
+        "ǀXam language",
+        "Latin",
+        "Hindi",
+        "Bulgarian",
+        "Polish",
+        "Tahitian",
+        "Georgian",
+        "Korean",
+        "Xhosa",
+        "English"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"Blade: Trinity\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.bladetrinity.com/\" . [ <pred:fact_h> ?e ; <pred:fact_r> <official_website> ; <pred:fact_t> ?pv ] <language_of_work_or_name> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Blade: Trinity"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.bladetrinity.com/",
+            "language of work or name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "question": "Which has less cost, Wonder Woman that is 141 minutes long or Sucker Punch?",
+      "answer": "Sucker Punch",
+      "choices": [
+        "Sucker Punch",
+        "Training Day",
+        "Wonder Woman",
+        "Pleasantville",
+        "Curse of the Golden Flower",
+        "The Towering Inferno",
+        "Rebecca",
+        "A Prairie Home Companion",
+        "Talk to Her",
+        "The Fifth Element"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Wonder Woman\" . ?e <duration> ?pv_1 . ?pv_1 <pred:unit> \"minute\" . ?pv_1 <pred:value> \"141\"^^xsd:double . } UNION { ?e <pred:name> \"Sucker Punch\" . } ?e <cost> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Wonder Woman"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "duration",
+            "141 minute",
+            "="
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Sucker Punch"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": [
+            "cost",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "question": "What is the ISO 3166-2 code of the city with NUTS code UKE11 (the start time of this statement is 1999-01-01)?",
+      "answer": "GB-KHL",
+      "choices": [
+        "FR-33",
+        "CS-VO",
+        "US-KS",
+        "GB-GLG",
+        "GB-FIF",
+        "IN-PB",
+        "ES-CT",
+        "GB-KHL",
+        "IT-75",
+        "US-MD"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"city\" . ?e <NUTS_code> ?pv_1 . ?pv_1 <pred:value> \"UKE11\" . [ <pred:fact_h> ?e ; <pred:fact_r> <NUTS_code> ; <pred:fact_t> ?pv_1 ] <start_time> ?qpv . ?qpv <pred:date> \"1999-01-01\"^^xsd:date . ?e <ISO_3166-2_code> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "NUTS code",
+            "UKE11"
+          ]
+        },
+        {
+          "function": "QFilterDate",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "start time",
+            "1999-01-01",
+            "="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "city"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "ISO 3166-2 code"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "question": "Which fictional profession was born in Montreal and the native language name Aurora?",
+      "answer": "Aurora",
+      "choices": [
+        "Rogue",
+        "Wonder Woman",
+        "Frankenstein",
+        "Havok",
+        "Michelangelo",
+        "Daredevil",
+        "Aurora",
+        "Darwin",
+        "Hercules",
+        "Batman"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"fictional profession\" . ?e <place_of_birth> ?e_1 . ?e_1 <pred:name> \"Montreal\" .  ?e <name_in_native_language> ?pv . ?pv <pred:value> \"Aurora\" .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Montreal"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "place of birth",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "fictional profession"
+          ]
+        },
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "name in native language",
+            "Aurora"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "fictional profession"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "question": "What visual artwork is titled Milan and is distributed by Star Cinema?",
+      "answer": "Milan",
+      "choices": [
+        "Rebecca",
+        "Dubai",
+        "The Towering Inferno",
+        "Milan",
+        "The Hunchback of Notre Dame",
+        "Pleasantville",
+        "A Prairie Home Companion",
+        "Training Day",
+        "The Fifth Element",
+        "Curse of the Golden Flower"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <title> ?pv . ?pv <pred:value> \"Milan\" . ?e <distributor> ?e_1 . ?e_1 <pred:name> \"Star Cinema\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "Milan"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Star Cinema"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "distributor",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "question": "What is the release date of the visual artwork that received an Academy Award for Best Film Editing involving the winner Barbara McLean?",
+      "answer": "1944-01-01",
+      "choices": [
+        "1980-08-15",
+        "2005-11-23",
+        "1932-11-28",
+        "2001-11-16",
+        "2007-07-04",
+        "1944-01-01",
+        "1988-09-15",
+        "1966",
+        "2007-06-24",
+        "1978-11-15"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <award_received> ?e_1 . ?e_1 <pred:name> \"Academy Award for Best Film Editing\" .  [ <pred:fact_h> ?e ; <pred:fact_r> <award_received> ; <pred:fact_t> ?e_1 ] <winner> ?qpv . ?qpv <pred:value> \"Barbara McLean\" . ?e <publication_date> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Academy Award for Best Film Editing"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "award received",
+            "backward"
+          ]
+        },
+        {
+          "function": "QFilterStr",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "winner",
+            "Barbara McLean"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "publication date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "question": "Was the the Nintendo activity with the GameID of GGZX52 published before 2002?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"activity\" . ?e <Nintendo_GameID> ?pv_1 . ?pv_1 <pred:value> \"GGZX52\" . ?e <publication_date> ?pv . ?pv <pred:year> ?v . FILTER ( ?v < 2002 ) .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "Nintendo GameID",
+            "GGZX52"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "activity"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "publication date"
+          ]
+        },
+        {
+          "function": "VerifyYear",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "2002",
+            "<"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "question": "Where was the visual artwork which gained the exploitation visa number of 94332 in 1998 published on 1998-04-09?",
+      "answer": "Germany",
+      "choices": [
+        "Slovakia",
+        "Austin",
+        "Northern America",
+        "Tribeca Film Festival",
+        "2008 Toronto International Film Festival",
+        "Taiwan",
+        "worldwide",
+        "Toronto",
+        "Moscow",
+        "Germany"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <exploitation_visa_number> ?pv_1 . ?pv_1 <pred:value> \"94332\" . [ <pred:fact_h> ?e ; <pred:fact_r> <exploitation_visa_number> ; <pred:fact_t> ?pv_1 ] <start_time> ?qpv_1 . ?qpv_1 <pred:year> 1998 . ?e <publication_date> ?pv . ?pv <pred:date> \"1998-04-09\"^^xsd:date . [ <pred:fact_h> ?e ; <pred:fact_r> <publication_date> ; <pred:fact_t> ?pv ] <place_of_publication> ?qpv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "exploitation visa number",
+            "94332"
+          ]
+        },
+        {
+          "function": "QFilterYear",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "start time",
+            "1998",
+            "="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "publication date",
+            "1998-04-09",
+            "place of publication"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "question": "Which movie is longer, Transamerica or Mr. Smith Goes to Washington (the one whose color is black-and-white)?",
+      "answer": "Mr. Smith Goes to Washington",
+      "choices": [
+        "Rebecca",
+        "The Towering Inferno",
+        "The Hunchback of Notre Dame",
+        "Curse of the Golden Flower",
+        "Transamerica",
+        "Training Day",
+        "A Prairie Home Companion",
+        "Mr. Smith Goes to Washington",
+        "Talk to Her",
+        "Pleasantville"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Transamerica\" .  } UNION { ?e <pred:name> \"Mr. Smith Goes to Washington\" . ?e <color> ?e_1 . ?e_1 <pred:name> \"black-and-white\" .   } ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Transamerica"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "black-and-white"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "color",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Mr. Smith Goes to Washington"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            3
+          ],
+          "inputs": []
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            4
+          ],
+          "inputs": [
+            "duration",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "question": "What is the publication date for the novel mostly describing the American Civil War?",
+      "answer": "1936-06-10",
+      "choices": [
+        "2015-03-27",
+        "1991-09-26",
+        "2008-09-07",
+        "2012-09-24",
+        "2007-03-12",
+        "1936-06-10",
+        "2015-09-14",
+        "1994-11-03",
+        "2009-12-24",
+        "2010-11-04"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"novel\" . ?e <main_subject> ?e_1 . ?e_1 <pred:name> \"American Civil War\" .  ?e <publication_date> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "American Civil War"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "main subject",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "novel"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "publication date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "question": "How is Ocean County and Atlantic Ocean related?",
+      "answer": "named after",
+      "choices": [
+        "operator",
+        "family",
+        "opposite of",
+        "named after",
+        "does not have part",
+        "publisher",
+        "material used",
+        "programming language",
+        "indigenous to",
+        "superhuman feature or ability"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Ocean County\" . ?e_2 <pred:name> \"Atlantic Ocean\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Ocean County"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Atlantic Ocean"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "question": "Which one has less area, Carroll County (bordering on Grafton County) or Ramsey County?",
+      "answer": "Ramsey County",
+      "choices": [
+        "Delaware County",
+        "Greene County",
+        "San Juan County",
+        "Lee County",
+        "Carroll County",
+        "Washoe County",
+        "Ramsey County",
+        "African Union",
+        "Cass County",
+        "Orange County"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Carroll County\" . ?e_1 <shares_border_with> ?e . ?e_1 <pred:name> \"Grafton County\" .   } UNION { ?e <pred:name> \"Ramsey County\" .  } ?e <area> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Grafton County"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "shares border with",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Carroll County"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Ramsey County"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": [
+            "area",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "question": "When did christian John Ritter win a Primetime Emmy Award for Outstanding Lead Actor in a Comedy Series?",
+      "answer": "1984",
+      "choices": [
+        "1996-01-16",
+        "1764-01-01",
+        "1862",
+        "1996-01-01",
+        "1825-12-01",
+        "2016-03-01",
+        "1840",
+        "2018-02-01",
+        "2016-11-30",
+        "1984"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"Primetime Emmy Award for Outstanding Lead Actor in a Comedy Series\" . ?e_2 <pred:name> \"John Ritter\" . ?e_2 <religion> ?e_3 . ?e_3 <pred:name> \"Christianity\" . ?e_1 <winner> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <winner> ; <pred:fact_t> ?e_2 ] <point_in_time> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Primetime Emmy Award for Outstanding Lead Actor in a Comedy Series"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Christianity"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "religion",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "John Ritter"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            3
+          ],
+          "inputs": []
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            0,
+            4
+          ],
+          "inputs": [
+            "winner",
+            "point in time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "question": "http://www.miramax.com/movie/no-country-for-old-men is the official website for which film?",
+      "answer": "No Country for Old Men",
+      "choices": [
+        "No Country for Old Men",
+        "One Flew Over the Cuckoo's Nest",
+        "Rebecca",
+        "My Left Foot",
+        "Pleasantville",
+        "Dark Shadows",
+        "Beginners",
+        "A Prairie Home Companion",
+        "Twin Peaks: Fire Walk with Me",
+        "Talk to Her"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"film\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.miramax.com/movie/no-country-for-old-men\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.miramax.com/movie/no-country-for-old-men"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "film"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "question": "Among the counties of Michigan whose inception time is not in 1838,which one has the largest area ?",
+      "answer": "Marquette County",
+      "choices": [
+        "Jackson County",
+        "Genesee County",
+        "Clinton County",
+        "Macomb County",
+        "Monroe County",
+        "Washtenaw County",
+        "Livingston County",
+        "Kent County",
+        "Wayne County",
+        "Marquette County"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county of Michigan\" . ?e <inception> ?pv_1 . ?pv_1 <pred:year> ?v_1 . FILTER ( ?v_1 != 1838 ) . ?e <area> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterYear",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "inception",
+            "1838",
+            "!="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "county of Michigan"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "area",
+            "largest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "question": "Is 25 the edition number of the award ceremony that follows the 2003 Grammy Awards?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"award ceremony\" . ?e_1 <followed_by> ?e . ?e_1 <pred:name> \"2003 Grammy Awards\" .  ?e <edition_number> ?pv . ?pv <pred:value> \"25\" .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "2003 Grammy Awards"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "followed by",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "award ceremony"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "edition number"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "25"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "question": "What is the criterion used for the calendar month that follows December, its name января?",
+      "answer": "genitive case",
+      "choices": [
+        "genitive case",
+        "apogee",
+        "Preferred",
+        "nickname",
+        "perigee",
+        "architectural height",
+        "Doctor Who",
+        "term",
+        "contrast",
+        "number of episodes at the end of the current season or the last one aired"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"calendar month\" . ?e <follows> ?e_1 . ?e_1 <pred:name> \"December\" .  ?e <name> ?pv . ?pv <pred:value> \"января\" . [ <pred:fact_h> ?e ; <pred:fact_r> <name> ; <pred:fact_t> ?pv ] <criterion_used> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "December"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "follows",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "calendar month"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "name",
+            "января",
+            "criterion used"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "question": "Which has fewer employees, Lafayette College or Santa Monica College?",
+      "answer": "Lafayette College",
+      "choices": [
+        "Trinity College",
+        "Hampshire College",
+        "Williams College",
+        "Colorado College",
+        "Lafayette College",
+        "Barnard College",
+        "Clark University",
+        "Grinnell College",
+        "Denison University",
+        "Scottish Church College"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Lafayette College\" .  } UNION { ?e <pred:name> \"Santa Monica College\" .  } ?e <employees> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Lafayette College"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Santa Monica College"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "employees",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "question": "Michael Jackson whose CANTIC-ID is a10299695 won a MTV Video Music Award for Best Dance Video for which work?",
+      "answer": "Scream/Childhood",
+      "choices": [
+        "Wonder Man",
+        "Rosencrantz & Guildenstern Are Dead",
+        "Scream/Childhood",
+        "Teenage Father",
+        "The Gay Divorcee",
+        "Overexposed",
+        "Weeds",
+        "The Man Between",
+        "Mr. Warmth: The Don Rickles Project",
+        "Oldest Living Confederate Widow Tells All"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"MTV Video Music Award for Best Dance Video\" . ?e_2 <pred:name> \"Michael Jackson\" . ?e_2 <CANTIC-ID> ?pv . ?pv <pred:value> \"a10299695\" . ?e_1 <winner> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <winner> ; <pred:fact_t> ?e_2 ] <for_work> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "MTV Video Music Award for Best Dance Video"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Michael Jackson"
+          ]
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "CANTIC-ID",
+            "a10299695"
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            0,
+            2
+          ],
+          "inputs": [
+            "winner",
+            "for work"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "question": "What is the beginning date that 116454 is the exploitation visa number for Red Road?",
+      "answer": "2006-11-20",
+      "choices": [
+        "1997-03-03",
+        "2006-11-20",
+        "1948-01-30",
+        "1990-11-06",
+        "1945-06-15",
+        "2011-03-11",
+        "1963-10-29",
+        "2007-07-24",
+        "1912-11-20",
+        "1977-01-01"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"Red Road\" . ?e <exploitation_visa_number> ?pv . ?pv <pred:value> \"116454\" . [ <pred:fact_h> ?e ; <pred:fact_r> <exploitation_visa_number> ; <pred:fact_t> ?pv ] <start_time> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Red Road"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "exploitation visa number",
+            "116454",
+            "start time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "question": "What is the character role of Adam West (whose official website is http://www.adamwest.com) as a cast member in Batman (that has Joan Collins as a cast member)?",
+      "answer": "Batman",
+      "choices": [
+        "Samantha Jones",
+        "\"Priest\" Vallon",
+        "Nicky",
+        "Sue Sylvester",
+        "Betty Draper",
+        "Clara Clayton",
+        "Batman",
+        "Superman",
+        "Storm",
+        "Ethan Kanin"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"Batman\" . ?e_1 <cast_member> ?e_3 . ?e_3 <pred:name> \"Joan Collins\" . ?e_2 <pred:name> \"Adam West\" . ?e_2 <official_website> ?pv . ?pv <pred:value> \"http://www.adamwest.com\" . ?e_1 <cast_member> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <cast_member> ; <pred:fact_t> ?e_2 ] <character_role> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Joan Collins"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "cast member",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Batman"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Adam West"
+          ]
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "official website",
+            "http://www.adamwest.com"
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            3,
+            5
+          ],
+          "inputs": [
+            "cast member",
+            "character role"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "question": "What is the relationship between Eugene (the one whose Twitter username is islandgirl_81) and SM Entertainment?",
+      "answer": "record label",
+      "choices": [
+        "eye color",
+        "editor",
+        "depicts",
+        "military branch",
+        "record label",
+        "permanent resident of",
+        "original film format",
+        "mouth of the watercourse",
+        "language of work or name",
+        "indigenous to"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Eugene\" . ?e_1 <Twitter_username> ?pv . ?pv <pred:value> \"islandgirl_81\" . ?e_2 <pred:name> \"SM Entertainment\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Eugene"
+          ]
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "Twitter username",
+            "islandgirl_81"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "SM Entertainment"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "question": "Does Audrey Hepburn or Erykah Badu have fewer kids?",
+      "answer": "Audrey Hepburn",
+      "choices": [
+        "Audrey Hepburn",
+        "Sylvester Stallone",
+        "James E. Reilly",
+        "Erykah Badu",
+        "Rahul Dev Burman",
+        "Simon Cowell",
+        "Max Fleischer",
+        "Paul Simon",
+        "Richard Gere",
+        "David Byrne"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Audrey Hepburn\" .  } UNION { ?e <pred:name> \"Erykah Badu\" .  } ?e <number_of_children> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Audrey Hepburn"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Erykah Badu"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "number of children",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "question": "Which movie is longer, The Three Musketeers (the one whose duration is 73 minute) or The Graduate?",
+      "answer": "The Graduate",
+      "choices": [
+        "Pleasantville",
+        "The Towering Inferno",
+        "A Prairie Home Companion",
+        "Talk to Her",
+        "The Graduate",
+        "The Three Musketeers",
+        "Rebecca",
+        "Training Day",
+        "The Hunchback of Notre Dame",
+        "Curse of the Golden Flower"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"The Three Musketeers\" . ?e <duration> ?pv_1 . ?pv_1 <pred:unit> \"minute\" . ?pv_1 <pred:value> \"73\"^^xsd:double . } UNION { ?e <pred:name> \"The Graduate\" . } ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "The Three Musketeers"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "duration",
+            "73 minute",
+            "="
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "The Graduate"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": [
+            "duration",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "question": "Of the independent cities that share a border with Chesapeake, which has the smallest area?",
+      "answer": "Portsmouth",
+      "choices": [
+        "Lynchburg",
+        "Portsmouth",
+        "Norfolk",
+        "Fairfax",
+        "Charlottesville",
+        "Virginia Beach",
+        "Winchester",
+        "Hampton",
+        "Roanoke",
+        "Danville"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"independent city\" . ?e <shares_border_with> ?e_1 . ?e_1 <pred:name> \"Chesapeake\" .  ?e <area> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Chesapeake"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "shares border with",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "independent city"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "area",
+            "smallest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "question": "Which movie's official website is http://www.allaboutstevemovie.com/?",
+      "answer": "All About Steve",
+      "choices": [
+        "A Prairie Home Companion",
+        "All About Steve",
+        "Marmaduke",
+        "Talk to Her",
+        "Moonrise Kingdom",
+        "Munich",
+        "Rogue",
+        "Genesis",
+        "Rebecca",
+        "A Single Man"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"film\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.allaboutstevemovie.com/\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.allaboutstevemovie.com/"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "film"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "question": "When was Unstoppable distributed by Sony Pictures Home Entertainment published?",
+      "answer": "2004-01-01",
+      "choices": [
+        "2004-01-01",
+        "2000-10-19",
+        "2016-09-01",
+        "1942-01-28",
+        "2008-04-30",
+        "2012-03-09",
+        "1989-12-26",
+        "2002-03-22",
+        "1978-12-14",
+        "1982-04-15"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:name> \"Unstoppable\" . ?e <distributor> ?e_1 . ?e_1 <pred:name> \"Sony Pictures Home Entertainment\" .  ?e <publication_date> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Sony Pictures Home Entertainment"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "distributor",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Unstoppable"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "publication date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "question": "What language is associated with the official website https://www.collegeparkmd.gov/ for College Park?",
+      "answer": "English",
+      "choices": [
+        "Finnish",
+        "Russian",
+        "Occitan",
+        "Slavic languages",
+        "Bokmål",
+        "Franco-Provençal",
+        "Galician",
+        "Esperanto",
+        "Toki Pona",
+        "English"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"College Park\" . ?e <official_website> ?pv . ?pv <pred:value> \"https://www.collegeparkmd.gov/\" . [ <pred:fact_h> ?e ; <pred:fact_r> <official_website> ; <pred:fact_t> ?pv ] <language_of_work_or_name> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "College Park"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "https://www.collegeparkmd.gov/",
+            "language of work or name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "question": "Does Independence (the one whose population is 669) or Towson have a higher elevation above sea level?",
+      "answer": "Independence",
+      "choices": [
+        "Josh Groban",
+        "lymphoma",
+        "Stanford",
+        "Scott Lobdell",
+        "Silver Spring",
+        "Towson",
+        "INXS",
+        "Independence",
+        "McLean",
+        "Bethesda"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Independence\" . ?e <population> ?pv_1 . ?pv_1 <pred:unit> \"1\" . ?pv_1 <pred:value> \"669\"^^xsd:double . } UNION { ?e <pred:name> \"Towson\" . } ?e <elevation_above_sea_level> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Independence"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "population",
+            "669",
+            "="
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Towson"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": [
+            "elevation above sea level",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "question": "How many capitals does the sovereign state with maritime identification digits 466 have?",
+      "answer": "1",
+      "choices": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"capital\" . ?e <part_of> ?e_1 . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"sovereign state\" . ?e_1 <maritime_identification_digits> ?pv . ?pv <pred:value> \"466\" .   }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "maritime identification digits",
+            "466"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "sovereign state"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "part of",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "capital"
+          ]
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "question": "How was it determined that 1,897,753 is the population of Texan county that contains San Antonio (the one that is the capital of Bexar County) ?",
+      "answer": "demographic balance",
+      "choices": [
+        "United Kingdom Census 1971",
+        "extrapolation",
+        "Yemen General Census of Population, Housing and Establishments 2004",
+        "de jure",
+        "demographic balance",
+        "Address Based Population Registration System",
+        "hearth tax",
+        "average",
+        "United Kingdom Census 2001",
+        "de facto"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county of Texas\" . ?e_1 <located_in_the_administrative_territorial_entity> ?e . ?e_1 <pred:name> \"San Antonio\" . ?e_1 <capital_of> ?e_2 . ?e_2 <pred:name> \"Bexar County\" .  ?e <population> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> \"1897753\"^^xsd:double . [ <pred:fact_h> ?e ; <pred:fact_r> <population> ; <pred:fact_t> ?pv ] <determination_method> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Bexar County"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "capital of",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "San Antonio"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "located in the administrative territorial entity",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "county of Texas"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "population",
+            "1897753",
+            "determination method"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 32,
+      "question": "What language is associated with the official website http://www.morgan.edu of Morgan State University ?",
+      "answer": "English",
+      "choices": [
+        "Australian English",
+        "American English",
+        "Toki Pona",
+        "Slavic languages",
+        "Belgian French",
+        "Breton",
+        "English",
+        "Hindi",
+        "Ewe",
+        "Chinese"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"Morgan State University\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.morgan.edu\" . [ <pred:fact_h> ?e ; <pred:fact_r> <official_website> ; <pred:fact_t> ?pv ] <language_of_work_or_name> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Morgan State University"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.morgan.edu",
+            "language of work or name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "question": "Was Robbie Williams (the one whose position is defender) born after 1969?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:name> \"Robbie Williams\" . ?e <position_played_on_team_/_speciality> ?e_1 . ?e_1 <pred:name> \"defender\" .  ?e <date_of_birth> ?pv . ?pv <pred:year> ?v . FILTER ( ?v > 1969 ) .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "defender"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "position played on team / speciality",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Robbie Williams"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "date of birth"
+          ]
+        },
+        {
+          "function": "VerifyYear",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "1969",
+            ">"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "question": "Where was a visual artwork, that is the predecessor of Platoon (winner of Academy Award for Best Film Editing), published on 13th March 1986 ?",
+      "answer": "Germany",
+      "choices": [
+        "Grauman's Chinese Theatre",
+        "Park City",
+        "BFI London Film Festival",
+        "Cannes Film Festival",
+        "Kingdom of the Netherlands",
+        "New Amsterdam Theatre",
+        "Hollywood Bowl",
+        "Netherlands",
+        "Germany",
+        "Spain"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"visual artwork\" . ?e <followed_by> ?e_1 . ?e_1 <pred:name> \"Platoon\" . ?e_1 <award_received> ?e_2 . ?e_2 <pred:name> \"Academy Award for Best Film Editing\" .  ?e <publication_date> ?pv . ?pv <pred:date> \"1986-03-13\"^^xsd:date . [ <pred:fact_h> ?e ; <pred:fact_r> <publication_date> ; <pred:fact_t> ?pv ] <place_of_publication> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Academy Award for Best Film Editing"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "award received",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Platoon"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "followed by",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "visual artwork"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "publication date",
+            "1986-03-13",
+            "place of publication"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "question": "What is the official website for Roger Moore, who was born in 1943?",
+      "answer": "http://www.rogermoorephotography.com",
+      "choices": [
+        "http://www.hairspraymovie.com/",
+        "http://stevenseagal.com/",
+        "https://www.bleeckerstreetmedia.com/beirut",
+        "http://www.nba.com/wizards/",
+        "http://lifeandtimes.com",
+        "http://necmusic.edu",
+        "http://www.mgm.com/view/movie/231/The-World-Is-Not-Enough",
+        "http://www.co.weber.ut.us",
+        "http://www.rogermoorephotography.com",
+        "http://www.jiangsu.gov.cn"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:name> \"Roger Moore\" . ?e <date_of_birth> ?pv_1 . ?pv_1 <pred:year> 1943 . ?e <official_website> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Roger Moore"
+          ]
+        },
+        {
+          "function": "FilterYear",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "date of birth",
+            "1943",
+            "="
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "official website"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "question": "What is the date of birth for the human whose ISNI is 0000 0000 7978 5832?",
+      "answer": "1961-06-25",
+      "choices": [
+        "1927-05-13",
+        "1939-05-25",
+        "1974-01-30",
+        "1939-07-02",
+        "1961-06-25",
+        "1964-06-15",
+        "1973-05-17",
+        "1874-09-13",
+        "1948-07-08",
+        "1797-08-30"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <ISNI> ?pv_1 . ?pv_1 <pred:value> \"0000 0000 7978 5832\" . ?e <date_of_birth> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0000 7978 5832"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "date of birth"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "question": "Alan Bennett of Wycombe Wanderers F.C. has what link to Cork?",
+      "answer": "place of birth",
+      "choices": [
+        "destination point",
+        "highest judicial authority",
+        "creator",
+        "characters",
+        "risk factor",
+        "located on astronomical location",
+        "chairperson",
+        "parent astronomical body",
+        "next higher rank",
+        "place of birth"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Alan Bennett\" . ?e_1 <member_of_sports_team> ?e_3 . ?e_3 <pred:name> \"Wycombe Wanderers F.C.\" . ?e_2 <pred:name> \"Cork\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Wycombe Wanderers F.C."
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "member of sports team",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Alan Bennett"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Cork"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "question": "When did the producer of Love Affair (the one that is designed by Van Nest Polglase) die?",
+      "answer": "1969-07-05",
+      "choices": [
+        "1852-02-21",
+        "1964-10-15",
+        "2002-12-25",
+        "1999-12-12",
+        "1969-07-05",
+        "2012-05-29",
+        "2018-09-27",
+        "1900-08-25",
+        "1983-01-01",
+        "1773-12-24"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e_1 <producer> ?e . ?e_1 <pred:name> \"Love Affair\" . ?e_1 <production_designer> ?e_2 . ?e_2 <pred:name> \"Van Nest Polglase\" .  ?e <date_of_death> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Van Nest Polglase"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "production designer",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Love Affair"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "producer",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "date of death"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "question": "When was the administrative territorial entity whose official website is http://www.jacksoncounty.wv.gov established?",
+      "answer": "1831-03-01",
+      "choices": [
+        "1873",
+        "1889-11-08",
+        "1776-09-06",
+        "1330",
+        "1831-03-01",
+        "1891-12-10",
+        "1918-04-01",
+        "1937-04-17",
+        "1793-01-01",
+        "1731"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"administrative territorial entity\" . ?e <official_website> ?pv_1 . ?pv_1 <pred:value> \"http://www.jacksoncounty.wv.gov\" . ?e <inception> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.jacksoncounty.wv.gov"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "administrative territorial entity"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "inception"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "question": "Which person is assigned ISNI 0000 0000 6581 8680?",
+      "answer": "Manoj Kumar",
+      "choices": [
+        "William Henry Harrison",
+        "Sylvester Stallone",
+        "Michel Legrand",
+        "Max Fleischer",
+        "Sean Hayes",
+        "Manoj Kumar",
+        "Ron Carter",
+        "Richard Gere",
+        "LeAnn Rimes",
+        "Michael Lerner"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <ISNI> ?pv . ?pv <pred:value> \"0000 0000 6581 8680\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0000 6581 8680"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "question": "What is the population of the county town whose native label is Warwick ?",
+      "answer": "32719",
+      "choices": [
+        "21551634",
+        "10267300",
+        "167505",
+        "6606395",
+        "423420",
+        "886837",
+        "10945",
+        "387423",
+        "539403",
+        "32719"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county town\" . ?e <native_label> ?pv_1 . ?pv_1 <pred:value> \"Warwick\" . ?e <population> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "native label",
+            "Warwick"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "county town"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "population"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "question": "What is the connection between Oasis (whose title is Oasis) and adventure film?",
+      "answer": "genre",
+      "choices": [
+        "official residence",
+        "worshipped by",
+        "drafted by",
+        "published in",
+        "natural product of taxon",
+        "place of burial",
+        "language of work or name",
+        "partially contains",
+        "genre",
+        "exported to"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Oasis\" . ?e_1 <title> ?pv . ?pv <pred:value> \"Oasis\" . ?e_2 <pred:name> \"adventure film\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Oasis"
+          ]
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "Oasis"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "adventure film"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "question": "Which one is taller Napoleon (the one who died in1821-05-05) or Ben Johnson (the one that participated in the 1988 Summer Olympics)?",
+      "answer": "Ben Johnson",
+      "choices": [
+        "Max Fleischer",
+        "Simon Cowell",
+        "Napoleon",
+        "Sylvester Stallone",
+        "Ben Johnson",
+        "Rahul Dev Burman",
+        "James E. Reilly",
+        "David Byrne",
+        "Richard Gere",
+        "William Henry Harrison"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Napoleon\" . ?e <date_of_death> ?pv_1 . ?pv_1 <pred:date> \"1821-05-05\"^^xsd:date . } UNION { ?e <pred:name> \"Ben Johnson\" . ?e <participant_of> ?e_1 . ?e_1 <pred:name> \"1988 Summer Olympics\" . } ?e <height> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Napoleon"
+          ]
+        },
+        {
+          "function": "FilterDate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "date of death",
+            "1821-05-05",
+            "="
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "1988 Summer Olympics"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "participant of",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Ben Johnson"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": []
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            1,
+            5
+          ],
+          "inputs": [
+            "height",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "question": "Does the filming-location city for Merry Christmas, Mr. Lawrence, have its population equal to 4.2 (the point in time of this statement is 2014)?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"city\" . ?e_1 <filming_location> ?e . ?e_1 <pred:name> \"Merry Christmas, Mr. Lawrence\" .  ?e <population> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> \"4.2\"^^xsd:double . [ <pred:fact_h> ?e ; <pred:fact_r> <population> ; <pred:fact_t> ?pv ] <point_in_time> ?qpv . ?qpv <pred:year> 2014 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Merry Christmas, Mr. Lawrence"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "filming location",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "city"
+          ]
+        },
+        {
+          "function": "QueryAttrUnderCondition",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "population",
+            "point in time",
+            "2014"
+          ]
+        },
+        {
+          "function": "VerifyNum",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "4.2",
+            "="
+          ]
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "question": "Why does the statement, that the ISNI of a person buried in Ticino is  0000 0003 6864 0824, should be considered deprecated ?",
+      "answer": "applies to other compound",
+      "choices": [
+        "not been able to confirm this claim",
+        "withdrawn identifier value",
+        "applies to other person",
+        "anachronism",
+        "retraction",
+        "forgery",
+        "error in referenced source",
+        "does not exactly match",
+        "former entity",
+        "applies to other compound"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <place_of_burial> ?e_1 . ?e_1 <pred:name> \"Ticino\" .  ?e <ISNI> ?pv . ?pv <pred:value> \"0000 0003 6864 0824\" . [ <pred:fact_h> ?e ; <pred:fact_r> <ISNI> ; <pred:fact_t> ?pv ] <reason_for_deprecation> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Ticino"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "place of burial",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0003 6864 0824",
+            "reason for deprecation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 46,
+      "question": "How many human settlements where the Institute for Advanced Study is situated are in Essex County, the location of Newark?",
+      "answer": "0",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human settlement\" . ?e_1 <located_in_the_administrative_territorial_entity> ?e . ?e_1 <pred:name> \"Institute for Advanced Study\" .  ?e <located_in_the_administrative_territorial_entity> ?e_2 . ?e_2 <pred:name> \"Essex County\" . ?e_3 <located_in_the_administrative_territorial_entity> ?e_2 . ?e_3 <pred:name> \"Newark\" .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Institute for Advanced Study"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "located in the administrative territorial entity",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human settlement"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Newark"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "located in the administrative territorial entity",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Essex County"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            4,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            6
+          ],
+          "inputs": [
+            "located in the administrative territorial entity",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            7
+          ],
+          "inputs": [
+            "human settlement"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            8
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            9
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "question": "What is the relationship between neo-psychedelia and Danger Mouse?",
+      "answer": "famous people",
+      "choices": [
+        "sport",
+        "different from",
+        "eye color",
+        "screenwriter",
+        "league",
+        "work location",
+        "mother",
+        "next lower rank",
+        "famous people",
+        "lifestyle"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"neo-psychedelia\" . ?e_2 <pred:name> \"Danger Mouse\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "neo-psychedelia"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Danger Mouse"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "question": "What city that borders Los Angeles, in the United States, has the smallest area?",
+      "answer": "West Hollywood",
+      "choices": [
+        "Burbank",
+        "Culver City",
+        "Santa Monica",
+        "Torrance",
+        "Beverly Hills",
+        "Glendale",
+        "West Hollywood",
+        "Compton",
+        "Long Beach",
+        "Inglewood"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"city of the United States\" . ?e <shares_border_with> ?e_1 . ?e_1 <pred:name> \"Los Angeles\" .  ?e <area> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Los Angeles"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "shares border with",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "city of the United States"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "area",
+            "smallest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "question": "Does arrie (whose narrative location is Maine) or Atonement (that was nominated for a BAFTA Award for Best Makeup and Hair) have the longer running time?",
+      "answer": "Atonement",
+      "choices": [
+        "Carrie",
+        "The Fifth Element",
+        "The Hunchback of Notre Dame",
+        "Talk to Her",
+        "Training Day",
+        "Atonement",
+        "A Prairie Home Companion",
+        "The Towering Inferno",
+        "Curse of the Golden Flower",
+        "Pleasantville"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Carrie\" . ?e <narrative_location> ?e_1 . ?e_1 <pred:name> \"Maine\" .   } UNION { ?e <pred:name> \"Atonement\" . ?e <nominated_for> ?e_2 . ?e_2 <pred:name> \"BAFTA Award for Best Makeup and Hair\" .  } ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Maine"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "narrative location",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Carrie"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "BAFTA Award for Best Makeup and Hair"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "nominated for",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Atonement"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            5,
+            6
+          ],
+          "inputs": []
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            3,
+            7
+          ],
+          "inputs": [
+            "duration",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "question": "Tell me the inception time of the record label that is in the black metal genre.",
+      "answer": "1993-01-01",
+      "choices": [
+        "1917-01-01",
+        "2007-12-13",
+        "1870-07-20",
+        "1530",
+        "1763",
+        "1827-03-15",
+        "1903-06-12",
+        "1993-01-01",
+        "1921-07-16",
+        "1693-03-29"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"record label\" . ?e <genre> ?e_1 . ?e_1 <pred:name> \"black metal\" .  ?e <inception> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "black metal"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "genre",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "record label"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "inception"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 51,
+      "question": "What is the connection between Pyrus to polyunsaturated fat?",
+      "answer": "nutrient",
+      "choices": [
+        "organizer",
+        "writing system",
+        "participant of",
+        "followed by",
+        "officeholder",
+        "nutrient",
+        "season starts",
+        "main food source",
+        "editor",
+        "dedicated to"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Pyrus\" . ?e_2 <pred:name> \"polyunsaturated fat\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Pyrus"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "polyunsaturated fat"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "question": "What is the link between Thom Yorke and the United Kingdom?",
+      "answer": "country of citizenship",
+      "choices": [
+        "cast member",
+        "country of citizenship",
+        "official color",
+        "headquarters location",
+        "source of material",
+        "production designer",
+        "field of work",
+        "parent astronomical body",
+        "writing system",
+        "father"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Thom Yorke\" . ?e_2 <pred:name> \"United Kingdom\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Thom Yorke"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "United Kingdom"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 53,
+      "question": "Is http://www.lonchaney.tk/ the official website for The Sopranos?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"television series\" . ?e <title> ?pv_1 . ?pv_1 <pred:value> \"The Sopranos\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.lonchaney.tk/\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "The Sopranos"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "television series"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "official website"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "http://www.lonchaney.tk/"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 54,
+      "question": "What person's birth date is before 1975 and birth date is 1951-01-17?",
+      "answer": "Bindu",
+      "choices": [
+        "Bruce Campbell",
+        "Richard Gere",
+        "Pauly Shore",
+        "William Henry Harrison",
+        "Sylvester Stallone",
+        "Bindu",
+        "Gulshan Grover",
+        "Max Fleischer",
+        "Roger Moore",
+        "Leslie Caron"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <date_of_birth> ?pv . ?pv <pred:year> ?v . FILTER ( ?v < 1975 ) . ?e <date_of_birth> ?pv_1 . ?pv_1 <pred:date> \"1951-01-17\"^^xsd:date .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterYear",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "date of birth",
+            "1975",
+            "<"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterDate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "date of birth",
+            "1951-01-17",
+            "="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 55,
+      "question": "Which one has the smallest duration among the characteristic movie that particularly depicts pirate.",
+      "answer": "Pirates of the Caribbean: The Curse of the Black Pearl",
+      "choices": [
+        "G-Force",
+        "Pirates of the Caribbean: The Curse of the Black Pearl",
+        "The Muppets",
+        "Holes",
+        "The Flintstones in Viva Rock Vegas",
+        "Pirates of the Caribbean: Dead Man's Chest",
+        "National Treasure: Book of Secrets",
+        "John Carter",
+        "Alvin and the Chipmunks: Chipwrecked",
+        "Old Dogs"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"feature film\" . ?e <main_subject> ?e_1 . ?e_1 <pred:name> \"pirate\" .  ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "pirate"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "main subject",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "feature film"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "duration",
+            "smallest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "question": "What language is associated with the official website http://www.harfordcountymd.gov for the Maryland county whose PermID is 4296763139?",
+      "answer": "English",
+      "choices": [
+        "Belarusian",
+        "Lithuanian",
+        "Hungarian",
+        "Jèrriais",
+        "Malagasy",
+        "Ewe",
+        "American English",
+        "Montenegrin",
+        "Old English",
+        "English"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county of Maryland\" . ?e <PermID> ?pv_1 . ?pv_1 <pred:value> \"4296763139\" . ?e <official_website> ?pv . ?pv <pred:value> \"http://www.harfordcountymd.gov\" . [ <pred:fact_h> ?e ; <pred:fact_r> <official_website> ; <pred:fact_t> ?pv ] <language_of_work_or_name> ?qpv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "PermID",
+            "4296763139"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "county of Maryland"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "official website",
+            "http://www.harfordcountymd.gov",
+            "language of work or name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "question": "Was the university corresponding to ISNI 0000 0004 1937 1135 established in any year but 1590 ?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"university\" . ?e <ISNI> ?pv_1 . ?pv_1 <pred:value> \"0000 0004 1937 1135\" . ?e <inception> ?pv . ?pv <pred:year> ?v . FILTER ( ?v != 1590 ) .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0004 1937 1135"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "university"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "inception"
+          ]
+        },
+        {
+          "function": "VerifyYear",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "1590",
+            "!="
+          ]
+        }
+      ]
+    },
+    {
+      "id": 58,
+      "question": "Is the ISO 3166-2 code of Kosi Zone JP-08 ?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:name> \"Kosi Zone\" . ?e <ISO_3166-2_code> ?pv . ?pv <pred:value> \"JP-08\" .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Kosi Zone"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISO 3166-2 code"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "JP-08"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 59,
+      "question": "What action game falls within the same genre as an entertainment piece whose publication date is on 1st January 2010 ?",
+      "answer": "light gun shooter",
+      "choices": [
+        "Harry Potter and the Half-Blood Prince",
+        "Shrek Forever After",
+        "third-person shooter",
+        "Battleship",
+        "Batman",
+        "beat 'em up",
+        "music video game",
+        "platform game",
+        "light gun shooter",
+        "Guitar Hero 5"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"action game\" . ?e_1 <genre> ?e . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"entertainment\" . ?e_1 <publication_date> ?pv_1 . ?pv_1 <pred:date> \"2010-01-01\"^^xsd:date .   }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterDate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "publication date",
+            "2010-01-01",
+            "="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "entertainment"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "genre",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "action game"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "question": "Is the elevation lower in Lubbock or in Fayetteville, founded in 1762?",
+      "answer": "Fayetteville",
+      "choices": [
+        "Lubbock",
+        "Lansing",
+        "Greenville",
+        "New Haven",
+        "Franklin",
+        "Fayetteville",
+        "Boulder",
+        "Compton",
+        "Oakland",
+        "Waukegan"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Lubbock\" . } UNION { ?e <pred:name> \"Fayetteville\" . ?e <inception> ?pv_1 . ?pv_1 <pred:year> 1762 . } ?e <elevation_above_sea_level> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Lubbock"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Fayetteville"
+          ]
+        },
+        {
+          "function": "FilterYear",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "inception",
+            "1762",
+            "="
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            2
+          ],
+          "inputs": [
+            "elevation above sea level",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 61,
+      "question": "What is the number of Texas counties that have a population under 36000000 or official website of http://www.co.mclennan.tx.us",
+      "answer": "17",
+      "choices": [
+        "15",
+        "16",
+        "17",
+        "18",
+        "19",
+        "20",
+        "21",
+        "22",
+        "23",
+        "24"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county of Texas\" .  { ?e <population> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> ?v . FILTER ( ?v < \"36000000\"^^xsd:double ) .  } UNION { ?e <official_website> ?pv . ?pv <pred:value> \"http://www.co.mclennan.tx.us\" .  } }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "population",
+            "36000000",
+            "<"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "county of Texas"
+          ]
+        },
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "official website",
+            "http://www.co.mclennan.tx.us"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "county of Texas"
+          ]
+        },
+        {
+          "function": "Or",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 62,
+      "question": "Since when has Canberra (the one whose elevation (above sea level) is 1893 foot) been the capital of Australia (the one whose nominal GDP is 27261731436.891 United States dollar)?",
+      "answer": "1927",
+      "choices": [
+        "1871-01-26",
+        "1929-06-03",
+        "1927",
+        "1980-12-10",
+        "1992-01-13",
+        "2002-09-27",
+        "-218",
+        "2017-03-02",
+        "1739-09-18",
+        "1955"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"Australia\" . ?e_1 <nominal_GDP> ?pv . ?pv <pred:unit> \"United States dollar\" . ?pv <pred:value> \"27261731436.891\"^^xsd:double . ?e_2 <pred:name> \"Canberra\" . ?e_2 <elevation_above_sea_level> ?pv_1 . ?pv_1 <pred:unit> \"foot\" . ?pv_1 <pred:value> \"1893\"^^xsd:double . ?e_1 <capital> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <capital> ; <pred:fact_t> ?e_2 ] <start_time> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Australia"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "nominal GDP",
+            "27261731436.891 United States dollar",
+            "="
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Canberra"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "elevation above sea level",
+            "1893 foot",
+            "="
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            1,
+            3
+          ],
+          "inputs": [
+            "capital",
+            "start time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 63,
+      "question": "When did the North Carolina county with the official website www.gastongov.com record a population of 206890?",
+      "answer": "2011-07-01",
+      "choices": [
+        "1993-09-25",
+        "1833",
+        "2014-12-20",
+        "1914",
+        "1852-12-01",
+        "1836",
+        "1975-04-08",
+        "2011-07-01",
+        "2004-03-01",
+        "1995-03-27"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"county of North Carolina\" . ?e <official_website> ?pv_1 . ?pv_1 <pred:value> \"http://www.gastongov.com\" . ?e <population> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> \"206890\"^^xsd:double . [ <pred:fact_h> ?e ; <pred:fact_r> <population> ; <pred:fact_t> ?pv ] <point_in_time> ?qpv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.gastongov.com"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "county of North Carolina"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "population",
+            "206890",
+            "point in time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "question": "What is the connection between Method Man and African Americans?",
+      "answer": "ethnic group",
+      "choices": [
+        "fictional universe described in",
+        "update method",
+        "has quality",
+        "ethnic group",
+        "color",
+        "inspired by",
+        "currency",
+        "geographic distribution",
+        "place of origin (Switzerland)",
+        "interested in"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"Method Man\" . ?e_2 <pred:name> \"African Americans\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Method Man"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "African Americans"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "question": "Is the ISNI of the human that was nominated for a Broadcast Film Critics Association Award for Best Supporting Actor for Master and Commander: The Far Side of the World equal to 0000 0001 1470 3215?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <nominated_for> ?e_1 . ?e_1 <pred:name> \"Broadcast Film Critics Association Award for Best Supporting Actor\" .  [ <pred:fact_h> ?e ; <pred:fact_r> <nominated_for> ; <pred:fact_t> ?e_1 ] <for_work> ?qpv . ?qpv <pred:value> \"Master and Commander: The Far Side of the World\" . ?e <ISNI> ?pv . ?pv <pred:value> \"0000 0001 1470 3215\" .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Broadcast Film Critics Association Award for Best Supporting Actor"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "nominated for",
+            "backward"
+          ]
+        },
+        {
+          "function": "QFilterStr",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "for work",
+            "Master and Commander: The Far Side of the World"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "ISNI"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "0000 0001 1470 3215"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 66,
+      "question": "When did the comedy-drama Bones conclude?",
+      "answer": "2017-03-28",
+      "choices": [
+        "1976-12-04",
+        "1858-06-20",
+        "1836",
+        "2017-03-28",
+        "1796",
+        "1666",
+        "1899",
+        "1930-03-28",
+        "2011-11-27",
+        "1936-04-19"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:name> \"Bones\" . ?e <genre> ?e_1 . ?e_1 <pred:name> \"comedy-drama\" .  ?e <end_time> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "comedy-drama"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "genre",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Bones"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "end time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 67,
+      "question": "How was the official color of USC, cardinal, originally stated?",
+      "answer": "USC Cardinal",
+      "choices": [
+        "Director of photography",
+        "Costume and design consultant",
+        "USC Cardinal",
+        "Newark Branch of Rutgers",
+        "Burnt Man",
+        "Bert; Mr. Dawes, Sr.",
+        "Additional Story Material",
+        "Walt Disney presents",
+        "forum apud Munichen",
+        "Prerelease engagements"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"University of Southern California\" . ?e_2 <pred:name> \"cardinal\" . ?e_1 <official_color> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <official_color> ; <pred:fact_t> ?e_2 ] <stated_as> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "University of Southern California"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "cardinal"
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "official color",
+            "stated as"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 68,
+      "question": "Who was the reviewer for the Belgium national football team that has a ranking of 64?",
+      "answer": "FIFA",
+      "choices": [
+        "Rotten Tomatoes",
+        "Empire",
+        "Charity Navigator",
+        "Gene Siskel",
+        "FIFA",
+        "Innovation, Science and Economic Development Canada",
+        "Metacritic",
+        "AllMovie",
+        "International Congress of Distinguished Awards",
+        "Peter Travers"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:name> \"Belgium national football team\" . ?e <ranking> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> \"64\"^^xsd:double . [ <pred:fact_h> ?e ; <pred:fact_r> <ranking> ; <pred:fact_t> ?pv ] <review_score_by> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Belgium national football team"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ranking",
+            "64",
+            "review score by"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 69,
+      "question": "When was the sound with the subreddit dreampop invented?",
+      "answer": "1982-01-01",
+      "choices": [
+        "1905-03-10",
+        "1278",
+        "1747",
+        "1876-03-11",
+        "1861-04-21",
+        "1945",
+        "1937-03-01",
+        "1971-03-26",
+        "1525",
+        "1982-01-01"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"sound\" . ?e <subreddit> ?pv_1 . ?pv_1 <pred:value> \"dreampop\" . ?e <inception> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "subreddit",
+            "dreampop"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "sound"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "inception"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 70,
+      "question": "Tell me the film festival edition that follows the film festival edition that follows 58th Berlin International Film Festival",
+      "answer": "60th Berlin International Film Festival",
+      "choices": [
+        "2010 Sundance Film Festival",
+        "2009 Sundance Film Festival",
+        "61st Berlin International Film Festival",
+        "2011 Sundance Film Festival",
+        "32nd Berlin International Film Festival",
+        "59th Berlin International Film Festival",
+        "60th Berlin International Film Festival",
+        "62nd Berlin International Film Festival",
+        "2012 Sundance Film Festival",
+        "2008 Sundance Film Festival"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"film festival edition\" . ?e_1 <followed_by> ?e . ?e_1 <pred:instance_of> ?c_1 . ?c_1 <pred:name> \"film festival edition\" . ?e_2 <followed_by> ?e_1 . ?e_2 <pred:name> \"58th Berlin International Film Festival\" .   }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "58th Berlin International Film Festival"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "followed by",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "film festival edition"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "followed by",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "film festival edition"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 71,
+      "question": "What is the date of birth for the human whose place of origin is Lucerne?",
+      "answer": "1976-06-05",
+      "choices": [
+        "2011-01-21",
+        "1924-02-03",
+        "1903-09-12",
+        "2013-06-09",
+        "2009-08-06",
+        "2002-07-15",
+        "2003-06-15",
+        "1976-06-05",
+        "1936-06-14",
+        "1910-11-20"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <place_of_origin_(Switzerland)> ?e_1 . ?e_1 <pred:name> \"Lucerne\" .  ?e <date_of_death> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Lucerne"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "place of origin (Switzerland)",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "date of death"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 72,
+      "question": "What is the population of the US city that's the birthplace of musician Jeff Daniels ?",
+      "answer": "115452",
+      "choices": [
+        "34324",
+        "4870000",
+        "8144",
+        "115452",
+        "4237518",
+        "780612",
+        "169572",
+        "2616556",
+        "231704",
+        "830000"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"city of the United States\" . ?e_1 <place_of_birth> ?e . ?e_1 <pred:name> \"Jeff Daniels\" . ?e_1 <occupation> ?e_2 . ?e_2 <pred:name> \"musician\" .  ?e <population> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "musician"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "occupation",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Jeff Daniels"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "place of birth",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "city of the United States"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "population"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 73,
+      "question": "Which has lower elevation above sea level, Timmins or Rabat?",
+      "answer": "Rabat",
+      "choices": [
+        "Abidjan",
+        "Kingston",
+        "Rabat",
+        "Santo Domingo",
+        "Kilkenny",
+        "Timmins",
+        "Bergen",
+        "Dundee",
+        "Cork",
+        "Trieste"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Timmins\" .  } UNION { ?e <pred:name> \"Rabat\" .  } ?e <elevation_above_sea_level> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Timmins"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Rabat"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "elevation above sea level",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 74,
+      "question": "What is the postal code of the University of Western Ontario's headquarters that is located in London (whose population is 366151)?",
+      "answer": "N6A 3K7",
+      "choices": [
+        "94595",
+        "01901–01905",
+        "1014–1015",
+        "N6A 3K7",
+        "27264",
+        "75000–78999",
+        "80805",
+        "07050–07051",
+        "1800–1831",
+        "85010–85059"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"University of Western Ontario\" . ?e_2 <pred:name> \"London\" . ?e_2 <population> ?pv . ?pv <pred:unit> \"1\" . ?pv <pred:value> \"366151\"^^xsd:double . ?e_1 <headquarters_location> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <headquarters_location> ; <pred:fact_t> ?e_2 ] <postal_code> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "University of Western Ontario"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "London"
+          ]
+        },
+        {
+          "function": "FilterNum",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "population",
+            "366151",
+            "="
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            0,
+            2
+          ],
+          "inputs": [
+            "headquarters location",
+            "postal code"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 75,
+      "question": "Was the game with the Nintendo GameID of GHLZ69 not published in 1941?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"activity\" . ?e <Nintendo_GameID> ?pv_1 . ?pv_1 <pred:value> \"GHLZ69\" . ?e <publication_date> ?pv . ?pv <pred:year> ?v . FILTER ( ?v != 1941 ) .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "Nintendo GameID",
+            "GHLZ69"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "activity"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "publication date"
+          ]
+        },
+        {
+          "function": "VerifyYear",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "1941",
+            "!="
+          ]
+        }
+      ]
+    },
+    {
+      "id": 76,
+      "question": "What is the connection between the 1992 NCAA Men's Division I Basketball Tournament to UCLA Bruins men's basketball?",
+      "answer": "seed team",
+      "choices": [
+        "seed team",
+        "make-up artist",
+        "costume designer",
+        "nominated for",
+        "based on",
+        "father",
+        "professional or sports partner",
+        "head of state",
+        "owner of",
+        "film crew member"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"1992 NCAA Men's Division I Basketball Tournament\" . ?e_2 <pred:name> \"UCLA Bruins men's basketball\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "1992 NCAA Men's Division I Basketball Tournament"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "UCLA Bruins men's basketball"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 77,
+      "question": "What first-level administrative country subdivision has the capital Hobart and has the capital Hobart (the start time of this statement is 1856-01-01)?",
+      "answer": "Tasmania",
+      "choices": [
+        "Greater Poland Voivodeship",
+        "England",
+        "Upper Austria",
+        "Punjab",
+        "Podlaskie Voivodeship",
+        "New South Wales",
+        "Minas Gerais",
+        "Lublin Voivodeship",
+        "Tasmania",
+        "Lower Austria"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"first-level administrative country subdivision\" . ?e <capital> ?e_1 . ?e_1 <pred:name> \"Hobart\" .  ?e_2 <capital_of> ?e . ?e_2 <pred:name> \"Hobart\" . [ <pred:fact_h> ?e_2 ; <pred:fact_r> <capital_of> ; <pred:fact_t> ?e ] <start_time> ?qpv . ?qpv <pred:date> \"1856-01-01\"^^xsd:date .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Hobart"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "capital",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "first-level administrative country subdivision"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Hobart"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "capital of",
+            "forward"
+          ]
+        },
+        {
+          "function": "QFilterDate",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "start time",
+            "1856-01-01",
+            "="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            5
+          ],
+          "inputs": [
+            "first-level administrative country subdivision"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            6
+          ],
+          "inputs": []
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            7
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 78,
+      "question": "Is 0000 0001 2284 9898 the ISNI of the higher education institution with official website http://www.williams.edu?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"higher education institution\" . ?e <official_website> ?pv_1 . ?pv_1 <pred:value> \"http://www.williams.edu\" . ?e <ISNI> ?pv . ?pv <pred:value> \"0000 0001 2284 9898\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "official website",
+            "http://www.williams.edu"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "higher education institution"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "ISNI"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "0000 0001 2284 9898"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 79,
+      "question": "Is Skip Lievsay's birth year later than 1960?",
+      "answer": "yes",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:name> \"Skip Lievsay\" . ?e <date_of_birth> ?pv . ?pv <pred:year> ?v . FILTER ( ?v > 1960 ) .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Skip Lievsay"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "date of birth"
+          ]
+        },
+        {
+          "function": "VerifyYear",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "1960",
+            ">"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 80,
+      "question": "Regarding a movie first published on 27th June 2007, what is the location of its first performance on 16th October 2007 ?",
+      "answer": "Rome",
+      "choices": [
+        "Broadcasting House",
+        "West Virginia",
+        "Ancient Egypt",
+        "Brookline",
+        "Melbourne",
+        "Brevard County",
+        "Dormont",
+        "worldwide",
+        "Mortlake Crematorium",
+        "Rome"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"film\" . ?e <publication_date> ?pv_1 . ?pv_1 <pred:date> \"2007-06-27\"^^xsd:date . ?e <date_of_first_performance> ?pv . ?pv <pred:date> \"2007-10-15\"^^xsd:date . [ <pred:fact_h> ?e ; <pred:fact_r> <date_of_first_performance> ; <pred:fact_t> ?pv ] <location> ?qpv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterDate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "publication date",
+            "2007-06-27",
+            "="
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "film"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "date of first performance",
+            "2007-10-15",
+            "location"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 81,
+      "question": "Who performs the synth-pop theme song A View to a Kill for the spy film A View to a Kill?",
+      "answer": "Duran Duran",
+      "choices": [
+        "Antonio Banderas",
+        "Mike Myers",
+        "Tina Turner",
+        "Nick Nolte",
+        "Adele",
+        "Duran Duran",
+        "David Boreanaz",
+        "Madonna",
+        "Prince",
+        "Tobey Maguire"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"A View to a Kill\" . ?e_1 <genre> ?e_3 . ?e_3 <pred:name> \"spy film\" . ?e_2 <pred:name> \"A View to a Kill\" . ?e_2 <genre> ?e_4 . ?e_4 <pred:name> \"synth-pop\" . ?e_1 <theme_music> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <theme_music> ; <pred:fact_t> ?e_2 ] <performer> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "spy film"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "genre",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "A View to a Kill"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "synth-pop"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "genre",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "A View to a Kill"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            5,
+            6
+          ],
+          "inputs": []
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            3,
+            7
+          ],
+          "inputs": [
+            "theme music",
+            "performer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 82,
+      "question": "Which movie cost less to make, Seven (the one that has Richard Schiff as a cast member) or Quantum of Solace?",
+      "answer": "Seven",
+      "choices": [
+        "Rebecca",
+        "Curse of the Golden Flower",
+        "Talk to Her",
+        "Seven",
+        "Pleasantville",
+        "The Hunchback of Notre Dame",
+        "The Towering Inferno",
+        "The Fifth Element",
+        "Quantum of Solace",
+        "Training Day"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"Seven\" . ?e <cast_member> ?e_1 . ?e_1 <pred:name> \"Richard Schiff\" .   } UNION { ?e <pred:name> \"Quantum of Solace\" .  } ?e <cost> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Richard Schiff"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "cast member",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Seven"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Quantum of Solace"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": [
+            "cost",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 83,
+      "question": "Is Libris-URI of a person, whose ISNI is 0000 0003 6854 3848, equal to 53hlpqwp4csd9fj ?",
+      "answer": "no",
+      "choices": [
+        "yes",
+        "no",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown"
+      ],
+      "sparql": "ASK { ?e <pred:instance_of> ?c . ?c <pred:name> \"human\" . ?e <ISNI> ?pv_1 . ?pv_1 <pred:value> \"0000 0003 6854 3848\" . ?e <Libris-URI> ?pv . ?pv <pred:value> \"53hlpqwp4csd9fj\" .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0003 6854 3848"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "human"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "Libris-URI"
+          ]
+        },
+        {
+          "function": "VerifyStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "53hlpqwp4csd9fj"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 84,
+      "question": "How is The Mummy Returns, released for PlayStation 2 platform,  connected to Dee Bradley Baker?",
+      "answer": "voice actor",
+      "choices": [
+        "candidacy in election",
+        "donated by",
+        "voice actor",
+        "source of material",
+        "maintained by",
+        "religious order",
+        "instrument",
+        "patron saint",
+        "mountain range",
+        "broadcast by"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"The Mummy Returns\" . ?e_1 <platform> ?e_3 . ?e_3 <pred:name> \"PlayStation 2\" . ?e_2 <pred:name> \"Dee Bradley Baker\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "PlayStation 2"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "platform",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "The Mummy Returns"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Dee Bradley Baker"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 85,
+      "question": "What U.S. city is the capital of Skagit County?",
+      "answer": "Mount Vernon",
+      "choices": [
+        "Kingston",
+        "Oakland",
+        "New Haven",
+        "Tyler",
+        "Franklin",
+        "Columbus",
+        "Arlington",
+        "Monterey",
+        "Waukegan",
+        "Mount Vernon"
+      ],
+      "sparql": "SELECT DISTINCT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"city of the United States\" . ?e_1 <capital> ?e . ?e_1 <pred:name> \"Skagit County\" .   }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Skagit County"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "capital",
+            "forward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "city of the United States"
+          ]
+        },
+        {
+          "function": "What",
+          "dependencies": [
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 86,
+      "question": "What is the number of civil war that has a start time after 1927 or that is located in Russian Empire.",
+      "answer": "3",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"civil war\" .  { ?e <start_time> ?pv . ?pv <pred:year> ?v . FILTER ( ?v > 1927 ) .  } UNION { ?e <location> ?e_1 . ?e_1 <pred:name> \"Russian Empire\" .  } }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterYear",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "start time",
+            "1927",
+            ">"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "civil war"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Russian Empire"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "location",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "civil war"
+          ]
+        },
+        {
+          "function": "Or",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 87,
+      "question": "What part of the province of Canada having the capital of Winnipeg has the demonym of Manitobain?",
+      "answer": "masculine",
+      "choices": [
+        "diplomatic recognition",
+        "Northern Region",
+        "masculine",
+        "building",
+        "Dyer County",
+        "Fayette County",
+        "Rhea County",
+        "given name",
+        "Herzegovina",
+        "groin"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"province of Canada\" . ?e <capital> ?e_1 . ?e_1 <pred:name> \"Winnipeg\" .  ?e <demonym> ?pv . ?pv <pred:value> \"Manitobain\" . [ <pred:fact_h> ?e ; <pred:fact_r> <demonym> ; <pred:fact_t> ?pv ] <applies_to_part> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Winnipeg"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "capital",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "province of Canada"
+          ]
+        },
+        {
+          "function": "QueryAttrQualifier",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "demonym",
+            "Manitobain",
+            "applies to part"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 88,
+      "question": "What is the relation between North Dakota State University and North Dakota?",
+      "answer": "named after",
+      "choices": [
+        "instrument",
+        "organizer",
+        "filming location",
+        "narrative role",
+        "lowest point",
+        "dialect of",
+        "grants",
+        "symptom of",
+        "named after",
+        "official residence"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"North Dakota State University\" . ?e_2 <pred:name> \"North Dakota\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "North Dakota State University"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "North Dakota"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 89,
+      "question": "Who is the nominee of the Academy award for Best Director that was a nomination for the film Juno that was nominated for an Academy Award for Best Writing, Original Screenplay?",
+      "answer": "Jason Reitman",
+      "choices": [
+        "Pierre Bismuth",
+        "Lisa Fruchtman",
+        "Bruce A. Evans",
+        "Stephen Mirrione",
+        "Charles Knode",
+        "Margaret Leighton",
+        "Jason Reitman",
+        "Jane Alexander",
+        "Stanley Shapiro",
+        "Faye Dunaway"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"Juno\" . ?e_1 <nominated_for> ?e_3 . ?e_3 <pred:name> \"Academy Award for Best Writing, Original Screenplay\" . ?e_2 <pred:name> \"Academy Award for Best Director\" . ?e_1 <nominated_for> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <nominated_for> ; <pred:fact_t> ?e_2 ] <nominee> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Academy Award for Best Writing, Original Screenplay"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "nominated for",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Juno"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Academy Award for Best Director"
+          ]
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": [
+            "nominated for",
+            "nominee"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 90,
+      "question": "How many films are titled The Expendables or mainly portray aviation?",
+      "answer": "53",
+      "choices": [
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"film\" .  { ?e <title> ?pv . ?pv <pred:value> \"The Expendables\" .  } UNION { ?e <main_subject> ?e_1 . ?e_1 <pred:name> \"aviation\" .  } }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "The Expendables"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "film"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "aviation"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "main subject",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "film"
+          ]
+        },
+        {
+          "function": "Or",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 91,
+      "question": "What character role is played by Charlie Cox (winner of the Screen Actors Guild Award for Outstanding Performance by an Ensemble in a Drama Series) in the film Daredevil (whose title is ديرديفيل)?",
+      "answer": "Daredevil",
+      "choices": [
+        "Scratchy",
+        "Bird Brain Mary",
+        "Jack McCoy",
+        "Daredevil",
+        "Abigail Whistler",
+        "Red Skull",
+        "Benjamin Franklin",
+        "Irina Spalko",
+        "Ellie",
+        "Mathayus"
+      ],
+      "sparql": "SELECT DISTINCT ?qpv WHERE { ?e_1 <pred:name> \"Daredevil\" . ?e_1 <title> ?pv . ?pv <pred:value> \"ديرديفيل\" . ?e_2 <pred:name> \"Charlie Cox\" . ?e_3 <winner> ?e_2 . ?e_3 <pred:name> \"Screen Actors Guild Award for Outstanding Performance by an Ensemble in a Drama Series\" . ?e_1 <cast_member> ?e_2 . [ <pred:fact_h> ?e_1 ; <pred:fact_r> <cast_member> ; <pred:fact_t> ?e_2 ] <character_role> ?qpv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Daredevil"
+          ]
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "ديرديفيل"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Screen Actors Guild Award for Outstanding Performance by an Ensemble in a Drama Series"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "winner",
+            "forward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Charlie Cox"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": []
+        },
+        {
+          "function": "QueryRelationQualifier",
+          "dependencies": [
+            1,
+            5
+          ],
+          "inputs": [
+            "cast member",
+            "character role"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 92,
+      "question": "Which weighs more, palmitoleic acid or L-Tyrosine?",
+      "answer": "palmitoleic acid",
+      "choices": [
+        "palmitic acid",
+        "L-Arginine",
+        "L-Tyrosine",
+        "thiamine ion",
+        "L-Leucine",
+        "capric acid",
+        "sucrose",
+        "palmitoleic acid",
+        "L-alanine",
+        "cis-oleic acid"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"palmitoleic acid\" .  } UNION { ?e <pred:name> \"L-Tyrosine\" .  } ?e <mass> ?pv . ?pv <pred:value> ?v .  } ORDER BY DESC(?v) LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "palmitoleic acid"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "L-Tyrosine"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "mass",
+            "greater"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 93,
+      "question": "What is the connection between John Wood (the one whose ISNI is 0000 0000 7243 7675) to architecture?",
+      "answer": "field of work",
+      "choices": [
+        "professorship",
+        "owner of",
+        "film crew member",
+        "has quality",
+        "interested in",
+        "commander of",
+        "creator",
+        "taxon rank",
+        "superhuman feature or ability",
+        "field of work"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"John Wood\" . ?e_1 <ISNI> ?pv . ?pv <pred:value> \"0000 0000 7243 7675\" . ?e_2 <pred:name> \"architecture\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "John Wood"
+          ]
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "ISNI",
+            "0000 0000 7243 7675"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "architecture"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 94,
+      "question": "What is the connection between The Adventures of Tintin (the one whose director is Steven Spielberg) to Steven Moffat?",
+      "answer": "screenwriter",
+      "choices": [
+        "next higher rank",
+        "performer",
+        "director/manager",
+        "shares border with",
+        "copyright representative",
+        "official color",
+        "seed team",
+        "mascot",
+        "owned by",
+        "screenwriter"
+      ],
+      "sparql": "SELECT DISTINCT ?p WHERE { ?e_1 <pred:name> \"The Adventures of Tintin\" . ?e_1 <director> ?e_3 . ?e_3 <pred:name> \"Steven Spielberg\" . ?e_2 <pred:name> \"Steven Moffat\" . ?e_1 ?p ?e_2 .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Steven Spielberg"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "director",
+            "backward"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "The Adventures of Tintin"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            1,
+            2
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Steven Moffat"
+          ]
+        },
+        {
+          "function": "QueryRelation",
+          "dependencies": [
+            3,
+            4
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 95,
+      "question": "Which one has short equity, JPMorgan Chase or AT&T?",
+      "answer": "AT&T",
+      "choices": [
+        "Sega",
+        "KLM",
+        "JPMorgan Chase",
+        "Entertainment One",
+        "Adobe Inc.",
+        "AT&T",
+        "McDonald's",
+        "Pfizer",
+        "Silver Pictures",
+        "Vodafone"
+      ],
+      "sparql": "SELECT ?e WHERE { { ?e <pred:name> \"JPMorgan Chase\" .  } UNION { ?e <pred:name> \"AT&T\" .  } ?e <total_equity> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "JPMorgan Chase"
+          ]
+        },
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "AT&T"
+          ]
+        },
+        {
+          "function": "SelectBetween",
+          "dependencies": [
+            0,
+            1
+          ],
+          "inputs": [
+            "total equity",
+            "less"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 96,
+      "question": "What is M. Emmet Walsh's Deutsche Synchronkartei actor-ID ?",
+      "answer": "1110",
+      "choices": [
+        "2298",
+        "2815",
+        "1878",
+        "1278",
+        "1110",
+        "2814",
+        "656",
+        "14714",
+        "34763",
+        "466"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:name> \"M. Emmet Walsh\" . ?e <Deutsche_Synchronkartei_actor-ID> ?pv .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "M. Emmet Walsh"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "Deutsche Synchronkartei actor-ID"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 97,
+      "question": "How many secondary schools are there that belong to the allegiance of the United Kingdom and whose official website is https://www.rada.ac.uk?",
+      "answer": "0",
+      "choices": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "sparql": "SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"secondary school\" . ?e <allegiance> ?e_1 . ?e_1 <pred:name> \"United Kingdom\" .  ?e <official_website> ?pv . ?pv <pred:value> \"https://www.rada.ac.uk\" .  }",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "United Kingdom"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "allegiance",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "secondary school"
+          ]
+        },
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            3
+          ],
+          "inputs": [
+            "official website",
+            "https://www.rada.ac.uk"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            4
+          ],
+          "inputs": [
+            "secondary school"
+          ]
+        },
+        {
+          "function": "And",
+          "dependencies": [
+            2,
+            5
+          ],
+          "inputs": []
+        },
+        {
+          "function": "Count",
+          "dependencies": [
+            6
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    {
+      "id": 98,
+      "question": "Which has the shortest duration of feature films released in Belgium?",
+      "answer": "Alvin and the Chipmunks: Chipwrecked",
+      "choices": [
+        "Pirates of the Caribbean: The Curse of the Black Pearl",
+        "The Muppets",
+        "John Carter",
+        "Old Dogs",
+        "Holes",
+        "The Flintstones in Viva Rock Vegas",
+        "Hannah Montana: The Movie",
+        "Alvin and the Chipmunks: Chipwrecked",
+        "National Treasure: Book of Secrets",
+        "G-Force"
+      ],
+      "sparql": "SELECT ?e WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"feature film\" . ?e <film_release_region> ?e_1 . ?e_1 <pred:name> \"Belgium\" .  ?e <duration> ?pv . ?pv <pred:value> ?v .  } ORDER BY ?v LIMIT 1",
+      "program": [
+        {
+          "function": "Find",
+          "dependencies": [],
+          "inputs": [
+            "Belgium"
+          ]
+        },
+        {
+          "function": "Relate",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "film release region",
+            "backward"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "feature film"
+          ]
+        },
+        {
+          "function": "SelectAmong",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "duration",
+            "smallest"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 99,
+      "question": "How long is the movie titled George Washington?",
+      "answer": "89 minute",
+      "choices": [
+        "124 minute",
+        "388 minute",
+        "107 minute",
+        "11 minute",
+        "58 minute",
+        "31 minute",
+        "44 minute",
+        "67.0 minute",
+        "89 minute",
+        "72 minute"
+      ],
+      "sparql": "SELECT DISTINCT ?pv WHERE { ?e <pred:instance_of> ?c . ?c <pred:name> \"film\" . ?e <title> ?pv_1 . ?pv_1 <pred:value> \"George Washington\" . ?e <duration> ?pv .  }",
+      "program": [
+        {
+          "function": "FindAll",
+          "dependencies": [],
+          "inputs": []
+        },
+        {
+          "function": "FilterStr",
+          "dependencies": [
+            0
+          ],
+          "inputs": [
+            "title",
+            "George Washington"
+          ]
+        },
+        {
+          "function": "FilterConcept",
+          "dependencies": [
+            1
+          ],
+          "inputs": [
+            "film"
+          ]
+        },
+        {
+          "function": "QueryAttr",
+          "dependencies": [
+            2
+          ],
+          "inputs": [
+            "duration"
+          ]
+        }
+      ]
+    }
+  ]
+}

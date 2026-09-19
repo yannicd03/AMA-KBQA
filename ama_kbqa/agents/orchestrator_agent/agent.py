@@ -394,6 +394,16 @@ class Orchestrator:
             attributes={"agent": self.name, "model": self.model, "query": query[:500]},
             payload={"query": query},
         ):
+            # Engine switch (`[agent].engine` / `AMA_AGENT_ENGINE`, see
+            # config.py). Phase 3b: the routing/delegation topology is ported
+            # to ama_kbqa/graph/orchestrator.py — see that module's
+            # docstring. Legacy body below is unchanged and stays the
+            # default.
+            from ama_kbqa.config import get_agent_engine
+            if get_agent_engine() == "graph":
+                from ama_kbqa.graph.orchestrator import run_orchestrator_graph
+                return await run_orchestrator_graph(self, query)
+
             try:
                 await self._init_mcp()
 

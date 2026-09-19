@@ -391,6 +391,10 @@ You MUST change your approach NOW."""
         """
         Get generic loop recovery guidance.
 
+        Override in subclass for KG-specific guidance (tool names, etc.).
+        This default is deliberately tool-name-agnostic so it stays correct
+        for any future KG agent that doesn't override it.
+
         Returns:
             Generic loop guidance string
         """
@@ -398,6 +402,9 @@ You MUST change your approach NOW."""
 - Try a different tool
 - Review your journal
 - Answer with available data
+- If a previous semantic/vector search returned confident-looking but wrong
+  results, switch to a deterministic lexical lookup tool (exact/substring
+  name match) instead of retrying the same search with rephrased terms
 - The data might not exist"""
 
     def _get_loop_intervention_template(self) -> str:
@@ -965,6 +972,19 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
                 _current_span_id.reset(_parent_token)
 
     async def _ask_impl(self, query: str, _root_span) -> str:
+        # Engine switch (`[agent].engine` / `AMA_AGENT_ENGINE`, see config.py).
+        # Phase 3: the whole per-question pipeline around the tool loop
+        # (MCP init, tool listing, follow-up detection, classification,
+        # prompt assembly, fast path, tool filtering) is ported to
+        # ama_kbqa/graph/pipeline.py — see that module's docstring. Text-mode
+        # tool-call agents (framework/text_tool_calls.py) always use the
+        # legacy body below, regardless of the configured engine (same rule
+        # ``_run_tool_loop`` already applies for the Phase 1/2 tool loop).
+        from ama_kbqa.config import get_agent_engine
+        if get_agent_engine() == "graph" and not getattr(self, "_text_tool_call_mode", False):
+            from ama_kbqa.graph.pipeline import run_pipeline_graph
+            return await run_pipeline_graph(self, query, _root_span)
+
         try:
             # Initialize MCP connection
             await self._init_mcp()
@@ -1381,6 +1401,25 @@ If you already have relevant evidence, call GetJournalSummary and answer from it
         Returns:
             Final answer string
         """
+        # Engine switch (`[agent].engine` / `AMA_AGENT_ENGINE`, see config.py).
+        # Phase 1: only the core loop (call_model/execute_tools, max_iterations,
+        # tool_choice schedule) is ported to ama_kbqa/graph/ — see that
+        # package's docstring for what's deliberately NOT ported yet. Text-mode
+        # tool-call agents (framework/text_tool_calls.py) always use the legacy
+        # loop below, regardless of the configured engine.
+        from ama_kbqa.config import get_agent_engine
+        if get_agent_engine() == "graph":
+            if not getattr(self, "_text_tool_call_mode", False):
+                from ama_kbqa.graph.runner import run_tool_loop_graph
+                return await run_tool_loop_graph(
+                    self, query, tools, max_iterations, refresh_interval, qtype=qtype
+                )
+            self._trace(
+                "Graph engine requested but agent is in text-tool-call mode; "
+                "falling back to the legacy tool loop.",
+                COLOR_YELLOW,
+            )
+
         iteration_count = 0
         final_agent_content: Optional[str] = None
         # Fast-path evidence is collected before the loop. Count it here so a

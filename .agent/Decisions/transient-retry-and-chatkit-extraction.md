@@ -4,6 +4,15 @@
 **Branches:** `dev` (this repo) and `wikikgqa-2026` (sibling repo, same arc)
 **Status:** Shipped, CI green at every step
 
+> **Superseded in part (2026-08-22):** the "langchain-free repo" invariant below (the
+> `chatkit[langchain]` extra is for ORCA only, AMA-KBQA stays core-only, guarded by
+> `tests/llm/test_kit_library.py::test_langchain_is_not_installed` /
+> `test_langchain_only_names_raise_helpful_error`) no longer holds. The
+> `feat/langgraph-rewrite` effort adds `langgraph`/`langchain-core`/`langchain-openai` as
+> real AMA-KBQA dependencies and deletes both guard tests. See
+> `Decisions/langgraph-adoption.md`. Everything else below (the retry wiring itself, the
+> package extraction history) is unaffected and this body is left as originally written.
+
 ## Related Docs
 - [Agent Framework](../System/agent_framework.md) — `_create_with_retry` / `TransientRetry` integration detail
 - [Project Architecture](../System/project_architecture.md) — Tech Stack / dependency listing

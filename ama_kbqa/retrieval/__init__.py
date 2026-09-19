@@ -12,6 +12,11 @@ from ama_kbqa.retrieval.embeddings import (
     embed_queries,
     embed_query,
 )
+from ama_kbqa.retrieval.lookup import (
+    LookupResult,
+    lookup_by_label,
+    normalize_label,
+)
 from ama_kbqa.retrieval.search import (
     RetrievalParams,
     build_retrieval_params,
@@ -36,6 +41,7 @@ def clear_question_caches() -> None:
 
 
 __all__ = [
+    "LookupResult",
     "RetrievalParams",
     "build_retrieval_params",
     "clear_embedding_cache",
@@ -43,6 +49,8 @@ __all__ = [
     "clear_result_cache",
     "embed_queries",
     "embed_query",
+    "lookup_by_label",
+    "normalize_label",
     "search",
     "search_terms",
 ]

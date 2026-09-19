@@ -46,6 +46,7 @@ CORE_TOOLS = {
     "GetResourceLabel", "BatchGetResourceLabels", "GetRelationTargets",
     "FollowRelationPath", "FindByPredicateValue", "RunORKGSPARQL",
     "ManageJournal", "GetJournalSummary", "GetJournalStateJSON",
+    "LookupResourceByLabel",
 }
 
 # Extra tools per question type (on top of CORE_TOOLS). "General" is

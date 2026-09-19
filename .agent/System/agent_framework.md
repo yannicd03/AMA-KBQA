@@ -10,6 +10,16 @@ question-type strategies and tool catalogs live in the per-agent docs.
 - [SciQAAgent](sciqa_agent.md) — SciQA-specific lifecycle, journal, tools
 - [Orchestrator Routing](orchestrator_routing.md) — routing/delegation layer
 - [Project Architecture](project_architecture.md) — full repo structure, config, CI
+- [Graph Engine](graph_engine.md) — LangGraph `StateGraph` reimplementation of this doc's tool loop/pipeline/orchestrator, selectable via `[agent].engine`
+
+---
+
+> **2026-08-23:** An alternative execution engine for everything this doc describes now
+> exists at `ama_kbqa/graph/`, selectable via `[agent].engine = "graph"` / `AMA_AGENT_ENGINE`
+> (default stays `"legacy"` — the mechanics below). It ports the tool loop, the per-question
+> pipeline, and the Orchestrator's routing/delegation topology onto an explicit LangGraph
+> `StateGraph`, reusing most of this class's methods directly rather than reimplementing
+> them. See [Graph Engine](graph_engine.md) for the full picture; this doc is not rewritten.
 
 ---
 

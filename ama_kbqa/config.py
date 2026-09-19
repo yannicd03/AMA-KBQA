@@ -569,6 +569,76 @@ def get_zero_tool_call_retry_max() -> int:
     return int(config.get("agent", {}).get("zero_tool_call_retry_max", 1))
 
 
+AGENT_ENGINE_ENV = "AMA_AGENT_ENGINE"
+
+
+def get_agent_engine() -> str:
+    """Return the agent execution engine: ``"legacy"`` (default) or ``"graph"``.
+
+    Read from the ``AMA_AGENT_ENGINE`` environment variable first (so a shell
+    or CI job can flip engines without editing config.toml), falling back to
+    ``[agent].engine`` in config.toml, defaulting to ``"legacy"`` when neither
+    is set or the value is unrecognized. See
+    ``.agent/Tasks/active/langgraph-rewrite.md``.
+
+    Returns:
+        str: ``"legacy"`` or ``"graph"``.
+    """
+    raw = os.environ.get(AGENT_ENGINE_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("agent", {}).get("engine", "legacy")
+    raw = str(raw).strip().lower()
+    return raw if raw in ("legacy", "graph") else "legacy"
+
+
+AGENT_CHECKPOINTER_ENV = "AMA_AGENT_CHECKPOINTER"
+AGENT_CHECKPOINTER_PATH_ENV = "AMA_AGENT_CHECKPOINTER_PATH"
+DEFAULT_AGENT_CHECKPOINTER_PATH = "benchmark_results/checkpoints.sqlite"
+
+
+def get_agent_checkpointer() -> str:
+    """Return the graph engine's checkpointer backend: ``"none"`` (default),
+    ``"memory"``, or ``"sqlite"``.
+
+    Only consulted by ``ama_kbqa.graph.pipeline`` when
+    ``get_agent_engine() == "graph"``; the legacy engine never attaches a
+    checkpointer. Read from the ``AMA_AGENT_CHECKPOINTER`` environment
+    variable first, falling back to ``[agent].checkpointer`` in config.toml,
+    defaulting to ``"none"`` when neither is set or the value is
+    unrecognized — ``"none"`` compiles the pipeline graph exactly as before
+    this option existed (byte-identical behaviour).
+
+    Returns:
+        str: ``"none"``, ``"memory"``, or ``"sqlite"``.
+    """
+    raw = os.environ.get(AGENT_CHECKPOINTER_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("agent", {}).get("checkpointer", "none")
+    raw = str(raw).strip().lower()
+    return raw if raw in ("none", "memory", "sqlite") else "none"
+
+
+def get_agent_checkpointer_path() -> str:
+    """Return the filesystem path for the ``"sqlite"`` checkpointer backend.
+
+    Read from the ``AMA_AGENT_CHECKPOINTER_PATH`` environment variable first,
+    falling back to ``[agent].checkpointer_path`` in config.toml, defaulting
+    to ``"benchmark_results/checkpoints.sqlite"`` (relative to the repo root)
+    when neither is set. Unused when :func:`get_agent_checkpointer` returns
+    anything other than ``"sqlite"``.
+
+    Returns:
+        str: the configured sqlite checkpoint database path.
+    """
+    raw = os.environ.get(AGENT_CHECKPOINTER_PATH_ENV)
+    if raw is None or str(raw).strip() == "":
+        config = load_config()
+        raw = config.get("agent", {}).get("checkpointer_path", DEFAULT_AGENT_CHECKPOINTER_PATH)
+    return str(raw).strip() or DEFAULT_AGENT_CHECKPOINTER_PATH
+
+
 def get_synthesis_enabled() -> bool:
     """Whether to run the dedicated synthesis LLM step after the tool loop.
 

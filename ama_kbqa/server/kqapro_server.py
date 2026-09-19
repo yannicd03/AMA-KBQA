@@ -2013,29 +2013,33 @@ def _find_node_impl(semantic_node_name: str, context: Context) -> SearchResponse
     exact_matches = []
 
     # --- PHASE 1: Exact Filter ---
+    # Runs automatically on EVERY FindNode call (not opt-in) — this is the
+    # existing behavior, unchanged by the refactor onto the shared
+    # ama_kbqa.retrieval.lookup helper below. The scroll+filter mechanics
+    # (should-conditions over original_id/name/attributes.value.value,
+    # EXACT_MATCH_SCROLL_LIMIT) are now implemented once in lookup.py and
+    # reused by SciQA's equivalent phase in sciqa_server.py's FindResource,
+    # plus the standalone LookupEntityByName/LookupResourceByLabel tools —
+    # but the fields matched, the limit, and everything below (mapping,
+    # merge, disambiguation_notice) are byte-for-byte the same as before.
     try:
-        should_conditions = [
-            models.FieldCondition(key="original_id", match=models.MatchValue(value=search_term_clean)),
-            models.FieldCondition(key="name", match=models.MatchValue(value=search_term_clean)),
-            models.FieldCondition(key="attributes.value.value", match=models.MatchValue(value=search_term_clean))
-        ]
-        filter_query = models.Filter(should=should_conditions)
-
-        # .scroll() ist stabil
         # limit=5 previously made byte-identical duplicate labels (e.g. 13 KG
         # entities named "Roger Moore") structurally unreachable: vector
         # similarity can't discriminate between them, and whichever 5 Qdrant
         # happened to return first silently won. EXACT_MATCH_SCROLL_LIMIT
         # pulls enough duplicates that the desired entity is actually present
         # in `exact_matches` for the ambiguity handling below to surface.
-        scroll_results, _ = app_context.qdrant.scroll(
-            collection_name=COLLECTION_ENTITIES,
-            scroll_filter=filter_query,
+        lookup_result = retrieval.lookup_by_label(
+            app_context.qdrant,
+            COLLECTION_ENTITIES,
+            search_term_clean,
+            mode="exact",
+            label_field="name",
+            extra_fields=["original_id", "attributes.value.value"],
             limit=EXACT_MATCH_SCROLL_LIMIT,
-            with_payload=True
         )
-        
-        for point in scroll_results:
+
+        for point in lookup_result.matches:
             payload = point.payload or {}
             attributes = payload.get("attributes", [])
             unique_attrs = sorted(list(set(a.get("key") for a in attributes if a.get("key"))))
@@ -2146,6 +2150,133 @@ def FindNode(semantic_node_name: str, context: Context) -> SearchResponse:
     Optimized for qdrant-client 1.16+.
     """
     return _find_node_impl(semantic_node_name, context)
+
+
+def _node_match_from_point(point, *, node_type: str, relevance_score: float) -> NodeMatch:
+    """Build a NodeMatch from a raw Qdrant point payload.
+
+    Same field extraction FindNode's Phase 1/Phase 2 mapping use, factored
+    out for LookupEntityByName so it doesn't duplicate the attribute/
+    predicate extraction inline.
+    """
+    payload = point.payload or {}
+    attributes = payload.get("attributes", [])
+    unique_attrs = sorted(set(a.get("key") for a in attributes if a.get("key")))
+    relations = payload.get("relations", [])
+    unique_preds = sorted(set(r.get("predicate") for r in relations if r.get("predicate")))
+    return NodeMatch(
+        original_id=payload.get("original_id", "N/A"),
+        name=payload.get("name", "Unknown"),
+        node_type=node_type,
+        relevance_score=relevance_score,
+        available_attributes=unique_attrs,
+        available_predicates=unique_preds,
+    )
+
+
+@mcp.tool
+@log_tool_duration
+def LookupEntityByName(entity_name: str, context: Context, mode: str = "contains") -> SearchResponse:
+    """
+    Deterministic, non-vector, non-BM25 name lookup. Reach for this SPECIFICALLY when:
+
+    1. A previous FindNode call returned results that look plausible (decent
+       relevance_score) but are the WRONG entity — gated dense search can return a
+       full, confident-looking result set with the correct entity simply absent, and
+       no score threshold can detect that. Retrying FindNode with more semantic
+       rephrasing rarely helps; this tool bypasses vectors entirely.
+    2. You already hold what looks like a literal name/identifier, especially an
+       OVER-SPECIFIED mention — e.g. the question says "Texas metropolitan area" or
+       "Abraham Lincoln (film)" but the KB stores the plain entity as "Texas" or
+       "Abraham Lincoln". FindNode's own exact-match phase only matches the FULL
+       string byte-for-byte, so it structurally cannot catch this; this tool does,
+       by trying the query's own trailing/interior word-substrings and matching
+       those exactly instead of the whole thing.
+
+    Args:
+        entity_name: The literal name or over-specified mention to resolve.
+        mode: "contains" (default) — tries substrings of entity_name anchored at
+            EVERY position, longest first, capped at a small number of probes; best
+            when the extra qualifier could be anywhere in the mention.
+            "prefix" — tries only substrings anchored at the START (i.e.
+            progressively drops TRAILING words); cheaper, and covers the two
+            motivating examples above ("Texas metropolitan area" -> "Texas
+            metropolitan" -> "Texas"). Prefer this when you expect the qualifier to
+            be a trailing annotation like "(film)", "metropolitan area", "(band)".
+            "exact" — a single byte-for-byte (case/whitespace-lenient) match on
+            entity_name itself, no substring probing; use when you already believe
+            entity_name IS the exact stored label and just want a vector-free
+            confirmation.
+
+    Returns:
+        SearchResponse. In "contains"/"prefix" mode, `matches` is the UNION of
+        every substring probe that hit something (longest substring first,
+        deduped) — NOT just the single longest match, because a longer but
+        unrelated substring can happen to match a different entity while the
+        correct (shorter) one also matched; both are returned rather than the
+        heuristic silently discarding one. `disambiguation_notice` is set
+        whenever more than one distinct entity matched — whether from
+        duplicate exact labels or from different substrings each matching a
+        different entity — do NOT assume the first result is correct in that
+        case; inspect distinguishing attributes via GetNodeSummary before
+        picking one.
+    """
+    app_context: AppContext = context.request_context.lifespan_context
+    name_clean = entity_name.strip()
+    logger.info(f"LookupEntityByName: mode={mode!r} query={name_clean!r}")
+
+    try:
+        lookup_result = retrieval.lookup_by_label(
+            app_context.qdrant,
+            COLLECTION_ENTITIES,
+            name_clean,
+            mode=mode,
+            label_field="name",
+            extra_fields=["original_id", "attributes.value.value"],
+            limit=MAX_EXACT_MATCHES_RETURNED,
+            normalize=True,
+        )
+    except Exception as e:
+        logger.error(f"LookupEntityByName: lookup failed: {e}")
+        return SearchResponse(matches=[], result_count=0)
+
+    matched_on = lookup_result.matched_text or name_clean
+    matches = [
+        _node_match_from_point(point, node_type="entity", relevance_score=1.0)
+        for point in lookup_result.matches
+    ]
+
+    disambiguation_notice = None
+    if lookup_result.ambiguous:
+        disambiguation_notice = (
+            f"{lookup_result.total_matched} entities in the KB share the exact label "
+            f"'{matched_on}' (showing {len(matches)}). Do NOT assume the first/top match "
+            f"is correct — inspect distinguishing attributes (e.g. date of birth, "
+            f"official_website) via GetNodeSummary/GetEdgeQualifiers across the "
+            f"candidates below to pick the right one."
+        )
+    elif not lookup_result.exhaustive and not matches:
+        # Bounded probing gave up before trying every possible substring (or,
+        # for "exact", hit the scroll cap without finding one) — say so
+        # explicitly rather than implying the label is confirmed absent.
+        disambiguation_notice = (
+            f"No match found for '{name_clean}' within the bounded lookup "
+            f"(mode={mode}). This does not confirm the entity is absent from the KB "
+            f"— try a different mode, a shorter substring, or FindNode."
+        )
+
+    if matches:
+        for m in matches[:5]:
+            session_journal.visited_nodes[m.original_id] = m.name
+        session_journal.add_completed_step(
+            f"LookupEntityByName('{name_clean}', mode={mode}) -> {len(matches)} matches"
+        )
+
+    return SearchResponse(
+        matches=matches,
+        result_count=len(matches),
+        disambiguation_notice=disambiguation_notice,
+    )
 
 
 @mcp.tool
