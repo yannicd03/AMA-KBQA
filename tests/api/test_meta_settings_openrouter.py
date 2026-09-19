@@ -145,8 +145,11 @@ def test_the_shipped_config_really_offers_the_booth_presets():
         ("deepseek", "deepseek-v4-pro", "DeepSeek V4 Pro (direct)"),
     ]
     # settings_level and live_graph must still be [frontend] keys, not keys of
-    # the last array entry (which is exactly what bad ordering produces).
-    assert cfg.get_frontend_settings_level() == "full"
+    # the last array entry (which is exactly what bad ordering produces). The
+    # *value* of settings_level is a deployment choice ("full" or "minimal"),
+    # so assert only that it resolves to a valid level. The key's placement
+    # against the shipped config is guarded by test_config_frontend_settings.py.
+    assert cfg.get_frontend_settings_level() in cfg.FRONTEND_SETTINGS_LEVELS
     assert cfg.get_live_graph_enabled() is True
     assert all(e["default"] is False for e in entries)
 

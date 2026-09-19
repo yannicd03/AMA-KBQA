@@ -497,6 +497,42 @@ renders `ok`. `demo-llamacpp` is the only branch that actually probes.
   `tests/api/test_meta_settings_booth.py` to keep the shared file small — a
   future branch should follow that pattern rather than growing the shared
   file further.
+- **Confirmed on the 2026-09-17 forward merge** (`demo-v2-int` →
+  `demo-public`, `demo-booth`, `demo-llamacpp`, landing at `a68ee74` on this
+  branch): git merged two same-name top-level definitions side by side **with
+  no conflict marker**, twice, on two different branches. On `demo-booth`,
+  booth's `_FRONTEND_CHAT_PROVIDERS = ("kit", "openrouter", "deepseek")` in
+  `ama_kbqa/config.py` ended up ~8 lines above `demo-v2-int`'s
+  `_FRONTEND_CHAT_PROVIDERS = ("kit", "openrouter")`; the later binding wins
+  at runtime, so every direct-DeepSeek picker entry would have been silently
+  dropped, with nothing but a log warning. On `demo-llamacpp`, the same
+  collision recurred on `_FRONTEND_CHAT_PROVIDERS`, plus a second one on
+  `register_runtime_pricing` in `ama_kbqa/pricing.py` (identical bodies,
+  different docstrings — indistinguishable to a marker-only diff review).
+  **A clean, marker-free merge is not evidence of correctness for this
+  file pair.** After any forward merge touching `config.py` or `pricing.py`,
+  grep for duplicate top-level assignments/defs rather than trusting the
+  absence of `<<<<<<<` markers — e.g.
+  `git grep -c "^_FRONTEND_CHAT_PROVIDERS = " HEAD -- ama_kbqa/config.py`
+  should print `1`.
+- **Also confirmed the same day:** a conflict can swallow a needed line
+  instead of marking it. On `demo-llamacpp`, resolving the conflict in
+  `tests/api/test_meta_settings.py` dropped the
+  `by_role = {row["role"]: row for row in rows}` line, leaving the test
+  referencing an undefined name; restored from `b5e486e`. The merge result
+  imported and looked plausible — it was wrong by omission, not by marker.
+- **Test-writing rule for any file that forward-merges across all demo
+  branches:** assert the invariant, never a branch's own config value.
+  `tests/api/test_meta_settings_openrouter.py` originally pinned
+  `cfg.get_frontend_settings_level() == "full"` to guard the TOML
+  array-table hazard (see `Decisions/demo-picker-provider-routing.md` —
+  a plain `[frontend]` key written after `[[frontend.chat_models]]` silently
+  becomes a key of the last array entry). Pinning the *value* instead tested
+  `demo-v2-int`'s own identity and broke `demo-public`, which ships
+  `"minimal"` by design. Fixed in `a68ee74` by relaxing to
+  `cfg.get_frontend_settings_level() in cfg.FRONTEND_SETTINGS_LEVELS`;
+  placement (the actual hazard) stays guarded branch-agnostically by
+  `tests/test_config_frontend_settings.py`.
 - The v1-line branches (`demo-hetzner`, `demo-kit-models`, `demo-bwcloud*`,
   ~280 commits diverged from `demo-v2-int`) do not have the React frontend
   at all yet, let alone this settings panel. Pending a decision on whether

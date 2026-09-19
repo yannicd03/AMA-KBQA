@@ -11,6 +11,7 @@ summary: Public demo deployment runbook for the shared Hetzner box (compose proj
 - [Decisions/federated-dispatch-and-fusion.md](../Decisions/federated-dispatch-and-fusion.md) — federated dispatch backend behind demo v2's second Orchestrator picker entry (§9)
 - [Decisions/0001-three-branch-demo-split.md](../Decisions/0001-three-branch-demo-split.md) — why `demo-v2-int`/`demo-public`/`demo-booth` are three branches, not a feature flag (§9–§10)
 - [Decisions/0002-deepseek-thinking-mode-disabled.md](../Decisions/0002-deepseek-thinking-mode-disabled.md) — DeepSeek-direct thinking-mode gotcha (§10)
+- [Decisions/public-repo-deploy-config-extraction.md](../Decisions/public-repo-deploy-config-extraction.md) — why host details live in `deploy/hetzner/deploy.env` instead of this repo
 - [Project Architecture](../System/project_architecture.md) — overall system overview
 
 ---
@@ -19,12 +20,23 @@ summary: Public demo deployment runbook for the shared Hetzner box (compose proj
 
 bwcloud (host `seminar`) reaches end of life on **2026-09-15**. On **2026-09-14** the public demo at **https://amakbqa.yanlab.de** moved off bwcloud onto the **shared Hetzner box** (4 vCPU / 7.6 GiB RAM + 4 GiB swap, **no buildx**).
 
-> **Host details are not in this repository.** The origin address, ssh alias
-> and deploy user live in `deploy/hetzner/deploy.env`, which is gitignored.
-> Copy `deploy/hetzner/deploy.env.example` and fill it in. Throughout this SOP,
-> `$DEPLOY_SSH_ALIAS`, `$DEPLOY_USER` and `$DEPLOY_HOST` refer to those values.
-> Publishing the origin address would let traffic bypass the Cloudflare proxy
-> and reach the box directly.
+> **Host details are not in this repository — start here on a fresh clone.**
+> The origin address, ssh alias, deploy user and Cloudflare tunnel id live in
+> `deploy/hetzner/deploy.env`, gitignored. Before anything else in this SOP:
+>
+> 1. `cp deploy/hetzner/deploy.env.example deploy/hetzner/deploy.env` and fill
+>    in the real values.
+> 2. `./deploy/hetzner/render-deploy-config.sh` — renders
+>    `cloudflared-amakbqa.yml` and `cloudflared-amakbqa.service` from the
+>    committed `.template` files; refuses to run if `CLOUDFLARE_TUNNEL_ID` is
+>    still the placeholder.
+> 3. Then continue with the rest of this SOP as written.
+>
+> Throughout this SOP, `$DEPLOY_SSH_ALIAS`, `$DEPLOY_USER` and `$DEPLOY_HOST`
+> refer to `deploy.env` values. Publishing the origin address would let
+> traffic bypass the Cloudflare proxy and reach the box directly — see
+> [Decisions/public-repo-deploy-config-extraction.md](../Decisions/public-repo-deploy-config-extraction.md)
+> for the full rationale.
 
 That box already runs other services, none of which this migration touched:
 - **ORCA** — MAS production stack, compose project `mas-in-production` at `/srv/orca`, ports 8001, 2025–2030, 6333/6334, 27017; root `cloudflared.service` tunnel `orca`.
