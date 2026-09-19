@@ -1,3 +1,20 @@
+---
+type: decision
+status: accepted
+date: 2026-09-20
+summary: "The demo frontend, federated dispatch and the LangGraph rewrite collapse into mainline dev. demo-booth's content survives as the kept variant; demo-llamacpp is dropped; demo-public is deprecated (its settings_level=minimal distinction becomes a config value on dev). feature/federated-retrieval is superseded by the hand-port already on dev, not merged directly."
+affects: [branch/dev, branch/demo-v2-int, branch/demo-booth, branch/demo-public, branch/demo-llamacpp, branch/feat-langgraph-rewrite, branch/feature-federated-retrieval, branch/demo-v2-sparql, branch/chore-scrub-local-paths, branch/chore-deploy-config-extraction, branch/feat-exact-lookup-tool]
+relates: [amakbqa/adr-001, federated-dispatch-and-fusion, langgraph-adoption, react-frontend-second-ui, demo-picker-provider-routing]
+evidence:
+  - "commit 12e55f2 (integrate/dev-consolidation tip at ADR time)"
+  - "commit c37bd1a (feat/langgraph-rewrite + feat/exact-lookup-tool merge)"
+  - "commit bf9c464 (demo-v2-int merge)"
+  - "commit 3ce7f00 (demo-booth merge)"
+  - "commit fc8e365 (federated dispatch hand-port, see federated-dispatch-and-fusion.md addendum)"
+  - "dev fast-forwarded 3a1bab4 -> 12e55f2 same day; tip 7b9bf8b as of 2026-09-20"
+  - "1289 tests pass, ruff clean"
+---
+
 # ADR 0004: Consolidate the demo lines back into `dev`
 
 ## Related Docs

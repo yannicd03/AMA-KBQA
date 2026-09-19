@@ -1,34 +1,40 @@
 entities:
   - id: branch/demo-v2-int
     type: branch
-    status: active
-    as_of: 2026-09-17
+    status: merged
+    as_of: 2026-09-20
     title: demo-v2-int
-    summary: "Shared integration base for the demo v2 line (Router/Federated picker, live graph panel, data-driven settings panel). Tip 69cd5a9 2026-09-17, adding cooperative run cancellation and the provider-aware model picker. No longer KIT-only: it carries 2 [[frontend.chat_models]] DeepSeek presets plus a custom OpenRouter entry. Pushed to origin; the three downstream demo branches are each 3 commits behind and not yet merged forward."
+    summary: "Shared integration base for the demo v2 line (Router/Federated picker, live graph panel, data-driven settings panel). Deleted locally 2026-09-20, absorbed into dev via the 2026-09-20 consolidation (bf9c464), superset of demo-public and demo-llamacpp content."
+    merged_into: [branch/dev]
+    evidence: ["commit bf9c464", "amakbqa/adr-004"]
 
   - id: branch/demo-public
     type: branch
-    status: active
-    as_of: 2026-09-17
+    status: archived
+    as_of: 2026-09-20
     title: demo-public
-    summary: "Public-facing demo branch, settings_level = minimal (endpoints and diagnostics hidden). Tip da98f01 2026-09-17, exactly 3 commits behind demo-v2-int; the ports move, cancellation and picker work are not merged forward yet. Pushed to origin."
+    summary: "Public-facing demo branch, settings_level = minimal (endpoints and diagnostics hidden). Deprecated 2026-09-20, not deleted from history: its only distinct content (settings_level = minimal) now lives as a supported config value on dev rather than a separate branch."
     depends_on: [branch/demo-v2-int]
+    relates: [amakbqa/adr-004]
 
   - id: branch/demo-booth
     type: branch
-    status: active
-    as_of: 2026-09-17
+    status: merged
+    as_of: 2026-09-20
     title: demo-booth
-    summary: "SEMANTiCS 2026 booth demo branch (KIT + OpenRouter + DeepSeek endpoint rows, per-provider notice dedupe). Tip 176b16b 2026-09-17, exactly 3 commits behind demo-v2-int and not merged forward. Carries 7 [[frontend.chat_models]] entries, the largest picker of any branch. Pushed to origin."
+    summary: "SEMANTiCS 2026 booth demo branch (KIT + OpenRouter + DeepSeek endpoint rows, per-provider notice dedupe). Deleted locally 2026-09-20, absorbed into dev via the 2026-09-20 consolidation (3ce7f00) as the surviving demo-line variant, superseding demo-public and demo-llamacpp."
     depends_on: [branch/demo-v2-int]
+    merged_into: [branch/dev]
+    evidence: ["commit 3ce7f00", "amakbqa/adr-004"]
 
   - id: branch/demo-llamacpp
     type: branch
-    status: active
-    as_of: 2026-09-17
+    status: archived
+    as_of: 2026-09-20
     title: demo-llamacpp
-    summary: "Local llama.cpp demo branch, created 2026-09-15 off demo-booth; local chat (:8080) and embedding (:8081) settings rows with a probed status. Tip b5e486e 2026-09-17, exactly 3 commits behind demo-v2-int and not merged forward. Carries 0 [[frontend.chat_models]] entries. Pushed to origin."
+    summary: "Local llama.cpp demo branch, created 2026-09-15 off demo-booth (not demo-v2-int); local chat (:8080) and embedding (:8081) settings rows with a probed status. Dropped outright at user request 2026-09-20, unported, no unique content preserved beyond git history. Last tip 76de335."
     depends_on: [branch/demo-booth]
+    evidence: ["tip 76de335", "amakbqa/adr-004"]
 
   - id: feature/one-api-serves-every-demo-branch
     type: feature
@@ -228,24 +234,29 @@ entities:
 
   - id: branch/feat-langgraph-rewrite
     type: branch
-    status: active
+    status: merged
     as_of: 2026-09-20
     title: feat/langgraph-rewrite
-    summary: Structural agent-loop rewrite onto a plain LangGraph StateGraph. Phases 0-5 done, Phase 6 open, engine default still legacy. Last substantive commit 2026-08-23; took the public-repo scrub commit 0d6d01a today.
+    summary: Structural agent-loop rewrite onto a plain LangGraph StateGraph. Phases 0-5 done, Phase 6 open, engine default still legacy. Deleted locally 2026-09-20, absorbed into dev via the consolidation merge (c37bd1a), which also carries feat/exact-lookup-tool.
+    merged_into: [branch/dev]
+    evidence: ["commit c37bd1a", "amakbqa/adr-004"]
 
   - id: branch/chore-deploy-config-extraction
     type: branch
-    status: active
+    status: merged
     as_of: 2026-09-20
     title: chore/deploy-config-extraction
-    summary: Cut off demo-v2-int today. Moves Hetzner deploy host details into a gitignored deploy.env rendered from committed templates, ahead of the repo going public. Commits 4c4a5a0, f7fab65.
+    summary: Cut off demo-v2-int. Moves Hetzner deploy host details into a gitignored deploy.env rendered from committed templates, ahead of the repo going public. Commits 4c4a5a0, f7fab65. Deleted locally 2026-09-20, merged into dev.
+    merged_into: [branch/dev]
 
   - id: branch/chore-scrub-local-paths
     type: branch
-    status: active
+    status: merged
     as_of: 2026-09-20
     title: chore/scrub-local-paths
-    summary: Cut off dev today, scrubbing local username/paths out of tracked files ahead of the repo going public. Commit 3a1bab4.
+    summary: Cut off dev, scrubbing local username/paths out of tracked files ahead of the repo going public. Commit 3a1bab4. Deleted locally 2026-09-20 as one of the branches absorbed into dev's consolidation.
+    merged_into: [branch/dev]
+    evidence: ["commit 3a1bab4", "amakbqa/adr-004"]
 
   - id: branch/dev
     type: branch
@@ -302,3 +313,60 @@ entities:
     as_of: 2026-09-20
     title: demo-bwcloud
     summary: Quarantine line - descends from the pre-scrub lineage and carries the dead leaked OpenRouter key. Must never be merged or pushed to the public repo. See git-security-key-scrub.
+
+  # -- 2026-09-20 dev-consolidation: additional branch stubs -------------------
+
+  - id: branch/demo-v2-sparql
+    type: branch
+    status: merged
+    as_of: 2026-09-20
+    title: demo-v2-sparql
+    summary: SPARQL synthesis-hint work branch in the demo v2 line. Deleted locally 2026-09-20, absorbed into dev via the consolidation merge.
+    merged_into: [branch/dev]
+    depends_on: [branch/demo-v2-int]
+    relates: [amakbqa/adr-004]
+
+  - id: branch/feature-federated-retrieval
+    type: branch
+    status: archived
+    as_of: 2026-09-20
+    title: feature/federated-retrieval
+    summary: "Federated retrieval, forked from an old main (commits 034dddc/7195f60/67eb6b7/98882ac). Predated dev's one-round-trip routing rework and was never fast-forwardable onto it. Deleted locally 2026-09-20, superseded by the hand-port on dev (fc8e365, see federated-dispatch-and-fusion's 2026-09-14 addendum); its own commits are not part of dev's history."
+    relates: [amakbqa/adr-004, amakbqa/decision/federated-dispatch-and-fusion]
+
+  - id: branch/feat-exact-lookup-tool
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: feat/exact-lookup-tool
+    summary: Exact-lookup tool line, absorbed into dev via the 2026-09-20 consolidation merge (carried inside c37bd1a alongside feat/langgraph-rewrite) but still kept as the main checkout's own branch, not deleted.
+    relates: [amakbqa/adr-004]
+
+  - id: branch/integrate-dev-consolidation
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: integrate/dev-consolidation
+    summary: Staging branch for the 2026-09-20 dev consolidation; same commit as dev (tip 7b9bf8b). Nothing pushed to either remote yet.
+    relates: [amakbqa/adr-004, branch/dev]
+
+  - id: branch/baseline-web-research
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: baseline/web-research
+    summary: Spec-only baseline branch cut from the public main on 2026-09-20 for a web-research baseline agent. Spec in progress, no implementation yet.
+
+  - id: branch/baseline-sandbox-bash
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: baseline/sandbox-bash
+    summary: Spec-only baseline branch cut from the public main on 2026-09-20 for a sandboxed-bash baseline agent. Spec in progress, no implementation yet.
+
+  - id: branch/baseline-sparql-only
+    type: branch
+    status: active
+    as_of: 2026-09-20
+    title: baseline/sparql-only
+    summary: Spec-only baseline branch cut from the public main on 2026-09-20 for a SPARQL-only baseline agent. Spec in progress, no implementation yet.
