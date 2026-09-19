@@ -1,0 +1,21 @@
+# cloudflared ingress for the public demo.
+#
+# Generated from this template by deploy/hetzner/render-deploy-config.sh.
+# Do not edit the rendered file: edit this template or deploy.env instead.
+#
+# Installed to ${CLOUDFLARE_CREDENTIALS_DIR}/amakbqa.yml and run by the
+# cloudflared-amakbqa systemd unit. The tunnel credentials JSON is secret and
+# lives only on the server.
+#
+# Staging model: the primary hostname stays on the current frontend while the
+# staging hostname serves the candidate. To cut over, point the primary at
+# DEMO_STAGING_PORT and restart the unit; to roll back, point it back at
+# DEMO_PORT.
+tunnel: ${CLOUDFLARE_TUNNEL_ID}
+credentials-file: ${CLOUDFLARE_CREDENTIALS_DIR}/${CLOUDFLARE_TUNNEL_ID}.json
+ingress:
+  - hostname: ${DEMO_HOSTNAME}
+    service: http://localhost:${DEMO_PORT}
+  - hostname: ${DEMO_STAGING_HOSTNAME}
+    service: http://localhost:${DEMO_STAGING_PORT}
+  - service: http_status:404
